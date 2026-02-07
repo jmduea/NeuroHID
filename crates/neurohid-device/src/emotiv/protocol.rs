@@ -18,7 +18,7 @@
 //!
 //! | Stream | Description | API Level |
 //! |--------|-------------|-----------|
-//! | `eeg`  | Raw EEG channel data | Premium |
+//! | `eeg`  | Raw EEG channel data | Premium, (basic for consumer devices) |
 //! | `dev`  | Battery, signal, contact quality | Basic |
 //! | `mot`  | Accelerometer, magnetometer, gyroscope/quaternion | Basic |
 //! | `eq`   | Per-sensor EEG quality metrics | Basic |
@@ -33,24 +33,19 @@ use serde::{Deserialize, Serialize};
 // ─── JSON-RPC Protocol ──────────────────────────────────────────────────
 
 /// A JSON-RPC 2.0 request to the Cortex API.
-///
-/// The `params` field is omitted entirely when `None`, matching the behavior
-/// of the official Emotiv Cortex examples (e.g., `getCortexInfo` sends no
-/// `params` field at all).
 #[derive(Debug, Serialize)]
 pub struct CortexRequest {
-    pub jsonrpc: &'static str,
     pub id: u64,
+    pub jsonrpc: &'static str,
     pub method: &'static str,
     #[serde(skip_serializing_if = "Option::is_none")]
+    // Using `serde_json::Value` allows us to flexibly construct params for different methods without needing a separate struct for each method's parameters.
     pub params: Option<serde_json::Value>,
 }
 
 impl CortexRequest {
     /// Create a new request with the given method and params.
     pub fn new(id: u64, method: &'static str, params: serde_json::Value) -> Self {
-        // If the params value is an empty object `{}`, omit it entirely
-        // to match the official Cortex API examples.
         let params = if params.is_object() && params.as_object().is_some_and(|m| m.is_empty()) {
             None
         } else {
@@ -89,7 +84,7 @@ impl std::fmt::Display for CortexError {
 
 // ─── Headset & Session ──────────────────────────────────────────────────
 
-/// Headset information returned by `queryHeadsets`.
+/// Headset info
 #[derive(Debug, Clone, Deserialize)]
 pub struct HeadsetInfo {
     /// Headset ID (e.g., "INSIGHT-A1B2C3D4").
@@ -888,7 +883,11 @@ mod tests {
         let json = serde_json::to_string(&req).unwrap();
         assert!(json.contains("\"jsonrpc\":\"2.0\""));
         assert!(json.contains("\"method\":\"queryHeadsets\""));
-        assert!(!json.contains("\"params\""), "empty params should be omitted: {}", json);
+        assert!(
+            !json.contains("\"params\""),
+            "empty params should be omitted: {}",
+            json
+        );
     }
 
     #[test]
@@ -900,7 +899,11 @@ mod tests {
         );
 
         let json = serde_json::to_string(&req).unwrap();
-        assert!(json.contains("\"params\""), "non-empty params should be present: {}", json);
+        assert!(
+            json.contains("\"params\""),
+            "non-empty params should be present: {}",
+            json
+        );
         assert!(json.contains("\"clientId\":\"abc\""));
     }
 
@@ -936,9 +939,8 @@ mod tests {
     fn test_parse_device_quality_insight() {
         // Insight has 5 channels: AF3, AF4, T7, T8, Pz
         // Format: [battery, signal, AF3_cq, AF4_cq, T7_cq, T8_cq, Pz_cq, overall, battery_pct]
-        let dev: Vec<serde_json::Value> = serde_json::from_str(
-            r#"[4, 1, 4, 3, 2, 4, 1, 75, 88]"#,
-        ).unwrap();
+        let dev: Vec<serde_json::Value> =
+            serde_json::from_str(r#"[4, 1, 4, 3, 2, 4, 1, 75, 88]"#).unwrap();
 
         let quality = DeviceQuality::from_dev_array(&dev, 5).unwrap();
         assert_eq!(quality.battery_level, 4);
@@ -960,7 +962,9 @@ mod tests {
     #[test]
     fn test_parse_motion_data() {
         // [COUNTER, INTERPOLATED, Q0, Q1, Q2, Q3, ACCX, ACCY, ACCZ, MAGX, MAGY, MAGZ]
-        let mot = vec![123.0, 0.0, 0.707, 0.0, 0.707, 0.0, 0.01, -9.81, 0.02, 30.0, -15.0, 45.0];
+        let mot = vec![
+            123.0, 0.0, 0.707, 0.0, 0.707, 0.0, 0.01, -9.81, 0.02, 30.0, -15.0, 45.0,
+        ];
         let motion = MotionData::from_mot_array(&mot, 1609459200.0).unwrap();
 
         let q = motion.quaternion.unwrap();
