@@ -40,7 +40,7 @@ use std::time::Duration;
 use futures::{stream::SplitSink, stream::SplitStream, SinkExt, StreamExt};
 use native_tls::TlsConnector as NativeTlsConnector;
 use tokio::net::TcpStream;
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio::task::JoinHandle;
 use tokio_tungstenite::{
     connect_async_tls_with_config,
@@ -52,8 +52,8 @@ use neurohid_types::error::{DeviceError, Error as NeurohidError, Result};
 
 use super::protocol::{
     CortexRequest, CortexResponse, DetectionInfo, DetectionType, ErrorCodes, ExportFormat,
-    HeadsetInfo, MarkerInfo, Methods, ProfileAction, ProfileInfo, RecordInfo, SessionInfo,
-    Streams, TrainingStatus, UserLoginInfo,
+    HeadsetInfo, MarkerInfo, Methods, ProfileAction, ProfileInfo, RecordInfo, SessionInfo, Streams,
+    TrainingStatus, UserLoginInfo,
 };
 
 /// Default timeout for Cortex API calls.
@@ -75,28 +75,10 @@ type WsReader = SplitStream<WebSocketStream<MaybeTlsStream<TcpStream>>>;
 type PendingResponse = oneshot::Sender<Result<serde_json::Value>>;
 
 /// Senders for dispatching stream data events to consumers.
-pub(crate) struct StreamSenders {
-    pub eeg_tx: Option<mpsc::Sender<serde_json::Value>>,
-    pub dev_tx: Option<mpsc::Sender<serde_json::Value>>,
-    pub mot_tx: Option<mpsc::Sender<serde_json::Value>>,
-    pub pow_tx: Option<mpsc::Sender<serde_json::Value>>,
-    pub met_tx: Option<mpsc::Sender<serde_json::Value>>,
-    pub com_tx: Option<mpsc::Sender<serde_json::Value>>,
-    pub fac_tx: Option<mpsc::Sender<serde_json::Value>>,
-    pub sys_tx: Option<mpsc::Sender<serde_json::Value>>,
-}
+pub(crate) type StreamSenders = HashMap<&'static str, mpsc::Sender<serde_json::Value>>;
 
 /// Receivers for consuming stream data events.
-pub(crate) struct StreamReceivers {
-    pub eeg_rx: Option<mpsc::Receiver<serde_json::Value>>,
-    pub dev_rx: Option<mpsc::Receiver<serde_json::Value>>,
-    pub mot_rx: Option<mpsc::Receiver<serde_json::Value>>,
-    pub pow_rx: Option<mpsc::Receiver<serde_json::Value>>,
-    pub met_rx: Option<mpsc::Receiver<serde_json::Value>>,
-    pub com_rx: Option<mpsc::Receiver<serde_json::Value>>,
-    pub fac_rx: Option<mpsc::Receiver<serde_json::Value>>,
-    pub sys_rx: Option<mpsc::Receiver<serde_json::Value>>,
-}
+pub(crate) type StreamReceivers = HashMap<&'static str, mpsc::Receiver<serde_json::Value>>;
 
 /// WebSocket JSON-RPC client for the Emotiv Cortex API.
 ///
@@ -134,15 +116,6 @@ impl CortexClient {
     ///
     /// The Cortex service must be running on the local machine.
     /// This configures TLS to accept the self-signed localhost certificate.
-    ///
-    /// ## WSL2 Compatibility Note
-    ///
-    /// The Emotiv Cortex API returns -32601 "Method not found" for all
-    /// JSON-RPC methods when the WebSocket connection originates from a
-    /// WSL2 process, even with mirrored networking. This is not caused by
-    /// headers or request formatting — it appears to be based on the source
-    /// process context. The fix is handled upstream in `neurohid-core` via
-    /// a native Windows TCP relay (see `tasks::wsl2_relay`).
     pub async fn connect(url: &str) -> Result<Self> {
         // Configure TLS to accept self-signed certificates (Cortex uses one
         // for its localhost WebSocket server)
@@ -156,16 +129,16 @@ impl CortexClient {
         let connector = Connector::NativeTls(tls_connector);
 
         // Parse the WebSocket URL as a URI for the connection.
-        let uri: http::Uri = url.parse().map_err(|e: http::uri::InvalidUri| {
-            DeviceError::ConnectionFailed {
-                reason: format!("Invalid Cortex URL '{}': {}", url, e),
-            }
-        })?;
+        let uri: http::Uri =
+            url.parse()
+                .map_err(|e: http::uri::InvalidUri| DeviceError::ConnectionFailed {
+                    reason: format!("Invalid Cortex URL '{}': {}", url, e),
+                })?;
 
         let connect_fut = connect_async_tls_with_config(
             uri,
             None, // WebSocket config
-            false, // disable_nagle
+            true, // disable_nagle
             Some(connector),
         );
 
@@ -294,37 +267,10 @@ impl CortexClient {
                         // only for the duration of the try_send call.
                         if let Ok(guard) = stream_senders.lock() {
                             if let Some(ref senders) = *guard {
-                                if value.get("eeg").is_some() {
-                                    if let Some(ref tx) = senders.eeg_tx {
+                                for (key, tx) in senders.iter() {
+                                    if value.get(*key).is_some() {
                                         let _ = tx.try_send(value);
-                                    }
-                                } else if value.get("dev").is_some() {
-                                    if let Some(ref tx) = senders.dev_tx {
-                                        let _ = tx.try_send(value);
-                                    }
-                                } else if value.get("mot").is_some() {
-                                    if let Some(ref tx) = senders.mot_tx {
-                                        let _ = tx.try_send(value);
-                                    }
-                                } else if value.get("pow").is_some() {
-                                    if let Some(ref tx) = senders.pow_tx {
-                                        let _ = tx.try_send(value);
-                                    }
-                                } else if value.get("met").is_some() {
-                                    if let Some(ref tx) = senders.met_tx {
-                                        let _ = tx.try_send(value);
-                                    }
-                                } else if value.get("com").is_some() {
-                                    if let Some(ref tx) = senders.com_tx {
-                                        let _ = tx.try_send(value);
-                                    }
-                                } else if value.get("fac").is_some() {
-                                    if let Some(ref tx) = senders.fac_tx {
-                                        let _ = tx.try_send(value);
-                                    }
-                                } else if value.get("sys").is_some() {
-                                    if let Some(ref tx) = senders.sys_tx {
-                                        let _ = tx.try_send(value);
+                                        break;
                                     }
                                 }
                             }
@@ -345,9 +291,10 @@ impl CortexClient {
                         tracing::warn!("WebSocket read error: {}", e);
                         let mut pending = pending_responses.lock().await;
                         for (_, tx) in pending.drain() {
-                            let _ = tx.send(Err(DeviceError::CommunicationError(
-                                format!("WebSocket error: {}", e),
-                            )
+                            let _ = tx.send(Err(DeviceError::CommunicationError(format!(
+                                "WebSocket error: {}",
+                                e
+                            ))
                             .into()));
                         }
                         break;
@@ -414,13 +361,33 @@ impl CortexClient {
                 DeviceError::Timeout
             })?
             .map_err(|_| {
-                DeviceError::CommunicationError("Response channel dropped (reader loop died)".into())
+                DeviceError::CommunicationError(
+                    "Response channel dropped (reader loop died)".into(),
+                )
             })??;
 
         Ok(result)
     }
 
     // ─── Streaming ──────────────────────────────────────────────────────
+
+    /// Stream name validation and mapping to static keys for senders/receivers.
+    fn stream_key(name: &str) -> &'static str {
+        match name {
+            Streams::EEG => "eeg",
+            Streams::DEV => "dev",
+            Streams::MOT => "mot",
+            Streams::POW => "pow",
+            Streams::MET => "met",
+            Streams::COM => "com",
+            Streams::FAC => "fac",
+            Streams::SYS => "sys",
+            other => {
+                tracing::warn!(stream = other, "Unknown stream type");
+                "unknown"
+            }
+        }
+    }
 
     /// Create data stream channels for the specified streams.
     ///
@@ -432,67 +399,13 @@ impl CortexClient {
     /// Call this before `subscribe_streams()`. Returns receivers that
     /// the device layer uses to consume stream events.
     pub(crate) fn create_stream_channels(&self, streams: &[&str]) -> StreamReceivers {
-        let mut senders = StreamSenders {
-            eeg_tx: None,
-            dev_tx: None,
-            mot_tx: None,
-            pow_tx: None,
-            met_tx: None,
-            com_tx: None,
-            fac_tx: None,
-            sys_tx: None,
-        };
-
-        let mut receivers = StreamReceivers {
-            eeg_rx: None,
-            dev_rx: None,
-            mot_rx: None,
-            pow_rx: None,
-            met_rx: None,
-            com_rx: None,
-            fac_rx: None,
-            sys_rx: None,
-        };
+        let mut senders = StreamSenders::new();
+        let mut receivers = StreamReceivers::new();
 
         for &stream in streams {
             let (tx, rx) = mpsc::channel(STREAM_CHANNEL_BUFFER);
-            match stream {
-                Streams::EEG => {
-                    senders.eeg_tx = Some(tx);
-                    receivers.eeg_rx = Some(rx);
-                }
-                Streams::DEV => {
-                    senders.dev_tx = Some(tx);
-                    receivers.dev_rx = Some(rx);
-                }
-                Streams::MOT => {
-                    senders.mot_tx = Some(tx);
-                    receivers.mot_rx = Some(rx);
-                }
-                Streams::POW => {
-                    senders.pow_tx = Some(tx);
-                    receivers.pow_rx = Some(rx);
-                }
-                Streams::MET => {
-                    senders.met_tx = Some(tx);
-                    receivers.met_rx = Some(rx);
-                }
-                Streams::COM => {
-                    senders.com_tx = Some(tx);
-                    receivers.com_rx = Some(rx);
-                }
-                Streams::FAC => {
-                    senders.fac_tx = Some(tx);
-                    receivers.fac_rx = Some(rx);
-                }
-                Streams::SYS => {
-                    senders.sys_tx = Some(tx);
-                    receivers.sys_rx = Some(rx);
-                }
-                other => {
-                    tracing::warn!(stream = other, "Unknown stream type requested");
-                }
-            }
+            senders.insert(Self::stream_key(stream), tx);
+            receivers.insert(Self::stream_key(stream), rx);
         }
 
         // Install the senders into the shared structure that the reader
@@ -517,38 +430,13 @@ impl CortexClient {
         stream: &str,
     ) -> Option<mpsc::Receiver<serde_json::Value>> {
         let (tx, rx) = mpsc::channel(STREAM_CHANNEL_BUFFER);
-
         if let Ok(mut guard) = self.stream_senders.lock() {
-            let senders = guard.get_or_insert_with(|| StreamSenders {
-                eeg_tx: None,
-                dev_tx: None,
-                mot_tx: None,
-                pow_tx: None,
-                met_tx: None,
-                com_tx: None,
-                fac_tx: None,
-                sys_tx: None,
-            });
-
-            match stream {
-                Streams::EEG => senders.eeg_tx = Some(tx),
-                Streams::DEV => senders.dev_tx = Some(tx),
-                Streams::MOT => senders.mot_tx = Some(tx),
-                Streams::POW => senders.pow_tx = Some(tx),
-                Streams::MET => senders.met_tx = Some(tx),
-                Streams::COM => senders.com_tx = Some(tx),
-                Streams::FAC => senders.fac_tx = Some(tx),
-                Streams::SYS => senders.sys_tx = Some(tx),
-                _ => {
-                    tracing::warn!(stream, "Unknown stream type for add_stream_channel");
-                    return None;
-                }
-            }
+            let senders = guard.get_or_insert_with(StreamSenders::new);
+            senders.insert(Self::stream_key(stream), tx);
+            Some(rx)
         } else {
-            return None;
+            None
         }
-
-        Some(rx)
     }
 
     /// Remove a single stream channel sender.
@@ -557,17 +445,7 @@ impl CortexClient {
     pub(crate) fn remove_stream_channel(&self, stream: &str) {
         if let Ok(mut guard) = self.stream_senders.lock() {
             if let Some(ref mut senders) = *guard {
-                match stream {
-                    Streams::EEG => senders.eeg_tx = None,
-                    Streams::DEV => senders.dev_tx = None,
-                    Streams::MOT => senders.mot_tx = None,
-                    Streams::POW => senders.pow_tx = None,
-                    Streams::MET => senders.met_tx = None,
-                    Streams::COM => senders.com_tx = None,
-                    Streams::FAC => senders.fac_tx = None,
-                    Streams::SYS => senders.sys_tx = None,
-                    _ => {}
-                }
+                senders.remove(stream);
             }
         }
     }
@@ -592,11 +470,7 @@ impl CortexClient {
     }
 
     /// Check if the application has been granted access rights.
-    pub async fn has_access_right(
-        &self,
-        client_id: &str,
-        client_secret: &str,
-    ) -> Result<bool> {
+    pub async fn has_access_right(&self, client_id: &str, client_secret: &str) -> Result<bool> {
         let result = self
             .call(
                 Methods::HAS_ACCESS_RIGHT,
@@ -635,11 +509,7 @@ impl CortexClient {
     ///   app approval internally.
     /// - `authorize` must succeed — it returns the cortex token for all
     ///   subsequent operations.
-    pub async fn authenticate(
-        &self,
-        client_id: &str,
-        client_secret: &str,
-    ) -> Result<String> {
+    pub async fn authenticate(&self, client_id: &str, client_secret: &str) -> Result<String> {
         // Step 0: getCortexInfo — verify API is alive, log version
         let cortex_info_ok = match self.get_cortex_info().await {
             Ok(info) => {
@@ -970,11 +840,7 @@ impl CortexClient {
     }
 
     /// Stop an active recording.
-    pub async fn stop_record(
-        &self,
-        cortex_token: &str,
-        session_id: &str,
-    ) -> Result<RecordInfo> {
+    pub async fn stop_record(&self, cortex_token: &str, session_id: &str) -> Result<RecordInfo> {
         let result = self
             .call(
                 Methods::UPDATE_RECORD,
@@ -1046,7 +912,12 @@ impl CortexClient {
             )
             .await?;
 
-        tracing::info!(?record_ids, folder, format = format.as_str(), "Export initiated");
+        tracing::info!(
+            ?record_ids,
+            folder,
+            format = format.as_str(),
+            "Export initiated"
+        );
 
         Ok(())
     }
@@ -1192,10 +1063,7 @@ impl CortexClient {
     ///
     /// Returns available actions, controls, and events for mental command
     /// or facial expression detection.
-    pub async fn get_detection_info(
-        &self,
-        detection: DetectionType,
-    ) -> Result<DetectionInfo> {
+    pub async fn get_detection_info(&self, detection: DetectionType) -> Result<DetectionInfo> {
         let result = self
             .call(
                 Methods::GET_DETECTION_INFO,
@@ -1206,8 +1074,7 @@ impl CortexClient {
             .await?;
 
         serde_json::from_value(result).map_err(|e| {
-            DeviceError::CommunicationError(format!("failed to parse detection info: {}", e))
-                .into()
+            DeviceError::CommunicationError(format!("failed to parse detection info: {}", e)).into()
         })
     }
 

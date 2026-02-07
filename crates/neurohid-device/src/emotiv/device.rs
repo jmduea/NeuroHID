@@ -41,12 +41,10 @@ use async_trait::async_trait;
 use futures::Stream;
 use tokio::sync::{mpsc, watch};
 
-use neurohid_types::device::{
-    ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DeviceType,
-};
+use neurohid_types::device::{ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DeviceType};
 use neurohid_types::error::{DeviceError, Result};
-use neurohid_types::signal::DeviceChannelConfig;
 use neurohid_types::now_micros;
+use neurohid_types::signal::DeviceChannelConfig;
 
 use crate::traits::{Device, SampleStream};
 
@@ -54,8 +52,7 @@ use super::cortex_client::CortexClient;
 use super::protocol::{
     BandPowerData, DetectionInfo, DetectionType, DeviceQuality, EegEvent, ExportFormat,
     FacialExpression, HeadsetInfo, MarkerInfo, MentalCommand, MotEvent, MotionData,
-    PerformanceMetrics, ProfileAction, ProfileInfo, PowEvent, RecordInfo, Streams,
-    TrainingStatus,
+    PerformanceMetrics, PowEvent, ProfileAction, ProfileInfo, RecordInfo, Streams, TrainingStatus,
 };
 
 /// A connected Emotiv headset with an active Cortex session.
@@ -142,9 +139,11 @@ impl EmotivDevice {
             .latest_quality
             .read()
             .ok()
-            .and_then(|guard| guard.as_ref().map(|q| {
-                (Some(q.battery_percent), Some(q.channel_quality.clone()))
-            }))
+            .and_then(|guard| {
+                guard
+                    .as_ref()
+                    .map(|q| (Some(q.battery_percent), Some(q.channel_quality.clone())))
+            })
             .unwrap_or((None, None));
 
         let status = DeviceStatus {
@@ -204,17 +203,15 @@ impl EmotivDevice {
     ///
     /// Requires an active session (call after `start_streaming()` or
     /// at least after the provider has connected).
-    pub async fn subscribe_motion(
-        &self,
-    ) -> Result<Pin<Box<dyn Stream<Item = MotionData> + Send>>> {
+    pub async fn subscribe_motion(&self) -> Result<Pin<Box<dyn Stream<Item = MotionData> + Send>>> {
         self.ensure_connected()?;
 
-        let rx = self
-            .client
-            .add_stream_channel(Streams::MOT)
-            .ok_or(DeviceError::CommunicationError(
-                "Failed to create motion stream channel".into(),
-            ))?;
+        let rx =
+            self.client
+                .add_stream_channel(Streams::MOT)
+                .ok_or(DeviceError::CommunicationError(
+                    "Failed to create motion stream channel".into(),
+                ))?;
 
         self.client
             .subscribe_streams(&self.cortex_token, &self.session_id, &[Streams::MOT])
@@ -236,12 +233,12 @@ impl EmotivDevice {
     ) -> Result<Pin<Box<dyn Stream<Item = BandPowerData> + Send>>> {
         self.ensure_connected()?;
 
-        let rx = self
-            .client
-            .add_stream_channel(Streams::POW)
-            .ok_or(DeviceError::CommunicationError(
-                "Failed to create band power stream channel".into(),
-            ))?;
+        let rx =
+            self.client
+                .add_stream_channel(Streams::POW)
+                .ok_or(DeviceError::CommunicationError(
+                    "Failed to create band power stream channel".into(),
+                ))?;
 
         let num_channels = self.num_channels;
 
@@ -261,20 +258,19 @@ impl EmotivDevice {
     ) -> Result<Pin<Box<dyn Stream<Item = PerformanceMetrics> + Send>>> {
         self.ensure_connected()?;
 
-        let rx = self
-            .client
-            .add_stream_channel(Streams::MET)
-            .ok_or(DeviceError::CommunicationError(
-                "Failed to create metrics stream channel".into(),
-            ))?;
+        let rx =
+            self.client
+                .add_stream_channel(Streams::MET)
+                .ok_or(DeviceError::CommunicationError(
+                    "Failed to create metrics stream channel".into(),
+                ))?;
 
         Ok(Box::pin(TypedStream::new(rx, |event| {
             let met = event.get("met")?.as_array()?;
             // met array format: [eng, exc, lex, str, rel, int, foc, ...]
             // Some values may be null if signal quality is insufficient
-            let f = |i: usize| -> Option<f32> {
-                met.get(i).and_then(|v| v.as_f64()).map(|v| v as f32)
-            };
+            let f =
+                |i: usize| -> Option<f32> { met.get(i).and_then(|v| v.as_f64()).map(|v| v as f32) };
             let time = event.get("time")?.as_f64()?;
             Some(PerformanceMetrics {
                 timestamp: (time * 1_000_000.0) as i64,
@@ -300,12 +296,12 @@ impl EmotivDevice {
     ) -> Result<Pin<Box<dyn Stream<Item = MentalCommand> + Send>>> {
         self.ensure_connected()?;
 
-        let rx = self
-            .client
-            .add_stream_channel(Streams::COM)
-            .ok_or(DeviceError::CommunicationError(
-                "Failed to create mental command stream channel".into(),
-            ))?;
+        let rx =
+            self.client
+                .add_stream_channel(Streams::COM)
+                .ok_or(DeviceError::CommunicationError(
+                    "Failed to create mental command stream channel".into(),
+                ))?;
 
         Ok(Box::pin(TypedStream::new(rx, |event| {
             let com = event.get("com")?.as_array()?;
@@ -325,12 +321,12 @@ impl EmotivDevice {
     ) -> Result<Pin<Box<dyn Stream<Item = FacialExpression> + Send>>> {
         self.ensure_connected()?;
 
-        let rx = self
-            .client
-            .add_stream_channel(Streams::FAC)
-            .ok_or(DeviceError::CommunicationError(
-                "Failed to create facial expression stream channel".into(),
-            ))?;
+        let rx =
+            self.client
+                .add_stream_channel(Streams::FAC)
+                .ok_or(DeviceError::CommunicationError(
+                    "Failed to create facial expression stream channel".into(),
+                ))?;
 
         Ok(Box::pin(TypedStream::new(rx, |event| {
             let fac = event.get("fac")?.as_array()?;
@@ -461,9 +457,7 @@ impl EmotivDevice {
     /// List all profiles for the current user.
     pub async fn query_profiles(&self) -> Result<Vec<ProfileInfo>> {
         self.ensure_connected()?;
-        self.client
-            .query_profiles(&self.cortex_token)
-            .await
+        self.client.query_profiles(&self.cortex_token).await
     }
 
     /// Get the profile currently loaded for this headset.
@@ -478,11 +472,7 @@ impl EmotivDevice {
     ///
     /// Loading a profile is required before `subscribe_mental_commands()`
     /// or `subscribe_facial_expressions()` will return meaningful data.
-    pub async fn setup_profile(
-        &self,
-        profile_name: &str,
-        action: ProfileAction,
-    ) -> Result<()> {
+    pub async fn setup_profile(&self, profile_name: &str, action: ProfileAction) -> Result<()> {
         self.ensure_connected()?;
         self.client
             .setup_profile(&self.cortex_token, &self.id.0, profile_name, action)
@@ -499,10 +489,7 @@ impl EmotivDevice {
     ///
     /// Returns the list of available actions, controls, and events
     /// for the specified detection type.
-    pub async fn get_detection_info(
-        &self,
-        detection: DetectionType,
-    ) -> Result<DetectionInfo> {
+    pub async fn get_detection_info(&self, detection: DetectionType) -> Result<DetectionInfo> {
         self.ensure_connected()?;
         self.client.get_detection_info(detection).await
     }
@@ -522,7 +509,13 @@ impl EmotivDevice {
     ) -> Result<serde_json::Value> {
         self.ensure_connected()?;
         self.client
-            .training(&self.cortex_token, &self.session_id, detection, status, action)
+            .training(
+                &self.cortex_token,
+                &self.session_id,
+                detection,
+                status,
+                action,
+            )
             .await
     }
 
@@ -616,7 +609,7 @@ impl Device for EmotivDevice {
         // Create stream channels for EEG and device quality data.
         // The reader loop will start routing events to these channels.
         let streams = [Streams::EEG, Streams::DEV];
-        let receivers = self.client.create_stream_channels(&streams);
+        let mut receivers = self.client.create_stream_channels(&streams);
 
         // Subscribe to both streams via the Cortex API
         self.client
@@ -635,7 +628,7 @@ impl Device for EmotivDevice {
 
         // Spawn the device quality adapter task (reads "dev" events,
         // updates the shared quality state).
-        if let Some(mut dev_rx) = receivers.dev_rx {
+        if let Some(mut dev_rx) = receivers.remove(Streams::DEV) {
             let quality = Arc::clone(&latest_quality);
             let num_ch = num_channels;
             let streaming_flag = Arc::clone(&streaming);
@@ -647,10 +640,8 @@ impl Device for EmotivDevice {
                     match dev_rx.recv().await {
                         Some(event) => {
                             if let Some(dev_array) = event.get("dev").and_then(|v| v.as_array()) {
-                                let dev_values: Vec<serde_json::Value> =
-                                    dev_array.to_vec();
-                                if let Some(dq) =
-                                    DeviceQuality::from_dev_array(&dev_values, num_ch)
+                                let dev_values: Vec<serde_json::Value> = dev_array.to_vec();
+                                if let Some(dq) = DeviceQuality::from_dev_array(&dev_values, num_ch)
                                 {
                                     let battery = dq.battery_percent;
                                     let cq = dq.channel_quality.clone();
@@ -680,7 +671,7 @@ impl Device for EmotivDevice {
 
         // Spawn the EEG adapter task (reads "eeg" events, converts to Samples
         // with quality data attached).
-        if let Some(mut eeg_rx) = receivers.eeg_rx {
+        if let Some(mut eeg_rx) = receivers.remove(Streams::EEG) {
             let quality = Arc::clone(&latest_quality);
 
             tokio::spawn(async move {
@@ -689,9 +680,7 @@ impl Device for EmotivDevice {
                 while streaming.load(Ordering::SeqCst) {
                     match eeg_rx.recv().await {
                         Some(event) => {
-                            if let Ok(eeg_event) =
-                                serde_json::from_value::<EegEvent>(event)
-                            {
+                            if let Ok(eeg_event) = serde_json::from_value::<EegEvent>(event) {
                                 // Take only EEG channels, discard trailing marker
                                 let values: Vec<f32> = eeg_event
                                     .eeg
@@ -701,17 +690,12 @@ impl Device for EmotivDevice {
                                     .collect();
 
                                 // Attach the latest contact quality data
-                                let sample_quality = quality
-                                    .read()
-                                    .ok()
-                                    .and_then(|guard| {
-                                        guard.as_ref().map(|q| q.channel_quality.clone())
-                                    });
+                                let sample_quality = quality.read().ok().and_then(|guard| {
+                                    guard.as_ref().map(|q| q.channel_quality.clone())
+                                });
 
                                 let sample = neurohid_types::signal::Sample {
-                                    device_timestamp: Some(
-                                        (eeg_event.time * 1_000_000.0) as i64,
-                                    ),
+                                    device_timestamp: Some((eeg_event.time * 1_000_000.0) as i64),
                                     system_timestamp: now_micros(),
                                     sequence_number: Some(sequence),
                                     values,
