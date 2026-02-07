@@ -1,0 +1,120 @@
+//! # NeuroHID Service (Headless)
+//!
+//! This is the standalone headless service binary. It runs continuously in the
+//! background, connecting to your EEG device, processing signals, communicating
+//! with the Python ML layer, and emitting HID events based on decoded intentions.
+//!
+//! For the unified GUI experience, use `neurohid` (the hub binary) instead.
+
+use tokio::sync::broadcast;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use clap::Parser;
+
+use neurohid_core::service::NeuroHidService;
+
+/// Command-line arguments for the NeuroHID service.
+#[derive(Parser, Debug)]
+#[command(name = "neurohid-service")]
+#[command(about = "NeuroHID - Brain-computer interface headless service")]
+struct Args {
+    /// Path to configuration file (uses default location if not specified)
+    #[arg(short, long)]
+    config: Option<String>,
+
+    /// Profile to use (uses default profile if not specified)
+    #[arg(short, long)]
+    profile: Option<String>,
+
+    /// Run in foreground (don't daemonize)
+    #[arg(short, long)]
+    foreground: bool,
+
+    /// Verbose logging
+    #[arg(short, long)]
+    verbose: bool,
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    // Parse command-line arguments
+    let args = Args::parse();
+
+    // Initialize logging. The log level can be controlled via the RUST_LOG
+    // environment variable or the --verbose flag.
+    let log_level = if args.verbose { "debug" } else { "info" };
+    tracing_subscriber::registry()
+        .with(tracing_subscriber::fmt::layer())
+        .with(tracing_subscriber::EnvFilter::from_default_env()
+            .add_directive(format!("neurohid={}", log_level).parse().unwrap()))
+        .init();
+
+    tracing::info!("Starting NeuroHID service");
+
+    // Initialize storage system. This sets up the data directories and ensures
+    // we can access the platform keychain for encryption keys.
+    let (profile_store, config_store) = neurohid_storage::initialize().await
+        .map_err(|e| anyhow::anyhow!("Failed to initialize storage: {}", e))?;
+
+    // Load configuration
+    let config = config_store.load().await
+        .map_err(|e| anyhow::anyhow!("Failed to load configuration: {}", e))?;
+
+    tracing::info!("Configuration loaded");
+
+    // Determine which profile to use. If a profile was specified on the command
+    // line, use that. Otherwise, try to find a default profile. If no profiles
+    // exist at all, we need to run calibration first.
+    let profile_id = if let Some(profile_name) = &args.profile {
+        neurohid_types::profile::ProfileId::new(profile_name)
+    } else {
+        // Try to find the default profile
+        let profiles = profile_store.list_profiles().await
+            .map_err(|e| anyhow::anyhow!("Failed to list profiles: {}", e))?;
+
+        if profiles.is_empty() {
+            tracing::error!("No profiles found. Please run neurohid (hub) first.");
+            anyhow::bail!("No profiles found. Run neurohid (hub) to create one.");
+        }
+
+        // Use the first profile (in the future, we might have a "default" flag)
+        profiles[0].id.clone()
+    };
+
+    tracing::info!("Using profile: {}", profile_id);
+
+    // Verify the profile exists and is calibrated
+    let profile_metadata = profile_store.get_metadata(&profile_id).await
+        .map_err(|e| anyhow::anyhow!("Failed to load profile {}: {}", profile_id, e))?;
+
+    if !profile_metadata.calibration_state.is_ready() {
+        tracing::error!("Profile '{}' is not fully calibrated", profile_id);
+        anyhow::bail!("Profile is not calibrated. Run neurohid (hub) to complete setup.");
+    }
+
+    // Set up graceful shutdown handling. When the user presses Ctrl+C or the
+    // system sends a termination signal, we want to clean up properly.
+    let (shutdown_tx, _) = broadcast::channel::<()>(1);
+    let shutdown_tx_clone = shutdown_tx.clone();
+
+    ctrlc::set_handler(move || {
+        tracing::info!("Shutdown signal received");
+        let _ = shutdown_tx_clone.send(());
+    })?;
+
+    // Create the service and run it. The service manages all the concurrent
+    // tasks and coordinates between them.
+    let service = NeuroHidService::new(
+        config,
+        profile_store,
+        profile_id,
+        shutdown_tx.subscribe(),
+    ).await?;
+
+    tracing::info!("Service initialized, starting main loop");
+
+    // Run the service until shutdown is requested
+    service.run().await?;
+
+    tracing::info!("NeuroHID service stopped");
+    Ok(())
+}

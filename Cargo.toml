@@ -1,0 +1,64 @@
+[workspace]
+resolver = "2"
+
+members = [
+    "crates/neurohid-types",
+    "crates/neurohid-core",
+    "crates/neurohid-signal",
+    "crates/neurohid-device",
+    "crates/neurohid-platform",
+    "crates/neurohid-storage",
+    "crates/neurohid-ipc",
+    "crates/neurohid-calibration",
+    "crates/neurohid-hub",
+]
+
+# Shared dependencies across all crates - ensures version consistency
+[workspace.dependencies]
+# Async runtime
+tokio = { version = "1.49.0", features = ["full"] }
+tokio-tungstenite = { version = "0.28.0", features = ["native-tls"] }
+futures = "0.3.31"
+
+# Serialization
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+toml = "0.9.8"
+
+# Error handling
+thiserror = "2.0.18"
+anyhow = "1.0.101"
+
+# Logging
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+
+# Numeric / Signal processing
+ndarray = "0.17.2"
+num-complex = "0.4.6"
+rustfft = "6.4.1"
+
+# Cross-platform abstractions
+dirs = "6.0.0"
+
+# Security
+keyring = { version = "3.6.3", features = [
+    "linux-native",
+    "apple-native",
+    "windows-native",
+] }
+aes-gcm = "0.10.3"
+rand = "0.9.2"
+base64 = "0.22.1"
+
+# Time
+chrono = { version = "0.4.43", features = ["serde"] }
+
+# Testing
+approx = "0.5.1"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/jmduea/neurohid"

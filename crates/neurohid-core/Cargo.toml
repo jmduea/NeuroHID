@@ -1,0 +1,57 @@
+[package]
+name = "neurohid-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "NeuroHID core service - the main background process"
+
+[lib]
+name = "neurohid_core"
+path = "src/lib.rs"
+
+[[bin]]
+name = "neurohid-service"
+path = "src/main.rs"
+
+[features]
+default = []
+brainflow = ["neurohid-device/brainflow"]
+emotiv = ["neurohid-device/emotiv"]
+all-backends = ["brainflow", "emotiv"]
+
+[dependencies]
+neurohid-types = { path = "../neurohid-types" }
+neurohid-device = { path = "../neurohid-device" }
+neurohid-signal = { path = "../neurohid-signal" }
+neurohid-platform = { path = "../neurohid-platform" }
+neurohid-storage = { path = "../neurohid-storage" }
+neurohid-ipc = { path = "../neurohid-ipc" }
+
+# Async runtime
+tokio = { workspace = true }
+futures = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Async trait support (for DeviceProvider wrapper)
+async-trait = "0.1"
+
+# Error handling
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# CLI argument parsing
+clap = { version = "4.4", features = ["derive"] }
+
+# Signal handling for graceful shutdown
+ctrlc = "3.4"
+
+[dev-dependencies]
+tokio-test = "0.4"

@@ -1,0 +1,58 @@
+[package]
+name = "neurohid-hub"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+description = "NeuroHID Hub - unified GUI for device management, calibration, and service control"
+
+[[bin]]
+name = "neurohid"
+path = "src/main.rs"
+
+[features]
+default = []
+brainflow = ["neurohid-core/brainflow", "neurohid-device/brainflow"]
+emotiv = ["neurohid-core/emotiv", "neurohid-device/emotiv"]
+all-backends = ["brainflow", "emotiv"]
+
+[dependencies]
+neurohid-types = { path = "../neurohid-types" }
+neurohid-core = { path = "../neurohid-core" }
+neurohid-calibration = { path = "../neurohid-calibration" }
+neurohid-device = { path = "../neurohid-device" }
+neurohid-storage = { path = "../neurohid-storage" }
+
+# GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
+egui = "0.27"
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"
+eframe = { version = "0.27", default-features = false, features = [
+    "default_fonts",
+    "glow",
+    "x11",
+] }
+
+[target.'cfg(windows)'.dependencies]
+eframe = { version = "0.27", default-features = false, features = [
+    "default_fonts",
+    "glow",
+] }

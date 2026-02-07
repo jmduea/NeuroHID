@@ -1,0 +1,58 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "neurohid-ml"
+version = "0.1.0"
+description = "Python ML components for NeuroHID (decoder, ErrP detection)"
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "MIT OR Apache-2.0" }
+authors = [{ name = "NeuroHID Contributors" }]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Human Machine Interfaces",
+]
+
+dependencies = [
+    "torch>=2.10.0",
+    "numpy>=2.4.2",
+    "scipy>=1.17.0",
+    "scikit-learn>=1.8.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
+    "black>=26.1.0",
+    "ruff>=0.15.0",
+    "mypy>=1.19.1",
+]
+
+[project.scripts]
+neurohid-ml = "neurohid_ml.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+select = ["E", "F", "I", "N", "W"]
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_configs = true
