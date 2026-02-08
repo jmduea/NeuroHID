@@ -66,17 +66,21 @@ impl CortexRequest {
 pub struct CortexResponse {
     pub id: Option<u64>,
     pub result: Option<serde_json::Value>,
-    pub error: Option<CortexError>,
+    pub error: Option<RpcError>,
 }
 
-/// A JSON-RPC 2.0 error from the Cortex API.
+/// A JSON-RPC 2.0 error payload from the Cortex API.
+///
+/// This is the raw error object from the protocol. Use
+/// [`CortexError::from_api_error`](crate::CortexError::from_api_error)
+/// to convert to a semantic error type.
 #[derive(Debug, Clone, Deserialize)]
-pub struct CortexError {
+pub struct RpcError {
     pub code: i32,
     pub message: String,
 }
 
-impl std::fmt::Display for CortexError {
+impl std::fmt::Display for RpcError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Cortex API error {}: {}", self.code, self.message)
     }
@@ -84,18 +88,11 @@ impl std::fmt::Display for CortexError {
 
 // ─── Headset & Session ──────────────────────────────────────────────────
 
-/// Headset info
+/// Headset info returned by `queryHeadsets`.
 #[derive(Debug, Clone, Deserialize)]
 pub struct HeadsetInfo {
     /// Headset ID (e.g., "INSIGHT-A1B2C3D4").
     pub id: String,
-
-    /// Dongle serial number, if connected via USB dongle.
-    #[serde(rename = "dongle")]
-    pub dongle_serial: Option<String>,
-
-    /// Firmware version string.
-    pub firmware: Option<String>,
 
     /// Connection status: "discovered", "connecting", "connected".
     pub status: String,
@@ -103,6 +100,13 @@ pub struct HeadsetInfo {
     /// How the headset is connected: "dongle", "bluetooth", "usb cable".
     #[serde(rename = "connectedBy")]
     pub connected_by: Option<String>,
+
+    /// Dongle serial number, if connected via USB dongle.
+    #[serde(rename = "dongle")]
+    pub dongle_serial: Option<String>,
+
+    /// Firmware version string.
+    pub firmware: Option<String>,
 
     /// Motion sensor names available on this headset.
     #[serde(rename = "motionSensors")]
@@ -113,6 +117,22 @@ pub struct HeadsetInfo {
 
     /// Device-specific settings.
     pub settings: Option<serde_json::Value>,
+
+    /// Mapping of EEG channels to headset sensor locations (EPOC Flex).
+    #[serde(rename = "flexMapping")]
+    pub flex_mapping: Option<serde_json::Value>,
+
+    /// Headband position (EPOC X).
+    #[serde(rename = "headbandPosition")]
+    pub headband_position: Option<String>,
+
+    /// Custom name of the headset, if set by the user.
+    #[serde(rename = "customName")]
+    pub custom_name: Option<String>,
+
+    /// Virtual headset flag (true for virtual devices)
+    #[serde(rename = "isVirtual")]
+    pub is_virtual: Option<bool>,
 }
 
 /// Session information from `createSession` / `querySessions`.
@@ -124,9 +144,31 @@ pub struct SessionInfo {
     /// Session status: "opened", "activated".
     pub status: String,
 
+    /// EmotivID of the user
+    pub owner: String,
+
+    /// Id of license used by the session
+    pub license: String,
+
     /// Application ID.
     #[serde(rename = "appId")]
-    pub app_id: Option<String>,
+    pub app_id: String,
+
+    /// ISO datetime when the session was created.
+    pub started: String,
+
+    /// ISO datetime when the session was closed.
+    pub stopped: Option<String>,
+
+    /// Data streams subscribed to in this session.
+    pub streams: Vec<String>,
+
+    /// Ids of all records created during this session.
+    #[serde(rename = "recordIds")]
+    pub record_ids: Vec<String>,
+
+    /// Whether this session is currently being recorded.
+    pub recording: bool,
 
     /// Headset associated with this session.
     pub headset: Option<HeadsetInfo>,
@@ -136,9 +178,14 @@ pub struct SessionInfo {
 
 /// An EEG data event from a subscribed stream.
 ///
-/// The `eeg` array contains channel values followed by a trailing marker value.
-/// For Insight: `[AF3, AF4, T7, T8, Pz, marker]`
-/// For EPOC: `[AF3, F7, F3, FC5, T7, P7, O1, O2, P8, T8, FC6, F4, F8, AF4, marker]`
+/// The `eeg` array is a heterogeneous list whose columns are reported by
+/// the `subscribe` response `cols` field. For Emotiv Insight the layout is:
+///
+/// `[COUNTER, INTERPOLATED, AF3, T7, Pz, T8, AF4, RAW_CQ, MARKER_HARDWARE, MARKERS]`
+///
+/// The trailing `MARKERS` element is an array (often `[]`), so the field
+/// is typed as `Vec<serde_json::Value>`. Use [`EegData::from_eeg_array`]
+/// to extract strongly-typed channel data.
 #[derive(Debug, Deserialize)]
 pub struct EegEvent {
     /// Session ID.
@@ -147,8 +194,67 @@ pub struct EegEvent {
     /// Timestamp (Unix seconds as f64, from Cortex).
     pub time: f64,
 
-    /// EEG channel values + trailing marker.
-    pub eeg: Vec<f64>,
+    /// Raw EEG values including counter, interpolation flag, channels,
+    /// contact quality, and markers.
+    pub eeg: Vec<serde_json::Value>,
+}
+
+/// Parsed EEG channel data from an `"eeg"` stream event.
+///
+/// Produced by [`EegData::from_eeg_array`], which mirrors the pattern
+/// used by [`DeviceQuality::from_dev_array`] for the `"dev"` stream.
+#[derive(Debug, Clone)]
+pub struct EegData {
+    /// Timestamp in microseconds (converted from Cortex f64 seconds).
+    pub timestamp: i64,
+    /// Sample counter from the headset (wraps at device-specific max).
+    pub counter: u32,
+    /// Whether this sample was interpolated (`true`) or measured (`false`).
+    pub interpolated: bool,
+    /// EEG channel values in microvolts, ordered by headset channel layout.
+    ///
+    /// Insight: `[AF3, T7, Pz, T8, AF4]` (5 channels)
+    /// EPOC:    `[AF3, F7, F3, FC5, T7, P7, O1, O2, P8, T8, FC6, F4, F8, AF4]` (14 channels)
+    pub channels: Vec<f32>,
+    /// Raw contact quality value (0 = off head, higher = better).
+    pub raw_cq: f32,
+}
+
+impl EegData {
+    /// Parse an [`EegEvent::eeg`] array into structured EEG data.
+    ///
+    /// Expected layout:
+    /// `[COUNTER, INTERPOLATED, ch1, .., chN, RAW_CQ, MARKER_HARDWARE, MARKERS]`
+    ///
+    /// Returns `None` if the array is too short or contains unexpected types.
+    pub fn from_eeg_array(
+        eeg: &[serde_json::Value],
+        num_channels: usize,
+        timestamp: f64,
+    ) -> Option<Self> {
+        // COUNTER + INTERPOLATED + channels + RAW_CQ + MARKER_HARDWARE + MARKERS
+        if eeg.len() < 2 + num_channels + 3 {
+            return None;
+        }
+
+        let counter = eeg[0].as_u64()? as u32;
+        let interpolated = eeg[1].as_u64()? != 0;
+
+        let channels: Vec<f32> = eeg[2..2 + num_channels]
+            .iter()
+            .map(|v| v.as_f64().map(|f| f as f32))
+            .collect::<Option<Vec<f32>>>()?;
+
+        let raw_cq = eeg[2 + num_channels].as_f64()? as f32;
+
+        Some(Self {
+            timestamp: (timestamp * 1_000_000.0) as i64,
+            counter,
+            interpolated,
+            channels,
+            raw_cq,
+        })
+    }
 }
 
 /// A device info event from the "dev" stream.
@@ -170,8 +276,7 @@ pub struct DevEvent {
 /// Parsed device quality data from a "dev" stream event.
 ///
 /// Cortex reports contact quality per-channel as integers 0–4 (None/Poor/Fair/Good/Excellent)
-/// and overall quality as 0–100. We normalize these to 0.0–1.0 for consistency with the
-/// `Sample.quality` field in `neurohid-types`.
+/// and overall quality as 0–100. We normalize these to 0.0–1.0 for consistency.
 #[derive(Debug, Clone)]
 pub struct DeviceQuality {
     /// Battery level 0–4 (coarse indicator).
@@ -308,11 +413,45 @@ pub struct EegQuality {
     pub sensor_quality: Vec<f32>,
 }
 
+impl EegQuality {
+    /// Parse an `EqEvent.eq` array into structured EEG quality data.
+    ///
+    /// The array format: `[battery, overall, sr_quality, ch1_q, ch2_q, ..., chN_q]`
+    /// where quality values are 0–4 (normalized to 0.0–1.0).
+    pub fn from_eq_array(eq: &[serde_json::Value], num_channels: usize) -> Option<Self> {
+        // Minimum: battery + overall + sr_quality + num_channels sensor values
+        if eq.len() < 3 + num_channels {
+            return None;
+        }
+
+        let battery_percent = eq[0].as_u64()? as u8;
+        let overall = (eq[1].as_f64()? / 100.0) as f32;
+        let sample_rate_quality = eq[2].as_f64()? as f32;
+
+        let sensor_quality: Vec<f32> = eq[3..3 + num_channels]
+            .iter()
+            .filter_map(|v| v.as_f64())
+            .map(|q| (q / 4.0) as f32) // Normalize 0–4 to 0.0–1.0
+            .collect();
+
+        if sensor_quality.len() != num_channels {
+            return None;
+        }
+
+        Some(Self {
+            battery_percent,
+            overall,
+            sample_rate_quality,
+            sensor_quality,
+        })
+    }
+}
+
 /// A band power event from the "pow" stream.
 ///
 /// Contains frequency band power values per channel. Each channel has 5 bands:
 /// theta (4-8Hz), alpha (8-12Hz), betaL (12-16Hz), betaH (16-25Hz), gamma (25-45Hz).
-/// Values are absolute power in µV²/Hz.
+/// Values are absolute power in uV²/Hz.
 #[derive(Debug, Deserialize)]
 pub struct PowEvent {
     /// Session ID.
@@ -331,7 +470,7 @@ pub struct BandPowerData {
     /// Timestamp in microseconds.
     pub timestamp: i64,
     /// Per-channel band powers: `[channel][band]` where bands are
-    /// `[theta, alpha, betaL, betaH, gamma]` in µV²/Hz.
+    /// `[theta, alpha, betaL, betaH, gamma]` in uV²/Hz.
     pub channel_powers: Vec<[f32; 5]>,
 }
 
@@ -486,7 +625,7 @@ pub struct StreamEvent {
     pub time: Option<f64>,
 
     /// EEG data (present when subscribed to "eeg").
-    pub eeg: Option<Vec<f64>>,
+    pub eeg: Option<Vec<serde_json::Value>>,
 
     /// Device data / contact quality (present when subscribed to "dev").
     pub dev: Option<Vec<serde_json::Value>>,
@@ -688,28 +827,51 @@ pub struct UserLoginInfo {
 pub struct Methods;
 
 impl Methods {
-    // ─── Authentication ─────────────────────────────────────────────
+    // --- Cortex info ------------------------------------------------
+
     /// Get Cortex version and build info.
     pub const GET_CORTEX_INFO: &'static str = "getCortexInfo";
 
-    /// Check if the app has been granted access.
-    pub const HAS_ACCESS_RIGHT: &'static str = "hasAccessRight";
-
-    /// Request application access from the user.
-    pub const REQUEST_ACCESS: &'static str = "requestAccess";
-
-    /// Authorize and obtain a cortex token.
-    pub const AUTHORIZE: &'static str = "authorize";
+    // ─── Authentication ─────────────────────────────────────────────
 
     /// Get the currently logged-in user.
     pub const GET_USER_LOGIN: &'static str = "getUserLogin";
 
+    /// Request application access from the user.
+    pub const REQUEST_ACCESS: &'static str = "requestAccess";
+
+    /// Check if the app has been granted access.
+    pub const HAS_ACCESS_RIGHT: &'static str = "hasAccessRight";
+
+    /// Authorize and obtain a cortex token.
+    pub const AUTHORIZE: &'static str = "authorize";
+
+    /// Generate a new cortex token.
+    /// Can also be used to refresh an existing token by providing the current token in the params.
+    pub const GENERATE_NEW_TOKEN: &'static str = "generateNewToken";
+
+    /// Get basic information about the current user
+    pub const GET_USER_INFO: &'static str = "getUserInfo";
+
+    /// Get information about the license currently used by your app
+    pub const GET_LICENSE_INFO: &'static str = "getLicenseInfo";
+
     // ─── Headset Management ─────────────────────────────────────────
-    /// Query available headsets.
-    pub const QUERY_HEADSETS: &'static str = "queryHeadsets";
 
     /// Control (connect/disconnect/refresh) a specific headset.
     pub const CONTROL_DEVICE: &'static str = "controlDevice";
+
+    /// Manage EEG channel mapping configs for an EPOC Flex headset
+    pub const CONFIG_MAPPING: &'static str = "configMapping";
+
+    /// Query available headsets.
+    pub const QUERY_HEADSETS: &'static str = "queryHeadsets";
+
+    /// Update settings of an EPOC+ or EPOC X headset.
+    pub const UPDATE_HEADSET: &'static str = "updateHeadset";
+
+    /// Updatet headband position of an EPOC X headset.
+    pub const UPDATE_HEADSET_CUSTOM_INFO: &'static str = "updateHeadsetCustomInfo";
 
     /// Synchronize system time with headset clock.
     pub const SYNC_WITH_HEADSET_CLOCK: &'static str = "syncWithHeadsetClock";
@@ -735,14 +897,31 @@ impl Methods {
     /// Create a new data recording.
     pub const CREATE_RECORD: &'static str = "createRecord";
 
-    /// Update (stop) an active recording.
+    /// Stop an active recording.
+    pub const STOP_RECORD: &'static str = "stopRecord";
+
+    /// Update a recording's metadata.
     pub const UPDATE_RECORD: &'static str = "updateRecord";
+
+    /// Delete one or more recordings.
+    pub const DELETE_RECORD: &'static str = "deleteRecord";
+
+    /// Export a recording to CSV/EDF.
+    pub const EXPORT_RECORD: &'static str = "exportRecord";
 
     /// Query recorded sessions.
     pub const QUERY_RECORDS: &'static str = "queryRecords";
 
-    /// Export a recording to CSV/EDF.
-    pub const EXPORT_RECORD: &'static str = "exportRecord";
+    /// Get a list of records, selected by their id
+    pub const GET_RECORD_INFOS: &'static str = "getRecordInfos";
+
+    /// Configure the opt-out feature for records.
+    /// This handles whether or not records created are automatically shared with Emotiv for research purposes.
+    /// By default, records are NOT shared with Emotiv.
+    pub const CONFIG_OPT_OUT: &'static str = "configOptOut";
+
+    /// Download a record from Emotiv cloud
+    pub const DOWNLOAD_RECORD: &'static str = "requestToDownloadRecordData";
 
     // ─── Markers ────────────────────────────────────────────────────
     /// Inject a time-stamped marker during recording.
@@ -751,7 +930,24 @@ impl Methods {
     /// Update a marker (convert instance to interval marker).
     pub const UPDATE_MARKER: &'static str = "updateMarker";
 
-    // ─── Profiles ───────────────────────────────────────────────────
+    // --- Subjects ---------------------------------------------------
+
+    /// Create a new subject (user) in the EMOTIV system.
+    pub const CREATE_SUBJECT: &'static str = "createSubject";
+
+    /// Update an existing subject's information.
+    pub const UPDATE_SUBJECT: &'static str = "updateSubject";
+
+    /// Delete one or more subjects.
+    pub const DELETE_SUBJECTS: &'static str = "deleteSubjects";
+
+    /// Query existing subjects.
+    pub const QUERY_SUBJECTS: &'static str = "querySubjects";
+
+    /// Get demographic attributes
+    pub const GET_DEMOGRAPHIC_ATTRIBUTES: &'static str = "getDemographicAttributes";
+
+    // ─── BCI/Training/Profiles ───────────────────────────────────────────────────
     /// List user profiles.
     pub const QUERY_PROFILE: &'static str = "queryProfile";
 
@@ -761,24 +957,40 @@ impl Methods {
     /// Manage profiles (create, load, unload, save, rename, delete).
     pub const SETUP_PROFILE: &'static str = "setupProfile";
 
-    // ─── BCI / Training ─────────────────────────────────────────────
+    /// Load an empty profile for a headset
+    pub const LOAD_GUEST_PROFILE: &'static str = "loadGuestProfile";
+
     /// Control training lifecycle (start, accept, reject, reset, erase).
     pub const TRAINING: &'static str = "training";
 
     /// Get available actions/controls/events for a detection type.
     pub const GET_DETECTION_INFO: &'static str = "getDetectionInfo";
 
+    // --- Advanced BCI -------------------------------------------------------------
+
+    /// Get a list of trained actions of a profile.
+    pub const GET_TRAINED_SIGNATURE_ACTIONS: &'static str = "getTrainedSignatureActions";
+
+    /// Get the duration of a training
+    pub const GET_TRAINING_TIME: &'static str = "getTrainingTime";
+
+    /// Get or set the signature used by the facial expression detection.
+    pub const FACIAL_EXPRESSION_SIGNATURE_TYPE: &'static str = "facialExpressionSignatureType";
+
+    /// Get or set the threshold of a facial expression action for a profile.
+    pub const FACIAL_EXPRESSION_THRESHOLD: &'static str = "facialExpressionThreshold";
+
     /// Get or set active mental command actions.
     pub const MENTAL_COMMAND_ACTIVE_ACTION: &'static str = "mentalCommandActiveAction";
-
-    /// Get or set mental command action sensitivity.
-    pub const MENTAL_COMMAND_ACTION_SENSITIVITY: &'static str = "mentalCommandActionSensitivity";
 
     /// Get mental command brain mapping data.
     pub const MENTAL_COMMAND_BRAIN_MAP: &'static str = "mentalCommandBrainMap";
 
     /// Get or set mental command training threshold.
     pub const MENTAL_COMMAND_TRAINING_THRESHOLD: &'static str = "mentalCommandTrainingThreshold";
+
+    /// Get or set mental command action sensitivity.
+    pub const MENTAL_COMMAND_ACTION_SENSITIVITY: &'static str = "mentalCommandActionSensitivity";
 }
 
 // ─── Error Codes ────────────────────────────────────────────────────────
@@ -838,6 +1050,19 @@ impl Streams {
     pub const FAC: &'static str = "fac";
     /// System/training events.
     pub const SYS: &'static str = "sys";
+
+    /// All available stream names.
+    pub const ALL: &'static [&'static str] = &[
+        Self::EEG,
+        Self::DEV,
+        Self::MOT,
+        Self::EQ,
+        Self::POW,
+        Self::MET,
+        Self::COM,
+        Self::FAC,
+        Self::SYS,
+    ];
 }
 
 #[cfg(test)]
@@ -864,15 +1089,54 @@ mod tests {
 
     #[test]
     fn test_deserialize_eeg_event() {
+        // Real Cortex V2 format: MARKERS is an array, not a number
         let json = r#"{
             "sid": "session-uuid-123",
             "time": 1609459200.123456,
-            "eeg": [10.5, -3.2, 7.1, -1.0, 5.5, 0.0]
+            "eeg": [29, 0, 4262.564, 4264.615, 4265.128, 4267.179, 4263.59, 0.0, 0, []]
         }"#;
 
         let event: EegEvent = serde_json::from_str(json).unwrap();
         assert_eq!(event.sid, "session-uuid-123");
-        assert_eq!(event.eeg.len(), 6); // 5 channels + 1 marker
+        assert_eq!(event.eeg.len(), 10);
+        assert_eq!(event.eeg[0].as_u64(), Some(29)); // COUNTER
+        assert!(event.eeg[9].is_array()); // MARKERS
+    }
+
+    #[test]
+    fn test_parse_eeg_data_insight() {
+        // [COUNTER, INTERPOLATED, AF3, T7, Pz, T8, AF4, RAW_CQ, MARKER_HARDWARE, MARKERS]
+        let eeg: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[29, 0, 4262.564, 4264.615, 4265.128, 4267.179, 4263.59, 0.0, 0, []]"#,
+        )
+        .unwrap();
+
+        let data = EegData::from_eeg_array(&eeg, 5, 1609459200.0).unwrap();
+        assert_eq!(data.counter, 29);
+        assert!(!data.interpolated);
+        assert_eq!(data.channels.len(), 5);
+        assert!((data.channels[0] - 4262.564).abs() < 0.01);
+        assert!((data.channels[4] - 4263.59).abs() < 0.01);
+        assert!((data.raw_cq - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn test_parse_eeg_data_too_short() {
+        let eeg: Vec<serde_json::Value> = serde_json::from_str(r#"[29, 0, 4262.564]"#).unwrap();
+        assert!(EegData::from_eeg_array(&eeg, 5, 1.0).is_none());
+    }
+
+    #[test]
+    fn test_parse_eeg_data_with_markers() {
+        let eeg: Vec<serde_json::Value> = serde_json::from_str(
+            r#"[30, 0, 4100.0, 4200.0, 4300.0, 4400.0, 4500.0, 1.0, 0, ["marker1"]]"#,
+        )
+        .unwrap();
+
+        let data = EegData::from_eeg_array(&eeg, 5, 2.0).unwrap();
+        assert_eq!(data.counter, 30);
+        assert_eq!(data.channels.len(), 5);
+        assert!((data.raw_cq - 1.0).abs() < f32::EPSILON);
     }
 
     #[test]
@@ -908,7 +1172,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deserialize_cortex_error() {
+    fn test_deserialize_rpc_error() {
         let json = r#"{
             "id": 1,
             "error": {
@@ -1030,11 +1294,12 @@ mod tests {
         let json = r#"{
             "sid": "s1",
             "time": 1.0,
-            "eeg": [1.0, 2.0, 3.0]
+            "eeg": [29, 0, 4262.564, 4264.615, 4265.128, 4267.179, 4263.59, 0.0, 0, []]
         }"#;
 
         let event: StreamEvent = serde_json::from_str(json).unwrap();
         assert!(event.eeg.is_some());
+        assert_eq!(event.eeg.as_ref().unwrap().len(), 10);
         assert!(event.dev.is_none());
         assert!(event.mot.is_none());
     }
