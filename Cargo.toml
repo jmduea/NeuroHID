@@ -11,6 +11,8 @@ members = [
     "crates/neurohid-ipc",
     "crates/neurohid-calibration",
     "crates/neurohid-hub",
+    "crates/emotiv-cortex-v2",
+    "crates/emotiv-cortex-cli",
 ]
 
 # Shared dependencies across all crates - ensures version consistency
