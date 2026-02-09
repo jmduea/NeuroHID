@@ -11,6 +11,7 @@ name = "emotiv-cortex-cli"
 path = "src/main.rs"
 
 [features]
+default = ["lsl"]
 lsl = ["dep:lsl"]
 
 [dependencies]
