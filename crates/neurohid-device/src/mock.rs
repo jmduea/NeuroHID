@@ -393,6 +393,7 @@ impl MockSampleStream {
             .collect();
         
         Sample {
+            source_id: None,
             device_timestamp: Some(timestamp),
             system_timestamp: timestamp,
             sequence_number: Some(self.sequence),

@@ -65,6 +65,16 @@ impl HubApp {
             hub.state.init_error = Some(err);
         }
 
+        // Auto-start the service so streams are discovered immediately.
+        let profile_store = Some(hub.state.profile_store.clone());
+        let profile_id = hub.state.active_profile_id.clone();
+        hub.service_manager.start(
+            &hub.runtime,
+            hub.state.config.clone(),
+            profile_store,
+            profile_id,
+        );
+
         hub
     }
 
@@ -225,7 +235,7 @@ impl eframe::App for HubApp {
                     self.dashboard.show(ui, &self.state, &mut self.service_manager, &self.runtime);
                 }
                 Screen::Devices => {
-                    self.devices.show(ui, &self.state);
+                    self.devices.show(ui, &self.state, &mut self.service_manager);
                 }
                 Screen::Profiles => {
                     self.profiles.show(ui, &mut self.state, &self.runtime);

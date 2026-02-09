@@ -6,20 +6,12 @@ license.workspace = true
 
 description = "Device abstraction layer for biosensor devices"
 
-[features]
-default = []
-brainflow = ["dep:brainflow"]
-emotiv = ["tokio-tungstenite/native-tls", "dep:native-tls"]
-
 [dependencies]
 neurohid-types = { path = "../neurohid-types" }
 
 # Async runtime
 tokio = { workspace = true }
 futures = { workspace = true }
-
-# WebSocket for Cortex API
-tokio-tungstenite = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
@@ -35,14 +27,8 @@ tracing = { workspace = true }
 # Async traits
 async-trait = "0.1"
 
-# BrainFlow SDK bindings (optional, enabled by "brainflow" feature)
-# The Rust bindings live in the brainflow repo under rust_package/brainflow/
-# and are not published to crates.io. Install the BrainFlow native library
-# before enabling this feature: https://brainflow.readthedocs.io/
-brainflow = { git = "https://github.com/brainflow-dev/brainflow", optional = true }
-
-# TLS for Emotiv Cortex API (optional, enabled by "emotiv" feature)
-native-tls = { version = "0.2", optional = true }
+# Lab Streaming Layer
+lsl = "0.1"
 
 [dev-dependencies]
 tokio-test = "0.4"

@@ -62,33 +62,44 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("Configuration loaded");
 
     // Determine which profile to use. If a profile was specified on the command
-    // line, use that. Otherwise, try to find a default profile. If no profiles
-    // exist at all, we need to run calibration first.
+    // line, use that. Otherwise, try to find a default profile. The service can
+    // run without a profile (for stream discovery and monitoring).
     let profile_id = if let Some(profile_name) = &args.profile {
-        neurohid_types::profile::ProfileId::new(profile_name)
+        Some(neurohid_types::profile::ProfileId::new(profile_name))
     } else {
         // Try to find the default profile
         let profiles = profile_store.list_profiles().await
             .map_err(|e| anyhow::anyhow!("Failed to list profiles: {}", e))?;
 
         if profiles.is_empty() {
-            tracing::error!("No profiles found. Please run neurohid (hub) first.");
-            anyhow::bail!("No profiles found. Run neurohid (hub) to create one.");
+            tracing::warn!("No profiles found. Service will run without a profile (stream discovery only).");
+            None
+        } else {
+            // Use the first profile (in the future, we might have a "default" flag)
+            Some(profiles[0].id.clone())
         }
-
-        // Use the first profile (in the future, we might have a "default" flag)
-        profiles[0].id.clone()
     };
 
-    tracing::info!("Using profile: {}", profile_id);
+    if let Some(ref pid) = profile_id {
+        tracing::info!("Using profile: {}", pid);
 
-    // Verify the profile exists and is calibrated
-    let profile_metadata = profile_store.get_metadata(&profile_id).await
-        .map_err(|e| anyhow::anyhow!("Failed to load profile {}: {}", profile_id, e))?;
-
-    if !profile_metadata.calibration_state.is_ready() {
-        tracing::error!("Profile '{}' is not fully calibrated", profile_id);
-        anyhow::bail!("Profile is not calibrated. Run neurohid (hub) to complete setup.");
+        // Check calibration state (warn only, don't block startup)
+        match profile_store.get_metadata(pid).await {
+            Ok(metadata) => {
+                if !metadata.calibration_state.is_ready() {
+                    tracing::warn!(
+                        "Profile '{}' is not fully calibrated. \
+                         HID actions will not be emitted until calibration is complete.",
+                        pid
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load profile metadata for {}: {}", pid, e);
+            }
+        }
+    } else {
+        tracing::info!("Running without a profile");
     }
 
     // Set up graceful shutdown handling. When the user presses Ctrl+C or the
@@ -105,7 +116,7 @@ async fn main() -> anyhow::Result<()> {
     // tasks and coordinates between them.
     let service = NeuroHidService::new(
         config,
-        profile_store,
+        Some(profile_store),
         profile_id,
         shutdown_tx.subscribe(),
     ).await?;

@@ -38,17 +38,15 @@ pub struct SystemConfig {
     pub service: ServiceConfig,
 }
 
-/// Which device backend to use for EEG data acquisition.
+/// Which device backend to use for data acquisition.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DeviceBackend {
     /// Mock device for testing and development (no hardware needed).
     Mock,
-    /// BrainFlow library (supports OpenBCI, Muse, and 30+ other boards).
-    BrainFlow,
-    /// Emotiv Cortex API (Insight, EPOC+, EPOC X).
-    Emotiv,
-    /// Auto-detect: try Emotiv, then BrainFlow, then fall back to Mock.
+    /// Lab Streaming Layer — consume any LSL stream on the local network.
+    Lsl,
+    /// Auto-detect: try LSL first, then fall back to Mock.
     #[default]
     Auto,
 }
@@ -57,8 +55,7 @@ impl DeviceBackend {
     /// All variants in display order, for use in UI selectors.
     pub const ALL: &'static [DeviceBackend] = &[
         DeviceBackend::Auto,
-        DeviceBackend::Emotiv,
-        DeviceBackend::BrainFlow,
+        DeviceBackend::Lsl,
         DeviceBackend::Mock,
     ];
 }
@@ -67,67 +64,43 @@ impl std::fmt::Display for DeviceBackend {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             DeviceBackend::Mock => write!(f, "Mock"),
-            DeviceBackend::BrainFlow => write!(f, "BrainFlow"),
-            DeviceBackend::Emotiv => write!(f, "Emotiv"),
+            DeviceBackend::Lsl => write!(f, "LSL"),
             DeviceBackend::Auto => write!(f, "Auto"),
         }
     }
 }
 
-/// Configuration specific to the Emotiv Cortex API backend.
-///
-/// Credentials (client_id / client_secret) are stored in the platform
-/// keychain via `neurohid-storage`, not in this config struct.
+/// Configuration for the LSL (Lab Streaming Layer) backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct EmotivConfig {
-    /// WebSocket URL for the Cortex service.
-    #[serde(default = "default_cortex_url")]
-    pub cortex_url: String,
+pub struct LslConfig {
+    /// LSL resolve predicate for stream discovery.
+    ///
+    /// Examples: `"type='EEG'"`, `"name='EmotivEEG'"`, `""` (all streams).
+    /// See LSL docs for predicate syntax.
+    #[serde(default)]
+    pub predicate: String,
 
-    /// Emotiv license key, if using a commercial license.
-    pub license: Option<String>,
+    /// Timeout for stream resolution in seconds.
+    #[serde(default = "default_resolve_timeout")]
+    pub resolve_timeout_secs: f64,
 
-    /// Whether to request decontaminated EEG data (motion artifact removal).
-    #[serde(default = "default_true")]
-    pub decontaminated: bool,
+    /// Inlet buffer size in samples (0 = LSL default of 360 seconds).
+    #[serde(default)]
+    pub buffer_size: u32,
 }
 
-fn default_cortex_url() -> String {
-    "wss://localhost:6868".to_string()
+fn default_resolve_timeout() -> f64 {
+    5.0
 }
 
-fn default_true() -> bool {
-    true
-}
-
-impl Default for EmotivConfig {
+impl Default for LslConfig {
     fn default() -> Self {
         Self {
-            cortex_url: default_cortex_url(),
-            license: None,
-            decontaminated: true,
+            predicate: String::new(),
+            resolve_timeout_secs: default_resolve_timeout(),
+            buffer_size: 0,
         }
     }
-}
-
-/// Configuration specific to the BrainFlow backend.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct BrainFlowBackendConfig {
-    /// Serial port for boards that need one (e.g., "/dev/ttyUSB0", "COM3").
-    pub serial_port: Option<String>,
-
-    /// IP address for network-connected boards.
-    pub ip_address: Option<String>,
-
-    /// IP port for network-connected boards.
-    pub ip_port: Option<i32>,
-
-    /// MAC address for Bluetooth boards.
-    pub mac_address: Option<String>,
-
-    /// Whether to always include the synthetic board in discovery.
-    #[serde(default = "default_true")]
-    pub include_synthetic: bool,
 }
 
 /// Configuration for device connection.
@@ -146,24 +119,19 @@ pub struct DeviceConfig {
     /// Connection behavior settings.
     pub connection: ConnectionSettings,
 
-    /// Emotiv-specific configuration (only used when backend is Emotiv or Auto).
+    /// LSL-specific configuration (only used when backend is Lsl or Auto).
     #[serde(default)]
-    pub emotiv: Option<EmotivConfig>,
-
-    /// BrainFlow-specific configuration (only used when backend is BrainFlow or Auto).
-    #[serde(default)]
-    pub brainflow: Option<BrainFlowBackendConfig>,
+    pub lsl: Option<LslConfig>,
 }
 
 impl Default for DeviceConfig {
     fn default() -> Self {
         Self {
             backend: DeviceBackend::default(),
-            preferred_device_type: Some("EmotivInsight".to_string()),
+            preferred_device_type: None,
             preferred_device_id: None,
             connection: ConnectionSettings::default(),
-            emotiv: None,
-            brainflow: None,
+            lsl: None,
         }
     }
 }

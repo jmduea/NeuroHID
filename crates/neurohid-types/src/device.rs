@@ -96,6 +96,31 @@ pub struct DeviceInfo {
     pub battery_percent: Option<u8>,
 }
 
+/// A discovered LSL stream available on the network.
+///
+/// This is a lightweight, UI-friendly representation used for stream
+/// discovery and management. Unlike `DeviceInfo`, it doesn't carry
+/// channel configuration details — those are populated after connection.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DiscoveredStream {
+    /// Unique identifier (source_id or stream name if source_id is empty)
+    pub id: String,
+    /// Human-readable stream name
+    pub name: String,
+    /// Stream type (e.g., "EEG", "Motion", "Markers")
+    pub stream_type: String,
+    /// Number of channels in this stream
+    pub channel_count: i32,
+    /// Nominal sampling rate in Hz
+    pub sample_rate: f64,
+    /// Whether we currently have an active inlet for this stream
+    pub connected: bool,
+    /// Current battery level (0-100), if reported by the device
+    pub battery_percent: Option<u8>,
+    /// Per-channel signal quality (0.0 = bad, 1.0 = good), if available
+    pub channel_quality: Option<Vec<f32>>,
+}
+
 /// The current connection state of a device.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ConnectionState {

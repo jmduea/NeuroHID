@@ -9,21 +9,12 @@ use crate::state::HubState;
 
 pub struct SettingsScreen {
     unsaved_changes: bool,
-    // Emotiv credential fields (loaded from keyring, not from config)
-    emotiv_client_id: String,
-    emotiv_client_secret: String,
-    credentials_loaded: bool,
-    credentials_status: Option<String>,
 }
 
 impl SettingsScreen {
     pub fn new() -> Self {
         Self {
             unsaved_changes: false,
-            emotiv_client_id: String::new(),
-            emotiv_client_secret: String::new(),
-            credentials_loaded: false,
-            credentials_status: None,
         }
     }
 
@@ -87,107 +78,30 @@ impl SettingsScreen {
                         }
                     });
 
-                    // Cortex URL field (visible when backend is Emotiv or Auto)
+                    // LSL predicate field (visible when backend is Lsl or Auto)
                     if matches!(
                         cfg.backend,
-                        neurohid_types::config::DeviceBackend::Emotiv
+                        neurohid_types::config::DeviceBackend::Lsl
                             | neurohid_types::config::DeviceBackend::Auto
                     ) {
                         ui.horizontal(|ui| {
-                            ui.label("Cortex URL:");
-                            let emotiv_cfg = cfg.emotiv.get_or_insert_with(Default::default);
+                            ui.label("LSL predicate:");
+                            let lsl_cfg = cfg.lsl.get_or_insert_with(Default::default);
                             if ui
-                                .text_edit_singleline(&mut emotiv_cfg.cortex_url)
+                                .text_edit_singleline(&mut lsl_cfg.predicate)
                                 .changed()
                             {
                                 changed = true;
                             }
                         });
-
-                        // Hint text for WSL2 users
-                        #[cfg(unix)]
-                        if std::env::var("WSL_DISTRO_NAME").is_ok()
-                            || std::env::var("WSLENV").is_ok()
-                        {
-                            ui.label(
-                                egui::RichText::new(
-                                    "WSL2 detected: localhost URLs will auto-resolve \
-                                     to the Windows host at runtime.",
-                                )
-                                .small()
-                                .weak(),
-                            );
-                        }
-
-                        ui.add_space(8.0);
                         ui.label(
-                            egui::RichText::new("Emotiv API Credentials")
-                                .strong(),
+                            egui::RichText::new(
+                                "Filter streams by predicate, e.g. \"type='EEG'\" \
+                                 or leave empty for all streams.",
+                            )
+                            .small()
+                            .weak(),
                         );
-
-                        // Lazy-load credentials from keyring on first display
-                        if !self.credentials_loaded {
-                            self.credentials_loaded = true;
-                            match neurohid_storage::get_emotiv_credentials() {
-                                Ok((id, secret)) => {
-                                    self.emotiv_client_id = id;
-                                    self.emotiv_client_secret = secret;
-                                }
-                                Err(_) => {
-                                    // No credentials stored yet — leave fields empty
-                                }
-                            }
-                        }
-
-                        ui.horizontal(|ui| {
-                            ui.label("Client ID:");
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.emotiv_client_id)
-                                    .desired_width(250.0)
-                                    .password(true),
-                            );
-                        });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Client Secret:");
-                            ui.add(
-                                egui::TextEdit::singleline(&mut self.emotiv_client_secret)
-                                    .desired_width(250.0)
-                                    .password(true),
-                            );
-                        });
-
-                        ui.horizontal(|ui| {
-                            if ui.button("Save Credentials").clicked() {
-                                match neurohid_storage::set_emotiv_credentials(
-                                    &self.emotiv_client_id,
-                                    &self.emotiv_client_secret,
-                                ) {
-                                    Ok(()) => {
-                                        self.credentials_status =
-                                            Some("Credentials saved to keyring".into());
-                                    }
-                                    Err(e) => {
-                                        self.credentials_status =
-                                            Some(format!("Error: {}", e));
-                                    }
-                                }
-                            }
-
-                            if let Some(status) = &self.credentials_status {
-                                ui.label(
-                                    egui::RichText::new(status)
-                                        .small()
-                                        .color(
-                                            if status.starts_with("Error") {
-                                                egui::Color32::RED
-                                            } else {
-                                                egui::Color32::GREEN
-                                            },
-                                        ),
-                                );
-                            }
-                        });
                     }
 
                     ui.horizontal(|ui| {

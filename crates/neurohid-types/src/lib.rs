@@ -34,7 +34,7 @@ pub mod error;
 // Re-export commonly used types at the crate root for convenience
 pub use signal::{Sample, ChannelId, ChannelConfig, FeatureVector};
 pub use action::{Action, MouseAction, KeyAction, MouseButton, Key};
-pub use device::{DeviceId, DeviceInfo, DeviceStatus, ConnectionState};
+pub use device::{DeviceId, DeviceInfo, DeviceStatus, ConnectionState, DiscoveredStream};
 pub use observation::{Observation, CursorState};
 pub use reward::{RewardSignal, ErrPResult, SignalQuality};
 pub use profile::{ProfileId, CalibrationState};

@@ -69,19 +69,23 @@ impl DeviceChannelConfig {
 /// This is the raw data as received from the hardware.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Sample {
+    /// Identifies which stream this sample came from (LSL stream id).
+    /// `None` for mock devices or when stream identity is irrelevant.
+    pub source_id: Option<String>,
+
     /// Timestamp when this sample was acquired (device time, if available)
     pub device_timestamp: Option<Timestamp>,
-    
+
     /// Timestamp when this sample was received by the system
     pub system_timestamp: Timestamp,
-    
+
     /// Sequence number from the device (for detecting dropped samples)
     pub sequence_number: Option<u64>,
-    
+
     /// Channel values in microvolts. The order corresponds to the channel
     /// configuration's channel order.
     pub values: Vec<f32>,
-    
+
     /// Optional quality indicators per channel (0.0 = bad, 1.0 = good)
     pub quality: Option<Vec<f32>>,
 }
@@ -90,6 +94,7 @@ impl Sample {
     /// Create a new sample with the current system timestamp
     pub fn new(values: Vec<f32>) -> Self {
         Self {
+            source_id: None,
             device_timestamp: None,
             system_timestamp: crate::now_micros(),
             sequence_number: None,

@@ -1,6 +1,6 @@
 //! # Device Task
 //!
-//! This task is responsible for connecting to the EEG device and streaming
+//! This task is responsible for connecting to data sources and streaming
 //! samples to the signal processing task. It's the entry point for all brain
 //! signal data in the system.
 //!
@@ -8,29 +8,51 @@
 //!
 //! The provider is selected based on `DeviceConfig::backend`:
 //!
-//! | Backend     | Feature flag  | Description                        |
-//! |-------------|---------------|------------------------------------|
-//! | `Mock`      | *(always)*    | Synthetic sine-wave generator      |
-//! | `BrainFlow` | `brainflow`   | OpenBCI, Muse, Unicorn, etc.       |
-//! | `Emotiv`    | `emotiv`      | Emotiv Insight/EPOC via Cortex API |
-//! | `Auto`      | *(any)*       | Tries available backends in order  |
+//! | Backend | Description                                        |
+//! |---------|----------------------------------------------------|
+//! | `Mock`  | Synthetic sine-wave generator (always available)   |
+//! | `Lsl`   | Lab Streaming Layer — any LSL stream on the network|
+//! | `Auto`  | Tries LSL first, then falls back to Mock           |
+//!
+//! ## Architecture
+//!
+//! The device task supports two modes:
+//!
+//! - **Interactive mode** (with `device_command_rx`): Scan+command loop that
+//!   responds to `Rescan`, `Connect`, and `Disconnect` commands from the hub.
+//!   Multiple streams can be connected simultaneously.
+//!
+//! - **Headless mode** (without `device_command_rx`): Auto-connects to the
+//!   first discovered stream and streams until shutdown. Compatible with
+//!   `cargo run -p neurohid-core`.
 
-use futures::StreamExt;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+
+use futures::StreamExt;
 use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::time::{self, Duration};
+use tokio_util::sync::CancellationToken;
 
 use neurohid_device::mock::MockProvider;
-use neurohid_device::{DeviceProvider, MockDeviceConfig};
+use neurohid_device::{Device, DeviceProvider, MockDeviceConfig};
 use neurohid_types::{
     config::{DeviceBackend, DeviceConfig},
+    device::{DeviceId, DeviceInfo, DiscoveredStream},
     error::{DeviceError, Result},
     signal::Sample,
 };
 
-use crate::service::ServiceState;
+use crate::service::{DeviceCommand, ServiceState};
 
-/// The device task connects to the EEG device and streams samples.
+/// An active stream connection managed by the device task.
+struct ActiveStream {
+    cancel: CancellationToken,
+    join_handle: tokio::task::JoinHandle<()>,
+}
+
+/// The device task connects to EEG devices and streams samples.
 pub struct DeviceTask {
     config: DeviceConfig,
     sample_tx: mpsc::Sender<Sample>,
@@ -39,6 +61,8 @@ pub struct DeviceTask {
     calibration_sample_tx: Option<mpsc::Sender<Sample>>,
     /// Atomic flag: when true, samples are also sent to calibration channel
     calibration_mode: Option<Arc<AtomicBool>>,
+    /// Optional channel for receiving stream management commands from the hub
+    device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
 }
 
 impl DeviceTask {
@@ -49,6 +73,7 @@ impl DeviceTask {
         state: Arc<RwLock<ServiceState>>,
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
         calibration_mode: Option<Arc<AtomicBool>>,
+        device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
     ) -> Self {
         Self {
             config,
@@ -56,13 +81,158 @@ impl DeviceTask {
             state,
             calibration_sample_tx,
             calibration_mode,
+            device_command_rx,
         }
     }
 
     /// Runs the device task until shutdown is signaled.
-    pub async fn run(self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
+    pub async fn run(self, shutdown: broadcast::Receiver<()>) -> Result<()> {
         let provider = create_provider(&self.config).await?;
 
+        if self.device_command_rx.is_some() {
+            self.run_interactive(provider, shutdown).await
+        } else {
+            self.run_headless(provider, shutdown).await
+        }
+    }
+
+    /// Interactive mode: scan+command loop with multi-stream management.
+    async fn run_interactive(
+        self,
+        provider: Box<dyn DeviceProvider>,
+        mut shutdown: broadcast::Receiver<()>,
+    ) -> Result<()> {
+        let mut command_rx = self.device_command_rx.unwrap();
+        let mut active_streams: HashMap<String, ActiveStream> = HashMap::new();
+        let mut rescan_interval = time::interval(Duration::from_secs(10));
+
+        // Initial scan
+        scan(
+            &provider,
+            &self.state,
+            &active_streams,
+        )
+        .await;
+
+        loop {
+            tokio::select! {
+                _ = shutdown.recv() => {
+                    tracing::info!("Device task received shutdown signal");
+                    break;
+                }
+
+                Some(cmd) = command_rx.recv() => {
+                    match cmd {
+                        DeviceCommand::Rescan => {
+                            tracing::info!("Rescan requested");
+                            scan(&provider, &self.state, &active_streams).await;
+                        }
+
+                        DeviceCommand::Connect(stream_id) => {
+                            if active_streams.contains_key(&stream_id) {
+                                tracing::warn!("Stream '{}' is already connected", stream_id);
+                                continue;
+                            }
+
+                            tracing::info!("Connecting to stream '{}'", stream_id);
+
+                            match provider
+                                .connect(&DeviceId::new(&stream_id), None)
+                                .await
+                            {
+                                Ok(device) => {
+                                    let cancel = CancellationToken::new();
+                                    let handle = spawn_stream_task(
+                                        device,
+                                        stream_id.clone(),
+                                        self.sample_tx.clone(),
+                                        self.calibration_sample_tx.clone(),
+                                        self.calibration_mode.as_ref().map(Arc::clone),
+                                        self.state.clone(),
+                                        cancel.clone(),
+                                    );
+
+                                    active_streams.insert(
+                                        stream_id.clone(),
+                                        ActiveStream {
+                                            cancel,
+                                            join_handle: handle,
+                                        },
+                                    );
+
+                                    // Update state after successful connect
+                                    update_connection_state(
+                                        &self.state,
+                                        &active_streams,
+                                    )
+                                    .await;
+
+                                    // Refresh discovered_streams to update connected flags
+                                    scan(&provider, &self.state, &active_streams).await;
+                                }
+                                Err(e) => {
+                                    tracing::error!(
+                                        "Failed to connect to stream '{}': {}",
+                                        stream_id,
+                                        e
+                                    );
+                                }
+                            }
+                        }
+
+                        DeviceCommand::Disconnect(stream_id) => {
+                            if let Some(active) = active_streams.remove(&stream_id) {
+                                tracing::info!("Disconnecting stream '{}'", stream_id);
+                                active.cancel.cancel();
+                                // Wait for the task to finish (best-effort)
+                                let _ = active.join_handle.await;
+
+                                update_connection_state(
+                                    &self.state,
+                                    &active_streams,
+                                )
+                                .await;
+
+                                // Refresh discovered_streams to update connected flags
+                                scan(&provider, &self.state, &active_streams).await;
+                            } else {
+                                tracing::warn!(
+                                    "Stream '{}' is not connected, ignoring disconnect",
+                                    stream_id
+                                );
+                            }
+                        }
+                    }
+                }
+
+                _ = rescan_interval.tick() => {
+                    scan(&provider, &self.state, &active_streams).await;
+                }
+            }
+        }
+
+        // Clean up all active streams
+        for (id, active) in active_streams.drain() {
+            tracing::info!("Shutting down stream '{}'", id);
+            active.cancel.cancel();
+            let _ = active.join_handle.await;
+        }
+
+        {
+            let mut state = self.state.write().await;
+            state.device_connected = false;
+            state.device_name = None;
+        }
+
+        Ok(())
+    }
+
+    /// Headless mode: auto-connect to first discovered stream (legacy behavior).
+    async fn run_headless(
+        self,
+        provider: Box<dyn DeviceProvider>,
+        mut shutdown: broadcast::Receiver<()>,
+    ) -> Result<()> {
         // Discover available devices
         tracing::info!("Discovering devices...");
         let devices = provider.discover().await?;
@@ -94,13 +264,11 @@ impl DeviceTask {
         // Main loop: read samples and forward them to the signal task
         loop {
             tokio::select! {
-                // Check for shutdown signal
                 _ = shutdown.recv() => {
                     tracing::info!("Device task received shutdown signal");
                     break;
                 }
 
-                // Read next sample from device
                 sample_result = stream.next() => {
                     match sample_result {
                         Some(Ok(sample)) => {
@@ -114,24 +282,20 @@ impl DeviceTask {
                             // If calibration mode is active, fan-out the sample
                             if let (Some(flag), Some(tx)) = (&self.calibration_mode, &self.calibration_sample_tx) {
                                 if flag.load(Ordering::Relaxed) {
-                                    // try_send to avoid blocking the device loop
                                     let _ = tx.try_send(sample.clone());
                                 }
                             }
 
                             // Send sample to signal task
                             if self.sample_tx.send(sample).await.is_err() {
-                                // Receiver dropped, time to shut down
                                 tracing::warn!("Sample receiver dropped, stopping device task");
                                 break;
                             }
                         }
                         Some(Err(e)) => {
                             tracing::warn!("Error reading sample: {}", e);
-                            // Continue trying - transient errors are expected
                         }
                         None => {
-                            // Stream ended
                             tracing::info!("Device stream ended");
                             break;
                         }
@@ -154,13 +318,237 @@ impl DeviceTask {
     }
 }
 
+// ─── Stream Task ─────────────────────────────────────────────────────────────
+
+/// Spawn a tokio task that streams samples from a single connected device.
+///
+/// The task runs until the `cancel` token is cancelled or the stream ends.
+fn spawn_stream_task(
+    mut device: Box<dyn Device>,
+    stream_id: String,
+    sample_tx: mpsc::Sender<Sample>,
+    calibration_sample_tx: Option<mpsc::Sender<Sample>>,
+    calibration_mode: Option<Arc<AtomicBool>>,
+    state: Arc<RwLock<ServiceState>>,
+    cancel: CancellationToken,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(async move {
+        let stream_result = device.start_streaming().await;
+        let mut sample_stream = match stream_result {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::error!("Failed to start streaming for '{}': {}", stream_id, e);
+                return;
+            }
+        };
+
+        tracing::info!("Stream '{}' started", stream_id);
+
+        // Poll device status periodically to pick up battery/quality updates
+        let mut status_interval = time::interval(Duration::from_secs(5));
+        // Read initial status immediately
+        update_stream_status(&state, &stream_id, &*device).await;
+
+        loop {
+            tokio::select! {
+                _ = cancel.cancelled() => {
+                    tracing::info!("Stream '{}' cancelled", stream_id);
+                    break;
+                }
+
+                sample_result = sample_stream.next() => {
+                    match sample_result {
+                        Some(Ok(sample)) => {
+                            // Update signal quality in shared state
+                            if let Some(quality) = &sample.quality {
+                                let avg_quality =
+                                    quality.iter().sum::<f32>() / quality.len() as f32;
+                                let mut st = state.write().await;
+                                st.signal_quality = avg_quality;
+                            }
+
+                            // Fan-out to calibration channel if active
+                            if let (Some(flag), Some(tx)) =
+                                (&calibration_mode, &calibration_sample_tx)
+                            {
+                                if flag.load(Ordering::Relaxed) {
+                                    let _ = tx.try_send(sample.clone());
+                                }
+                            }
+
+                            // Send to signal processing pipeline
+                            if sample_tx.send(sample).await.is_err() {
+                                tracing::warn!(
+                                    "Sample receiver dropped, stopping stream '{}'",
+                                    stream_id
+                                );
+                                break;
+                            }
+                        }
+                        Some(Err(e)) => {
+                            tracing::warn!(
+                                "Error reading sample from '{}': {}",
+                                stream_id,
+                                e
+                            );
+                        }
+                        None => {
+                            tracing::info!("Stream '{}' ended", stream_id);
+                            break;
+                        }
+                    }
+                }
+
+                _ = status_interval.tick() => {
+                    update_stream_status(&state, &stream_id, &*device).await;
+                }
+            }
+        }
+
+        // Best-effort cleanup
+        let _ = device.stop_streaming().await;
+        let _ = device.disconnect().await;
+        tracing::info!("Stream task '{}' exited", stream_id);
+    })
+}
+
+// ─── Scan / State Helpers ────────────────────────────────────────────────────
+
+/// Read the device's current status and propagate battery/quality into the
+/// matching `DiscoveredStream` entry in `ServiceState`. Also updates the
+/// top-level `device_battery` field.
+async fn update_stream_status(
+    state: &Arc<RwLock<ServiceState>>,
+    stream_id: &str,
+    device: &dyn Device,
+) {
+    let status = device.status();
+    let mut st = state.write().await;
+
+    // Update the matching discovered stream entry
+    if let Some(ds) = st.discovered_streams.iter_mut().find(|s| s.id == stream_id) {
+        ds.battery_percent = status.battery_percent;
+        ds.channel_quality = status.channel_quality.clone();
+    }
+
+    // Update top-level device_battery from any connected stream that reports it.
+    // Use the first non-None battery value found.
+    st.device_battery = st
+        .discovered_streams
+        .iter()
+        .filter(|s| s.connected)
+        .find_map(|s| s.battery_percent);
+}
+
+/// Scan for available streams and update `ServiceState::discovered_streams`.
+async fn scan(
+    provider: &Box<dyn DeviceProvider>,
+    state: &Arc<RwLock<ServiceState>>,
+    active_streams: &HashMap<String, ActiveStream>,
+) {
+    match provider.discover().await {
+        Ok(devices) => {
+            let mut discovered: Vec<DiscoveredStream> = devices
+                .iter()
+                .map(|info| device_info_to_discovered(info, active_streams))
+                .collect();
+
+            tracing::debug!("Scan found {} stream(s)", discovered.len());
+
+            // Preserve battery/quality from the previous snapshot for connected
+            // streams — the status polling task updates these, and a rescan
+            // shouldn't erase them.
+            let st = state.read().await;
+            for ds in &mut discovered {
+                if let Some(prev) = st.discovered_streams.iter().find(|p| p.id == ds.id) {
+                    if ds.battery_percent.is_none() {
+                        ds.battery_percent = prev.battery_percent;
+                    }
+                    if ds.channel_quality.is_none() {
+                        ds.channel_quality = prev.channel_quality.clone();
+                    }
+                }
+            }
+            drop(st);
+
+            let mut st = state.write().await;
+            st.discovered_streams = discovered;
+        }
+        Err(e) => {
+            tracing::warn!("Stream scan failed: {}", e);
+        }
+    }
+}
+
+/// Convert a `DeviceInfo` into a `DiscoveredStream`.
+fn device_info_to_discovered(
+    info: &DeviceInfo,
+    active_streams: &HashMap<String, ActiveStream>,
+) -> DiscoveredStream {
+    let id = info.id.0.clone();
+    let name = info
+        .name
+        .clone()
+        .unwrap_or_else(|| info.id.0.clone());
+
+    let (stream_type, channel_count, sample_rate) = match &info.channel_config {
+        Some(cfg) => {
+            let type_str = match &info.device_type {
+                neurohid_types::device::DeviceType::Unknown(s) => s.clone(),
+                other => format!("{:?}", other),
+            };
+            (type_str, cfg.channels.len() as i32, cfg.sampling_rate_hz as f64)
+        }
+        None => {
+            let type_str = match &info.device_type {
+                neurohid_types::device::DeviceType::Unknown(s) => s.clone(),
+                other => format!("{:?}", other),
+            };
+            (type_str, 0, 0.0)
+        }
+    };
+
+    let connected = active_streams.contains_key(&id);
+
+    DiscoveredStream {
+        id,
+        name,
+        stream_type,
+        channel_count,
+        sample_rate,
+        connected,
+        battery_percent: info.battery_percent,
+        channel_quality: None,
+    }
+}
+
+/// Update `device_connected` and `device_name` in shared state based on
+/// the current set of active streams.
+async fn update_connection_state(
+    state: &Arc<RwLock<ServiceState>>,
+    active_streams: &HashMap<String, ActiveStream>,
+) {
+    let mut st = state.write().await;
+    st.device_connected = !active_streams.is_empty();
+    if active_streams.is_empty() {
+        st.device_name = None;
+    } else {
+        let names: Vec<&String> = active_streams.keys().collect();
+        st.device_name = Some(
+            names
+                .iter()
+                .map(|s| s.as_str())
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+    }
+}
+
 // ─── Provider Factory ────────────────────────────────────────────────────────
 
 /// Create a device provider based on the backend configuration.
 ///
-/// For `Auto` mode, tries backends in priority order: Emotiv → BrainFlow → Mock.
-/// Each real backend is gated behind a Cargo feature flag; selecting a backend
-/// that wasn't compiled returns `DeviceError::UnsupportedDevice`.
+/// For `Auto` mode, tries LSL first, then falls back to Mock.
 async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
     match config.backend {
         DeviceBackend::Mock => {
@@ -168,521 +556,31 @@ async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider
             Ok(Box::new(MockProvider::new(MockDeviceConfig::default())))
         }
 
-        DeviceBackend::BrainFlow => create_brainflow_provider(config),
-
-        DeviceBackend::Emotiv => create_emotiv_provider(config).await,
+        DeviceBackend::Lsl => {
+            tracing::info!("Using LSL device backend");
+            create_lsl_provider(config)
+        }
 
         DeviceBackend::Auto => {
             tracing::info!("Auto-detecting device backend...");
 
-            // Try Emotiv first (if compiled in)
-            #[cfg(feature = "emotiv")]
-            {
-                match create_emotiv_provider(config).await {
-                    Ok(provider) => {
-                        if provider.is_available().await {
-                            tracing::info!("Auto-detected: Emotiv Cortex service available");
-                            return Ok(provider);
-                        }
-                        tracing::warn!(
-                            "Emotiv Cortex service not reachable, trying next backend. \
-                             Verify the Emotiv Launcher is running and check Settings > Device > Cortex URL."
-                        );
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "Emotiv provider creation failed: {}, trying next backend",
-                            e
-                        );
-                    }
-                }
+            let provider = create_lsl_provider(config)?;
+            if provider.is_available().await {
+                tracing::info!("Auto-detected: LSL streams available");
+                return Ok(provider);
             }
 
-            // Try BrainFlow next (if compiled in)
-            #[cfg(feature = "brainflow")]
-            {
-                match create_brainflow_provider(config) {
-                    Ok(provider) => {
-                        if provider.is_available().await {
-                            tracing::info!("Auto-detected: BrainFlow library available");
-                            return Ok(provider);
-                        }
-                        tracing::warn!("BrainFlow not available, falling back to Mock");
-                    }
-                    Err(e) => {
-                        tracing::warn!(
-                            "BrainFlow provider creation failed: {}, falling back to Mock",
-                            e
-                        );
-                    }
-                }
-            }
-
-            // Fall back to Mock
             tracing::warn!(
-                "Auto-detect: no real device backend available, falling back to Mock. \
-                 If you have an Emotiv headset, check that the Emotiv Launcher is running."
+                "Auto-detect: no LSL streams found, falling back to Mock. \
+                 Ensure your device software is running and pushing to LSL."
             );
             Ok(Box::new(MockProvider::new(MockDeviceConfig::default())))
         }
     }
 }
 
-// ─── BrainFlow ───────────────────────────────────────────────────────────────
-
-#[cfg(feature = "brainflow")]
-fn create_brainflow_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
-    use neurohid_device::brainflow::{BoardParams, BrainFlowConfig, BrainFlowDeviceProvider};
-
-    tracing::info!("Using BrainFlow device backend");
-
-    let bf_config = if let Some(ref bf) = config.brainflow {
-        let mut bf_cfg = BrainFlowConfig::default();
-        bf_cfg.include_synthetic = bf.include_synthetic;
-
-        // If a serial port or other params are specified, set them on the
-        // default board set. The user would typically also narrow board_ids
-        // in production, but for now we apply params globally.
-        if bf.serial_port.is_some()
-            || bf.ip_address.is_some()
-            || bf.ip_port.is_some()
-            || bf.mac_address.is_some()
-        {
-            let params = BoardParams {
-                serial_port: bf.serial_port.clone(),
-                ip_address: bf.ip_address.clone(),
-                ip_port: bf.ip_port,
-                mac_address: bf.mac_address.clone(),
-                file: None,
-            };
-            // Apply to all configured boards
-            for &bid in &bf_cfg.board_ids {
-                bf_cfg.board_params.insert(bid as i32, params.clone());
-            }
-        }
-
-        bf_cfg
-    } else {
-        BrainFlowConfig::default()
-    };
-
-    Ok(Box::new(BrainFlowDeviceProvider::new(bf_config)))
-}
-
-#[cfg(not(feature = "brainflow"))]
-fn create_brainflow_provider(_config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
-    Err(DeviceError::UnsupportedDevice {
-        device_type: "BrainFlow (compile with --features brainflow)".into(),
-    }
-    .into())
-}
-
-// ─── Emotiv ──────────────────────────────────────────────────────────────────
-
-/// Wraps an `EmotivProvider` and keeps an optional WSL2 TCP relay alive
-/// for the provider's entire lifetime.
-///
-/// When running in WSL2, the Emotiv Cortex API rejects JSON-RPC methods
-/// from WSL2-originated connections (-32601). This wrapper holds the native
-/// Windows TCP relay process that proxies connections so Cortex sees them
-/// as originating from a Windows process.
-///
-/// On non-WSL2 systems, `_relay` is `None` and this wrapper is transparent.
-#[cfg(feature = "emotiv")]
-struct RelayEmotivProvider {
-    inner: neurohid_device::emotiv::EmotivProvider,
-    #[cfg(unix)]
-    _relay: Option<super::wsl2_relay::Wsl2Relay>,
-}
-
-#[cfg(feature = "emotiv")]
-#[async_trait::async_trait]
-impl DeviceProvider for RelayEmotivProvider {
-    fn device_type(&self) -> neurohid_types::device::DeviceType {
-        self.inner.device_type()
-    }
-
-    async fn is_available(&self) -> bool {
-        self.inner.is_available().await
-    }
-
-    async fn discover(&self) -> Result<Vec<neurohid_types::device::DeviceInfo>> {
-        self.inner.discover().await
-    }
-
-    async fn connect(
-        &self,
-        device_id: &neurohid_types::device::DeviceId,
-        settings: Option<neurohid_types::device::ConnectionSettings>,
-    ) -> Result<Box<dyn neurohid_device::Device>> {
-        self.inner.connect(device_id, settings).await
-    }
-}
-
-#[cfg(feature = "emotiv")]
-async fn create_emotiv_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
-    use neurohid_device::emotiv::EmotivProvider;
-
-    tracing::info!("Using Emotiv device backend");
-
-    let mut emotiv_config = config.emotiv.clone().unwrap_or_default();
-
-    // WSL2: launch a native Windows TCP relay so the Cortex service sees
-    // connections from a Windows process (it rejects WSL2-originated ones).
-    #[cfg(unix)]
-    let relay = {
-        let is_wsl2 = std::env::var("WSL_DISTRO_NAME").is_ok() || std::env::var("WSLENV").is_ok();
-
-        if is_wsl2
-            && (emotiv_config.cortex_url.contains("localhost")
-                || emotiv_config.cortex_url.contains("127.0.0.1"))
-        {
-            let target_port = extract_port_from_wss_url(&emotiv_config.cortex_url).unwrap_or(6868);
-
-            match super::wsl2_relay::Wsl2Relay::launch(target_port).await {
-                Ok(Some(r)) => {
-                    tracing::info!(
-                        relay_port = r.port(),
-                        target_port,
-                        "WSL2 TCP relay active, routing Cortex connections through \
-                         native Windows process"
-                    );
-                    emotiv_config.cortex_url = super::wsl2_relay::rewrite_url_for_relay(
-                        &emotiv_config.cortex_url,
-                        r.port(),
-                    );
-                    Some(r)
-                }
-                Ok(None) => {
-                    tracing::warn!(
-                        "WSL2 detected but PowerShell relay unavailable (interop \
-                         may be disabled); falling back to direct connection. \
-                         Cortex API may return -32601 errors."
-                    );
-                    emotiv_config.cortex_url =
-                        resolve_wsl2_cortex_url(&emotiv_config.cortex_url).await;
-                    None
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        error = %e,
-                        "Failed to launch WSL2 relay; falling back to direct connection"
-                    );
-                    emotiv_config.cortex_url =
-                        resolve_wsl2_cortex_url(&emotiv_config.cortex_url).await;
-                    None
-                }
-            }
-        } else {
-            // Not WSL2, or URL doesn't target localhost — no relay needed
-            if is_wsl2 {
-                // WSL2 with non-localhost URL (user configured a remote endpoint)
-                tracing::debug!("WSL2 detected but Cortex URL is not localhost; skipping relay");
-            }
-            emotiv_config.cortex_url = resolve_wsl2_cortex_url(&emotiv_config.cortex_url).await;
-            None
-        }
-    };
-
-    // On non-Unix platforms, no relay is needed (not WSL2)
-    #[cfg(not(unix))]
-    {
-        let _ = resolve_wsl2_cortex_url; // suppress unused warning
-    }
-
-    tracing::info!(cortex_url = %emotiv_config.cortex_url, "Emotiv Cortex URL");
-
-    let (client_id, client_secret) = neurohid_storage::get_emotiv_credentials().map_err(|e| {
-        DeviceError::PermissionDenied(format!(
-            "Failed to read Emotiv credentials from keyring: {}. \
-             Set them in Settings > Device > Emotiv API Credentials.",
-            e
-        ))
-    })?;
-
-    let provider = EmotivProvider::new(emotiv_config, client_id, client_secret);
-
-    Ok(Box::new(RelayEmotivProvider {
-        inner: provider,
-        #[cfg(unix)]
-        _relay: relay,
-    }))
-}
-
-#[cfg(not(feature = "emotiv"))]
-async fn create_emotiv_provider(_config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
-    Err(DeviceError::UnsupportedDevice {
-        device_type: "Emotiv (compile with --features emotiv)".into(),
-    }
-    .into())
-}
-
-// ─── WSL2 Host Resolution ──────────────────────────────────────────────────
-
-/// If running inside WSL2 and the Cortex URL points at localhost, probe the
-/// network to decide whether to rewrite the URL.
-///
-/// **Note**: This function only handles TCP-level reachability (NAT mode
-/// IP rewriting). It does NOT solve the Cortex API `-32601` issue where the
-/// service rejects JSON-RPC methods from WSL2-originated connections. The
-/// primary fix for that is the WSL2 TCP relay (see [`super::wsl2_relay`]).
-/// This function is used as a fallback when the relay cannot be launched.
-///
-/// 1. **Try localhost first** (TCP connect with 2s timeout). If it succeeds,
-///    the URL works as-is — this covers mirrored networking, port forwarding,
-///    and any other configuration where localhost already reaches the host.
-/// 2. **Fall back to Windows host IP** from `/etc/resolv.conf` or `ip route`,
-///    verifying reachability with a TCP probe before rewriting.
-///
-/// This avoids unreliable filesystem heuristics (e.g. `/sys/class/net/eth0`)
-/// that vary across WSL2 kernel versions and networking configurations.
-///
-/// Detection: `WSL_DISTRO_NAME` or `WSLENV` environment variables.
-///
-/// Returns the original URL unchanged when not in WSL2, the URL doesn't
-/// target localhost, or no reachable alternative is found.
-#[cfg(all(unix, feature = "emotiv"))]
-async fn resolve_wsl2_cortex_url(url: &str) -> String {
-    let is_wsl2 = std::env::var("WSL_DISTRO_NAME").is_ok() || std::env::var("WSLENV").is_ok();
-    if !is_wsl2 {
-        return url.to_string();
-    }
-
-    if !url.contains("localhost") && !url.contains("127.0.0.1") {
-        return url.to_string();
-    }
-
-    let port = extract_port_from_wss_url(url).unwrap_or(6868);
-
-    // Try localhost first — works in mirrored networking, port-forwarded setups,
-    // and any config where localhost already reaches the Windows host.
-    if tcp_probe("127.0.0.1", port).await {
-        tracing::info!(
-            port,
-            "WSL2: localhost:{} is reachable, using URL unchanged",
-            port,
-        );
-        return url.to_string();
-    }
-
-    tracing::debug!(
-        port,
-        "WSL2: localhost:{} not reachable, trying Windows host IP",
-        port
-    );
-
-    // localhost failed — try the Windows host IP from resolv.conf
-    if let Some(host_ip) = read_wsl2_host_from_resolv_conf() {
-        if tcp_probe(&host_ip, port).await {
-            tracing::info!(
-                host_ip = %host_ip,
-                "WSL2 NAT mode: rewriting Cortex URL to reach Windows host"
-            );
-            return url
-                .replace("localhost", &host_ip)
-                .replace("127.0.0.1", &host_ip);
-        }
-        tracing::debug!(host_ip = %host_ip, "resolv.conf host IP not reachable on port {}", port);
-    }
-
-    // Try the default gateway from ip route
-    if let Some(host_ip) = read_wsl2_host_from_ip_route() {
-        if tcp_probe(&host_ip, port).await {
-            tracing::info!(
-                host_ip = %host_ip,
-                "WSL2 NAT mode (via ip route): rewriting Cortex URL to reach Windows host"
-            );
-            return url
-                .replace("localhost", &host_ip)
-                .replace("127.0.0.1", &host_ip);
-        }
-        tracing::debug!(host_ip = %host_ip, "ip route gateway not reachable on port {}", port);
-    }
-
-    tracing::warn!(
-        "WSL2 detected but Cortex not reachable on localhost or resolved Windows host IPs; \
-         using original URL '{}'. Verify the Emotiv Launcher is running and check \
-         Settings > Device > Cortex URL.",
-        url
-    );
-    url.to_string()
-}
-
-/// On non-Unix platforms, WSL2 resolution is a no-op.
-#[cfg(all(not(unix), feature = "emotiv"))]
-async fn resolve_wsl2_cortex_url(url: &str) -> String {
-    url.to_string()
-}
-
-/// Attempt a TCP connection to `host:port` with a 2-second timeout.
-/// Returns `true` if the connection was established.
-#[cfg(all(unix, feature = "emotiv"))]
-async fn tcp_probe(host: &str, port: u16) -> bool {
-    use std::time::Duration;
-    let addr = format!("{}:{}", host, port);
-    tokio::time::timeout(
-        Duration::from_secs(2),
-        tokio::net::TcpStream::connect(&addr),
-    )
-    .await
-    .map(|r| r.is_ok())
-    .unwrap_or(false)
-}
-
-/// Extract the port number from a `wss://host:port` or `ws://host:port` URL.
-#[cfg(any(feature = "emotiv", test))]
-fn extract_port_from_wss_url(url: &str) -> Option<u16> {
-    // Strip schema, then split on ':' to find the port at the end
-    let after_schema = url.split("://").nth(1)?;
-    after_schema
-        .split(':')
-        .nth(1)?
-        .trim_end_matches('/')
-        .parse()
-        .ok()
-}
-
-/// Parse `/etc/resolv.conf` for the nameserver entry.
-/// In WSL2 with default (NAT) networking, this points at the Windows host.
-#[cfg(all(unix, feature = "emotiv"))]
-fn read_wsl2_host_from_resolv_conf() -> Option<String> {
-    let contents = std::fs::read_to_string("/etc/resolv.conf").ok()?;
-    parse_nameserver_from_resolv_conf(&contents)
-}
-
-/// Parse `ip route show default` output for the gateway IP.
-#[cfg(all(unix, feature = "emotiv"))]
-fn read_wsl2_host_from_ip_route() -> Option<String> {
-    let output = std::process::Command::new("ip")
-        .args(["route", "show", "default"])
-        .output()
-        .ok()?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    parse_gateway_from_ip_route(&stdout)
-}
-
-/// Extract the first `nameserver` IPv4 address from resolv.conf contents.
-#[cfg(any(feature = "emotiv", test))]
-fn parse_nameserver_from_resolv_conf(contents: &str) -> Option<String> {
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.starts_with("nameserver") {
-            let ip = line.split_whitespace().nth(1)?;
-            if ip.parse::<std::net::Ipv4Addr>().is_ok() {
-                return Some(ip.to_string());
-            }
-        }
-    }
-    None
-}
-
-/// Extract the default gateway IPv4 address from `ip route` output.
-#[cfg(any(feature = "emotiv", test))]
-fn parse_gateway_from_ip_route(output: &str) -> Option<String> {
-    for line in output.lines() {
-        if line.starts_with("default via") {
-            let ip = line.split_whitespace().nth(2)?;
-            if ip.parse::<std::net::Ipv4Addr>().is_ok() {
-                return Some(ip.to_string());
-            }
-        }
-    }
-    None
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_resolv_conf_typical_wsl2() {
-        let contents = "\
-# This file was automatically generated by WSL.
-nameserver 172.28.80.1
-";
-        assert_eq!(
-            parse_nameserver_from_resolv_conf(contents),
-            Some("172.28.80.1".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_parse_resolv_conf_skips_comments() {
-        let contents = "\
-# nameserver 8.8.8.8
-nameserver 172.16.0.1
-";
-        assert_eq!(
-            parse_nameserver_from_resolv_conf(contents),
-            Some("172.16.0.1".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_parse_resolv_conf_no_nameserver() {
-        let contents = "search example.com\n";
-        assert_eq!(parse_nameserver_from_resolv_conf(contents), None);
-    }
-
-    #[test]
-    fn test_parse_resolv_conf_skips_ipv6() {
-        let contents = "nameserver fd00::1\nnameserver 10.0.0.1\n";
-        assert_eq!(
-            parse_nameserver_from_resolv_conf(contents),
-            Some("10.0.0.1".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_parse_ip_route_typical() {
-        let output = "\
-default via 172.28.80.1 dev eth0
-172.28.80.0/20 dev eth0 proto kernel scope link src 172.28.82.45
-";
-        assert_eq!(
-            parse_gateway_from_ip_route(output),
-            Some("172.28.80.1".to_string()),
-        );
-    }
-
-    #[test]
-    fn test_parse_ip_route_no_default() {
-        let output = "172.28.80.0/20 dev eth0 proto kernel scope link src 172.28.82.45\n";
-        assert_eq!(parse_gateway_from_ip_route(output), None);
-    }
-
-    #[test]
-    fn test_url_rewrite_localhost() {
-        let url = "wss://localhost:6868";
-        let rewritten = url.replace("localhost", "172.28.80.1");
-        assert_eq!(rewritten, "wss://172.28.80.1:6868");
-    }
-
-    #[test]
-    fn test_url_rewrite_127_0_0_1() {
-        let url = "wss://127.0.0.1:6868";
-        let rewritten = url.replace("127.0.0.1", "172.28.80.1");
-        assert_eq!(rewritten, "wss://172.28.80.1:6868");
-    }
-
-    #[test]
-    fn test_url_no_rewrite_for_custom_host() {
-        let url = "wss://192.168.1.100:6868";
-        assert!(!url.contains("localhost") && !url.contains("127.0.0.1"));
-    }
-
-    #[test]
-    fn test_extract_port_from_wss_url() {
-        assert_eq!(
-            extract_port_from_wss_url("wss://localhost:6868"),
-            Some(6868)
-        );
-        assert_eq!(extract_port_from_wss_url("ws://127.0.0.1:8080"), Some(8080));
-        assert_eq!(
-            extract_port_from_wss_url("wss://example.com:443/"),
-            Some(443)
-        );
-        assert_eq!(extract_port_from_wss_url("wss://no-port"), None);
-        assert_eq!(extract_port_from_wss_url("not-a-url"), None);
-    }
+/// Create an LSL device provider from the device configuration.
+fn create_lsl_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
+    let lsl_config = config.lsl.clone().unwrap_or_default();
+    Ok(Box::new(neurohid_device::LslProvider::new(lsl_config)))
 }

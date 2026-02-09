@@ -5,6 +5,7 @@
 
 use neurohid_types::{
     config::SystemConfig,
+    device::DiscoveredStream,
     profile::{ProfileId, ProfileMetadata},
 };
 use neurohid_storage::{ProfileStore, ConfigStore};
@@ -19,6 +20,7 @@ pub struct ServiceSnapshot {
     pub running: bool,
     pub device_connected: bool,
     pub device_name: Option<String>,
+    /// Battery level of connected device(s), if reported.
     pub device_battery: Option<u8>,
     pub signal_quality: f32,
     pub actions_emitted: u64,
@@ -30,6 +32,8 @@ pub struct ServiceSnapshot {
     pub active_profile_name: Option<String>,
     /// If a service task failed at runtime, (task_name, error_message).
     pub task_error: Option<(String, String)>,
+    /// LSL streams discovered on the network.
+    pub discovered_streams: Vec<DiscoveredStream>,
 }
 
 impl Default for ServiceSnapshot {
@@ -47,6 +51,7 @@ impl Default for ServiceSnapshot {
             calibration_mode: false,
             active_profile_name: None,
             task_error: None,
+            discovered_streams: Vec::new(),
         }
     }
 }

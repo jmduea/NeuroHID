@@ -10,12 +10,6 @@ description = "NeuroHID Hub - unified GUI for device management, calibration, an
 name = "neurohid"
 path = "src/main.rs"
 
-[features]
-default = []
-brainflow = ["neurohid-core/brainflow", "neurohid-device/brainflow"]
-emotiv = ["neurohid-core/emotiv", "neurohid-device/emotiv"]
-all-backends = ["brainflow", "emotiv"]
-
 [dependencies]
 neurohid-types = { path = "../neurohid-types" }
 neurohid-core = { path = "../neurohid-core" }

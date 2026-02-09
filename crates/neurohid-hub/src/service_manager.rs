@@ -11,7 +11,7 @@ use neurohid_types::{
     profile::ProfileId,
 };
 use neurohid_storage::ProfileStore;
-use neurohid_core::service::{NeuroHidService, ServiceHandle};
+use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle};
 
 use crate::state::ServiceSnapshot;
 
@@ -34,8 +34,8 @@ impl ServiceManager {
         &mut self,
         runtime: &tokio::runtime::Runtime,
         config: SystemConfig,
-        profile_store: ProfileStore,
-        profile_id: ProfileId,
+        profile_store: Option<ProfileStore>,
+        profile_id: Option<ProfileId>,
     ) {
         // If we have a handle but the service has stopped itself (e.g., task failure),
         // drop the stale handle so the user can restart without clicking "Stop" first.
@@ -111,6 +111,7 @@ impl ServiceManager {
             calibration_mode: state_guard.calibration_mode,
             active_profile_name: state_guard.active_profile_name.clone(),
             task_error: state_guard.task_error.clone(),
+            discovered_streams: state_guard.discovered_streams.clone(),
         }
     }
 
@@ -139,5 +140,30 @@ impl ServiceManager {
     /// Last error encountered during start.
     pub fn last_error(&self) -> Option<&str> {
         self.last_error.as_deref()
+    }
+
+    /// Request a rescan of available LSL streams.
+    pub fn rescan_streams(&self) {
+        if let Some(handle) = &self.handle {
+            let _ = handle.device_command_tx.try_send(DeviceCommand::Rescan);
+        }
+    }
+
+    /// Connect to a specific stream by its id.
+    pub fn connect_stream(&self, stream_id: &str) {
+        if let Some(handle) = &self.handle {
+            let _ = handle
+                .device_command_tx
+                .try_send(DeviceCommand::Connect(stream_id.to_string()));
+        }
+    }
+
+    /// Disconnect from a specific stream by its id.
+    pub fn disconnect_stream(&self, stream_id: &str) {
+        if let Some(handle) = &self.handle {
+            let _ = handle
+                .device_command_tx
+                .try_send(DeviceCommand::Disconnect(stream_id.to_string()));
+        }
     }
 }

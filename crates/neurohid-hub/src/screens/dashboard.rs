@@ -57,22 +57,17 @@ impl DashboardScreen {
                         service_manager.stop();
                     }
                 } else {
-                    let has_profile = state.active_profile_id.is_some();
-                    ui.add_enabled_ui(has_profile, |ui| {
-                        if ui.button("Start Service").clicked() {
-                            if let Some(profile_id) = &state.active_profile_id {
-                                service_manager.start(
-                                    runtime,
-                                    state.config.clone(),
-                                    state.profile_store.clone(),
-                                    profile_id.clone(),
-                                );
-                            }
-                        }
-                    });
-                    if !has_profile {
+                    if ui.button("Start Service").clicked() {
+                        service_manager.start(
+                            runtime,
+                            state.config.clone(),
+                            Some(state.profile_store.clone()),
+                            state.active_profile_id.clone(),
+                        );
+                    }
+                    if state.active_profile_id.is_none() {
                         ui.label(
-                            egui::RichText::new("Create a profile first")
+                            egui::RichText::new("No profile selected — running in discovery mode")
                                 .small()
                                 .color(egui::Color32::YELLOW),
                         );
@@ -115,25 +110,57 @@ impl DashboardScreen {
                 ui.heading("Device");
                 ui.add_space(8.0);
 
-                if snap.device_connected {
+                let total_streams = snap.discovered_streams.len();
+                let connected_streams = snap.discovered_streams.iter().filter(|s| s.connected).count();
+
+                if connected_streams > 0 {
                     ui.horizontal(|ui| {
                         ui.colored_label(egui::Color32::GREEN, "●");
-                        ui.label("Connected");
+                        ui.label(format!(
+                            "{} connected, {} available",
+                            connected_streams, total_streams
+                        ));
+
+                        // Show battery if any connected device reports it
+                        if let Some(battery) = snap.device_battery {
+                            let bat_color = if battery > 50 {
+                                egui::Color32::GREEN
+                            } else if battery > 20 {
+                                egui::Color32::YELLOW
+                            } else {
+                                egui::Color32::RED
+                            };
+                            ui.colored_label(bat_color, format!("{}%", battery));
+                        }
                     });
-                    if let Some(name) = &snap.device_name {
-                        ui.label(format!("Name: {}", name));
+                    // List connected stream names with per-stream quality
+                    for s in snap.discovered_streams.iter().filter(|s| s.connected) {
+                        ui.horizontal(|ui| {
+                            let mut label = format!("  {} ({})", s.name, s.stream_type);
+                            if let Some(bat) = s.battery_percent {
+                                label.push_str(&format!(" | Bat: {}%", bat));
+                            }
+                            ui.label(egui::RichText::new(label).small());
+                        });
                     }
-                    if let Some(battery) = snap.device_battery {
-                        ui.label(format!("Battery: {}%", battery));
-                    }
+                } else if total_streams > 0 {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(egui::Color32::YELLOW, "●");
+                        ui.label(format!("{} stream(s) available", total_streams));
+                    });
+                    ui.label(
+                        egui::RichText::new("Go to Devices to connect")
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
                 } else {
                     ui.horizontal(|ui| {
                         ui.colored_label(egui::Color32::GRAY, "●");
-                        ui.label("No device connected");
+                        ui.label("No streams found");
                     });
                     if !snap.running {
                         ui.label(
-                            egui::RichText::new("Start the service to connect")
+                            egui::RichText::new("Start the service to discover streams")
                                 .small()
                                 .color(egui::Color32::GRAY),
                         );

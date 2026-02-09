@@ -11,11 +11,23 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 use neurohid_types::{
     config::SystemConfig,
+    device::DiscoveredStream,
     profile::ProfileId,
     signal::Sample,
     error::Result,
 };
 use neurohid_storage::ProfileStore;
+
+/// Commands sent from the hub to the DeviceTask for stream management.
+#[derive(Debug)]
+pub enum DeviceCommand {
+    /// Re-scan for available LSL streams
+    Rescan,
+    /// Connect to a specific stream by its id
+    Connect(String),
+    /// Disconnect from a specific stream by its id
+    Disconnect(String),
+}
 
 use crate::tasks::{DeviceTask, SignalTask, IpcTask, ActionTask};
 
@@ -31,11 +43,11 @@ pub struct NeuroHidService {
 
     /// Profile storage — will be used for profile reloading
     #[allow(dead_code)]
-    profile_store: ProfileStore,
+    profile_store: Option<ProfileStore>,
 
     /// Active profile ID — will be used when profile data loading is wired
     #[allow(dead_code)]
-    profile_id: ProfileId,
+    profile_id: Option<ProfileId>,
 
     /// Shutdown signal receiver
     shutdown_rx: broadcast::Receiver<()>,
@@ -90,6 +102,10 @@ pub struct ServiceState {
     /// If a task failed at runtime, (task_name, error_message).
     /// Populated by `run_inner()` so the GUI can display what went wrong.
     pub task_error: Option<(String, String)>,
+
+    /// LSL streams discovered on the network.
+    /// Updated periodically by the DeviceTask.
+    pub discovered_streams: Vec<DiscoveredStream>,
 }
 
 impl Default for ServiceState {
@@ -108,6 +124,7 @@ impl Default for ServiceState {
             ipc_connected: false,
             calibration_mode: false,
             task_error: None,
+            discovered_streams: Vec::new(),
         }
     }
 }
@@ -132,6 +149,9 @@ pub struct ServiceHandle {
 
     /// Atomic flag to toggle calibration mode from the GUI thread.
     pub calibration_mode: Arc<AtomicBool>,
+
+    /// Send commands to the DeviceTask (connect/disconnect/rescan).
+    pub device_command_tx: mpsc::Sender<DeviceCommand>,
 }
 
 impl NeuroHidService {
@@ -142,8 +162,8 @@ impl NeuroHidService {
     /// it in the background and get a `ServiceHandle`.
     pub async fn new(
         config: SystemConfig,
-        profile_store: ProfileStore,
-        profile_id: ProfileId,
+        profile_store: Option<ProfileStore>,
+        profile_id: Option<ProfileId>,
         shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<Self> {
         let shared_state = Arc::new(RwLock::new(ServiceState::default()));
@@ -171,9 +191,16 @@ impl NeuroHidService {
         // Bounded to 256 to avoid unbounded growth if the panel falls behind.
         let (cal_sample_tx, cal_sample_rx) = mpsc::channel::<Sample>(256);
 
+        // Channel for stream management commands from the GUI.
+        let (device_cmd_tx, device_cmd_rx) = mpsc::channel::<DeviceCommand>(16);
+
         let join_handle = tokio::spawn(async move {
-            self.run_inner(Some(calibration_flag_clone), Some(cal_sample_tx))
-                .await
+            self.run_inner(
+                Some(calibration_flag_clone),
+                Some(cal_sample_tx),
+                Some(device_cmd_rx),
+            )
+            .await
         });
 
         ServiceHandle {
@@ -182,6 +209,7 @@ impl NeuroHidService {
             join_handle,
             calibration_sample_rx: cal_sample_rx,
             calibration_mode: calibration_flag,
+            device_command_tx: device_cmd_tx,
         }
     }
 
@@ -189,7 +217,7 @@ impl NeuroHidService {
     ///
     /// This is the entry point for the standalone headless binary.
     pub async fn run(self) -> Result<()> {
-        self.run_inner(None, None).await
+        self.run_inner(None, None, None).await
     }
 
     /// Internal run loop shared by both `run()` and `spawn()`.
@@ -197,6 +225,7 @@ impl NeuroHidService {
         mut self,
         calibration_flag: Option<Arc<AtomicBool>>,
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
+        device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
     ) -> Result<()> {
         tracing::info!("Starting service tasks");
 
@@ -239,6 +268,7 @@ impl NeuroHidService {
                 state_device,
                 cal_tx_for_device,
                 cal_flag_for_device,
+                device_command_rx,
             );
             task.run(shutdown_device).await
         });

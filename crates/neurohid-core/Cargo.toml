@@ -14,12 +14,6 @@ path = "src/lib.rs"
 name = "neurohid-service"
 path = "src/main.rs"
 
-[features]
-default = []
-brainflow = ["neurohid-device/brainflow"]
-emotiv = ["neurohid-device/emotiv"]
-all-backends = ["brainflow", "emotiv"]
-
 [dependencies]
 neurohid-types = { path = "../neurohid-types" }
 neurohid-device = { path = "../neurohid-device" }
@@ -30,14 +24,12 @@ neurohid-ipc = { path = "../neurohid-ipc" }
 
 # Async runtime
 tokio = { workspace = true }
+tokio-util = { version = "0.7", features = ["rt"] }
 futures = { workspace = true }
 
 # Serialization
 serde = { workspace = true }
 serde_json = { workspace = true }
-
-# Async trait support (for DeviceProvider wrapper)
-async-trait = "0.1"
 
 # Error handling
 thiserror = { workspace = true }
@@ -47,10 +39,8 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 
-# CLI argument parsing
+# CLI
 clap = { version = "4.4", features = ["derive"] }
-
-# Signal handling for graceful shutdown
 ctrlc = "3.4"
 
 [dev-dependencies]
