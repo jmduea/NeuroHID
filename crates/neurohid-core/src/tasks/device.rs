@@ -107,12 +107,7 @@ impl DeviceTask {
         let mut rescan_interval = time::interval(Duration::from_secs(10));
 
         // Initial scan
-        scan(
-            &provider,
-            &self.state,
-            &active_streams,
-        )
-        .await;
+        scan(&provider, &self.state, &active_streams).await;
 
         loop {
             tokio::select! {
@@ -167,8 +162,10 @@ impl DeviceTask {
                                     )
                                     .await;
 
-                                    // Refresh discovered_streams to update connected flags
-                                    scan(&provider, &self.state, &active_streams).await;
+                                    // Update the connected flag in-place instead
+                                    // of a full re-scan (which would block on
+                                    // another resolve_lsl call).
+                                    set_stream_connected(&self.state, &stream_id, true).await;
                                 }
                                 Err(e) => {
                                     tracing::error!(
@@ -193,8 +190,9 @@ impl DeviceTask {
                                 )
                                 .await;
 
-                                // Refresh discovered_streams to update connected flags
-                                scan(&provider, &self.state, &active_streams).await;
+                                // Update the connected flag in-place instead
+                                // of a full re-scan.
+                                set_stream_connected(&self.state, &stream_id, false).await;
                             } else {
                                 tracing::warn!(
                                     "Stream '{}' is not connected, ignoring disconnect",
@@ -453,7 +451,11 @@ async fn scan(
                 .map(|info| device_info_to_discovered(info, active_streams))
                 .collect();
 
-            tracing::debug!("Scan found {} stream(s)", discovered.len());
+            if discovered.is_empty() {
+                tracing::info!("Scan found 0 streams (is a publisher running?)");
+            } else {
+                tracing::info!("Scan found {} stream(s)", discovered.len());
+            }
 
             // Preserve battery/quality from the previous snapshot for connected
             // streams — the status polling task updates these, and a rescan
@@ -486,10 +488,7 @@ fn device_info_to_discovered(
     active_streams: &HashMap<String, ActiveStream>,
 ) -> DiscoveredStream {
     let id = info.id.0.clone();
-    let name = info
-        .name
-        .clone()
-        .unwrap_or_else(|| info.id.0.clone());
+    let name = info.name.clone().unwrap_or_else(|| info.id.0.clone());
 
     let (stream_type, channel_count, sample_rate) = match &info.channel_config {
         Some(cfg) => {
@@ -497,7 +496,11 @@ fn device_info_to_discovered(
                 neurohid_types::device::DeviceType::Unknown(s) => s.clone(),
                 other => format!("{:?}", other),
             };
-            (type_str, cfg.channels.len() as i32, cfg.sampling_rate_hz as f64)
+            (
+                type_str,
+                cfg.channels.len() as i32,
+                cfg.sampling_rate_hz as f64,
+            )
         }
         None => {
             let type_str = match &info.device_type {
@@ -544,11 +547,24 @@ async fn update_connection_state(
     }
 }
 
+/// Toggle the `connected` flag on a single discovered stream without
+/// re-resolving the entire LSL network (which would add another full
+/// `resolve_timeout_secs` of latency).
+async fn set_stream_connected(state: &Arc<RwLock<ServiceState>>, stream_id: &str, connected: bool) {
+    let mut st = state.write().await;
+    if let Some(ds) = st.discovered_streams.iter_mut().find(|s| s.id == stream_id) {
+        ds.connected = connected;
+    }
+}
+
 // ─── Provider Factory ────────────────────────────────────────────────────────
 
 /// Create a device provider based on the backend configuration.
 ///
-/// For `Auto` mode, tries LSL first, then falls back to Mock.
+/// For `Auto` mode, creates an `AutoProvider` that tries LSL on every
+/// discovery call and falls back to Mock only when no LSL streams are found.
+/// This avoids the old behaviour where a single 1-second check at startup
+/// would permanently lock the provider to Mock.
 async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
     match config.backend {
         DeviceBackend::Mock => {
@@ -562,19 +578,10 @@ async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider
         }
 
         DeviceBackend::Auto => {
-            tracing::info!("Auto-detecting device backend...");
-
-            let provider = create_lsl_provider(config)?;
-            if provider.is_available().await {
-                tracing::info!("Auto-detected: LSL streams available");
-                return Ok(provider);
-            }
-
-            tracing::warn!(
-                "Auto-detect: no LSL streams found, falling back to Mock. \
-                 Ensure your device software is running and pushing to LSL."
-            );
-            Ok(Box::new(MockProvider::new(MockDeviceConfig::default())))
+            tracing::info!("Using Auto device backend (LSL preferred, Mock fallback)");
+            let lsl = create_lsl_provider(config)?;
+            let mock = Box::new(MockProvider::new(MockDeviceConfig::default()));
+            Ok(Box::new(AutoProvider::new(lsl, mock)))
         }
     }
 }
@@ -583,4 +590,76 @@ async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider
 fn create_lsl_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
     let lsl_config = config.lsl.clone().unwrap_or_default();
     Ok(Box::new(neurohid_device::LslProvider::new(lsl_config)))
+}
+
+// ─── Auto Provider ───────────────────────────────────────────────────────────
+
+/// A composite provider that delegates to LSL first, falling back to Mock
+/// on each `discover()` / `connect()` call instead of choosing once at startup.
+struct AutoProvider {
+    lsl: Box<dyn DeviceProvider>,
+    mock: Box<dyn DeviceProvider>,
+}
+
+impl AutoProvider {
+    fn new(lsl: Box<dyn DeviceProvider>, mock: Box<dyn DeviceProvider>) -> Self {
+        Self { lsl, mock }
+    }
+}
+
+#[async_trait::async_trait]
+impl DeviceProvider for AutoProvider {
+    fn device_type(&self) -> neurohid_types::device::DeviceType {
+        neurohid_types::device::DeviceType::Unknown("Auto".into())
+    }
+
+    async fn is_available(&self) -> bool {
+        // Always available — at minimum the mock layer works.
+        true
+    }
+
+    async fn discover(&self) -> Result<Vec<neurohid_types::device::DeviceInfo>> {
+        // Try LSL first; if it returns any streams, use those.
+        match self.lsl.discover().await {
+            Ok(devices) if !devices.is_empty() => {
+                tracing::debug!(
+                    "Auto: LSL discovered {} stream(s), using LSL",
+                    devices.len()
+                );
+                Ok(devices)
+            }
+            Ok(_) => {
+                tracing::debug!("Auto: no LSL streams found, falling back to Mock");
+                self.mock.discover().await
+            }
+            Err(e) => {
+                tracing::warn!("Auto: LSL discover failed ({e}), falling back to Mock");
+                self.mock.discover().await
+            }
+        }
+    }
+
+    async fn connect(
+        &self,
+        device_id: &neurohid_types::device::DeviceId,
+        settings: Option<neurohid_types::device::ConnectionSettings>,
+    ) -> Result<Box<dyn Device>> {
+        // Try LSL first. Mock device IDs start with "mock_" so we can
+        // short-circuit, but to be safe we always attempt LSL first for
+        // non-mock IDs.
+        if device_id.0.starts_with("mock_") {
+            return self.mock.connect(device_id, settings).await;
+        }
+
+        match self.lsl.connect(device_id, settings.clone()).await {
+            Ok(device) => Ok(device),
+            Err(e) => {
+                tracing::warn!(
+                    "Auto: LSL connect to '{}' failed ({e}), trying Mock",
+                    device_id
+                );
+                self.mock.connect(device_id, settings).await
+            }
+        }
+    }
 }

@@ -10,6 +10,9 @@ mod app;
 mod state;
 mod service_manager;
 mod screens;
+mod data_bus;
+mod widgets;
+mod layout;
 
 use app::HubApp;
 

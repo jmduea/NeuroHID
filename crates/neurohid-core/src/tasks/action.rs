@@ -35,6 +35,9 @@ pub struct ActionTask {
     /// Optional calibration mode flag — when set, HID emission is paused.
     calibration_mode: Option<Arc<AtomicBool>>,
 
+    /// Broadcast channel for forwarding actions to hub visualization widgets.
+    action_broadcast_tx: Option<broadcast::Sender<Action>>,
+
     // State for smoothing and debouncing
     #[allow(dead_code)] // will be used for absolute->relative position tracking
     last_mouse_pos: (f32, f32),
@@ -49,12 +52,14 @@ impl ActionTask {
         action_rx: mpsc::Receiver<Action>,
         state: Arc<RwLock<ServiceState>>,
         calibration_mode: Option<Arc<AtomicBool>>,
+        action_broadcast_tx: Option<broadcast::Sender<Action>>,
     ) -> Self {
         Self {
             config,
             action_rx,
             state,
             calibration_mode,
+            action_broadcast_tx,
             last_mouse_pos: (0.0, 0.0),
             last_action_time: std::time::Instant::now(),
             smoothed_velocity: (0.0, 0.0),
@@ -105,6 +110,12 @@ impl ActionTask {
                 action = self.action_rx.recv() => {
                     match action {
                         Some(action) => {
+                            // Broadcast action to hub visualization widgets
+                            // (always, regardless of confidence/calibration)
+                            if let Some(tx) = &self.action_broadcast_tx {
+                                let _ = tx.send(action.clone());
+                            }
+
                             // Check if output is enabled
                             if !self.config.enabled {
                                 continue;

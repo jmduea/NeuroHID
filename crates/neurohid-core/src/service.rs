@@ -5,18 +5,19 @@
 //! play any instruments itself, but it makes sure everyone starts at the right
 //! time, stays in sync, and stops together gracefully.
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
+use neurohid_storage::ProfileStore;
 use neurohid_types::{
+    action::Action,
     config::SystemConfig,
     device::DiscoveredStream,
-    profile::ProfileId,
-    signal::Sample,
     error::Result,
+    profile::ProfileId,
+    signal::{FeatureVector, Sample},
 };
-use neurohid_storage::ProfileStore;
 
 /// Commands sent from the hub to the DeviceTask for stream management.
 #[derive(Debug)]
@@ -29,7 +30,7 @@ pub enum DeviceCommand {
     Disconnect(String),
 }
 
-use crate::tasks::{DeviceTask, SignalTask, IpcTask, ActionTask};
+use crate::tasks::{ActionTask, DeviceTask, IpcTask, SignalTask};
 
 /// The main service that coordinates all NeuroHID operations.
 ///
@@ -152,6 +153,16 @@ pub struct ServiceHandle {
 
     /// Send commands to the DeviceTask (connect/disconnect/rescan).
     pub device_command_tx: mpsc::Sender<DeviceCommand>,
+
+    /// Broadcast receiver for ALL live EEG samples (for visualization widgets).
+    /// Unlike `calibration_sample_rx`, this always produces values.
+    pub sample_broadcast_rx: broadcast::Receiver<Sample>,
+
+    /// Broadcast receiver for extracted feature vectors (for visualization widgets).
+    pub feature_broadcast_rx: broadcast::Receiver<FeatureVector>,
+
+    /// Broadcast receiver for decoded actions (for visualization widgets).
+    pub action_broadcast_rx: broadcast::Receiver<Action>,
 }
 
 impl NeuroHidService {
@@ -194,11 +205,20 @@ impl NeuroHidService {
         // Channel for stream management commands from the GUI.
         let (device_cmd_tx, device_cmd_rx) = mpsc::channel::<DeviceCommand>(16);
 
+        // Broadcast channels for live data visualization in the hub.
+        // These fan-out to multiple widget subscribers.
+        let (sample_broadcast_tx, sample_broadcast_rx) = broadcast::channel::<Sample>(512);
+        let (feature_broadcast_tx, feature_broadcast_rx) = broadcast::channel::<FeatureVector>(128);
+        let (action_broadcast_tx, action_broadcast_rx) = broadcast::channel::<Action>(128);
+
         let join_handle = tokio::spawn(async move {
             self.run_inner(
                 Some(calibration_flag_clone),
                 Some(cal_sample_tx),
                 Some(device_cmd_rx),
+                Some(sample_broadcast_tx),
+                Some(feature_broadcast_tx),
+                Some(action_broadcast_tx),
             )
             .await
         });
@@ -210,6 +230,9 @@ impl NeuroHidService {
             calibration_sample_rx: cal_sample_rx,
             calibration_mode: calibration_flag,
             device_command_tx: device_cmd_tx,
+            sample_broadcast_rx,
+            feature_broadcast_rx,
+            action_broadcast_rx,
         }
     }
 
@@ -217,7 +240,7 @@ impl NeuroHidService {
     ///
     /// This is the entry point for the standalone headless binary.
     pub async fn run(self) -> Result<()> {
-        self.run_inner(None, None, None).await
+        self.run_inner(None, None, None, None, None, None).await
     }
 
     /// Internal run loop shared by both `run()` and `spawn()`.
@@ -226,6 +249,9 @@ impl NeuroHidService {
         calibration_flag: Option<Arc<AtomicBool>>,
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
         device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
+        sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
+        feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
+        action_broadcast_tx: Option<broadcast::Sender<Action>>,
     ) -> Result<()> {
         tracing::info!("Starting service tasks");
 
@@ -278,7 +304,15 @@ impl NeuroHidService {
         let signal_config = self.config.signal.clone();
         let signal_handle = tokio::spawn(async move {
             tracing::info!("Signal task starting");
-            let task = SignalTask::new(signal_config, sample_rx, feature_tx, errp_rx, state_signal);
+            let task = SignalTask::new(
+                signal_config,
+                sample_rx,
+                feature_tx,
+                errp_rx,
+                state_signal,
+                sample_broadcast_tx,
+                feature_broadcast_tx,
+            );
             task.run(shutdown_signal).await
         });
 
@@ -297,7 +331,13 @@ impl NeuroHidService {
         let cal_flag_for_action = calibration_flag.as_ref().map(Arc::clone);
         let action_handle = tokio::spawn(async move {
             tracing::info!("Action task starting");
-            let task = ActionTask::new(action_config, action_rx, state_action, cal_flag_for_action);
+            let task = ActionTask::new(
+                action_config,
+                action_rx,
+                state_action,
+                cal_flag_for_action,
+                action_broadcast_tx,
+            );
             task.run(shutdown_action).await
         });
 

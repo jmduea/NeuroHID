@@ -19,11 +19,43 @@ pub struct LslProvider {
 impl LslProvider {
     pub fn new(config: LslConfig) -> Self {
         super::configure_lsl();
+        tracing::info!(
+            "LSL provider initialized (liblsl v{}.{}, predicate: {})",
+            lsl::library_version() / 100,
+            lsl::library_version() % 100,
+            if config.predicate.is_empty() {
+                "<all streams>"
+            } else {
+                &config.predicate
+            },
+        );
         Self { config }
     }
 }
 
+/// Resolve LSL streams, correctly handling an empty predicate.
+///
+/// liblsl's `lsl_resolve_bypred` passes the predicate through `build_query`,
+/// which appends `" and " + pred` when the pointer is non-null — even if the
+/// string is empty.  This produces a malformed XPath query like
+/// `session_id='default' and ` that silently matches nothing.
+///
+/// When the predicate is empty (the default) we call `resolve_streams` instead,
+/// which is the same code path LabRecorder uses and avoids the bug entirely.
+fn resolve_lsl(
+    predicate: &str,
+    minimum: i32,
+    timeout: f64,
+) -> std::result::Result<Vec<lsl::StreamInfo>, lsl::Error> {
+    if predicate.is_empty() {
+        lsl::resolve_streams(timeout)
+    } else {
+        lsl::resolve_bypred(predicate, minimum, timeout)
+    }
+}
+
 /// Data extracted from an LSL `StreamInfo` (Send-safe, no C pointers).
+#[derive(Clone)]
 struct ResolvedStream {
     name: String,
     stream_type: String,
@@ -34,12 +66,20 @@ struct ResolvedStream {
 
 impl ResolvedStream {
     fn device_id(&self) -> DeviceId {
-        let id = if self.source_id.is_empty() {
-            self.name.clone()
+        DeviceId::new(Self::make_id(&self.source_id, &self.name))
+    }
+
+    /// Build a composite ID from source_id and stream name.
+    ///
+    /// Emotiv (and other multi-stream publishers) share a single `source_id`
+    /// across all of their LSL streams. Using `source_id::stream_name` as
+    /// the key gives every stream a unique identity.
+    fn make_id(source_id: &str, name: &str) -> String {
+        if source_id.is_empty() {
+            name.to_string()
         } else {
-            self.source_id.clone()
-        };
-        DeviceId::new(id)
+            format!("{}::{}", source_id, name)
+        }
     }
 
     fn to_device_info(&self) -> DeviceInfo {
@@ -83,7 +123,7 @@ impl DeviceProvider for LslProvider {
     async fn is_available(&self) -> bool {
         let predicate = self.config.predicate.clone();
         tokio::task::spawn_blocking(move || {
-            lsl::resolve_bypred(&predicate, 0, 1.0)
+            resolve_lsl(&predicate, 1, 1.0)
                 .map(|streams| !streams.is_empty())
                 .unwrap_or(false)
         })
@@ -96,9 +136,8 @@ impl DeviceProvider for LslProvider {
         let timeout = self.config.resolve_timeout_secs;
 
         let resolved = tokio::task::spawn_blocking(move || {
-            let streams = lsl::resolve_bypred(&predicate, 0, timeout).map_err(|e| {
-                DeviceError::CommunicationError(format!("LSL resolve failed: {e}"))
-            })?;
+            let streams = resolve_lsl(&predicate, 1, timeout)
+                .map_err(|e| DeviceError::CommunicationError(format!("LSL resolve failed: {e}")))?;
 
             Ok::<_, DeviceError>(
                 streams
@@ -137,22 +176,34 @@ impl DeviceProvider for LslProvider {
         device_id: &DeviceId,
         _settings: Option<ConnectionSettings>,
     ) -> Result<Box<dyn Device>> {
-        let predicate = self.config.predicate.clone();
         let timeout = self.config.resolve_timeout_secs;
         let target_id = device_id.0.clone();
         let buffer_size = self.config.buffer_size as i32;
 
+        // Extract the stream name from the composite ID ("source_id::name")
+        // so we can use a targeted LSL predicate that returns immediately
+        // once the single matching stream is found, instead of waiting the
+        // full timeout to enumerate every stream on the network.
+        let stream_name = if let Some((_src, name)) = target_id.split_once("::") {
+            name.to_string()
+        } else {
+            target_id.clone()
+        };
+
         let (inlet, resolved) = tokio::task::spawn_blocking(move || {
-            let streams = lsl::resolve_bypred(&predicate, 0, timeout).map_err(|e| {
-                DeviceError::CommunicationError(format!("LSL resolve failed: {e}"))
-            })?;
+            // Targeted resolve: ask liblsl for one stream with this exact name.
+            // resolve_bypred returns as soon as `minimum` (1) matches are found.
+            // Use a short timeout since discover() already confirmed the stream
+            // exists — we just need the StreamInfo handle for inlet creation.
+            let pred = format!("name='{}'", stream_name);
+            let connect_timeout = timeout.min(0.5);
+            let streams = lsl::resolve_bypred(&pred, 1, connect_timeout)
+                .map_err(|e| DeviceError::CommunicationError(format!("LSL resolve failed: {e}")))?;
 
             let stream_info = streams
                 .into_iter()
                 .find(|s| {
-                    let sid = s.source_id();
-                    let sname = s.stream_name();
-                    let id = if sid.is_empty() { sname } else { sid };
+                    let id = ResolvedStream::make_id(&s.source_id(), &s.stream_name());
                     id == target_id
                 })
                 .ok_or(DeviceError::NoDeviceFound)?;
@@ -166,11 +217,11 @@ impl DeviceProvider for LslProvider {
             };
 
             let max_buflen = if buffer_size > 0 { buffer_size } else { 360 };
-            let inlet = lsl::StreamInlet::new(&stream_info, max_buflen, 0, true).map_err(
-                |e| DeviceError::ConnectionFailed {
+            let inlet = lsl::StreamInlet::new(&stream_info, max_buflen, 0, true).map_err(|e| {
+                DeviceError::ConnectionFailed {
                     reason: format!("LSL inlet creation failed: {e}"),
-                },
-            )?;
+                }
+            })?;
 
             Ok::<_, DeviceError>((super::device::SendInlet(inlet), resolved))
         })

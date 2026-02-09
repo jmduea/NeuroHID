@@ -16,6 +16,7 @@ neurohid-core = { path = "../neurohid-core" }
 neurohid-calibration = { path = "../neurohid-calibration" }
 neurohid-device = { path = "../neurohid-device" }
 neurohid-storage = { path = "../neurohid-storage" }
+neurohid-signal = { path = "../neurohid-signal" }
 
 # GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
 egui = "0.27"

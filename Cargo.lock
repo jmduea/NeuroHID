@@ -2097,6 +2097,7 @@ name = "neurohid-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
  "clap",
  "ctrlc",
  "futures",
@@ -2144,6 +2145,7 @@ dependencies = [
  "neurohid-calibration",
  "neurohid-core",
  "neurohid-device",
+ "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
  "serde",

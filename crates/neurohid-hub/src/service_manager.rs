@@ -13,12 +13,15 @@ use neurohid_types::{
 use neurohid_storage::ProfileStore;
 use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle};
 
+use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
 
 /// Manages the embedded service lifecycle.
 pub struct ServiceManager {
     handle: Option<ServiceHandle>,
     last_error: Option<String>,
+    /// Whether the data bus has been connected to this handle's broadcast receivers.
+    bus_connected: bool,
 }
 
 impl ServiceManager {
@@ -26,6 +29,7 @@ impl ServiceManager {
         Self {
             handle: None,
             last_error: None,
+            bus_connected: false,
         }
     }
 
@@ -63,6 +67,7 @@ impl ServiceManager {
                 let handle = service.spawn(shutdown_tx);
                 self.handle = Some(handle);
                 self.last_error = None;
+                self.bus_connected = false;
                 tracing::info!("Service started");
             }
             Err(e) => {
@@ -76,7 +81,36 @@ impl ServiceManager {
     pub fn stop(&mut self) {
         if let Some(handle) = self.handle.take() {
             let _ = handle.shutdown_tx.send(());
+            self.bus_connected = false;
             tracing::info!("Service stop signal sent");
+        }
+    }
+
+    /// Synchronize the data bus with the service's broadcast channels.
+    /// Connects on first call after start, disconnects when service stops.
+    pub fn sync_data_bus(&mut self, bus: &mut DataBus) {
+        if let Some(handle) = &self.handle {
+            // Check if service is still active
+            let active = handle.state.try_read()
+                .map(|s| s.active)
+                .unwrap_or(true);
+
+            if active && !self.bus_connected {
+                // Create new receivers by resubscribing from the existing ones
+                let sample_rx = handle.sample_broadcast_rx.resubscribe();
+                let feature_rx = handle.feature_broadcast_rx.resubscribe();
+                let action_rx = handle.action_broadcast_rx.resubscribe();
+                bus.connect(sample_rx, feature_rx, action_rx);
+                self.bus_connected = true;
+                tracing::info!("Data bus connected to service broadcasts");
+            } else if !active && self.bus_connected {
+                bus.disconnect();
+                self.bus_connected = false;
+                tracing::info!("Data bus disconnected (service stopped)");
+            }
+        } else if self.bus_connected {
+            bus.disconnect();
+            self.bus_connected = false;
         }
     }
 

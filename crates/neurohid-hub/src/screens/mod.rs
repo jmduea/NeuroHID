@@ -8,11 +8,13 @@ pub mod devices;
 pub mod profiles;
 pub mod calibration;
 pub mod settings;
+pub mod visualization;
 
 /// The available hub screens, selected via sidebar navigation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Screen {
     Dashboard,
+    Visualization,
     Devices,
     Profiles,
     Calibration,
@@ -23,6 +25,7 @@ impl Screen {
     pub fn label(&self) -> &'static str {
         match self {
             Screen::Dashboard => "Dashboard",
+            Screen::Visualization => "Visualization",
             Screen::Devices => "Devices",
             Screen::Profiles => "Profiles",
             Screen::Calibration => "Calibration",
@@ -33,6 +36,7 @@ impl Screen {
     pub fn all() -> &'static [Screen] {
         &[
             Screen::Dashboard,
+            Screen::Visualization,
             Screen::Devices,
             Screen::Profiles,
             Screen::Calibration,

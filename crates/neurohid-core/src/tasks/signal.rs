@@ -18,9 +18,9 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 use neurohid_types::{
     config::SignalConfig,
-    signal::{Sample, FeatureVector},
-    reward::ErrPResult,
     error::Result,
+    reward::ErrPResult,
+    signal::{FeatureVector, Sample},
 };
 
 use crate::service::ServiceState;
@@ -51,6 +51,11 @@ pub struct SignalTask {
     errp_rx: mpsc::Receiver<ErrPResult>,
     state: Arc<RwLock<ServiceState>>,
 
+    /// Broadcast channel for forwarding raw samples to hub visualization widgets.
+    sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
+    /// Broadcast channel for forwarding features to hub visualization widgets.
+    feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
+
     // Internal state for signal processing
     stream_buffers: HashMap<String, StreamBuffer>,
     sample_count: u64,
@@ -64,6 +69,8 @@ impl SignalTask {
         feature_tx: mpsc::Sender<FeatureVector>,
         errp_rx: mpsc::Receiver<ErrPResult>,
         state: Arc<RwLock<ServiceState>>,
+        sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
+        feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
     ) -> Self {
         Self {
             config,
@@ -71,6 +78,8 @@ impl SignalTask {
             feature_tx,
             errp_rx,
             state,
+            sample_broadcast_tx,
+            feature_broadcast_tx,
             stream_buffers: HashMap::new(),
             sample_count: 0,
         }
@@ -103,6 +112,11 @@ impl SignalTask {
                         Some(sample) => {
                             self.sample_count += 1;
 
+                            // Broadcast raw sample to hub visualization widgets
+                            if let Some(tx) = &self.sample_broadcast_tx {
+                                let _ = tx.send(sample.clone());
+                            }
+
                             // Route sample to the correct per-stream buffer
                             let stream_key = sample.source_id.clone()
                                 .unwrap_or_else(|| DEFAULT_STREAM_KEY.to_string());
@@ -130,6 +144,11 @@ impl SignalTask {
                                 let window = &buf.samples[window_start..];
 
                                 let features = Self::extract_features(window);
+
+                                // Broadcast features to hub visualization widgets
+                                if let Some(tx) = &self.feature_broadcast_tx {
+                                    let _ = tx.send(features.clone());
+                                }
 
                                 // Send features to IPC task
                                 if self.feature_tx.send(features).await.is_err() {
@@ -205,9 +224,7 @@ impl SignalTask {
 
         for ch in 0..num_channels {
             // Get values for this channel
-            let values: Vec<f32> = window.iter()
-                .filter_map(|s| s.get(ch))
-                .collect();
+            let values: Vec<f32> = window.iter().filter_map(|s| s.get(ch)).collect();
 
             if values.is_empty() {
                 // No data for this channel, use zeros
@@ -218,16 +235,13 @@ impl SignalTask {
             // Compute simple statistics
             let mean = values.iter().sum::<f32>() / values.len() as f32;
 
-            let variance = values.iter()
-                .map(|v| (v - mean).powi(2))
-                .sum::<f32>() / values.len() as f32;
+            let variance =
+                values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
 
             let std_dev = variance.sqrt();
 
             // Compute a simple "power" estimate (sum of squared values)
-            let power = values.iter()
-                .map(|v| v.powi(2))
-                .sum::<f32>() / values.len() as f32;
+            let power = values.iter().map(|v| v.powi(2)).sum::<f32>() / values.len() as f32;
 
             // Compute the range
             let min = values.iter().cloned().fold(f32::INFINITY, f32::min);

@@ -10,23 +10,25 @@ mod provider;
 pub use device::LslDevice;
 pub use provider::LslProvider;
 
-/// Configure liblsl to avoid multicast warnings on Windows.
+/// Prepare liblsl for use.
 ///
-/// liblsl tries to bind multicast responders on 224.0.0.1 ("All Hosts"), which
-/// fails on Windows interfaces that don't support it (Hyper-V, VPN, WSL2).
-/// This writes a config file restricting liblsl to the standard LSL multicast
-/// group and points `LSLAPICFG` at it.
+/// Currently a no-op — we rely on liblsl's built-in defaults (ResolveScope =
+/// site, standard multicast address pools). This is the same configuration
+/// LabRecorder uses successfully.
+///
+/// Previous versions wrote a custom `LSLAPICFG` config file that set
+/// `resolve_scope = link` and `listen_address = 239.255.172.215`. This was
+/// broken for two reasons:
+///
+/// 1. `listen_address` controls the TCP bind address, NOT multicast discovery
+///    addresses. The correct setting for restricting multicast would be
+///    `AddressesOverride`.
+/// 2. `resolve_scope = link` limits discovery to LinkAddresses only
+///    (255.255.255.255, 224.0.0.183) — excluding the site-scoped
+///    239.255.172.215 that most outlets announce on.
+///
+/// Any warnings liblsl emits about Hyper-V / VPN adapters failing to bind
+/// multicast are harmless and suppressed by liblsl's default log level.
 pub(crate) fn configure_lsl() {
-    let cfg_content = "\
-[multicast]
-listen_address = 239.255.172.215
-";
-
-    let path = std::env::temp_dir().join("neurohid_lsl_api.cfg");
-    if std::fs::write(&path, cfg_content).is_ok() {
-        // SAFETY: called once at startup before any LSL threads are spawned.
-        unsafe {
-            std::env::set_var("LSLAPICFG", &path);
-        }
-    }
+    // Intentionally empty — use liblsl defaults.
 }

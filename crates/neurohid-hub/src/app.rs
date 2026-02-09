@@ -6,6 +6,7 @@
 use eframe::egui;
 
 use crate::state::HubState;
+use crate::data_bus::DataBus;
 use crate::service_manager::ServiceManager;
 use crate::screens::Screen;
 use crate::screens::dashboard::DashboardScreen;
@@ -13,6 +14,7 @@ use crate::screens::devices::DevicesScreen;
 use crate::screens::profiles::ProfilesScreen;
 use crate::screens::calibration::CalibrationScreen;
 use crate::screens::settings::SettingsScreen;
+use crate::screens::visualization::VisualizationScreen;
 
 /// The main hub application.
 pub struct HubApp {
@@ -20,8 +22,10 @@ pub struct HubApp {
     current_screen: Screen,
     state: HubState,
     service_manager: ServiceManager,
+    data_bus: DataBus,
     // Screen instances
     dashboard: DashboardScreen,
+    visualization: VisualizationScreen,
     devices: DevicesScreen,
     profiles: ProfilesScreen,
     calibration: CalibrationScreen,
@@ -54,7 +58,9 @@ impl HubApp {
             current_screen: Screen::Dashboard,
             state,
             service_manager: ServiceManager::new(),
+            data_bus: DataBus::new(),
             dashboard: DashboardScreen::new(),
+            visualization: VisualizationScreen::new(),
             devices: DevicesScreen::new(),
             profiles: ProfilesScreen::new(),
             calibration: CalibrationScreen::new(),
@@ -204,6 +210,12 @@ impl eframe::App for HubApp {
         // Poll service state (non-blocking)
         self.state.service_snapshot = self.service_manager.snapshot();
 
+        // Connect/disconnect the data bus based on service state
+        self.service_manager.sync_data_bus(&mut self.data_bus);
+
+        // Poll data bus — drain broadcast channels into ring buffers
+        self.data_bus.poll();
+
         // Show sidebar and status bar (always visible)
         self.show_sidebar(ctx);
         self.show_status_bar(ctx);
@@ -233,6 +245,9 @@ impl eframe::App for HubApp {
             match self.current_screen {
                 Screen::Dashboard => {
                     self.dashboard.show(ui, &self.state, &mut self.service_manager, &self.runtime);
+                }
+                Screen::Visualization => {
+                    self.visualization.show(ui, &self.data_bus, &self.state.service_snapshot);
                 }
                 Screen::Devices => {
                     self.devices.show(ui, &self.state, &mut self.service_manager);

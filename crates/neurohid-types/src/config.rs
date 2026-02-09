@@ -90,7 +90,7 @@ pub struct LslConfig {
 }
 
 fn default_resolve_timeout() -> f64 {
-    5.0
+    1.0
 }
 
 impl Default for LslConfig {
