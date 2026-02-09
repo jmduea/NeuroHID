@@ -821,6 +821,85 @@ pub struct UserLoginInfo {
     pub last_login_time: Option<String>,
 }
 
+// ─── Subjects ───────────────────────────────────────────────────────────
+
+/// Subject info from `createSubject` / `updateSubject` / `querySubjects`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SubjectInfo {
+    /// Subject name (unique identifier within a user's account).
+    #[serde(rename = "subjectName")]
+    pub subject_name: String,
+
+    /// Date of birth (ISO 8601 date, e.g. "1990-01-15").
+    #[serde(rename = "dateOfBirth")]
+    pub date_of_birth: Option<String>,
+
+    /// Biological sex: "M", "F", or "U" (unknown).
+    pub sex: Option<String>,
+
+    /// ISO 3166-1 alpha-2 country code (e.g. "US", "GB").
+    #[serde(rename = "countryCode")]
+    pub country_code: Option<String>,
+
+    /// Full country name.
+    #[serde(rename = "countryName")]
+    pub country_name: Option<String>,
+
+    /// State or province.
+    pub state: Option<String>,
+
+    /// City name.
+    pub city: Option<String>,
+
+    /// Custom demographic attributes as key-value pairs.
+    pub attributes: Option<Vec<serde_json::Value>>,
+
+    /// Number of experiments/recordings associated with this subject.
+    #[serde(rename = "experimentsCount")]
+    pub experiments_count: Option<u32>,
+}
+
+/// A demographic attribute type from `getDemographicAttributes`.
+///
+/// Each attribute has a name and a list of valid values.
+#[derive(Debug, Clone, Deserialize)]
+pub struct DemographicAttribute {
+    /// Attribute name (e.g. "sex", "country").
+    pub name: String,
+    /// Valid values for this attribute.
+    pub value: Vec<String>,
+}
+
+// ─── Advanced BCI Types ─────────────────────────────────────────────────
+
+/// Trained signature actions from `getTrainedSignatureActions`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrainedSignatureActions {
+    /// Total number of training sessions performed.
+    #[serde(rename = "totalTimesTraining")]
+    pub total_times_training: u32,
+
+    /// Per-action training counts.
+    #[serde(rename = "trainedActions")]
+    pub trained_actions: Vec<TrainedAction>,
+}
+
+/// A single trained action within a profile.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrainedAction {
+    /// Action name (e.g. "neutral", "push", "pull").
+    pub action: String,
+    /// Number of times this action has been trained.
+    pub times: u32,
+}
+
+/// Training time info from `getTrainingTime`.
+#[derive(Debug, Clone, Deserialize)]
+pub struct TrainingTime {
+    /// Training duration in seconds.
+    pub time: f64,
+}
+
 // ─── Method Names ───────────────────────────────────────────────────────
 
 /// Known Cortex API method names.
@@ -850,8 +929,8 @@ impl Methods {
     /// Can also be used to refresh an existing token by providing the current token in the params.
     pub const GENERATE_NEW_TOKEN: &'static str = "generateNewToken";
 
-    /// Get basic information about the current user
-    pub const GET_USER_INFO: &'static str = "getUserInfo";
+    /// Get basic information about the current user.
+    pub const GET_USER_INFO: &'static str = "getUserInformation";
 
     /// Get information about the license currently used by your app
     pub const GET_LICENSE_INFO: &'static str = "getLicenseInfo";
@@ -1191,12 +1270,24 @@ mod tests {
         let json = r#"{
             "id": "session-uuid-456",
             "status": "activated",
-            "appId": "com.example.app"
+            "owner": "user123",
+            "license": "license-abc",
+            "appId": "com.example.app",
+            "started": "2024-01-15T10:30:00Z",
+            "streams": ["eeg", "dev"],
+            "recordIds": [],
+            "recording": false
         }"#;
 
         let session: SessionInfo = serde_json::from_str(json).unwrap();
         assert_eq!(session.id, "session-uuid-456");
         assert_eq!(session.status, "activated");
+        assert_eq!(session.owner, "user123");
+        assert_eq!(session.license, "license-abc");
+        assert_eq!(session.streams, vec!["eeg", "dev"]);
+        assert!(!session.recording);
+        assert!(session.stopped.is_none());
+        assert!(session.headset.is_none());
     }
 
     #[test]
@@ -1386,5 +1477,84 @@ mod tests {
         assert_eq!(TrainingStatus::Reject.as_str(), "reject");
         assert_eq!(TrainingStatus::Reset.as_str(), "reset");
         assert_eq!(TrainingStatus::Erase.as_str(), "erase");
+    }
+
+    #[test]
+    fn test_get_user_info_method_name() {
+        assert_eq!(Methods::GET_USER_INFO, "getUserInformation");
+    }
+
+    #[test]
+    fn test_deserialize_subject_info() {
+        let json = r#"{
+            "subjectName": "subject01",
+            "dateOfBirth": "1990-01-15",
+            "sex": "M",
+            "countryCode": "US",
+            "countryName": "United States",
+            "state": "California",
+            "city": "San Francisco",
+            "experimentsCount": 5
+        }"#;
+
+        let info: SubjectInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.subject_name, "subject01");
+        assert_eq!(info.date_of_birth.as_deref(), Some("1990-01-15"));
+        assert_eq!(info.sex.as_deref(), Some("M"));
+        assert_eq!(info.country_code.as_deref(), Some("US"));
+        assert_eq!(info.experiments_count, Some(5));
+        assert!(info.attributes.is_none());
+    }
+
+    #[test]
+    fn test_deserialize_subject_info_minimal() {
+        let json = r#"{"subjectName": "subject02"}"#;
+
+        let info: SubjectInfo = serde_json::from_str(json).unwrap();
+        assert_eq!(info.subject_name, "subject02");
+        assert!(info.date_of_birth.is_none());
+        assert!(info.sex.is_none());
+        assert!(info.experiments_count.is_none());
+    }
+
+    #[test]
+    fn test_deserialize_demographic_attribute() {
+        let json = r#"[
+            {"name": "sex", "value": ["M", "F", "U"]},
+            {"name": "country", "value": ["US", "GB", "DE"]}
+        ]"#;
+
+        let attrs: Vec<DemographicAttribute> = serde_json::from_str(json).unwrap();
+        assert_eq!(attrs.len(), 2);
+        assert_eq!(attrs[0].name, "sex");
+        assert_eq!(attrs[0].value, vec!["M", "F", "U"]);
+        assert_eq!(attrs[1].name, "country");
+    }
+
+    #[test]
+    fn test_deserialize_trained_signature_actions() {
+        let json = r#"{
+            "totalTimesTraining": 15,
+            "trainedActions": [
+                {"action": "neutral", "times": 8},
+                {"action": "push", "times": 4},
+                {"action": "pull", "times": 3}
+            ]
+        }"#;
+
+        let actions: TrainedSignatureActions = serde_json::from_str(json).unwrap();
+        assert_eq!(actions.total_times_training, 15);
+        assert_eq!(actions.trained_actions.len(), 3);
+        assert_eq!(actions.trained_actions[0].action, "neutral");
+        assert_eq!(actions.trained_actions[0].times, 8);
+        assert_eq!(actions.trained_actions[2].action, "pull");
+    }
+
+    #[test]
+    fn test_deserialize_training_time() {
+        let json = r#"{"time": 8.0}"#;
+
+        let tt: TrainingTime = serde_json::from_str(json).unwrap();
+        assert!((tt.time - 8.0).abs() < f64::EPSILON);
     }
 }
