@@ -3,6 +3,7 @@ name = "neurohid-platform"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 description = "Cross-platform abstractions for HID emulation and system queries"
 

@@ -3,6 +3,7 @@ name = "neurohid-device"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 description = "Device abstraction layer for biosensor devices"
 
@@ -28,7 +29,11 @@ tracing = { workspace = true }
 async-trait = "0.1"
 
 # Lab Streaming Layer
-lsl = "0.1"
+lsl = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"
+
+[features]
+default = ["lsl"]
+lsl = ["dep:lsl"]

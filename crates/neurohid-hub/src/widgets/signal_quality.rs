@@ -16,11 +16,21 @@ const CHANNEL_COLORS: &[egui::Color32] = &[
     egui::Color32::from_rgb(206, 147, 216),
 ];
 
-/// Threshold helpers — based on Emotiv Insight expectations.
-const RMS_GOOD: f32 = 100.0;     // Good if RMS < 100 µV
-const RMS_WARN: f32 = 300.0;     // Warning if RMS 100–300 µV
+/// Electrode positions on head diagram (normalized 0-100 coordinate space).
+/// Top-down view: nose at top, left ear on left.
+const ELECTRODE_POSITIONS: &[(usize, f32, f32)] = &[
+    (0, 35.0, 25.0),   // AF3 - front-left
+    (1, 65.0, 25.0),   // AF4 - front-right
+    (2, 15.0, 50.0),   // T7 - left temporal
+    (3, 85.0, 50.0),   // T8 - right temporal
+    (4, 50.0, 70.0),   // Pz - parietal center
+];
+
+/// Threshold helpers - based on Emotiv Insight expectations.
+const RMS_GOOD: f32 = 100.0;     // Good if RMS < 100 uV
+const RMS_WARN: f32 = 300.0;     // Warning if RMS 100-300 uV
 const RAILED_GOOD: f32 = 1.0;    // < 1% railed
-const RAILED_WARN: f32 = 5.0;    // 1–5% railed
+const RAILED_WARN: f32 = 5.0;    // 1-5% railed
 
 /// Number of recent samples to analyze for quality metrics.
 const WINDOW_SAMPLES: usize = 256; // ~2 seconds at 128 Hz
@@ -58,11 +68,12 @@ impl Quality {
         }
     }
 
-    fn icon(self) -> &'static str {
+    /// Get pulse frequency multiplier for animation.
+    fn pulse_speed(self) -> f32 {
         match self {
-            Quality::Good => "●",
-            Quality::Warning => "●",
-            Quality::Bad => "●",
+            Quality::Good => 0.0,    // No pulse, steady
+            Quality::Warning => 2.0, // Slow pulse
+            Quality::Bad => 5.0,     // Fast pulse
         }
     }
 }
@@ -72,7 +83,7 @@ pub struct SignalQualityWidget {
     smoothing: f32,
     /// Cached channel metrics.
     cached_metrics: Vec<ChannelMetrics>,
-    /// Rail threshold in µV (values above this are "railed").
+    /// Rail threshold in uV (values above this are "railed").
     rail_threshold: f32,
 }
 
@@ -90,7 +101,7 @@ impl SignalQualityWidget {
         ctx: &WidgetContext<'_>,
         channel: usize,
     ) -> ChannelMetrics {
-        let samples = &ctx.bus.samples;
+        let samples = ctx.samples_for(WidgetId::SignalQuality);
         let start = if samples.len() > WINDOW_SAMPLES {
             samples.len() - WINDOW_SAMPLES
         } else {
@@ -147,6 +158,214 @@ impl SignalQualityWidget {
             mean,
         }
     }
+
+    /// Draw animated quality indicator dot.
+    fn draw_quality_dot(
+        &self,
+        painter: &egui::Painter,
+        center: egui::Pos2,
+        quality: Quality,
+        time: f64,
+        base_radius: f32,
+    ) {
+        let color = quality.color();
+        let pulse_speed = quality.pulse_speed();
+
+        let radius = if pulse_speed > 0.0 {
+            // Pulsing animation: oscillate size
+            let phase = (time * pulse_speed as f64).sin() as f32;
+            base_radius * (1.0 + 0.3 * phase)
+        } else {
+            base_radius
+        };
+
+        // Draw outer glow
+        let glow_color = egui::Color32::from_rgba_unmultiplied(
+            color.r(), color.g(), color.b(), 40
+        );
+        painter.circle_filled(center, radius + 2.0, glow_color);
+
+        // Draw main dot
+        painter.circle_filled(center, radius, color);
+
+        // Draw bright center highlight
+        let highlight = egui::Color32::from_rgba_unmultiplied(255, 255, 255, 80);
+        painter.circle_filled(
+            egui::pos2(center.x - radius * 0.2, center.y - radius * 0.2),
+            radius * 0.3,
+            highlight,
+        );
+    }
+
+    /// Draw the head diagram with electrode positions.
+    fn draw_head_diagram(
+        &self,
+        ui: &mut egui::Ui,
+        rect: egui::Rect,
+        time: f64,
+    ) {
+        let painter = ui.painter_at(rect);
+
+        // Calculate scaling to fit in rect
+        let size = rect.width().min(rect.height());
+        let center = rect.center();
+        let scale = size / 100.0;
+
+        // Head outline (circle)
+        let head_radius = 40.0 * scale;
+        painter.circle_stroke(
+            center,
+            head_radius,
+            egui::Stroke::new(2.0, egui::Color32::from_gray(100)),
+        );
+
+        // Nose indicator (triangle at top)
+        let nose_tip = egui::pos2(center.x, center.y - head_radius - 8.0 * scale);
+        let nose_left = egui::pos2(center.x - 6.0 * scale, center.y - head_radius + 2.0 * scale);
+        let nose_right = egui::pos2(center.x + 6.0 * scale, center.y - head_radius + 2.0 * scale);
+        painter.line_segment([nose_left, nose_tip], egui::Stroke::new(2.0, egui::Color32::from_gray(100)));
+        painter.line_segment([nose_right, nose_tip], egui::Stroke::new(2.0, egui::Color32::from_gray(100)));
+
+        // Ear indicators (arcs on sides)
+        // Left ear
+        let left_ear_center = egui::pos2(center.x - head_radius - 4.0 * scale, center.y);
+        painter.circle_stroke(
+            left_ear_center,
+            6.0 * scale,
+            egui::Stroke::new(1.5, egui::Color32::from_gray(80)),
+        );
+
+        // Right ear
+        let right_ear_center = egui::pos2(center.x + head_radius + 4.0 * scale, center.y);
+        painter.circle_stroke(
+            right_ear_center,
+            6.0 * scale,
+            egui::Stroke::new(1.5, egui::Color32::from_gray(80)),
+        );
+
+        // Draw electrodes at their positions
+        for &(ch_idx, norm_x, norm_y) in ELECTRODE_POSITIONS {
+            if ch_idx >= self.cached_metrics.len() {
+                continue;
+            }
+
+            // Convert normalized coordinates to screen position
+            // norm_x/norm_y are in 0-100 space, centered at 50,50
+            let x = center.x + (norm_x - 50.0) * scale;
+            let y = center.y + (norm_y - 50.0) * scale;
+            let pos = egui::pos2(x, y);
+
+            let quality = self.cached_metrics[ch_idx].quality;
+
+            // Draw electrode dot
+            self.draw_quality_dot(&painter, pos, quality, time, 6.0);
+
+            // Draw channel label
+            painter.text(
+                egui::pos2(pos.x, pos.y + 10.0),
+                egui::Align2::CENTER_TOP,
+                CHANNEL_NAMES[ch_idx],
+                egui::FontId::proportional(8.0),
+                egui::Color32::from_gray(150),
+            );
+        }
+    }
+
+    /// Draw improved quality bar with gradient and segment markers.
+    fn draw_quality_bar(
+        &self,
+        painter: &egui::Painter,
+        rect: egui::Rect,
+        fill_frac: f32,
+        quality: Quality,
+    ) {
+        let bar_height = 14.0;
+        let bar_rect = egui::Rect::from_min_size(
+            egui::pos2(rect.left(), rect.center().y - bar_height / 2.0),
+            egui::vec2(rect.width(), bar_height),
+        );
+
+        // Background
+        painter.rect_filled(bar_rect, 4.0, egui::Color32::from_gray(40));
+
+        // Segment markers at 25%, 50%, 75%
+        for pct in [0.25, 0.50, 0.75] {
+            let x = bar_rect.left() + bar_rect.width() * pct;
+            painter.line_segment(
+                [egui::pos2(x, bar_rect.top()), egui::pos2(x, bar_rect.bottom())],
+                egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+            );
+        }
+
+        // Fill with gradient
+        let fill_width = bar_rect.width() * fill_frac.clamp(0.0, 1.0);
+        if fill_width > 0.0 {
+            let fill_rect = egui::Rect::from_min_size(
+                bar_rect.min,
+                egui::vec2(fill_width, bar_height),
+            );
+
+            let base_color = quality.color();
+            let dark_color = egui::Color32::from_rgb(
+                (base_color.r() as f32 * 0.6) as u8,
+                (base_color.g() as f32 * 0.6) as u8,
+                (base_color.b() as f32 * 0.6) as u8,
+            );
+
+            // Draw bottom half (darker)
+            let bottom_half = egui::Rect::from_min_max(
+                egui::pos2(fill_rect.left(), fill_rect.center().y),
+                fill_rect.max,
+            );
+            painter.rect_filled(
+                bottom_half,
+                egui::Rounding { nw: 0.0, ne: 0.0, sw: 4.0, se: 0.0 },
+                dark_color,
+            );
+
+            // Draw top half (lighter)
+            let top_half = egui::Rect::from_min_max(
+                fill_rect.min,
+                egui::pos2(fill_rect.right(), fill_rect.center().y),
+            );
+            painter.rect_filled(
+                top_half,
+                egui::Rounding { nw: 4.0, ne: 0.0, sw: 0.0, se: 0.0 },
+                base_color,
+            );
+
+            // Show percentage text inside bar if wide enough
+            if fill_width > 30.0 {
+                painter.text(
+                    fill_rect.center(),
+                    egui::Align2::CENTER_CENTER,
+                    format!("{:.0}%", fill_frac * 100.0),
+                    egui::FontId::proportional(9.0),
+                    egui::Color32::from_gray(240),
+                );
+            }
+        }
+
+        // Border
+        painter.rect_stroke(bar_rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_gray(60)));
+    }
+
+    /// Get contextual tip based on overall quality.
+    fn get_quality_tip(&self) -> &'static str {
+        let has_bad = self.cached_metrics.iter().any(|m| m.quality == Quality::Bad);
+        let has_warning = self.cached_metrics.iter().any(|m| m.quality == Quality::Warning);
+        let all_good = self.cached_metrics.iter().all(|m| m.quality == Quality::Good);
+
+        if all_good {
+            "Signal quality is excellent"
+        } else if has_bad {
+            "Warning: Check electrode contact. Re-wet saline pads if needed."
+        } else if has_warning {
+            "Tip: Press electrodes firmly against scalp"
+        } else {
+            ""
+        }
+    }
 }
 
 impl Widget for SignalQualityWidget {
@@ -159,14 +378,17 @@ impl Widget for SignalQualityWidget {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
-        if ctx.bus.samples.len() < 32 {
+        // Get animation time
+        let time = ui.ctx().input(|i| i.time);
+
+        if ctx.samples_for(WidgetId::SignalQuality).len() < 32 {
             ui.centered_and_justified(|ui| {
                 ui.label(egui::RichText::new("Waiting for data...").weak());
             });
             return;
         }
 
-        let num_channels = ctx.bus.samples.back()
+        let num_channels = ctx.samples_for(WidgetId::SignalQuality).back()
             .map(|s| s.channel_count())
             .unwrap_or(5)
             .min(5);
@@ -198,12 +420,17 @@ impl Widget for SignalQualityWidget {
             Quality::Warning
         };
 
+        // --- Header with animated overall indicator ---
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(overall.icon()).color(overall.color()).size(16.0));
+            // Animated overall quality dot
+            let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+            let painter = ui.painter_at(dot_rect);
+            self.draw_quality_dot(&painter, dot_rect.center(), overall, time, 6.0);
+
             ui.label(egui::RichText::new(format!("Overall: {}", overall.label())).strong());
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 ui.label(
-                    egui::RichText::new(format!("{} channels • {} Hz", num_channels, 128))
+                    egui::RichText::new(format!("{} channels | {} Hz", num_channels, 128))
                         .small()
                         .weak(),
                 );
@@ -212,56 +439,133 @@ impl Widget for SignalQualityWidget {
 
         ui.separator();
 
-        // Channel quality table
+        // --- Head Diagram ---
+        let head_size = 120.0;
+        let (head_rect, _) = ui.allocate_exact_size(
+            egui::vec2(ui.available_width(), head_size),
+            egui::Sense::hover(),
+        );
+        self.draw_head_diagram(ui, head_rect, time);
+
+        ui.add_space(4.0);
+
+        // --- Channel quality table with alternating rows ---
         egui::Grid::new("signal_quality_grid")
             .num_columns(6)
-            .spacing([12.0, 6.0])
-            .striped(true)
+            .spacing([12.0, 4.0])
+            .min_col_width(40.0)
             .show(ui, |ui| {
-                // Header
+                // Header row
                 ui.label(egui::RichText::new("Ch").strong());
                 ui.label(egui::RichText::new("Status").strong());
-                ui.label(egui::RichText::new("RMS (µV)").strong());
-                ui.label(egui::RichText::new("P-P (µV)").strong());
+                ui.label(egui::RichText::new("RMS (uV)").strong());
+                ui.label(egui::RichText::new("P-P (uV)").strong());
                 ui.label(egui::RichText::new("Railed %").strong());
-                ui.label(egui::RichText::new("DC (µV)").strong());
+                ui.label(egui::RichText::new("DC (uV)").strong());
                 ui.end_row();
 
                 for ch in 0..num_channels {
                     let m = &self.cached_metrics[ch];
                     let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
+                    let row_idx = ch;
 
-                    // Channel name
-                    ui.label(egui::RichText::new(CHANNEL_NAMES[ch]).color(color));
+                    // Alternating row background
+                    let row_bg = if row_idx % 2 == 0 {
+                        egui::Color32::from_gray(25)
+                    } else {
+                        egui::Color32::from_gray(30)
+                    };
 
-                    // Quality indicator
+                    // Channel name with background
+                    ui.scope(|ui| {
+                        let rect = ui.available_rect_before_wrap();
+                        ui.painter().rect_filled(
+                            egui::Rect::from_min_size(rect.min, egui::vec2(ui.available_width(), 18.0)),
+                            0.0,
+                            row_bg,
+                        );
+                        ui.label(egui::RichText::new(CHANNEL_NAMES[ch]).color(color));
+                    });
+
+                    // Quality indicator with animated dot
                     ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(m.quality.icon()).color(m.quality.color()));
+                        let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                        let painter = ui.painter_at(dot_rect);
+                        self.draw_quality_dot(&painter, dot_rect.center(), m.quality, time, 4.0);
                         ui.label(egui::RichText::new(m.quality.label()).color(m.quality.color()));
                     });
 
-                    // RMS
-                    let rms_color = if m.rms < RMS_GOOD {
-                        egui::Color32::from_gray(200)
-                    } else if m.rms < RMS_WARN {
-                        egui::Color32::from_rgb(255, 193, 7)
-                    } else {
-                        egui::Color32::from_rgb(244, 67, 54)
-                    };
-                    ui.label(egui::RichText::new(format!("{:.1}", m.rms)).color(rms_color));
+                    // RMS with proportional bar fill
+                    ui.scope(|ui| {
+                        let available = ui.available_rect_before_wrap();
+                        let bar_rect = egui::Rect::from_min_size(available.min, egui::vec2(60.0, 16.0));
+                        let painter = ui.painter();
+
+                        // Background bar
+                        painter.rect_filled(bar_rect, 2.0, egui::Color32::from_gray(35));
+
+                        // Fill based on RMS (inverted: lower is better)
+                        let fill_frac = (m.rms / RMS_WARN).min(1.0);
+                        let rms_color = if m.rms < RMS_GOOD {
+                            Quality::Good.color()
+                        } else if m.rms < RMS_WARN {
+                            Quality::Warning.color()
+                        } else {
+                            Quality::Bad.color()
+                        };
+                        let fill_rect = egui::Rect::from_min_size(
+                            bar_rect.min,
+                            egui::vec2(bar_rect.width() * fill_frac, bar_rect.height()),
+                        );
+                        painter.rect_filled(fill_rect, 2.0, rms_color.gamma_multiply(0.4));
+
+                        // Text on top
+                        painter.text(
+                            bar_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("{:.1}", m.rms),
+                            egui::FontId::proportional(10.0),
+                            egui::Color32::from_gray(220),
+                        );
+
+                        ui.allocate_exact_size(egui::vec2(60.0, 16.0), egui::Sense::hover());
+                    });
 
                     // Peak-to-peak
                     ui.label(format!("{:.0}", m.peak_to_peak));
 
-                    // Railed %
-                    let railed_color = if m.railed_pct < RAILED_GOOD {
-                        egui::Color32::from_gray(200)
-                    } else if m.railed_pct < RAILED_WARN {
-                        egui::Color32::from_rgb(255, 193, 7)
-                    } else {
-                        egui::Color32::from_rgb(244, 67, 54)
-                    };
-                    ui.label(egui::RichText::new(format!("{:.2}%", m.railed_pct)).color(railed_color));
+                    // Railed % with bar fill
+                    ui.scope(|ui| {
+                        let available = ui.available_rect_before_wrap();
+                        let bar_rect = egui::Rect::from_min_size(available.min, egui::vec2(55.0, 16.0));
+                        let painter = ui.painter();
+
+                        painter.rect_filled(bar_rect, 2.0, egui::Color32::from_gray(35));
+
+                        let fill_frac = (m.railed_pct / 10.0).min(1.0);
+                        let railed_color = if m.railed_pct < RAILED_GOOD {
+                            Quality::Good.color()
+                        } else if m.railed_pct < RAILED_WARN {
+                            Quality::Warning.color()
+                        } else {
+                            Quality::Bad.color()
+                        };
+                        let fill_rect = egui::Rect::from_min_size(
+                            bar_rect.min,
+                            egui::vec2(bar_rect.width() * fill_frac, bar_rect.height()),
+                        );
+                        painter.rect_filled(fill_rect, 2.0, railed_color.gamma_multiply(0.4));
+
+                        painter.text(
+                            bar_rect.center(),
+                            egui::Align2::CENTER_CENTER,
+                            format!("{:.2}%", m.railed_pct),
+                            egui::FontId::proportional(10.0),
+                            egui::Color32::from_gray(220),
+                        );
+
+                        ui.allocate_exact_size(egui::vec2(55.0, 16.0), egui::Sense::hover());
+                    });
 
                     // DC offset (mean)
                     ui.label(format!("{:.1}", m.mean));
@@ -270,9 +574,9 @@ impl Widget for SignalQualityWidget {
                 }
             });
 
-        // Visual quality bars at the bottom
+        // --- Visual quality bars at the bottom ---
         ui.add_space(8.0);
-        let available_width = ui.available_width();
+        ui.label(egui::RichText::new("Quality Overview").small().weak());
 
         for ch in 0..num_channels {
             let m = &self.cached_metrics[ch];
@@ -281,25 +585,36 @@ impl Widget for SignalQualityWidget {
                     .color(CHANNEL_COLORS[ch % CHANNEL_COLORS.len()])
                     .monospace());
 
-                let bar_width = (available_width - 60.0).max(40.0);
+                let bar_width = (ui.available_width() - 10.0).max(60.0);
                 let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(bar_width, 10.0),
+                    egui::vec2(bar_width, 18.0),
                     egui::Sense::hover(),
                 );
 
-                let painter = ui.painter_at(rect);
-
-                // Background
-                painter.rect_filled(rect, 4.0, egui::Color32::from_gray(40));
-
                 // Fill based on inverse RMS (lower = better = longer bar)
                 let fill_frac = (1.0 - (m.rms / RMS_WARN).min(1.0)).max(0.0);
-                let fill_rect = egui::Rect::from_min_max(
-                    rect.min,
-                    egui::pos2(rect.left() + rect.width() * fill_frac, rect.max.y),
-                );
-                painter.rect_filled(fill_rect, 4.0, m.quality.color());
+                let painter = ui.painter_at(rect);
+                self.draw_quality_bar(&painter, rect, fill_frac, m.quality);
             });
         }
+
+        // --- Contextual tip ---
+        ui.add_space(8.0);
+        let tip = self.get_quality_tip();
+        if !tip.is_empty() {
+            let tip_color = match overall {
+                Quality::Good => egui::Color32::from_rgb(76, 175, 80),
+                Quality::Warning => egui::Color32::from_rgb(255, 193, 7),
+                Quality::Bad => egui::Color32::from_rgb(244, 67, 54),
+            };
+
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("*").color(tip_color));
+                ui.label(egui::RichText::new(tip).color(tip_color).italics());
+            });
+        }
+
+        // Request repaint for animations
+        ui.ctx().request_repaint();
     }
 }

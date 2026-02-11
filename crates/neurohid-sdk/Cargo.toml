@@ -1,0 +1,42 @@
+[package]
+name = "neurohid-sdk"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = true
+
+description = "SDK for NeuroHID — feature-gated access to brain-computer interface components"
+keywords = ["bci", "eeg", "brain-computer-interface", "neurohid", "sdk"]
+categories = ["science", "accessibility"]
+readme = "README.md"
+repository = "https://github.com/jmduea/neurohid"
+
+[features]
+default = ["types"]
+types = ["dep:neurohid-types"]
+signal = ["dep:neurohid-signal"]
+device = ["dep:neurohid-device"]
+device-lsl = ["device", "neurohid-device/lsl"]
+platform = ["dep:neurohid-platform"]
+storage = ["dep:neurohid-storage"]
+ipc = ["dep:neurohid-ipc"]
+calibration = ["dep:neurohid-calibration"]
+full = [
+    "types",
+    "signal",
+    "device",
+    "device-lsl",
+    "platform",
+    "storage",
+    "ipc",
+    "calibration",
+]
+
+[dependencies]
+neurohid-types = { path = "../neurohid-types", optional = true }
+neurohid-signal = { path = "../neurohid-signal", optional = true }
+neurohid-device = { path = "../neurohid-device", optional = true }
+neurohid-platform = { path = "../neurohid-platform", optional = true }
+neurohid-storage = { path = "../neurohid-storage", optional = true }
+neurohid-ipc = { path = "../neurohid-ipc", optional = true }
+neurohid-calibration = { path = "../neurohid-calibration", optional = true }

@@ -3,6 +3,7 @@ name = "neurohid-ipc"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 description = "IPC layer for communication between Rust core and Python ML layer"
 

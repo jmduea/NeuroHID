@@ -3,12 +3,9 @@ name = "neurohid-hub"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 description = "NeuroHID Hub - unified GUI for device management, calibration, and service control"
-
-[[bin]]
-name = "neurohid"
-path = "src/main.rs"
 
 [dependencies]
 neurohid-types = { path = "../neurohid-types" }
@@ -19,7 +16,7 @@ neurohid-storage = { path = "../neurohid-storage" }
 neurohid-signal = { path = "../neurohid-signal" }
 
 # GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
-egui = "0.27"
+egui = { workspace = true }
 
 # Async runtime
 tokio = { workspace = true }
@@ -40,14 +37,7 @@ chrono = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
 signal-hook = "0.3"
-eframe = { version = "0.27", default-features = false, features = [
-    "default_fonts",
-    "glow",
-    "x11",
-] }
+eframe = { workspace = true, features = ["default_fonts", "glow", "x11"] }
 
 [target.'cfg(windows)'.dependencies]
-eframe = { version = "0.27", default-features = false, features = [
-    "default_fonts",
-    "glow",
-] }
+eframe = { workspace = true, features = ["default_fonts", "glow"] }

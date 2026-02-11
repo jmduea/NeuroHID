@@ -147,6 +147,7 @@ impl Device for LslDevice {
             use lsl::Pullable;
 
             let mut sequence: u64 = 0;
+            let mut consecutive_errors: u64 = 0;
 
             while streaming.load(Ordering::Relaxed) {
                 // Pull with a short timeout so we can check the streaming flag.
@@ -160,7 +161,26 @@ impl Device for LslDevice {
                             continue;
                         }
 
+                        // Reset error counter on successful pull
+                        if consecutive_errors > 0 {
+                            tracing::info!(
+                                "LSL pull recovered after {} consecutive errors",
+                                consecutive_errors
+                            );
+                            consecutive_errors = 0;
+                        }
+
                         sequence += 1;
+
+                        // Log the very first sample for diagnostics
+                        if sequence == 1 {
+                            tracing::info!(
+                                "LSL: first sample pulled from '{}' ({} channels, ts={:.3})",
+                                device_id_for_thread,
+                                data.len(),
+                                timestamp
+                            );
+                        }
 
                         // LSL timestamps are seconds since an arbitrary epoch.
                         // Convert to microseconds for consistency with our Sample type.
@@ -183,12 +203,29 @@ impl Device for LslDevice {
                             break;
                         }
                     }
-                    Err(_) => {
-                        // Timeout or transient error — keep trying
+                    Err(e) => {
+                        consecutive_errors += 1;
+                        // Log the first error, then periodically to avoid flooding.
+                        if consecutive_errors == 1 {
+                            tracing::warn!(
+                                "LSL pull_sample error on '{}': {:?}",
+                                device_id_for_thread, e
+                            );
+                        } else if consecutive_errors % 50 == 0 {
+                            tracing::warn!(
+                                "LSL pull_sample: {} consecutive errors on '{}' (latest: {:?})",
+                                consecutive_errors, device_id_for_thread, e
+                            );
+                        }
                         continue;
                     }
                 }
             }
+
+            tracing::info!(
+                "LSL pull thread exiting for '{}' (pulled {} samples)",
+                device_id_for_thread, sequence
+            );
         });
 
         // Convert mpsc receiver to a Stream
@@ -219,5 +256,14 @@ impl Device for LslDevice {
             let status = rx.borrow().clone();
             Some((status, rx))
         }))
+    }
+}
+
+impl Drop for LslDevice {
+    fn drop(&mut self) {
+        // Ensure the spawn_blocking pull thread exits even if graceful
+        // shutdown didn't complete (e.g., runtime dropped without awaiting
+        // the device task). The thread checks this flag every 0.2s.
+        self.streaming.store(false, Ordering::SeqCst);
     }
 }

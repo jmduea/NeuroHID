@@ -36,11 +36,8 @@ struct Args {
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    // Parse command-line arguments
     let args = Args::parse();
 
-    // Initialize logging. The log level can be controlled via the RUST_LOG
-    // environment variable or the --verbose flag.
     let log_level = if args.verbose { "debug" } else { "info" };
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
@@ -50,24 +47,17 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting NeuroHID service");
 
-    // Initialize storage system. This sets up the data directories and ensures
-    // we can access the platform keychain for encryption keys.
     let (profile_store, config_store) = neurohid_storage::initialize().await
         .map_err(|e| anyhow::anyhow!("Failed to initialize storage: {}", e))?;
 
-    // Load configuration
     let config = config_store.load().await
         .map_err(|e| anyhow::anyhow!("Failed to load configuration: {}", e))?;
 
     tracing::info!("Configuration loaded");
 
-    // Determine which profile to use. If a profile was specified on the command
-    // line, use that. Otherwise, try to find a default profile. The service can
-    // run without a profile (for stream discovery and monitoring).
     let profile_id = if let Some(profile_name) = &args.profile {
         Some(neurohid_types::profile::ProfileId::new(profile_name))
     } else {
-        // Try to find the default profile
         let profiles = profile_store.list_profiles().await
             .map_err(|e| anyhow::anyhow!("Failed to list profiles: {}", e))?;
 
@@ -75,7 +65,6 @@ async fn main() -> anyhow::Result<()> {
             tracing::warn!("No profiles found. Service will run without a profile (stream discovery only).");
             None
         } else {
-            // Use the first profile (in the future, we might have a "default" flag)
             Some(profiles[0].id.clone())
         }
     };
@@ -83,7 +72,6 @@ async fn main() -> anyhow::Result<()> {
     if let Some(ref pid) = profile_id {
         tracing::info!("Using profile: {}", pid);
 
-        // Check calibration state (warn only, don't block startup)
         match profile_store.get_metadata(pid).await {
             Ok(metadata) => {
                 if !metadata.calibration_state.is_ready() {
@@ -102,8 +90,6 @@ async fn main() -> anyhow::Result<()> {
         tracing::info!("Running without a profile");
     }
 
-    // Set up graceful shutdown handling. When the user presses Ctrl+C or the
-    // system sends a termination signal, we want to clean up properly.
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
     let shutdown_tx_clone = shutdown_tx.clone();
 
@@ -112,8 +98,6 @@ async fn main() -> anyhow::Result<()> {
         let _ = shutdown_tx_clone.send(());
     })?;
 
-    // Create the service and run it. The service manages all the concurrent
-    // tasks and coordinates between them.
     let service = NeuroHidService::new(
         config,
         Some(profile_store),
@@ -123,7 +107,6 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Service initialized, starting main loop");
 
-    // Run the service until shutdown is requested
     service.run().await?;
 
     tracing::info!("NeuroHID service stopped");

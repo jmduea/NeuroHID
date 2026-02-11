@@ -4,11 +4,12 @@
 //! The bus collects samples, features, and actions from the service's broadcast
 //! channels and maintains ring-buffer snapshots that widgets read each frame.
 
-use std::collections::VecDeque;
+use std::collections::{HashMap, VecDeque};
 use tokio::sync::broadcast;
 
 use neurohid_types::{
     action::Action,
+    device::DiscoveredStream,
     signal::{FeatureVector, Sample},
 };
 
@@ -26,12 +27,19 @@ pub struct DataBus {
     feature_rx: Option<broadcast::Receiver<FeatureVector>>,
     action_rx: Option<broadcast::Receiver<Action>>,
 
-    /// Ring buffer of recent raw samples.
+    /// Ring buffer of recent raw samples (all streams, for backward compat).
     pub samples: VecDeque<Sample>,
+    /// Per-source ring buffers keyed by `Sample::source_id`.
+    /// Samples without a `source_id` are stored under the empty-string key.
+    pub samples_by_source: HashMap<String, VecDeque<Sample>>,
     /// Ring buffer of recent feature vectors.
     pub features: VecDeque<FeatureVector>,
     /// Ring buffer of recent decoded actions.
     pub actions: VecDeque<Action>,
+
+    /// Monotonically increasing counter of total samples received.
+    /// Unlike `samples.len()`, this never saturates at MAX_SAMPLES.
+    pub total_samples_received: u64,
 }
 
 impl DataBus {
@@ -42,8 +50,10 @@ impl DataBus {
             feature_rx: None,
             action_rx: None,
             samples: VecDeque::with_capacity(MAX_SAMPLES),
+            samples_by_source: HashMap::new(),
             features: VecDeque::with_capacity(MAX_FEATURES),
             actions: VecDeque::with_capacity(MAX_ACTIONS),
+            total_samples_received: 0,
         }
     }
 
@@ -75,10 +85,27 @@ impl DataBus {
             loop {
                 match rx.try_recv() {
                     Ok(sample) => {
+                        // Route to per-source buffer.
+                        let key = sample.source_id.clone().unwrap_or_default();
+                        let per_source = self
+                            .samples_by_source
+                            .entry(key)
+                            .or_insert_with(|| VecDeque::with_capacity(MAX_SAMPLES));
+                        if per_source.len() >= MAX_SAMPLES {
+                            per_source.pop_front();
+                        }
+                        per_source.push_back(sample.clone());
+
+                        // Also keep the flat buffer for backward compat.
                         if self.samples.len() >= MAX_SAMPLES {
                             self.samples.pop_front();
                         }
                         self.samples.push_back(sample);
+                        self.total_samples_received += 1;
+                        // Log receipt of the very first sample for diagnostics.
+                        if self.total_samples_received == 1 {
+                            tracing::info!("DataBus: first sample received");
+                        }
                     }
                     Err(broadcast::error::TryRecvError::Lagged(n)) => {
                         tracing::trace!("Sample bus lagged by {} messages", n);
@@ -125,5 +152,40 @@ impl DataBus {
     /// Whether any broadcast receiver is connected.
     pub fn is_connected(&self) -> bool {
         self.sample_rx.is_some()
+    }
+
+    /// Get samples belonging to streams whose `stream_type` matches one of
+    /// the given types. Uses the `DiscoveredStream` list to resolve
+    /// `source_id` → `stream_type`.
+    ///
+    /// Returns a reference to the per-source ring buffer if exactly one
+    /// matching stream is found, which is the common case and avoids
+    /// any allocation. When multiple streams of the same type exist
+    /// (rare), the first match is returned.
+    ///
+    /// Falls back to the flat `samples` buffer when:
+    ///   - No discovered streams are available (pre-connection).
+    ///   - No per-source buffers have been populated yet.
+    pub fn samples_for_type<'a>(
+        &'a self,
+        stream_types: &[&str],
+        streams: &[DiscoveredStream],
+    ) -> &'a VecDeque<Sample> {
+        // Find the first DiscoveredStream whose stream_type matches and
+        // that has data in the per-source map.
+        for ds in streams {
+            if stream_types
+                .iter()
+                .any(|st| ds.stream_type.eq_ignore_ascii_case(st))
+            {
+                if let Some(buf) = self.samples_by_source.get(&ds.id) {
+                    if !buf.is_empty() {
+                        return buf;
+                    }
+                }
+            }
+        }
+        // Fallback: return the flat buffer (backward compat / single-stream).
+        &self.samples
     }
 }

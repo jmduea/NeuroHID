@@ -3,6 +3,7 @@ name = "neurohid-types"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 description = "Core type definitions shared across all NeuroHID components"
 

@@ -286,7 +286,7 @@ impl NeuroHidService {
         let device_config = self.config.device.clone();
         let cal_tx_for_device = calibration_sample_tx.clone();
         let cal_flag_for_device = calibration_flag.as_ref().map(Arc::clone);
-        let device_handle = tokio::spawn(async move {
+        let mut device_handle = tokio::spawn(async move {
             tracing::info!("Device task starting");
             let task = DeviceTask::new(
                 device_config,
@@ -302,7 +302,7 @@ impl NeuroHidService {
         // Spawn the signal processing task. This reads samples, applies filters,
         // extracts features, and sends them to the IPC channel.
         let signal_config = self.config.signal.clone();
-        let signal_handle = tokio::spawn(async move {
+        let mut signal_handle = tokio::spawn(async move {
             tracing::info!("Signal task starting");
             let task = SignalTask::new(
                 signal_config,
@@ -319,7 +319,7 @@ impl NeuroHidService {
         // Spawn the IPC task. This manages communication with the Python ML
         // process, sending features and receiving actions/ErrP results.
         let ipc_config = self.config.service.clone();
-        let ipc_handle = tokio::spawn(async move {
+        let mut ipc_handle = tokio::spawn(async move {
             tracing::info!("IPC task starting");
             let task = IpcTask::new(ipc_config, feature_rx, action_tx, errp_tx);
             task.run(shutdown_ipc).await
@@ -329,7 +329,7 @@ impl NeuroHidService {
         // as HID events (mouse movements, clicks, keystrokes).
         let action_config = self.config.action.clone();
         let cal_flag_for_action = calibration_flag.as_ref().map(Arc::clone);
-        let action_handle = tokio::spawn(async move {
+        let mut action_handle = tokio::spawn(async move {
             tracing::info!("Action task starting");
             let task = ActionTask::new(
                 action_config,
@@ -351,87 +351,142 @@ impl NeuroHidService {
 
         tracing::info!("All tasks started, service is active");
 
-        // Wait for shutdown signal or task failure.
-        // tokio::select! lets us wait for multiple futures simultaneously.
-        // If a task fails, we capture the error so the GUI can display it.
+        // Wait for shutdown signal or CRITICAL task failure.
+        //
+        // Tasks are classified into two tiers:
+        //   - Critical (device, signal): these form the data pipeline. If either
+        //     fails the service cannot function and must shut down.
+        //   - Non-critical (ipc, action): failures here degrade functionality
+        //     (e.g. no HID output) but the data pipeline keeps flowing so the
+        //     console and visualizations continue to work.
+        //
+        // We use a loop + select with guards so that non-critical task exits
+        // are recorded as warnings without breaking out of the loop.
         let mut task_failure: Option<(String, String)> = None;
+        let mut ipc_done = false;
+        let mut action_done = false;
 
-        tokio::select! {
-            // Shutdown signal received (user-initiated, no error)
-            _ = self.shutdown_rx.recv() => {
-                tracing::info!("Shutdown signal received, stopping tasks");
-            }
-
-            // Device task finished (either error or clean shutdown)
-            result = device_handle => {
-                match result {
-                    Ok(Ok(())) => tracing::info!("Device task completed"),
-                    Ok(Err(e)) => {
-                        tracing::error!("Device task failed: {}", e);
-                        task_failure = Some(("device".into(), e.to_string()));
-                    }
-                    Err(e) => {
-                        tracing::error!("Device task panicked: {}", e);
-                        task_failure = Some(("device".into(), e.to_string()));
-                    }
+        loop {
+            tokio::select! {
+                // Shutdown signal received (user-initiated, no error)
+                _ = self.shutdown_rx.recv() => {
+                    tracing::info!("Shutdown signal received, stopping tasks");
+                    break;
                 }
-            }
 
-            // Signal task finished
-            result = signal_handle => {
-                match result {
-                    Ok(Ok(())) => tracing::info!("Signal task completed"),
-                    Ok(Err(e)) => {
-                        tracing::error!("Signal task failed: {}", e);
-                        task_failure = Some(("signal".into(), e.to_string()));
+                // ── Critical tasks ──────────────────────────────────────
+
+                // Device task finished (either error or clean shutdown)
+                result = &mut device_handle => {
+                    match result {
+                        Ok(Ok(())) => tracing::info!("Device task completed"),
+                        Ok(Err(e)) => {
+                            tracing::error!("Device task failed: {}", e);
+                            task_failure = Some(("device".into(), e.to_string()));
+                        }
+                        Err(e) => {
+                            tracing::error!("Device task panicked: {}", e);
+                            task_failure = Some(("device".into(), e.to_string()));
+                        }
                     }
-                    Err(e) => {
-                        tracing::error!("Signal task panicked: {}", e);
-                        task_failure = Some(("signal".into(), e.to_string()));
-                    }
+                    break;
                 }
-            }
 
-            // IPC task finished
-            result = ipc_handle => {
-                match result {
-                    Ok(Ok(())) => tracing::info!("IPC task completed"),
-                    Ok(Err(e)) => {
-                        tracing::error!("IPC task failed: {}", e);
-                        task_failure = Some(("ipc".into(), e.to_string()));
+                // Signal task finished
+                result = &mut signal_handle => {
+                    match result {
+                        Ok(Ok(())) => tracing::info!("Signal task completed"),
+                        Ok(Err(e)) => {
+                            tracing::error!("Signal task failed: {}", e);
+                            task_failure = Some(("signal".into(), e.to_string()));
+                        }
+                        Err(e) => {
+                            tracing::error!("Signal task panicked: {}", e);
+                            task_failure = Some(("signal".into(), e.to_string()));
+                        }
                     }
-                    Err(e) => {
-                        tracing::error!("IPC task panicked: {}", e);
-                        task_failure = Some(("ipc".into(), e.to_string()));
-                    }
+                    break;
                 }
-            }
 
-            // Action task finished
-            result = action_handle => {
-                match result {
-                    Ok(Ok(())) => tracing::info!("Action task completed"),
-                    Ok(Err(e)) => {
-                        tracing::error!("Action task failed: {}", e);
-                        task_failure = Some(("action".into(), e.to_string()));
+                // ── Non-critical tasks ──────────────────────────────────
+                // These do NOT break the loop — the data pipeline continues.
+
+                result = &mut ipc_handle, if !ipc_done => {
+                    ipc_done = true;
+                    match result {
+                        Ok(Ok(())) => tracing::info!("IPC task completed"),
+                        Ok(Err(e)) => {
+                            tracing::warn!("IPC task failed (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some((
+                                    "ipc".into(),
+                                    format!("{} — IPC disabled", e),
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("IPC task panicked (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some(("ipc".into(), format!("panicked: {}", e)));
+                            }
+                        }
                     }
-                    Err(e) => {
-                        tracing::error!("Action task panicked: {}", e);
-                        task_failure = Some(("action".into(), e.to_string()));
+                    // Continue the loop — data pipeline is unaffected.
+                }
+
+                result = &mut action_handle, if !action_done => {
+                    action_done = true;
+                    match result {
+                        Ok(Ok(())) => tracing::info!("Action task completed"),
+                        Ok(Err(e)) => {
+                            tracing::warn!("Action task failed (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some((
+                                    "action".into(),
+                                    format!("{} — HID output disabled", e),
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Action task panicked (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some(("action".into(), format!("panicked: {}", e)));
+                            }
+                        }
                     }
+                    // Continue the loop — data pipeline is unaffected.
                 }
             }
         }
 
-        // Mark service as inactive and store any task error for the GUI
+        // Abort any non-critical tasks that are still running.
+        if !ipc_done {
+            ipc_handle.abort();
+        }
+        if !action_done {
+            action_handle.abort();
+        }
+
+        // Mark service as inactive, store critical failure, and clean up
+        // stale connection flags so the GUI doesn't show "Connected" for
+        // streams that are no longer active.
         {
             let mut state = self.shared_state.write().await;
             state.active = false;
-            state.task_error = task_failure;
+            // Critical failure overwrites any prior non-critical warning.
+            if task_failure.is_some() {
+                state.task_error = task_failure;
+            }
+            state.device_connected = false;
+            state.device_name = None;
+            for stream in &mut state.discovered_streams {
+                stream.connected = false;
+            }
         }
-
-        // In a production implementation, we would wait for all tasks to
-        // finish gracefully here. For now, we let them get dropped.
 
         tracing::info!("Service shutdown complete");
         Ok(())

@@ -204,7 +204,15 @@ impl DeviceTask {
                 }
 
                 _ = rescan_interval.tick() => {
-                    scan(&provider, &self.state, &active_streams).await;
+                    // Only rescan when no streams are connected or none have been found
+                    let should_scan = active_streams.is_empty() || {
+                        self.state.try_read()
+                            .map(|st| st.discovered_streams.is_empty())
+                            .unwrap_or(true)
+                    };
+                    if should_scan {
+                        scan(&provider, &self.state, &active_streams).await;
+                    }
                 }
             }
         }
@@ -522,6 +530,7 @@ fn device_info_to_discovered(
         connected,
         battery_percent: info.battery_percent,
         channel_quality: None,
+        source_id: info.source_id.clone(),
     }
 }
 

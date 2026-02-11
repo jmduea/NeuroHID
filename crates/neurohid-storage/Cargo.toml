@@ -3,6 +3,7 @@ name = "neurohid-storage"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+publish = false
 
 description = "Secure profile storage with platform keychain integration"
 

@@ -43,11 +43,19 @@ impl ServiceManager {
     ) {
         // If we have a handle but the service has stopped itself (e.g., task failure),
         // drop the stale handle so the user can restart without clicking "Stop" first.
+        // Use `try_read()` first (non-blocking), but if the lock is contended fall
+        // back to assuming the handle is stale rather than silently blocking restart.
         let should_drop_handle = self.handle.as_ref().is_some_and(|handle| {
-            handle.state.try_read().is_ok_and(|state| !state.active)
+            match handle.state.try_read() {
+                Ok(state) => !state.active,
+                // Lock contended — check if the join handle has already finished,
+                // which is a reliable signal that the service is dead.
+                Err(_) => handle.join_handle.is_finished(),
+            }
         });
         if should_drop_handle {
             self.handle.take();
+            self.bus_connected = false;
         }
 
         if self.handle.is_some() {
@@ -198,6 +206,28 @@ impl ServiceManager {
             let _ = handle
                 .device_command_tx
                 .try_send(DeviceCommand::Disconnect(stream_id.to_string()));
+        }
+    }
+
+    /// Connect to all streams in a group (e.g., all streams from one device).
+    pub fn connect_streams(&self, stream_ids: &[&str]) {
+        if let Some(handle) = &self.handle {
+            for id in stream_ids {
+                let _ = handle
+                    .device_command_tx
+                    .try_send(DeviceCommand::Connect(id.to_string()));
+            }
+        }
+    }
+
+    /// Disconnect from all streams in a group.
+    pub fn disconnect_streams(&self, stream_ids: &[&str]) {
+        if let Some(handle) = &self.handle {
+            for id in stream_ids {
+                let _ = handle
+                    .device_command_tx
+                    .try_send(DeviceCommand::Disconnect(id.to_string()));
+            }
         }
     }
 }

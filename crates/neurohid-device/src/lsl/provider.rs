@@ -103,6 +103,12 @@ impl ResolvedStream {
             resolution_bits: 32, // Float32
         };
 
+        let source_id = if self.source_id.is_empty() {
+            None
+        } else {
+            Some(self.source_id.clone())
+        };
+
         DeviceInfo {
             id: self.device_id(),
             device_type: DeviceType::Unknown(format!("{}/{}", self.stream_type, self.name)),
@@ -110,6 +116,7 @@ impl ResolvedStream {
             firmware_version: None,
             channel_config: Some(channel_config),
             battery_percent: None,
+            source_id,
         }
     }
 }

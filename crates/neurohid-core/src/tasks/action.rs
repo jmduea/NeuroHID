@@ -70,25 +70,44 @@ impl ActionTask {
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
         tracing::info!("Action task started");
 
-        // Create the platform-specific HID emitter. This handles the differences
-        // between Linux (uinput), Windows (SendInput), and macOS (CGEvent).
-        let mut platform = match create_platform() {
-            Ok(p) => p,
+        // Try to create the platform-specific HID emitter. If this fails we
+        // continue running in "passthrough" mode: actions are still broadcast
+        // to visualization widgets so the console/graphs keep working, but no
+        // HID events are emitted. This prevents a platform init failure from
+        // taking down the entire data pipeline.
+        let mut platform: Option<Box<dyn Platform>> = match create_platform() {
+            Ok(p) => Some(p),
             Err(e) => {
-                tracing::error!("Failed to create platform: {}", e);
-                return Err(e);
+                tracing::warn!("Failed to create platform (HID output disabled): {}", e);
+                let mut state = self.state.write().await;
+                state.task_error = Some((
+                    "action".into(),
+                    format!("Platform unavailable: {} \u{2014} HID output disabled", e),
+                ));
+                None
             }
         };
 
         // Check that we have the necessary permissions for input simulation.
         // On macOS, this might prompt the user to grant accessibility access.
-        if let Err(e) = platform.check_input_permissions() {
-            tracing::error!("Input permission check failed: {}", e);
-            tracing::error!("Please grant the necessary permissions and restart.");
-            return Err(e);
+        if let Some(ref p) = platform {
+            if let Err(e) = p.check_input_permissions() {
+                tracing::warn!("Input permission check failed (HID output disabled): {}", e);
+                tracing::warn!("Please grant the necessary permissions and restart.");
+                let mut state = self.state.write().await;
+                state.task_error = Some((
+                    "action".into(),
+                    format!("Permission denied: {} \u{2014} HID output disabled", e),
+                ));
+                platform = None;
+            }
         }
 
-        tracing::info!("Platform initialized: {}", platform.platform_name());
+        if let Some(ref p) = platform {
+            tracing::info!("Platform initialized: {}", p.platform_name());
+        } else {
+            tracing::info!("Running in passthrough mode (no HID output)");
+        }
 
         // Check if action output is enabled in config
         if !self.config.enabled {
@@ -111,10 +130,14 @@ impl ActionTask {
                     match action {
                         Some(action) => {
                             // Broadcast action to hub visualization widgets
-                            // (always, regardless of confidence/calibration)
+                            // (always, regardless of confidence/calibration/platform)
                             if let Some(tx) = &self.action_broadcast_tx {
                                 let _ = tx.send(action.clone());
                             }
+
+                            // If no platform is available, skip HID emission
+                            // but keep broadcasting for visualizations.
+                            let Some(ref mut p) = platform else { continue };
 
                             // Check if output is enabled
                             if !self.config.enabled {
@@ -143,7 +166,7 @@ impl ActionTask {
                             let ms_since_last = now.duration_since(self.last_action_time).as_millis() as u32;
 
                             // Execute the action
-                            if let Err(e) = self.execute_action(&mut *platform, &action, ms_since_last) {
+                            if let Err(e) = self.execute_action(&mut **p, &action, ms_since_last) {
                                 tracing::warn!("Failed to execute action: {}", e);
                             } else {
                                 actions_emitted += 1;

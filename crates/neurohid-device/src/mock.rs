@@ -15,16 +15,19 @@
 use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
-use std::sync::{Arc, atomic::{AtomicBool, AtomicU64, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    Arc,
+};
 use std::task::{Context, Poll};
 use tokio::sync::watch;
 use tokio::time::{interval, Duration, Interval};
 
 use neurohid_types::{
-    device::{DeviceId, DeviceInfo, DeviceStatus, DeviceType, ConnectionState, ConnectionSettings},
-    signal::{Sample, DeviceChannelConfig, ChannelConfig, ChannelId},
+    device::{ConnectionSettings, ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DeviceType},
     error::{DeviceError, Result},
     now_micros,
+    signal::{ChannelConfig, ChannelId, DeviceChannelConfig, Sample},
 };
 
 use crate::traits::{Device, DeviceProvider, SampleStream};
@@ -84,7 +87,7 @@ impl MockProvider {
             num_devices: 1,
         }
     }
-    
+
     /// Sets the number of devices this provider will "discover".
     pub fn with_num_devices(mut self, count: usize) -> Self {
         self.num_devices = count;
@@ -97,12 +100,12 @@ impl DeviceProvider for MockProvider {
     fn device_type(&self) -> DeviceType {
         DeviceType::Mock
     }
-    
+
     async fn is_available(&self) -> bool {
         // Mock devices are always available - that's the point!
         true
     }
-    
+
     async fn discover(&self) -> Result<Vec<DeviceInfo>> {
         // Generate the configured number of mock devices
         let devices: Vec<DeviceInfo> = (0..self.num_devices)
@@ -115,13 +118,14 @@ impl DeviceProvider for MockProvider {
                     firmware_version: Some("1.0.0-mock".to_string()),
                     channel_config: Some(self.create_channel_config()),
                     battery_percent: Some(100),
+                    source_id: None,
                 }
             })
             .collect();
-        
+
         Ok(devices)
     }
-    
+
     async fn connect(
         &self,
         device_id: &DeviceId,
@@ -131,10 +135,10 @@ impl DeviceProvider for MockProvider {
         if !device_id.0.starts_with("mock_device_") {
             return Err(DeviceError::NoDeviceFound.into());
         }
-        
+
         // Create the mock device
         let device = MockDevice::new(device_id.clone(), self.config.clone());
-        
+
         Ok(Box::new(device))
     }
 }
@@ -143,7 +147,7 @@ impl MockProvider {
     fn create_channel_config(&self) -> DeviceChannelConfig {
         // Create channel configs that mimic an Emotiv Insight
         let channel_names = ["AF3", "AF4", "T7", "T8", "Pz"];
-        
+
         let channels: Vec<ChannelConfig> = (0..self.config.channel_count)
             .map(|i| {
                 let name = if i < channel_names.len() {
@@ -151,7 +155,7 @@ impl MockProvider {
                 } else {
                     format!("Ch{}", i)
                 };
-                
+
                 ChannelConfig {
                     id: ChannelId::new(&name),
                     position_10_20: Some(name),
@@ -160,7 +164,7 @@ impl MockProvider {
                 }
             })
             .collect();
-        
+
         DeviceChannelConfig {
             channels,
             sampling_rate_hz: self.config.sampling_rate_hz,
@@ -179,12 +183,12 @@ pub struct MockDevice {
     info: DeviceInfo,
     config: MockDeviceConfig,
     channel_config: DeviceChannelConfig,
-    
+
     // State tracking
     connected: AtomicBool,
     streaming: Arc<AtomicBool>,
     samples_sent: AtomicU64,
-    
+
     // Status broadcasting
     status_tx: watch::Sender<DeviceStatus>,
     status_rx: watch::Receiver<DeviceStatus>,
@@ -194,7 +198,7 @@ impl MockDevice {
     /// Creates a new mock device with the given configuration.
     pub fn new(id: DeviceId, config: MockDeviceConfig) -> Self {
         let channel_config = Self::create_channel_config(&config);
-        
+
         let info = DeviceInfo {
             id: id.clone(),
             device_type: DeviceType::Mock,
@@ -202,8 +206,9 @@ impl MockDevice {
             firmware_version: Some("1.0.0-mock".to_string()),
             channel_config: Some(channel_config.clone()),
             battery_percent: Some(100),
+            source_id: None,
         };
-        
+
         let initial_status = DeviceStatus {
             device_id: id.clone(),
             connection_state: ConnectionState::Connected,
@@ -214,9 +219,9 @@ impl MockDevice {
             channel_quality: Some(vec![config.signal_quality; config.channel_count]),
             message: Some("Mock device ready".to_string()),
         };
-        
+
         let (status_tx, status_rx) = watch::channel(initial_status);
-        
+
         Self {
             id,
             info,
@@ -229,10 +234,10 @@ impl MockDevice {
             status_rx,
         }
     }
-    
+
     fn create_channel_config(config: &MockDeviceConfig) -> DeviceChannelConfig {
         let channel_names = ["AF3", "AF4", "T7", "T8", "Pz"];
-        
+
         let channels: Vec<ChannelConfig> = (0..config.channel_count)
             .map(|i| {
                 let name = if i < channel_names.len() {
@@ -240,7 +245,7 @@ impl MockDevice {
                 } else {
                     format!("Ch{}", i)
                 };
-                
+
                 ChannelConfig {
                     id: ChannelId::new(&name),
                     position_10_20: Some(name),
@@ -249,14 +254,14 @@ impl MockDevice {
                 }
             })
             .collect();
-        
+
         DeviceChannelConfig {
             channels,
             sampling_rate_hz: config.sampling_rate_hz,
             resolution_bits: 14,
         }
     }
-    
+
     fn update_status(&self) {
         let status = DeviceStatus {
             device_id: self.id.clone(),
@@ -272,7 +277,7 @@ impl MockDevice {
             channel_quality: Some(vec![self.config.signal_quality; self.config.channel_count]),
             message: None,
         };
-        
+
         // Ignore send errors (receiver might be dropped)
         let _ = self.status_tx.send(status);
     }
@@ -283,65 +288,65 @@ impl Device for MockDevice {
     fn id(&self) -> &DeviceId {
         &self.id
     }
-    
+
     fn info(&self) -> &DeviceInfo {
         &self.info
     }
-    
+
     fn channel_config(&self) -> &DeviceChannelConfig {
         &self.channel_config
     }
-    
+
     fn status(&self) -> DeviceStatus {
         self.status_rx.borrow().clone()
     }
-    
+
     fn is_connected(&self) -> bool {
         self.connected.load(Ordering::SeqCst)
     }
-    
+
     fn is_streaming(&self) -> bool {
         self.streaming.load(Ordering::SeqCst)
     }
-    
+
     async fn start_streaming(&mut self) -> Result<SampleStream> {
         if !self.connected.load(Ordering::SeqCst) {
             return Err(DeviceError::NotConnected.into());
         }
-        
+
         if self.streaming.load(Ordering::SeqCst) {
             return Err(DeviceError::DeviceBusy.into());
         }
-        
+
         self.streaming.store(true, Ordering::SeqCst);
         self.update_status();
-        
+
         // Calculate sample interval from sampling rate
         let sample_period_us = (1_000_000.0 / self.config.sampling_rate_hz) as u64;
-        
+
         // Create the sample stream
         let stream = MockSampleStream::new(
             self.config.clone(),
             Arc::clone(&self.streaming),
             sample_period_us,
         );
-        
+
         Ok(Box::pin(stream))
     }
-    
+
     async fn stop_streaming(&mut self) -> Result<()> {
         self.streaming.store(false, Ordering::SeqCst);
         self.update_status();
         Ok(())
     }
-    
+
     async fn disconnect(&mut self) -> Result<()> {
         self.streaming.store(false, Ordering::SeqCst);
         self.connected.store(false, Ordering::SeqCst);
         self.update_status();
         Ok(())
     }
-    
+
     fn status_stream(&self) -> Pin<Box<dyn Stream<Item = DeviceStatus> + Send>> {
         let rx = self.status_rx.clone();
         Box::pin(futures::stream::unfold(rx, |mut rx| async move {
@@ -361,11 +366,7 @@ struct MockSampleStream {
 }
 
 impl MockSampleStream {
-    fn new(
-        config: MockDeviceConfig,
-        streaming: Arc<AtomicBool>,
-        sample_period_us: u64,
-    ) -> Self {
+    fn new(config: MockDeviceConfig, streaming: Arc<AtomicBool>, sample_period_us: u64) -> Self {
         Self {
             config,
             streaming,
@@ -373,11 +374,11 @@ impl MockSampleStream {
             sequence: 0,
         }
     }
-    
+
     fn generate_sample(&mut self) -> Sample {
         let timestamp = now_micros();
         self.sequence += 1;
-        
+
         let values: Vec<f32> = (0..self.config.channel_count)
             .map(|ch| {
                 if !self.config.realistic_signal {
@@ -386,12 +387,13 @@ impl MockSampleStream {
                     let t = timestamp as f64 / 1_000_000.0;
                     let noise = (rand_float() - 0.5) * 20.0;
                     let alpha_strength = if ch == 4 { 15.0 } else { 5.0 };
-                    let alpha = alpha_strength * (t * 10.0 * 2.0 * std::f64::consts::PI).sin() as f32;
+                    let alpha =
+                        alpha_strength * (t * 10.0 * 2.0 * std::f64::consts::PI).sin() as f32;
                     (noise + alpha).clamp(-150.0, 150.0)
                 }
             })
             .collect();
-        
+
         Sample {
             source_id: None,
             device_timestamp: Some(timestamp),
@@ -405,13 +407,13 @@ impl MockSampleStream {
 
 impl Stream for MockSampleStream {
     type Item = Result<Sample>;
-    
+
     fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         // Check if we should still be streaming
         if !self.streaming.load(Ordering::SeqCst) {
             return Poll::Ready(None);
         }
-        
+
         // Wait for the next sample interval
         match self.interval.poll_tick(cx) {
             Poll::Ready(_) => {
@@ -427,7 +429,7 @@ impl Stream for MockSampleStream {
 fn rand_float() -> f32 {
     use std::collections::hash_map::RandomState;
     use std::hash::{BuildHasher, Hasher};
-    
+
     let state = RandomState::new();
     let mut hasher = state.build_hasher();
     hasher.write_u64(now_micros() as u64);
@@ -438,32 +440,31 @@ fn rand_float() -> f32 {
 mod tests {
     use super::*;
     use futures::StreamExt;
-    
+
     #[tokio::test]
     async fn test_mock_provider_discovery() {
-        let provider = MockProvider::new(MockDeviceConfig::default())
-            .with_num_devices(3);
-        
+        let provider = MockProvider::new(MockDeviceConfig::default()).with_num_devices(3);
+
         let devices = provider.discover().await.unwrap();
         assert_eq!(devices.len(), 3);
-        
+
         for (i, device) in devices.iter().enumerate() {
             assert_eq!(device.id.0, format!("mock_device_{}", i));
             assert!(matches!(device.device_type, DeviceType::Mock));
         }
     }
-    
+
     #[tokio::test]
     async fn test_mock_device_streaming() {
         let provider = MockProvider::new(MockDeviceConfig::default());
         let devices = provider.discover().await.unwrap();
-        
+
         let mut device = provider.connect(&devices[0].id, None).await.unwrap();
         assert!(device.is_connected());
-        
+
         let mut stream = device.start_streaming().await.unwrap();
         assert!(device.is_streaming());
-        
+
         // Collect a few samples
         let mut samples = Vec::new();
         for _ in 0..10 {
@@ -471,34 +472,38 @@ mod tests {
                 samples.push(result.unwrap());
             }
         }
-        
+
         assert_eq!(samples.len(), 10);
         assert_eq!(samples[0].channel_count(), 5); // Default Insight-like config
     }
-    
+
     #[tokio::test]
     async fn test_stop_streaming_terminates_stream() {
         let provider = MockProvider::new(MockDeviceConfig::default());
         let devices = provider.discover().await.unwrap();
-        
+
         let mut device = provider.connect(&devices[0].id, None).await.unwrap();
         let mut stream = device.start_streaming().await.unwrap();
-        
+
         // Grab a sample to confirm stream is alive
         assert!(stream.next().await.is_some());
-        
+
         // Stop streaming — this must actually terminate the stream
         device.stop_streaming().await.unwrap();
         assert!(!device.is_streaming());
-        
+
         // Stream should yield None (terminated) on next poll
         // Use a timeout to avoid hanging if the bug regresses
-        let result = tokio::time::timeout(
-            std::time::Duration::from_millis(500),
-            stream.next(),
-        ).await;
-        
-        assert!(result.is_ok(), "stream should terminate promptly after stop_streaming");
-        assert!(result.unwrap().is_none(), "stream should yield None after stop_streaming");
+        let result =
+            tokio::time::timeout(std::time::Duration::from_millis(500), stream.next()).await;
+
+        assert!(
+            result.is_ok(),
+            "stream should terminate promptly after stop_streaming"
+        );
+        assert!(
+            result.unwrap().is_none(),
+            "stream should yield None after stop_streaming"
+        );
     }
 }

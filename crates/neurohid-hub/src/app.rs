@@ -8,6 +8,7 @@ use eframe::egui;
 use crate::state::HubState;
 use crate::data_bus::DataBus;
 use crate::service_manager::ServiceManager;
+use crate::stream_console::StreamConsole;
 use crate::screens::Screen;
 use crate::screens::dashboard::DashboardScreen;
 use crate::screens::devices::DevicesScreen;
@@ -23,6 +24,7 @@ pub struct HubApp {
     state: HubState,
     service_manager: ServiceManager,
     data_bus: DataBus,
+    stream_console: StreamConsole,
     // Screen instances
     dashboard: DashboardScreen,
     visualization: VisualizationScreen,
@@ -59,6 +61,7 @@ impl HubApp {
             state,
             service_manager: ServiceManager::new(),
             data_bus: DataBus::new(),
+            stream_console: StreamConsole::new(),
             dashboard: DashboardScreen::new(),
             visualization: VisualizationScreen::new(),
             devices: DevicesScreen::new(),
@@ -170,7 +173,7 @@ impl HubApp {
             });
     }
 
-    fn show_status_bar(&self, ctx: &egui::Context) {
+    fn show_status_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar")
             .exact_height(28.0)
             .show(ctx, |ui| {
@@ -191,6 +194,12 @@ impl HubApp {
                         if snap.calibration_mode {
                             ui.separator();
                             ui.colored_label(egui::Color32::YELLOW, "CALIBRATING");
+                        }
+
+                        ui.separator();
+                        let console_label = if self.stream_console.visible { "Console [x]" } else { "Console" };
+                        if ui.small_button(console_label).clicked() {
+                            self.stream_console.toggle();
                         }
                     } else if let Some((task, _)) = &snap.task_error {
                         ui.colored_label(
@@ -216,9 +225,15 @@ impl eframe::App for HubApp {
         // Poll data bus — drain broadcast channels into ring buffers
         self.data_bus.poll();
 
+        // Update stream console with new data
+        self.stream_console.update(&self.data_bus, &self.state.service_snapshot);
+
         // Show sidebar and status bar (always visible)
         self.show_sidebar(ctx);
         self.show_status_bar(ctx);
+
+        // Show stream console (renders before CentralPanel to claim bottom space)
+        self.stream_console.show(ctx, &self.data_bus, &self.state.service_snapshot);
 
         // When calibration is active, the CalibrationPanel renders its own
         // CentralPanel directly into the remaining space (after sidebar/status bar).
@@ -270,5 +285,16 @@ impl eframe::App for HubApp {
 
         // Request continuous repainting for live updates
         ctx.request_repaint();
+    }
+}
+
+impl Drop for HubApp {
+    fn drop(&mut self) {
+        // Stop the background service before the tokio runtime is dropped.
+        // Without this, the LSL spawn_blocking thread keeps running (its
+        // `streaming` flag is never set to false), which prevents
+        // Runtime::drop from completing — causing the process to hang on
+        // window close.
+        self.service_manager.stop();
     }
 }

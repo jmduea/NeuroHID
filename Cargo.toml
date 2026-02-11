@@ -2,6 +2,8 @@
 resolver = "2"
 
 members = [
+    "crates/neurohid",
+    "crates/neurohid-sdk",
     "crates/neurohid-types",
     "crates/neurohid-core",
     "crates/neurohid-signal",
@@ -56,11 +58,16 @@ base64 = "0.22.1"
 # Time
 chrono = { version = "0.4.43", features = ["serde"] }
 
+# GUI framework
+egui = "0.27"
+eframe = { version = "0.27", default-features = false }
+
 # Testing
 approx = "0.5.1"
 
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jmduea/neurohid"

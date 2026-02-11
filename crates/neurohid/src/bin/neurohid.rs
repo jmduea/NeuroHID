@@ -6,22 +6,16 @@
 use eframe::egui;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-mod app;
-mod state;
-mod service_manager;
-mod screens;
-mod data_bus;
-mod widgets;
-mod layout;
-
-use app::HubApp;
+use neurohid_hub::HubApp;
 
 fn main() {
     // Initialize logging
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive("neurohid=info".parse().unwrap()))
+        .with(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive("neurohid=info".parse().unwrap()),
+        )
         .init();
 
     tracing::info!("Starting NeuroHID Hub");
@@ -30,8 +24,8 @@ fn main() {
     // return EPIPE errors instead of killing the process.
     #[cfg(unix)]
     {
-        use std::sync::Arc;
         use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
         let _ = signal_hook::flag::register(
             signal_hook::consts::SIGPIPE,
             Arc::new(AtomicBool::new(false)),
@@ -74,9 +68,7 @@ fn main() {
         Err(e) => {
             let msg = e.to_string();
             if msg.contains("ExitFailure") {
-                tracing::warn!(
-                    "eframe exited with non-zero status (likely harmless on WSL2): {e}"
-                );
+                tracing::warn!("eframe exited with non-zero status (likely harmless on WSL2): {e}");
             } else {
                 tracing::error!("Fatal eframe error: {e}");
                 std::process::exit(1);

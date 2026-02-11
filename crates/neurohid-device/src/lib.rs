@@ -20,17 +20,19 @@
 //!
 //! Consumers of this crate work with them uniformly through the trait interface.
 
-pub mod traits;
-pub mod mock;
+#[cfg(feature = "lsl")]
 pub mod lsl;
+pub mod mock;
+pub mod traits;
 
-pub use traits::{Device, DeviceProvider, DeviceExt, SampleStream};
+#[cfg(feature = "lsl")]
+pub use lsl::{LslDevice, LslProvider};
 pub use mock::MockDeviceConfig;
-pub use lsl::{LslProvider, LslDevice};
+pub use traits::{Device, DeviceExt, DeviceProvider, SampleStream};
 
 // Re-export commonly used types from neurohid-types for convenience
 pub use neurohid_types::device::{
-    DeviceId, DeviceInfo, DeviceStatus, DeviceType, ConnectionState, ConnectionSettings,
+    ConnectionSettings, ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DeviceType,
 };
-pub use neurohid_types::signal::{Sample, DeviceChannelConfig, ChannelConfig, ChannelId};
 pub use neurohid_types::error::{DeviceError, Result};
+pub use neurohid_types::signal::{ChannelConfig, ChannelId, DeviceChannelConfig, Sample};

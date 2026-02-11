@@ -3,8 +3,8 @@
 //! Types related to biosensor devices: identifiers, connection state,
 //! and device information.
 
-use serde::{Deserialize, Serialize};
 use crate::signal::DeviceChannelConfig;
+use serde::{Deserialize, Serialize};
 
 /// Unique identifier for a device.
 /// This is typically the device's serial number or Bluetooth address.
@@ -58,7 +58,7 @@ impl DeviceType {
             DeviceType::Unknown(_) => None,
         }
     }
-    
+
     /// Get the expected sampling rate for this device type
     pub fn expected_sampling_rate(&self) -> Option<f32> {
         match self {
@@ -79,21 +79,28 @@ impl DeviceType {
 pub struct DeviceInfo {
     /// The unique identifier for this device
     pub id: DeviceId,
-    
+
     /// The device type/model
     pub device_type: DeviceType,
-    
+
     /// Human-readable name (e.g., "John's Insight")
     pub name: Option<String>,
-    
+
     /// Firmware version, if known
     pub firmware_version: Option<String>,
-    
+
     /// Channel configuration
     pub channel_config: Option<DeviceChannelConfig>,
-    
+
     /// Battery level as a percentage (0-100), if available
     pub battery_percent: Option<u8>,
+
+    /// Source identifier for grouping streams from the same physical device.
+    ///
+    /// Multi-stream publishers (e.g., Emotiv) share a single `source_id`
+    /// across all their LSL streams. The UI uses this to group streams
+    /// under a single device header.
+    pub source_id: Option<String>,
 }
 
 /// A discovered LSL stream available on the network.
@@ -119,6 +126,9 @@ pub struct DiscoveredStream {
     pub battery_percent: Option<u8>,
     /// Per-channel signal quality (0.0 = bad, 1.0 = good), if available
     pub channel_quality: Option<Vec<f32>>,
+    /// Source identifier for grouping streams from the same physical device.
+    /// `None` for standalone streams or mock devices.
+    pub source_id: Option<String>,
 }
 
 /// The current connection state of a device.
@@ -141,7 +151,7 @@ impl ConnectionState {
     pub fn is_usable(&self) -> bool {
         matches!(self, ConnectionState::Connected)
     }
-    
+
     /// Check if the device is in a transitional state
     pub fn is_transitioning(&self) -> bool {
         matches!(self, ConnectionState::Connecting)
@@ -153,25 +163,25 @@ impl ConnectionState {
 pub struct DeviceStatus {
     /// The device this status refers to
     pub device_id: DeviceId,
-    
+
     /// Current connection state
     pub connection_state: ConnectionState,
-    
+
     /// Whether data is currently flowing
     pub is_streaming: bool,
-    
+
     /// Number of samples received since connection
     pub samples_received: u64,
-    
+
     /// Number of samples dropped/missed (detected via sequence gaps)
     pub samples_dropped: u64,
-    
+
     /// Current battery level (if available)
     pub battery_percent: Option<u8>,
-    
+
     /// Per-channel signal quality (0.0 = bad, 1.0 = good)
     pub channel_quality: Option<Vec<f32>>,
-    
+
     /// Human-readable status message
     pub message: Option<String>,
 }
@@ -190,7 +200,7 @@ impl DeviceStatus {
             message: None,
         }
     }
-    
+
     /// Get the sample drop rate as a percentage
     pub fn drop_rate(&self) -> f32 {
         let total = self.samples_received + self.samples_dropped;
@@ -200,7 +210,7 @@ impl DeviceStatus {
             (self.samples_dropped as f32 / total as f32) * 100.0
         }
     }
-    
+
     /// Get the average channel quality
     pub fn average_quality(&self) -> Option<f32> {
         self.channel_quality.as_ref().map(|q| {
@@ -218,13 +228,13 @@ impl DeviceStatus {
 pub struct ConnectionSettings {
     /// Whether to automatically reconnect if connection is lost
     pub auto_reconnect: bool,
-    
+
     /// Maximum number of reconnection attempts
     pub max_reconnect_attempts: u32,
-    
+
     /// Delay between reconnection attempts in milliseconds
     pub reconnect_delay_ms: u64,
-    
+
     /// Timeout for connection attempts in milliseconds
     pub connection_timeout_ms: u64,
 }
