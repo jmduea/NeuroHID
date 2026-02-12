@@ -3,11 +3,11 @@
 //! Displays decoder performance metrics: action probability distribution,
 //! confidence gauge, decoded-actions-per-minute, and feature-vector summary.
 
-use std::collections::VecDeque;
-use std::f32::consts::PI;
+use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use neurohid_types::action::Action;
-use crate::widgets::{Widget, WidgetContext, WidgetId};
+use std::collections::VecDeque;
+use std::f32::consts::PI;
 
 /// History depth for actions-per-minute calculation.
 const ACTION_HISTORY_SECS: f64 = 60.0;
@@ -105,7 +105,11 @@ impl DecoderMonitorWidget {
 
         // Trim old timestamps
         let cutoff = now - ACTION_HISTORY_SECS;
-        while self.action_timestamps.front().map_or(false, |&t| t < cutoff) {
+        while self
+            .action_timestamps
+            .front()
+            .map_or(false, |&t| t < cutoff)
+        {
             self.action_timestamps.pop_front();
         }
 
@@ -116,7 +120,7 @@ impl DecoderMonitorWidget {
     }
 
     /// Draw an arc gauge for confidence visualization.
-    fn draw_arc_gauge(&self, ui: &mut egui::Ui) {
+    fn draw_arc_gauge(&self, ui: &mut egui::Ui, pane_index: usize) {
         let size = egui::vec2(70.0, 70.0);
         let (rect, response) = ui.allocate_exact_size(size, egui::Sense::hover());
 
@@ -145,7 +149,10 @@ impl DecoderMonitorWidget {
             let p0 = center + egui::vec2(a0.cos() * radius, a0.sin() * radius);
             let p1 = center + egui::vec2(a1.cos() * radius, a1.sin() * radius);
 
-            painter.line_segment([p0, p1], egui::Stroke::new(thickness, egui::Color32::from_gray(40)));
+            painter.line_segment(
+                [p0, p1],
+                egui::Stroke::new(thickness, egui::Color32::from_gray(40)),
+            );
         }
 
         // Filled arc based on confidence
@@ -205,9 +212,13 @@ impl DecoderMonitorWidget {
 
         // Tooltip on hover
         if response.hovered() {
-            egui::show_tooltip_at_pointer(ui.ctx(), egui::Id::new("conf_gauge_tooltip"), |ui| {
-                ui.label(format!("Confidence: {:.1}%", conf * 100.0));
-            });
+            egui::show_tooltip_at_pointer(
+                ui.ctx(),
+                egui::Id::new(format!("conf_gauge_tooltip_{}", pane_index)),
+                |ui| {
+                    ui.label(format!("Confidence: {:.1}%", conf * 100.0));
+                },
+            );
         }
     }
 
@@ -232,11 +243,17 @@ impl DecoderMonitorWidget {
         let y_70 = rect.bottom() - 0.7 * rect.height();
 
         painter.line_segment(
-            [egui::pos2(rect.left(), y_40), egui::pos2(rect.right() - 40.0, y_40)],
+            [
+                egui::pos2(rect.left(), y_40),
+                egui::pos2(rect.right() - 40.0, y_40),
+            ],
             egui::Stroke::new(0.5, egui::Color32::from_rgba_unmultiplied(244, 67, 54, 60)),
         );
         painter.line_segment(
-            [egui::pos2(rect.left(), y_70), egui::pos2(rect.right() - 40.0, y_70)],
+            [
+                egui::pos2(rect.left(), y_70),
+                egui::pos2(rect.right() - 40.0, y_70),
+            ],
             egui::Stroke::new(0.5, egui::Color32::from_rgba_unmultiplied(76, 175, 80, 60)),
         );
 
@@ -258,10 +275,13 @@ impl DecoderMonitorWidget {
 
         if self.confidence_history.len() >= 2 {
             let chart_width = rect.width() - 45.0; // Leave room for labels
-            let points: Vec<egui::Pos2> = self.confidence_history.iter()
+            let points: Vec<egui::Pos2> = self
+                .confidence_history
+                .iter()
                 .enumerate()
                 .map(|(i, &c)| {
-                    let x = rect.left() + (i as f32 / self.confidence_history.len() as f32) * chart_width;
+                    let x = rect.left()
+                        + (i as f32 / self.confidence_history.len() as f32) * chart_width;
                     let y = rect.bottom() - c.clamp(0.0, 1.0) * rect.height();
                     egui::pos2(x, y)
                 })
@@ -289,10 +309,36 @@ impl DecoderMonitorWidget {
                     let mesh = egui::Mesh {
                         indices: vec![0, 1, 2, 0, 2, 3],
                         vertices: vec![
-                            egui::epaint::Vertex { pos: egui::pos2(p0.x, y0), uv: egui::epaint::WHITE_UV, color: egui::Color32::from_rgba_unmultiplied(100, 181, 246, alpha) },
-                            egui::epaint::Vertex { pos: egui::pos2(p0.x, y1), uv: egui::epaint::WHITE_UV, color: egui::Color32::from_rgba_unmultiplied(100, 181, 246, alpha.saturating_sub(4)) },
-                            egui::epaint::Vertex { pos: egui::pos2(p1.x, y2), uv: egui::epaint::WHITE_UV, color: egui::Color32::from_rgba_unmultiplied(100, 181, 246, alpha.saturating_sub(4)) },
-                            egui::epaint::Vertex { pos: egui::pos2(p1.x, y3), uv: egui::epaint::WHITE_UV, color: egui::Color32::from_rgba_unmultiplied(100, 181, 246, alpha) },
+                            egui::epaint::Vertex {
+                                pos: egui::pos2(p0.x, y0),
+                                uv: egui::epaint::WHITE_UV,
+                                color: egui::Color32::from_rgba_unmultiplied(100, 181, 246, alpha),
+                            },
+                            egui::epaint::Vertex {
+                                pos: egui::pos2(p0.x, y1),
+                                uv: egui::epaint::WHITE_UV,
+                                color: egui::Color32::from_rgba_unmultiplied(
+                                    100,
+                                    181,
+                                    246,
+                                    alpha.saturating_sub(4),
+                                ),
+                            },
+                            egui::epaint::Vertex {
+                                pos: egui::pos2(p1.x, y2),
+                                uv: egui::epaint::WHITE_UV,
+                                color: egui::Color32::from_rgba_unmultiplied(
+                                    100,
+                                    181,
+                                    246,
+                                    alpha.saturating_sub(4),
+                                ),
+                            },
+                            egui::epaint::Vertex {
+                                pos: egui::pos2(p1.x, y3),
+                                uv: egui::epaint::WHITE_UV,
+                                color: egui::Color32::from_rgba_unmultiplied(100, 181, 246, alpha),
+                            },
                         ],
                         texture_id: egui::TextureId::default(),
                     };
@@ -307,9 +353,18 @@ impl DecoderMonitorWidget {
             ));
 
             // Min/max/avg labels
-            let min_conf = self.confidence_history.iter().cloned().fold(f32::INFINITY, f32::min);
-            let max_conf = self.confidence_history.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-            let avg_conf: f32 = self.confidence_history.iter().sum::<f32>() / self.confidence_history.len() as f32;
+            let min_conf = self
+                .confidence_history
+                .iter()
+                .cloned()
+                .fold(f32::INFINITY, f32::min);
+            let max_conf = self
+                .confidence_history
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max);
+            let avg_conf: f32 =
+                self.confidence_history.iter().sum::<f32>() / self.confidence_history.len() as f32;
 
             let label_x = rect.right() - 2.0;
             painter.text(
@@ -337,7 +392,7 @@ impl DecoderMonitorWidget {
     }
 
     /// Draw action type distribution with improved visuals.
-    fn draw_action_distribution(&self, ui: &mut egui::Ui) {
+    fn draw_action_distribution(&self, ui: &mut egui::Ui, pane_index: usize) {
         let labels = ["Move", "Click", "Scroll", "Key", "Noop"];
         let colors = [
             egui::Color32::from_rgb(100, 181, 246),
@@ -350,7 +405,8 @@ impl DecoderMonitorWidget {
 
         // Stacked bar (16px height)
         let bar_width = 140.0;
-        let (bar_rect, bar_response) = ui.allocate_exact_size(egui::vec2(bar_width, 16.0), egui::Sense::hover());
+        let (bar_rect, bar_response) =
+            ui.allocate_exact_size(egui::vec2(bar_width, 16.0), egui::Sense::hover());
         let painter = ui.painter_at(bar_rect);
         painter.rect_filled(bar_rect, 4.0, egui::Color32::from_gray(30));
 
@@ -392,9 +448,18 @@ impl DecoderMonitorWidget {
 
             // Tooltip for hovered segment
             if let Some((idx, frac)) = hovered_segment {
-                egui::show_tooltip_at_pointer(ui.ctx(), egui::Id::new("action_dist_tooltip"), |ui| {
-                    ui.label(format!("{}: {} ({:.1}%)", labels[idx], self.action_type_counts[idx], frac * 100.0));
-                });
+                egui::show_tooltip_at_pointer(
+                    ui.ctx(),
+                    egui::Id::new(format!("action_dist_tooltip_{}", pane_index)),
+                    |ui| {
+                        ui.label(format!(
+                            "{}: {} ({:.1}%)",
+                            labels[idx],
+                            self.action_type_counts[idx],
+                            frac * 100.0
+                        ));
+                    },
+                );
             }
         }
 
@@ -405,8 +470,10 @@ impl DecoderMonitorWidget {
                 let count = self.action_type_counts[i];
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 2.0;
-                    let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
-                    ui.painter().circle_filled(dot_rect.center(), 3.0, colors[i]);
+                    let (dot_rect, _) =
+                        ui.allocate_exact_size(egui::vec2(8.0, 8.0), egui::Sense::hover());
+                    ui.painter()
+                        .circle_filled(dot_rect.center(), 3.0, colors[i]);
                     ui.label(egui::RichText::new(format!("{} ({})", label, count)).small());
                 });
             }
@@ -414,17 +481,24 @@ impl DecoderMonitorWidget {
     }
 
     /// Draw feature heatmap with tooltips and color scale legend.
-    fn draw_feature_heatmap(&self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
+    fn draw_feature_heatmap(&self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         if let Some(fv) = ctx.bus.features.back() {
             ui.label(egui::RichText::new("Feature Heatmap").small().strong());
-            ui.label(egui::RichText::new(format!("{}D vector", fv.dim())).small().weak());
+            ui.label(
+                egui::RichText::new(format!("{}D vector", fv.dim()))
+                    .small()
+                    .weak(),
+            );
 
             let available_width = ui.available_width();
             let cell_size = ((available_width - 30.0) / (BANDS as f32 + 1.5)).min(36.0);
             let heatmap_height = cell_size * CHANNELS as f32;
             let legend_width = 20.0;
             let (rect, response) = ui.allocate_exact_size(
-                egui::vec2(cell_size * (BANDS + 1) as f32 + legend_width + 10.0, heatmap_height + 20.0),
+                egui::vec2(
+                    cell_size * (BANDS + 1) as f32 + legend_width + 10.0,
+                    heatmap_height + 20.0,
+                ),
                 egui::Sense::hover(),
             );
 
@@ -482,20 +556,31 @@ impl DecoderMonitorWidget {
                             let color = get_color(norm);
 
                             let cell_rect = egui::Rect::from_min_size(
-                                egui::pos2(rect.left() + cell_size + b as f32 * cell_size + 1.0, y + 1.0),
+                                egui::pos2(
+                                    rect.left() + cell_size + b as f32 * cell_size + 1.0,
+                                    y + 1.0,
+                                ),
                                 egui::vec2(cell_size - 2.0, cell_size - 2.0),
                             );
 
                             // Cell background with border
                             painter.rect_filled(cell_rect, 3.0, color);
-                            painter.rect_stroke(cell_rect, 3.0, egui::Stroke::new(1.0, egui::Color32::from_gray(50)));
+                            painter.rect_stroke(
+                                cell_rect,
+                                3.0,
+                                egui::Stroke::new(1.0, egui::Color32::from_gray(50)),
+                            );
 
                             // Check hover
                             if let Some(hover_pos) = response.hover_pos() {
                                 if cell_rect.contains(hover_pos) {
                                     hovered_cell = Some((ch, b, val));
                                     // Highlight hovered cell
-                                    painter.rect_stroke(cell_rect, 3.0, egui::Stroke::new(2.0, egui::Color32::WHITE));
+                                    painter.rect_stroke(
+                                        cell_rect,
+                                        3.0,
+                                        egui::Stroke::new(2.0, egui::Color32::WHITE),
+                                    );
                                 }
                             }
                         }
@@ -535,9 +620,16 @@ impl DecoderMonitorWidget {
 
                 // Tooltip for hovered cell
                 if let Some((ch, band, val)) = hovered_cell {
-                    egui::show_tooltip_at_pointer(ui.ctx(), egui::Id::new("heatmap_tooltip"), |ui| {
-                        ui.label(format!("{} {} : {:.4}", CHANNEL_NAMES[ch], BAND_NAMES[band], val));
-                    });
+                    egui::show_tooltip_at_pointer(
+                        ui.ctx(),
+                        egui::Id::new(format!("heatmap_tooltip_{}", pane_index)),
+                        |ui| {
+                            ui.label(format!(
+                                "{} {} : {:.4}",
+                                CHANNEL_NAMES[ch], BAND_NAMES[band], val
+                            ));
+                        },
+                    );
                 }
             }
         } else {
@@ -555,7 +647,7 @@ impl Widget for DecoderMonitorWidget {
         "Decoder Monitor"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
+    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         self.process_new_actions(ctx);
 
         let apm = self.action_timestamps.len() as f32; // actions in last 60s
@@ -566,7 +658,7 @@ impl Widget for DecoderMonitorWidget {
             ui.group(|ui| {
                 ui.vertical(|ui| {
                     ui.label(egui::RichText::new("Confidence").small().strong());
-                    self.draw_arc_gauge(ui);
+                    self.draw_arc_gauge(ui, pane_index);
                 });
             });
 
@@ -575,7 +667,11 @@ impl Widget for DecoderMonitorWidget {
                 ui.vertical(|ui| {
                     ui.label(egui::RichText::new("Actions/min").small().strong());
                     ui.label(egui::RichText::new(format!("{:.0}", apm)).size(20.0));
-                    ui.label(egui::RichText::new(format!("Total: {}", self.action_count)).small().weak());
+                    ui.label(
+                        egui::RichText::new(format!("Total: {}", self.action_count))
+                            .small()
+                            .weak(),
+                    );
                 });
             });
 
@@ -583,7 +679,7 @@ impl Widget for DecoderMonitorWidget {
             ui.group(|ui| {
                 ui.vertical(|ui| {
                     ui.label(egui::RichText::new("Action Types").small().strong());
-                    self.draw_action_distribution(ui);
+                    self.draw_action_distribution(ui, pane_index);
                 });
             });
         });
@@ -596,24 +692,27 @@ impl Widget for DecoderMonitorWidget {
             let mins = elapsed.as_secs() / 60;
             let secs = elapsed.as_secs() % 60;
 
-            ui.label(egui::RichText::new(format!(
-                "Session: {}m {:02}s",
-                mins, secs
-            )).small().weak());
+            ui.label(
+                egui::RichText::new(format!("Session: {}m {:02}s", mins, secs))
+                    .small()
+                    .weak(),
+            );
 
             ui.separator();
 
-            ui.label(egui::RichText::new(format!(
-                "Total actions: {}",
-                self.action_count
-            )).small().weak());
+            ui.label(
+                egui::RichText::new(format!("Total actions: {}", self.action_count))
+                    .small()
+                    .weak(),
+            );
 
             ui.separator();
 
-            ui.label(egui::RichText::new(format!(
-                "Latency: {:.0}ms",
-                self.processing_latency_ms
-            )).small().weak());
+            ui.label(
+                egui::RichText::new(format!("Latency: {:.0}ms", self.processing_latency_ms))
+                    .small()
+                    .weak(),
+            );
         });
 
         ui.separator();
@@ -625,6 +724,6 @@ impl Widget for DecoderMonitorWidget {
         ui.separator();
 
         // Feature vector heatmap
-        self.draw_feature_heatmap(ui, ctx);
+        self.draw_feature_heatmap(ui, ctx, pane_index);
     }
 }

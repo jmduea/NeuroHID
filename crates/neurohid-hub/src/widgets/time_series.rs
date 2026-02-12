@@ -409,7 +409,7 @@ impl Widget for TimeSeriesWidget {
         "Time Series"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
+    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         let sample_rate = 128.0f32;
 
         // Settings bar
@@ -462,7 +462,7 @@ impl Widget for TimeSeriesWidget {
             }
 
             ui.label("Window:");
-            egui::ComboBox::from_id_source("ts_window")
+            egui::ComboBox::from_id_source(format!("ts_window_{}", pane_index))
                 .selected_text(format!("{:.0}s", self.window_secs))
                 .width(60.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -473,11 +473,16 @@ impl Widget for TimeSeriesWidget {
 
             // Channel toggles
             ui.separator();
+            // Use the discovered stream's channel count for stability —
+            // avoids flickering when the flat buffer mixes stream types.
             let num_ch = ctx
-                .samples_for(WidgetId::TimeSeries)
-                .back()
-                .map(|s| s.channel_count())
-                .unwrap_or(5)
+                .channel_count_for(&["EEG"])
+                .unwrap_or_else(|| {
+                    ctx.samples_for(WidgetId::TimeSeries)
+                        .back()
+                        .map(|s| s.channel_count())
+                        .unwrap_or(5)
+                })
                 .min(8);
             for ch in 0..num_ch {
                 let name = CHANNEL_NAMES.get(ch).unwrap_or(&"?");
@@ -526,7 +531,12 @@ impl Widget for TimeSeriesWidget {
             return;
         }
 
-        let num_channels = visible_samples[0].channel_count().min(8);
+        // Use discovered stream channel count for stability;
+        // fall back to sample-derived count only if no stream metadata.
+        let num_channels = ctx
+            .channel_count_for(&["EEG"])
+            .unwrap_or_else(|| visible_samples[0].channel_count())
+            .min(8);
 
         // Update smoothed per-channel DC offset using an EMA.
         // On the first frame we seed directly from the window mean;

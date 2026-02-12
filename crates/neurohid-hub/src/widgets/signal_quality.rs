@@ -3,8 +3,8 @@
 //! Displays per-channel signal quality indicators, RMS amplitude,
 //! and railed-sample percentages to help users optimize electrode placement.
 
-use eframe::egui;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
+use eframe::egui;
 
 const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
@@ -19,18 +19,18 @@ const CHANNEL_COLORS: &[egui::Color32] = &[
 /// Electrode positions on head diagram (normalized 0-100 coordinate space).
 /// Top-down view: nose at top, left ear on left.
 const ELECTRODE_POSITIONS: &[(usize, f32, f32)] = &[
-    (0, 35.0, 25.0),   // AF3 - front-left
-    (1, 65.0, 25.0),   // AF4 - front-right
-    (2, 15.0, 50.0),   // T7 - left temporal
-    (3, 85.0, 50.0),   // T8 - right temporal
-    (4, 50.0, 70.0),   // Pz - parietal center
+    (0, 35.0, 25.0), // AF3 - front-left
+    (1, 65.0, 25.0), // AF4 - front-right
+    (2, 15.0, 50.0), // T7 - left temporal
+    (3, 85.0, 50.0), // T8 - right temporal
+    (4, 50.0, 70.0), // Pz - parietal center
 ];
 
 /// Threshold helpers - based on Emotiv Insight expectations.
-const RMS_GOOD: f32 = 100.0;     // Good if RMS < 100 uV
-const RMS_WARN: f32 = 300.0;     // Warning if RMS 100-300 uV
-const RAILED_GOOD: f32 = 1.0;    // < 1% railed
-const RAILED_WARN: f32 = 5.0;    // 1-5% railed
+const RMS_GOOD: f32 = 100.0; // Good if RMS < 100 uV
+const RMS_WARN: f32 = 300.0; // Warning if RMS 100-300 uV
+const RAILED_GOOD: f32 = 1.0; // < 1% railed
+const RAILED_WARN: f32 = 5.0; // 1-5% railed
 
 /// Number of recent samples to analyze for quality metrics.
 const WINDOW_SAMPLES: usize = 256; // ~2 seconds at 128 Hz
@@ -85,6 +85,8 @@ pub struct SignalQualityWidget {
     cached_metrics: Vec<ChannelMetrics>,
     /// Rail threshold in uV (values above this are "railed").
     rail_threshold: f32,
+    /// Whether device-reported quality is available.
+    has_device_quality: bool,
 }
 
 impl SignalQualityWidget {
@@ -93,14 +95,82 @@ impl SignalQualityWidget {
             smoothing: 0.9,
             cached_metrics: Vec::new(),
             rail_threshold: 8000.0, // 14-bit ADC typical max
+            has_device_quality: false,
         }
     }
 
-    fn compute_metrics(
+    /// Try to derive per-channel quality from a device-reported quality stream.
+    /// Emotiv publishes quality streams ("EmotivDeviceQuality", "EmotivEEGQuality")
+    /// where `Sample.values` contains per-channel quality indicators followed by
+    /// aggregate values (battery, overall, sample-rate).
+    ///
+    /// The values arrive **pre-normalized** to 0.0–1.0 by the Cortex adapter:
+    ///   - Indices 0..N-1 : per-sensor quality (0.0 = no contact, 1.0 = excellent)
+    ///   - Index N         : battery percent (0–100 as float)
+    ///   - Index N+1       : overall quality (0.0–1.0)
+    ///   - Index N+2       : sample-rate quality (float)
+    ///
+    /// Returns `Some(vec)` with one `ChannelMetrics` per EEG channel if quality
+    /// data is available, `None` otherwise.
+    fn quality_from_device_stream(
         &self,
         ctx: &WidgetContext<'_>,
-        channel: usize,
-    ) -> ChannelMetrics {
+        num_eeg_channels: usize,
+    ) -> Option<Vec<ChannelMetrics>> {
+        // Look for a "Quality" stream in the data bus.
+        let quality_samples = ctx.samples_for_type("Quality")?;
+        let latest = quality_samples.back()?;
+
+        // Need at least per-channel quality values.
+        if latest.values.len() < num_eeg_channels {
+            return None;
+        }
+
+        // Average the last few quality samples for stability.
+        let window = 10.min(quality_samples.len());
+        let start = quality_samples.len() - window;
+
+        let mut avg_quality = vec![0.0f32; num_eeg_channels];
+        for sample in quality_samples.range(start..) {
+            for ch in 0..num_eeg_channels {
+                if let Some(&v) = sample.values.get(ch) {
+                    avg_quality[ch] += v;
+                }
+            }
+        }
+        for v in avg_quality.iter_mut() {
+            *v /= window as f32;
+        }
+
+        let metrics = (0..num_eeg_channels)
+            .map(|ch| {
+                let q = avg_quality[ch]; // 0.0–1.0 (pre-normalized)
+                                         // Map 0.0–1.0 quality to Quality enum:
+                                         //   >= 0.75 → Good, >= 0.50 → Warning, <0.50 → Bad
+                let quality = if q >= 0.75 {
+                    Quality::Good
+                } else if q >= 0.50 {
+                    Quality::Warning
+                } else {
+                    Quality::Bad
+                };
+                // Synthesize approximate metrics from the quality value.
+                // We don't have real RMS from this stream, so estimate.
+                let quality_frac = q.clamp(0.0, 1.0);
+                ChannelMetrics {
+                    rms: RMS_WARN * (1.0 - quality_frac),
+                    peak_to_peak: 0.0,
+                    railed_pct: if q < 0.25 { 100.0 } else { 0.0 },
+                    quality,
+                    mean: 0.0,
+                }
+            })
+            .collect();
+
+        Some(metrics)
+    }
+
+    fn compute_metrics(&self, ctx: &WidgetContext<'_>, channel: usize) -> ChannelMetrics {
         let samples = ctx.samples_for(WidgetId::SignalQuality);
         let start = if samples.len() > WINDOW_SAMPLES {
             samples.len() - WINDOW_SAMPLES
@@ -108,7 +178,8 @@ impl SignalQualityWidget {
             0
         };
 
-        let values: Vec<f32> = samples.range(start..)
+        let values: Vec<f32> = samples
+            .range(start..)
             .filter_map(|s| s.get(channel))
             .collect();
 
@@ -136,7 +207,8 @@ impl SignalQualityWidget {
         let peak_to_peak = max_val - min_val;
 
         // Railed percentage
-        let railed_count = values.iter()
+        let railed_count = values
+            .iter()
             .filter(|v| v.abs() > self.rail_threshold)
             .count();
         let railed_pct = (railed_count as f32 / n) * 100.0;
@@ -180,9 +252,7 @@ impl SignalQualityWidget {
         };
 
         // Draw outer glow
-        let glow_color = egui::Color32::from_rgba_unmultiplied(
-            color.r(), color.g(), color.b(), 40
-        );
+        let glow_color = egui::Color32::from_rgba_unmultiplied(color.r(), color.g(), color.b(), 40);
         painter.circle_filled(center, radius + 2.0, glow_color);
 
         // Draw main dot
@@ -198,12 +268,7 @@ impl SignalQualityWidget {
     }
 
     /// Draw the head diagram with electrode positions.
-    fn draw_head_diagram(
-        &self,
-        ui: &mut egui::Ui,
-        rect: egui::Rect,
-        time: f64,
-    ) {
+    fn draw_head_diagram(&self, ui: &mut egui::Ui, rect: egui::Rect, time: f64) {
         let painter = ui.painter_at(rect);
 
         // Calculate scaling to fit in rect
@@ -223,8 +288,14 @@ impl SignalQualityWidget {
         let nose_tip = egui::pos2(center.x, center.y - head_radius - 8.0 * scale);
         let nose_left = egui::pos2(center.x - 6.0 * scale, center.y - head_radius + 2.0 * scale);
         let nose_right = egui::pos2(center.x + 6.0 * scale, center.y - head_radius + 2.0 * scale);
-        painter.line_segment([nose_left, nose_tip], egui::Stroke::new(2.0, egui::Color32::from_gray(100)));
-        painter.line_segment([nose_right, nose_tip], egui::Stroke::new(2.0, egui::Color32::from_gray(100)));
+        painter.line_segment(
+            [nose_left, nose_tip],
+            egui::Stroke::new(2.0, egui::Color32::from_gray(100)),
+        );
+        painter.line_segment(
+            [nose_right, nose_tip],
+            egui::Stroke::new(2.0, egui::Color32::from_gray(100)),
+        );
 
         // Ear indicators (arcs on sides)
         // Left ear
@@ -292,7 +363,10 @@ impl SignalQualityWidget {
         for pct in [0.25, 0.50, 0.75] {
             let x = bar_rect.left() + bar_rect.width() * pct;
             painter.line_segment(
-                [egui::pos2(x, bar_rect.top()), egui::pos2(x, bar_rect.bottom())],
+                [
+                    egui::pos2(x, bar_rect.top()),
+                    egui::pos2(x, bar_rect.bottom()),
+                ],
                 egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
             );
         }
@@ -300,10 +374,8 @@ impl SignalQualityWidget {
         // Fill with gradient
         let fill_width = bar_rect.width() * fill_frac.clamp(0.0, 1.0);
         if fill_width > 0.0 {
-            let fill_rect = egui::Rect::from_min_size(
-                bar_rect.min,
-                egui::vec2(fill_width, bar_height),
-            );
+            let fill_rect =
+                egui::Rect::from_min_size(bar_rect.min, egui::vec2(fill_width, bar_height));
 
             let base_color = quality.color();
             let dark_color = egui::Color32::from_rgb(
@@ -319,7 +391,12 @@ impl SignalQualityWidget {
             );
             painter.rect_filled(
                 bottom_half,
-                egui::Rounding { nw: 0.0, ne: 0.0, sw: 4.0, se: 0.0 },
+                egui::Rounding {
+                    nw: 0.0,
+                    ne: 0.0,
+                    sw: 4.0,
+                    se: 0.0,
+                },
                 dark_color,
             );
 
@@ -330,7 +407,12 @@ impl SignalQualityWidget {
             );
             painter.rect_filled(
                 top_half,
-                egui::Rounding { nw: 4.0, ne: 0.0, sw: 0.0, se: 0.0 },
+                egui::Rounding {
+                    nw: 4.0,
+                    ne: 0.0,
+                    sw: 0.0,
+                    se: 0.0,
+                },
                 base_color,
             );
 
@@ -347,14 +429,27 @@ impl SignalQualityWidget {
         }
 
         // Border
-        painter.rect_stroke(bar_rect, 4.0, egui::Stroke::new(1.0, egui::Color32::from_gray(60)));
+        painter.rect_stroke(
+            bar_rect,
+            4.0,
+            egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+        );
     }
 
     /// Get contextual tip based on overall quality.
     fn get_quality_tip(&self) -> &'static str {
-        let has_bad = self.cached_metrics.iter().any(|m| m.quality == Quality::Bad);
-        let has_warning = self.cached_metrics.iter().any(|m| m.quality == Quality::Warning);
-        let all_good = self.cached_metrics.iter().all(|m| m.quality == Quality::Good);
+        let has_bad = self
+            .cached_metrics
+            .iter()
+            .any(|m| m.quality == Quality::Bad);
+        let has_warning = self
+            .cached_metrics
+            .iter()
+            .any(|m| m.quality == Quality::Warning);
+        let all_good = self
+            .cached_metrics
+            .iter()
+            .all(|m| m.quality == Quality::Good);
 
         if all_good {
             "Signal quality is excellent"
@@ -377,7 +472,7 @@ impl Widget for SignalQualityWidget {
         "Signal Quality"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
+    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         // Get animation time
         let time = ui.ctx().input(|i| i.time);
 
@@ -388,15 +483,26 @@ impl Widget for SignalQualityWidget {
             return;
         }
 
-        let num_channels = ctx.samples_for(WidgetId::SignalQuality).back()
-            .map(|s| s.channel_count())
-            .unwrap_or(5)
+        // Use discovered stream channel count for stability.
+        let num_channels = ctx
+            .channel_count_for(&["EEG"])
+            .unwrap_or_else(|| {
+                ctx.samples_for(WidgetId::SignalQuality)
+                    .back()
+                    .map(|s| s.channel_count())
+                    .unwrap_or(5)
+            })
             .min(5);
 
-        // Update metrics with smoothing
-        let new_metrics: Vec<ChannelMetrics> = (0..num_channels)
-            .map(|ch| self.compute_metrics(ctx, ch))
-            .collect();
+        // Update metrics: prefer device-reported quality stream,
+        // fall back to computing from raw EEG values.
+        let device_quality = self.quality_from_device_stream(ctx, num_channels);
+        self.has_device_quality = device_quality.is_some();
+        let new_metrics: Vec<ChannelMetrics> = device_quality.unwrap_or_else(|| {
+            (0..num_channels)
+                .map(|ch| self.compute_metrics(ctx, ch))
+                .collect()
+        });
 
         if self.cached_metrics.len() != num_channels {
             self.cached_metrics = new_metrics;
@@ -412,9 +518,17 @@ impl Widget for SignalQualityWidget {
         }
 
         // Overall quality summary
-        let overall = if self.cached_metrics.iter().all(|m| m.quality == Quality::Good) {
+        let overall = if self
+            .cached_metrics
+            .iter()
+            .all(|m| m.quality == Quality::Good)
+        {
             Quality::Good
-        } else if self.cached_metrics.iter().any(|m| m.quality == Quality::Bad) {
+        } else if self
+            .cached_metrics
+            .iter()
+            .any(|m| m.quality == Quality::Bad)
+        {
             Quality::Bad
         } else {
             Quality::Warning
@@ -423,7 +537,8 @@ impl Widget for SignalQualityWidget {
         // --- Header with animated overall indicator ---
         ui.horizontal(|ui| {
             // Animated overall quality dot
-            let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
+            let (dot_rect, _) =
+                ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::hover());
             let painter = ui.painter_at(dot_rect);
             self.draw_quality_dot(&painter, dot_rect.center(), overall, time, 6.0);
 
@@ -450,7 +565,7 @@ impl Widget for SignalQualityWidget {
         ui.add_space(4.0);
 
         // --- Channel quality table with alternating rows ---
-        egui::Grid::new("signal_quality_grid")
+        egui::Grid::new(format!("signal_quality_grid_{}", pane_index))
             .num_columns(6)
             .spacing([12.0, 4.0])
             .min_col_width(40.0)
@@ -480,7 +595,10 @@ impl Widget for SignalQualityWidget {
                     ui.scope(|ui| {
                         let rect = ui.available_rect_before_wrap();
                         ui.painter().rect_filled(
-                            egui::Rect::from_min_size(rect.min, egui::vec2(ui.available_width(), 18.0)),
+                            egui::Rect::from_min_size(
+                                rect.min,
+                                egui::vec2(ui.available_width(), 18.0),
+                            ),
                             0.0,
                             row_bg,
                         );
@@ -489,7 +607,8 @@ impl Widget for SignalQualityWidget {
 
                     // Quality indicator with animated dot
                     ui.horizontal(|ui| {
-                        let (dot_rect, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
+                        let (dot_rect, _) =
+                            ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
                         let painter = ui.painter_at(dot_rect);
                         self.draw_quality_dot(&painter, dot_rect.center(), m.quality, time, 4.0);
                         ui.label(egui::RichText::new(m.quality.label()).color(m.quality.color()));
@@ -498,7 +617,8 @@ impl Widget for SignalQualityWidget {
                     // RMS with proportional bar fill
                     ui.scope(|ui| {
                         let available = ui.available_rect_before_wrap();
-                        let bar_rect = egui::Rect::from_min_size(available.min, egui::vec2(60.0, 16.0));
+                        let bar_rect =
+                            egui::Rect::from_min_size(available.min, egui::vec2(60.0, 16.0));
                         let painter = ui.painter();
 
                         // Background bar
@@ -537,7 +657,8 @@ impl Widget for SignalQualityWidget {
                     // Railed % with bar fill
                     ui.scope(|ui| {
                         let available = ui.available_rect_before_wrap();
-                        let bar_rect = egui::Rect::from_min_size(available.min, egui::vec2(55.0, 16.0));
+                        let bar_rect =
+                            egui::Rect::from_min_size(available.min, egui::vec2(55.0, 16.0));
                         let painter = ui.painter();
 
                         painter.rect_filled(bar_rect, 2.0, egui::Color32::from_gray(35));
@@ -581,15 +702,15 @@ impl Widget for SignalQualityWidget {
         for ch in 0..num_channels {
             let m = &self.cached_metrics[ch];
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(CHANNEL_NAMES[ch])
-                    .color(CHANNEL_COLORS[ch % CHANNEL_COLORS.len()])
-                    .monospace());
+                ui.label(
+                    egui::RichText::new(CHANNEL_NAMES[ch])
+                        .color(CHANNEL_COLORS[ch % CHANNEL_COLORS.len()])
+                        .monospace(),
+                );
 
                 let bar_width = (ui.available_width() - 10.0).max(60.0);
-                let (rect, _) = ui.allocate_exact_size(
-                    egui::vec2(bar_width, 18.0),
-                    egui::Sense::hover(),
-                );
+                let (rect, _) =
+                    ui.allocate_exact_size(egui::vec2(bar_width, 18.0), egui::Sense::hover());
 
                 // Fill based on inverse RMS (lower = better = longer bar)
                 let fill_frac = (1.0 - (m.rms / RMS_WARN).min(1.0)).max(0.0);

@@ -3,9 +3,9 @@
 //! Displays a virtual cursor minimap, direction indicator, action log,
 //! and real-time feedback about decoded HID actions.
 
-use std::collections::VecDeque;
-use eframe::egui;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
+use eframe::egui;
+use std::collections::VecDeque;
 
 /// Maximum action log entries to retain.
 const MAX_LOG_ENTRIES: usize = 50;
@@ -33,7 +33,9 @@ impl ActionFilter {
     fn matches(&self, entry: &ActionLogEntry) -> bool {
         match self {
             ActionFilter::All => true,
-            ActionFilter::Mouse => entry.action_type == ActionType::Move || entry.action_type == ActionType::Click,
+            ActionFilter::Mouse => {
+                entry.action_type == ActionType::Move || entry.action_type == ActionType::Click
+            }
             ActionFilter::Keyboard => entry.action_type == ActionType::Key,
             ActionFilter::Scroll => entry.action_type == ActionType::Scroll,
         }
@@ -148,7 +150,11 @@ impl ActionPreviewWidget {
                 // Process clicks
                 for btn in &mouse.buttons {
                     self.add_log(
-                        format!("{:?} {}", btn.button, if btn.pressed { "pressed" } else { "released" }),
+                        format!(
+                            "{:?} {}",
+                            btn.button,
+                            if btn.pressed { "pressed" } else { "released" }
+                        ),
                         action.confidence,
                         egui::Color32::from_rgb(129, 199, 132),
                         ActionType::Click,
@@ -178,7 +184,13 @@ impl ActionPreviewWidget {
         }
     }
 
-    fn add_log(&mut self, description: String, confidence: f32, color: egui::Color32, action_type: ActionType) {
+    fn add_log(
+        &mut self,
+        description: String,
+        confidence: f32,
+        color: egui::Color32,
+        action_type: ActionType,
+    ) {
         let now = chrono::Local::now();
         self.log.push_back(ActionLogEntry {
             time_str: now.format("%H:%M:%S%.3f").to_string(),
@@ -194,7 +206,13 @@ impl ActionPreviewWidget {
         }
     }
 
-    fn add_log_grouped(&mut self, description: String, confidence: f32, color: egui::Color32, action_type: ActionType) {
+    fn add_log_grouped(
+        &mut self,
+        description: String,
+        confidence: f32,
+        color: egui::Color32,
+        action_type: ActionType,
+    ) {
         // Check if we can group with the last entry
         if let Some(last) = self.log.back_mut() {
             if last.action_type == action_type && last.timestamp.elapsed().as_millis() < 500 {
@@ -223,7 +241,8 @@ impl ActionPreviewWidget {
             ui.add_space(20.0);
 
             // Placeholder icon (circle with question mark)
-            let (icon_rect, _) = ui.allocate_exact_size(egui::vec2(48.0, 48.0), egui::Sense::hover());
+            let (icon_rect, _) =
+                ui.allocate_exact_size(egui::vec2(48.0, 48.0), egui::Sense::hover());
             let painter = ui.painter_at(icon_rect);
             painter.circle_stroke(
                 icon_rect.center(),
@@ -239,9 +258,19 @@ impl ActionPreviewWidget {
             );
 
             ui.add_space(12.0);
-            ui.label(egui::RichText::new("Waiting for decoded actions...").size(14.0).color(egui::Color32::from_gray(150)));
+            ui.label(
+                egui::RichText::new("Waiting for decoded actions...")
+                    .size(14.0)
+                    .color(egui::Color32::from_gray(150)),
+            );
             ui.add_space(4.0);
-            ui.label(egui::RichText::new("The decoder will start emitting actions once calibration is complete.").small().weak());
+            ui.label(
+                egui::RichText::new(
+                    "The decoder will start emitting actions once calibration is complete.",
+                )
+                .small()
+                .weak(),
+            );
         });
     }
 
@@ -266,11 +295,19 @@ impl ActionPreviewWidget {
 
         // Shadow
         let shadow_rect = main_rect.translate(egui::vec2(shadow_offset, shadow_offset));
-        painter.rect_filled(shadow_rect, 6.0, egui::Color32::from_rgba_unmultiplied(0, 0, 0, 40));
+        painter.rect_filled(
+            shadow_rect,
+            6.0,
+            egui::Color32::from_rgba_unmultiplied(0, 0, 0, 40),
+        );
 
         // Background with rounded corners
         painter.rect_filled(main_rect, 6.0, egui::Color32::from_gray(20));
-        painter.rect_stroke(main_rect, 6.0, egui::Stroke::new(1.5, egui::Color32::from_gray(70)));
+        painter.rect_stroke(
+            main_rect,
+            6.0,
+            egui::Stroke::new(1.5, egui::Color32::from_gray(70)),
+        );
 
         // Grid (subtle)
         for i in 1..4 {
@@ -278,11 +315,17 @@ impl ActionPreviewWidget {
             let x = main_rect.left() + frac * main_rect.width();
             let y = main_rect.top() + frac * main_rect.height();
             painter.line_segment(
-                [egui::pos2(x, main_rect.top()), egui::pos2(x, main_rect.bottom())],
+                [
+                    egui::pos2(x, main_rect.top()),
+                    egui::pos2(x, main_rect.bottom()),
+                ],
                 egui::Stroke::new(0.3, egui::Color32::from_gray(40)),
             );
             painter.line_segment(
-                [egui::pos2(main_rect.left(), y), egui::pos2(main_rect.right(), y)],
+                [
+                    egui::pos2(main_rect.left(), y),
+                    egui::pos2(main_rect.right(), y),
+                ],
                 egui::Stroke::new(0.3, egui::Color32::from_gray(40)),
             );
         }
@@ -400,11 +443,17 @@ impl ActionPreviewWidget {
         let cross_size = 8.0;
 
         painter.line_segment(
-            [egui::pos2(cx - cross_size, cy), egui::pos2(cx + cross_size, cy)],
+            [
+                egui::pos2(cx - cross_size, cy),
+                egui::pos2(cx + cross_size, cy),
+            ],
             egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 100, 100)),
         );
         painter.line_segment(
-            [egui::pos2(cx, cy - cross_size), egui::pos2(cx, cy + cross_size)],
+            [
+                egui::pos2(cx, cy - cross_size),
+                egui::pos2(cx, cy + cross_size),
+            ],
             egui::Stroke::new(1.5, egui::Color32::from_rgb(255, 100, 100)),
         );
         painter.circle_filled(
@@ -439,33 +488,51 @@ impl ActionPreviewWidget {
 
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Distance:").small().weak());
-                    ui.label(egui::RichText::new(format!("{:.1} units", self.total_distance * 100.0)).small());
+                    ui.label(
+                        egui::RichText::new(format!("{:.1} units", self.total_distance * 100.0))
+                            .small(),
+                    );
                 });
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Avg speed:").small().weak());
-                    ui.label(egui::RichText::new(format!("{:.2} units/s", avg_speed * 100.0)).small());
+                    ui.label(
+                        egui::RichText::new(format!("{:.2} units/s", avg_speed * 100.0)).small(),
+                    );
                 });
                 ui.horizontal(|ui| {
                     ui.label(egui::RichText::new("Position:").small().weak());
-                    ui.label(egui::RichText::new(format!("({:.2}, {:.2})", self.cursor_x, self.cursor_y)).small());
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "({:.2}, {:.2})",
+                            self.cursor_x, self.cursor_y
+                        ))
+                        .small(),
+                    );
                 });
             });
         });
     }
 
     /// Draw action log with enhanced visuals.
-    fn draw_action_log(&mut self, ui: &mut egui::Ui, max_height: f32) {
+    fn draw_action_log(&mut self, ui: &mut egui::Ui, max_height: f32, pane_index: usize) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new("Action Log").small().strong());
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Time format toggle
-                if ui.small_button(if self.show_relative_time { "Abs" } else { "Rel" }).clicked() {
+                if ui
+                    .small_button(if self.show_relative_time {
+                        "Abs"
+                    } else {
+                        "Rel"
+                    })
+                    .clicked()
+                {
                     self.show_relative_time = !self.show_relative_time;
                 }
 
                 // Filter dropdown
-                egui::ComboBox::from_id_source("action_filter")
+                egui::ComboBox::from_id_source(format!("action_filter_{}", pane_index))
                     .selected_text(self.filter.label())
                     .width(70.0)
                     .show_ui(ui, |ui: &mut egui::Ui| {
@@ -486,7 +553,9 @@ impl ActionPreviewWidget {
                     return;
                 }
 
-                let filtered: Vec<_> = self.log.iter()
+                let filtered: Vec<_> = self
+                    .log
+                    .iter()
                     .filter(|e| self.filter.matches(e))
                     .rev()
                     .take(30)
@@ -576,7 +645,7 @@ impl Widget for ActionPreviewWidget {
         "Action Preview"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
+    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         self.process_actions(ctx);
 
         // Controls
@@ -592,7 +661,11 @@ impl Widget for ActionPreviewWidget {
                 self.log.clear();
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                ui.label(egui::RichText::new(format!("Total: {}", self.total_actions)).small().weak());
+                ui.label(
+                    egui::RichText::new(format!("Total: {}", self.total_actions))
+                        .small()
+                        .weak(),
+                );
             });
         });
 
@@ -619,7 +692,7 @@ impl Widget for ActionPreviewWidget {
 
             // === Action log ===
             ui.vertical(|ui| {
-                self.draw_action_log(ui, minimap_size + 40.0);
+                self.draw_action_log(ui, minimap_size + 40.0, pane_index);
             });
         });
     }

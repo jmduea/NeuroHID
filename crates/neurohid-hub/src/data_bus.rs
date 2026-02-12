@@ -173,10 +173,13 @@ impl DataBus {
     ) -> &'a VecDeque<Sample> {
         // Find the first DiscoveredStream whose stream_type matches and
         // that has data in the per-source map.
+        // Stream types may be composite strings like "EEG/EmotivEEG" so we
+        // match against the prefix before '/' (the LSL stream type).
         for ds in streams {
+            let ds_type_prefix = ds.stream_type.split('/').next().unwrap_or("");
             if stream_types
                 .iter()
-                .any(|st| ds.stream_type.eq_ignore_ascii_case(st))
+                .any(|st| ds_type_prefix.eq_ignore_ascii_case(st))
             {
                 if let Some(buf) = self.samples_by_source.get(&ds.id) {
                     if !buf.is_empty() {

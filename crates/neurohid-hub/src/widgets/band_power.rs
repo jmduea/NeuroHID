@@ -3,9 +3,9 @@
 //! Displays power in standard EEG frequency bands as bar charts.
 //! Bands: Delta (0.5-4), Theta (4-8), Alpha (8-13), Beta (13-30), Gamma (30-45).
 
-use std::collections::VecDeque;
-use eframe::egui;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
+use eframe::egui;
+use std::collections::VecDeque;
 
 const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
@@ -16,6 +16,16 @@ const BANDS: &[(&str, f32, f32, egui::Color32)] = &[
     ("Alpha", 8.0, 13.0, egui::Color32::from_rgb(220, 220, 80)),
     ("Beta", 13.0, 30.0, egui::Color32::from_rgb(220, 130, 80)),
     ("Gamma", 30.0, 45.0, egui::Color32::from_rgb(180, 100, 220)),
+];
+
+/// Emotiv pre-computed band power bands (from the "pow" / FFT stream).
+/// Order: theta, alpha, betaL, betaH, gamma — each carried per EEG channel.
+const EMOTIV_BANDS: &[(&str, f32, f32, egui::Color32)] = &[
+    ("Theta", 4.0, 8.0, egui::Color32::from_rgb(100, 200, 100)),
+    ("Alpha", 8.0, 12.0, egui::Color32::from_rgb(220, 220, 80)),
+    ("Beta-L", 12.0, 16.0, egui::Color32::from_rgb(220, 130, 80)),
+    ("Beta-H", 16.0, 25.0, egui::Color32::from_rgb(200, 110, 60)),
+    ("Gamma", 25.0, 45.0, egui::Color32::from_rgb(180, 100, 220)),
 ];
 
 /// FFT size for band-power computation.
@@ -39,6 +49,8 @@ pub struct BandPowerWidget {
     power_history: Vec<VecDeque<f32>>,
     /// Frame counter for throttling history updates.
     frame_count: u32,
+    /// Whether the current data source is a pre-computed FFT stream (affects band labels).
+    has_fft_source: bool,
 }
 
 impl BandPowerWidget {
@@ -49,9 +61,55 @@ impl BandPowerWidget {
             smoothing: 0.8,
             cached_powers: Vec::new(),
             band_visible: [true; 5],
-            power_history: (0..5).map(|_| VecDeque::with_capacity(HISTORY_SIZE)).collect(),
+            power_history: (0..5)
+                .map(|_| VecDeque::with_capacity(HISTORY_SIZE))
+                .collect(),
             frame_count: 0,
+            has_fft_source: false,
         }
+    }
+
+    /// Try to extract pre-computed band powers from a device-reported FFT stream
+    /// (e.g. EmotivBandPower). The stream carries 25 channels: 5 EEG channels × 5 bands.
+    /// Emotiv band order per channel is [theta, alpha, betaL, betaH, gamma].
+    /// Values are mapped 1:1 into the 5 band slots (see `EMOTIV_BANDS`).
+    fn powers_from_fft_stream(ctx: &WidgetContext<'_>) -> Option<Vec<[f32; 5]>> {
+        let fft_samples = ctx.samples_for_type("FFT")?;
+        if fft_samples.len() < 2 {
+            return None;
+        }
+        let latest = fft_samples.back()?;
+        let total_ch = latest.channel_count();
+        // Expect a multiple of 5 (5 bands per EEG channel)
+        if total_ch < 5 || total_ch % 5 != 0 {
+            return None;
+        }
+        let num_eeg = total_ch / 5;
+
+        // Average the last few samples for stability
+        let window = 5.min(fft_samples.len());
+        let start = fft_samples.len() - window;
+        let mut powers = vec![[0.0f32; 5]; num_eeg];
+
+        for sample in fft_samples.range(start..) {
+            for ch in 0..num_eeg {
+                let base = ch * 5;
+                // Direct 1:1 mapping — Emotiv provides [theta, alpha, betaL, betaH, gamma]
+                for b in 0..5 {
+                    powers[ch][b] += sample.get(base + b).unwrap_or(0.0);
+                }
+            }
+        }
+
+        // Average over the window
+        let inv = 1.0 / window as f32;
+        for ch_powers in powers.iter_mut() {
+            for v in ch_powers.iter_mut() {
+                *v *= inv;
+            }
+        }
+
+        Some(powers)
     }
 
     /// Compute band powers for one channel from raw FFT magnitude bins.
@@ -60,8 +118,13 @@ impl BandPowerWidget {
         channel: usize,
     ) -> [f32; 5] {
         let n = FFT_SIZE;
-        let start = if samples.len() > n { samples.len() - n } else { 0 };
-        let mut real: Vec<f32> = samples.range(start..)
+        let start = if samples.len() > n {
+            samples.len() - n
+        } else {
+            0
+        };
+        let mut real: Vec<f32> = samples
+            .range(start..)
             .filter_map(|s| s.get(channel))
             .collect();
 
@@ -158,9 +221,9 @@ impl BandPowerWidget {
     /// Darken a color for gradient bottom.
     fn darken_color(color: egui::Color32, factor: f32) -> egui::Color32 {
         egui::Color32::from_rgb(
-            ((color.r() as f32 * factor)) as u8,
-            ((color.g() as f32 * factor)) as u8,
-            ((color.b() as f32 * factor)) as u8,
+            (color.r() as f32 * factor) as u8,
+            (color.g() as f32 * factor) as u8,
+            (color.b() as f32 * factor) as u8,
         )
     }
 
@@ -182,11 +245,15 @@ impl BandPowerWidget {
         let max_val = history.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
         let range = (max_val - min_val).max(0.001);
 
-        let points: Vec<egui::Pos2> = history.iter().enumerate().map(|(i, &val)| {
-            let x = rect.left() + (i as f32 / (HISTORY_SIZE - 1) as f32) * rect.width();
-            let y = rect.bottom() - ((val - min_val) / range) * rect.height();
-            egui::pos2(x, y)
-        }).collect();
+        let points: Vec<egui::Pos2> = history
+            .iter()
+            .enumerate()
+            .map(|(i, &val)| {
+                let x = rect.left() + (i as f32 / (HISTORY_SIZE - 1) as f32) * rect.width();
+                let y = rect.bottom() - ((val - min_val) / range) * rect.height();
+                egui::pos2(x, y)
+            })
+            .collect();
 
         // Draw as polyline
         let stroke = egui::Stroke::new(1.5, color);
@@ -205,14 +272,18 @@ impl Widget for BandPowerWidget {
         "Band Power"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
+    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         self.frame_count = self.frame_count.wrapping_add(1);
 
         // Settings bar
         ui.horizontal(|ui| {
             ui.label("Display:");
-            egui::ComboBox::from_id_source("bp_mode")
-                .selected_text(if self.relative { "Relative %" } else { "Absolute" })
+            egui::ComboBox::from_id_source(format!("bp_mode_{}", pane_index))
+                .selected_text(if self.relative {
+                    "Relative %"
+                } else {
+                    "Absolute"
+                })
                 .width(80.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
                     ui.selectable_value(&mut self.relative, true, "Relative %");
@@ -220,10 +291,11 @@ impl Widget for BandPowerWidget {
                 });
 
             ui.label("Channel:");
-            let ch_text = self.selected_channel
+            let ch_text = self
+                .selected_channel
                 .map(|ch| CHANNEL_NAMES.get(ch).unwrap_or(&"?").to_string())
                 .unwrap_or_else(|| "All".to_string());
-            egui::ComboBox::from_id_source("bp_channel")
+            egui::ComboBox::from_id_source(format!("bp_channel_{}", pane_index))
                 .selected_text(&ch_text)
                 .width(60.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -237,19 +309,33 @@ impl Widget for BandPowerWidget {
             ui.add(egui::Slider::new(&mut self.smoothing, 0.0..=0.95).max_decimals(2));
         });
 
-        if ctx.samples_for(WidgetId::BandPower).len() < 64 {
+        // Try pre-computed FFT stream first (e.g. EmotivBandPower),
+        // fall back to computing from raw EEG.
+        let fft_powers = Self::powers_from_fft_stream(ctx);
+        let use_fft = fft_powers.is_some();
+        self.has_fft_source = use_fft;
+
+        // Select band definitions based on data source.
+        let bands: &[(&str, f32, f32, egui::Color32)] = if use_fft { EMOTIV_BANDS } else { BANDS };
+
+        if !use_fft && ctx.samples_for(WidgetId::BandPower).len() < 64 {
             ui.centered_and_justified(|ui| {
                 ui.label(egui::RichText::new("Collecting data...").weak());
             });
             return;
         }
 
-        // Determine which channels to show
-        let eeg_samples = ctx.samples_for(WidgetId::BandPower);
-        let num_channels = eeg_samples.back()
-            .map(|s| s.channel_count())
-            .unwrap_or(5)
-            .min(5);
+        // Determine channel count and which channels to show
+        let num_channels = if let Some(ref fp) = fft_powers {
+            fp.len().min(5)
+        } else {
+            let eeg_samples = ctx.samples_for(WidgetId::BandPower);
+            eeg_samples
+                .back()
+                .map(|s| s.channel_count())
+                .unwrap_or(5)
+                .min(5)
+        };
 
         let channels: Vec<usize> = match self.selected_channel {
             Some(ch) if ch < num_channels => vec![ch],
@@ -257,16 +343,33 @@ impl Widget for BandPowerWidget {
         };
 
         // Update cached powers with smoothing
-        if self.cached_powers.len() != num_channels {
-            self.cached_powers = (0..num_channels)
-                .map(|ch| Self::compute_band_powers(eeg_samples, ch))
-                .collect();
+        if let Some(fft_data) = fft_powers {
+            // Use pre-computed band powers from the FFT stream directly
+            if self.cached_powers.len() != num_channels {
+                self.cached_powers = fft_data[..num_channels].to_vec();
+            } else {
+                for ch in 0..num_channels {
+                    let new = &fft_data[ch];
+                    let cached = &mut self.cached_powers[ch];
+                    for b in 0..5 {
+                        cached[b] = self.smoothing * cached[b] + (1.0 - self.smoothing) * new[b];
+                    }
+                }
+            }
         } else {
-            for ch in 0..num_channels {
-                let new = Self::compute_band_powers(eeg_samples, ch);
-                let cached = &mut self.cached_powers[ch];
-                for b in 0..5 {
-                    cached[b] = self.smoothing * cached[b] + (1.0 - self.smoothing) * new[b];
+            // Compute from raw EEG via FFT
+            let eeg_samples = ctx.samples_for(WidgetId::BandPower);
+            if self.cached_powers.len() != num_channels {
+                self.cached_powers = (0..num_channels)
+                    .map(|ch| Self::compute_band_powers(eeg_samples, ch))
+                    .collect();
+            } else {
+                for ch in 0..num_channels {
+                    let new = Self::compute_band_powers(eeg_samples, ch);
+                    let cached = &mut self.cached_powers[ch];
+                    for b in 0..5 {
+                        cached[b] = self.smoothing * cached[b] + (1.0 - self.smoothing) * new[b];
+                    }
                 }
             }
         }
@@ -274,9 +377,11 @@ impl Widget for BandPowerWidget {
         // Update power history (throttled to ~2Hz)
         if self.frame_count % 30 == 0 {
             for b in 0..5 {
-                let avg_power: f32 = channels.iter()
+                let avg_power: f32 = channels
+                    .iter()
                     .filter_map(|&ch| self.cached_powers.get(ch).map(|p| p[b]))
-                    .sum::<f32>() / channels.len().max(1) as f32;
+                    .sum::<f32>()
+                    / channels.len().max(1) as f32;
 
                 let history = &mut self.power_history[b];
                 if history.len() >= HISTORY_SIZE {
@@ -302,14 +407,19 @@ impl Widget for BandPowerWidget {
             egui::Sense::hover(),
         );
         let dominant_painter = ui.painter_at(dominant_rect);
-        let (band_name, _, _, band_color) = BANDS[dominant_band];
+        let (band_name, _, _, band_color) = bands[dominant_band];
 
         // Subtle glow background
         let glow_rect = dominant_rect.shrink2(egui::vec2(dominant_rect.width() * 0.3, 2.0));
         dominant_painter.rect_filled(
             glow_rect,
             4.0,
-            egui::Color32::from_rgba_unmultiplied(band_color.r(), band_color.g(), band_color.b(), 30),
+            egui::Color32::from_rgba_unmultiplied(
+                band_color.r(),
+                band_color.g(),
+                band_color.b(),
+                30,
+            ),
         );
 
         dominant_painter.text(
@@ -321,15 +431,13 @@ impl Widget for BandPowerWidget {
         );
 
         // --- Interactive Legend ---
-        let (legend_rect, _) = ui.allocate_exact_size(
-            egui::vec2(available.x, legend_height),
-            egui::Sense::hover(),
-        );
+        let (legend_rect, _) =
+            ui.allocate_exact_size(egui::vec2(available.x, legend_height), egui::Sense::hover());
         let legend_painter = ui.painter_at(legend_rect);
         let legend_y = legend_rect.center().y;
         let mut legend_x = legend_rect.left() + 8.0;
 
-        for (b, &(name, f_lo, f_hi, color)) in BANDS.iter().enumerate() {
+        for (b, &(name, f_lo, f_hi, color)) in bands.iter().enumerate() {
             let box_size = 10.0;
             let text_width = 45.0;
             let item_width = box_size + 4.0 + text_width;
@@ -376,10 +484,18 @@ impl Widget for BandPowerWidget {
 
             // Tooltip on hover
             if item_response.hovered() {
-                egui::show_tooltip_at_pointer(ui.ctx(), egui::Id::new(format!("legend_tip_{}", b)), |ui| {
-                    ui.label(format!("{}: {:.1}-{:.1} Hz", name, f_lo, f_hi));
-                    ui.label(if self.band_visible[b] { "Click to hide" } else { "Click to show" });
-                });
+                egui::show_tooltip_at_pointer(
+                    ui.ctx(),
+                    egui::Id::new(format!("legend_tip_{}_{}", pane_index, b)),
+                    |ui| {
+                        ui.label(format!("{}: {:.1}-{:.1} Hz", name, f_lo, f_hi));
+                        ui.label(if self.band_visible[b] {
+                            "Click to hide"
+                        } else {
+                            "Click to show"
+                        });
+                    },
+                );
             }
 
             legend_x += item_width + 8.0;
@@ -410,7 +526,8 @@ impl Widget for BandPowerWidget {
         let pointer_pos = ui.ctx().pointer_hover_pos();
 
         for (g, &ch) in channels.iter().enumerate() {
-            let group_x = chart_rect.left() + group_spacing + (group_width + group_spacing) * g as f32;
+            let group_x =
+                chart_rect.left() + group_spacing + (group_width + group_spacing) * g as f32;
 
             // Channel label
             chart_painter.text(
@@ -422,7 +539,9 @@ impl Widget for BandPowerWidget {
             );
 
             let powers = &self.cached_powers[ch];
-            let total_power: f32 = powers.iter().enumerate()
+            let total_power: f32 = powers
+                .iter()
+                .enumerate()
                 .filter(|(b, _)| self.band_visible[*b])
                 .map(|(_, p)| p)
                 .sum();
@@ -434,7 +553,9 @@ impl Widget for BandPowerWidget {
             let y_max = if self.relative {
                 100.0
             } else {
-                powers.iter().enumerate()
+                powers
+                    .iter()
+                    .enumerate()
                     .filter(|(b, _)| self.band_visible[*b])
                     .map(|(_, p)| *p)
                     .fold(f32::EPSILON, f32::max)
@@ -451,14 +572,16 @@ impl Widget for BandPowerWidget {
                     powers[b]
                 };
 
-                let bar_height = (val / y_max * bar_chart_height).min(bar_chart_height).max(0.0);
+                let bar_height = (val / y_max * bar_chart_height)
+                    .min(bar_chart_height)
+                    .max(0.0);
                 let bar_x = group_x + (bar_width + bar_spacing) * b as f32;
                 let bar_rect = egui::Rect::from_min_max(
                     egui::pos2(bar_x, chart_bottom - bar_height),
                     egui::pos2(bar_x + bar_width, chart_bottom),
                 );
 
-                let (name, f_lo, f_hi, base_color) = BANDS[b];
+                let (name, f_lo, f_hi, base_color) = bands[b];
 
                 // Check if this bar is hovered
                 let is_hovered = pointer_pos.map(|p| bar_rect.contains(p)).unwrap_or(false);
@@ -492,7 +615,12 @@ impl Widget for BandPowerWidget {
                 if bottom_half.height() > 0.0 {
                     chart_painter.rect_filled(
                         bottom_half,
-                        egui::Rounding { nw: 0.0, ne: 0.0, sw: 0.0, se: 0.0 },
+                        egui::Rounding {
+                            nw: 0.0,
+                            ne: 0.0,
+                            sw: 0.0,
+                            se: 0.0,
+                        },
                         dark_color,
                     );
                 }
@@ -535,15 +663,28 @@ impl Widget for BandPowerWidget {
 
                 // Show tooltip on hover
                 if is_hovered {
-                    egui::show_tooltip_at_pointer(ui.ctx(), egui::Id::new(format!("bar_tip_{}_{}", ch, b)), |ui| {
-                        ui.label(egui::RichText::new(format!("{} ({:.1}-{:.1} Hz)", name, f_lo, f_hi)).strong());
-                        ui.label(format!("Channel: {}", CHANNEL_NAMES.get(ch).unwrap_or(&"?")));
-                        if self.relative {
-                            ui.label(format!("Relative Power: {:.1}%", val));
-                        } else {
-                            ui.label(format!("Absolute Power: {:.2} uV^2", val));
-                        }
-                    });
+                    egui::show_tooltip_at_pointer(
+                        ui.ctx(),
+                        egui::Id::new(format!("bar_tip_{}_{}_{}", pane_index, ch, b)),
+                        |ui| {
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} ({:.1}-{:.1} Hz)",
+                                    name, f_lo, f_hi
+                                ))
+                                .strong(),
+                            );
+                            ui.label(format!(
+                                "Channel: {}",
+                                CHANNEL_NAMES.get(ch).unwrap_or(&"?")
+                            ));
+                            if self.relative {
+                                ui.label(format!("Relative Power: {:.1}%", val));
+                            } else {
+                                ui.label(format!("Absolute Power: {:.2} uV^2", val));
+                            }
+                        },
+                    );
                 }
             }
         }
@@ -573,7 +714,7 @@ impl Widget for BandPowerWidget {
             egui::pos2(sparkline_rect.right() - 4.0, sparkline_rect.bottom() - 4.0),
         );
 
-        for (b, &(_, _, _, color)) in BANDS.iter().enumerate() {
+        for (b, &(_, _, _, color)) in bands.iter().enumerate() {
             if self.band_visible[b] {
                 self.draw_sparkline(&sparkline_painter, sparkline_area, b, color);
             }

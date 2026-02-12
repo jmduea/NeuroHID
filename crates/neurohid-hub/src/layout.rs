@@ -419,7 +419,10 @@ impl LayoutManager {
 
             ui.add_space(4.0);
 
-            // Widget content area
+            // Widget content area — wrapped in a ScrollArea so that
+            // content-heavy widgets (e.g. SignalQuality with head diagram,
+            // table and quality bars) cannot overflow the pane boundary
+            // and leak into the console panel below.
             if ui.available_size().y < 40.0 {
                 ui.centered_and_justified(|ui| {
                     ui.label(
@@ -429,7 +432,14 @@ impl LayoutManager {
                     );
                 });
             } else if let Some(pane) = self.panes.get_mut(index) {
-                pane.widget.show(ui, ctx);
+                let remaining_height = ui.available_height();
+                egui::ScrollArea::vertical()
+                    .id_source(format!("pane_scroll_{}", index))
+                    .max_height(remaining_height)
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        pane.widget.show(ui, ctx, index);
+                    });
             }
         });
 

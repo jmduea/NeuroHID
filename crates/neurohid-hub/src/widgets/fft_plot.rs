@@ -25,11 +25,56 @@ const LEFT_MARGIN: f32 = 50.0;
 
 /// EEG frequency bands with their characteristics (name, tooltip, f_lo, f_hi, r, g, b, a)
 const BANDS: &[(&str, &str, f32, f32, u8, u8, u8, u8)] = &[
-    ("delta", "Delta (0.5-4 Hz): Deep sleep, unconscious", 0.5, 4.0, 100, 100, 200, 25),
-    ("theta", "Theta (4-8 Hz): Drowsiness, light sleep, meditation", 4.0, 8.0, 100, 200, 100, 25),
-    ("alpha", "Alpha (8-13 Hz): Relaxed, calm, eyes closed", 8.0, 13.0, 200, 200, 100, 25),
-    ("beta", "Beta (13-30 Hz): Alert, active thinking, focus", 13.0, 30.0, 200, 100, 100, 25),
-    ("gamma", "Gamma (30-45 Hz): High-level cognition, perception", 30.0, 45.0, 200, 100, 200, 25),
+    (
+        "delta",
+        "Delta (0.5-4 Hz): Deep sleep, unconscious",
+        0.5,
+        4.0,
+        100,
+        100,
+        200,
+        25,
+    ),
+    (
+        "theta",
+        "Theta (4-8 Hz): Drowsiness, light sleep, meditation",
+        4.0,
+        8.0,
+        100,
+        200,
+        100,
+        25,
+    ),
+    (
+        "alpha",
+        "Alpha (8-13 Hz): Relaxed, calm, eyes closed",
+        8.0,
+        13.0,
+        200,
+        200,
+        100,
+        25,
+    ),
+    (
+        "beta",
+        "Beta (13-30 Hz): Alert, active thinking, focus",
+        13.0,
+        30.0,
+        200,
+        100,
+        100,
+        25,
+    ),
+    (
+        "gamma",
+        "Gamma (30-45 Hz): High-level cognition, perception",
+        30.0,
+        45.0,
+        200,
+        100,
+        200,
+        25,
+    ),
 ];
 
 pub struct FftPlotWidget {
@@ -60,10 +105,7 @@ impl FftPlotWidget {
     }
 
     /// Compute FFT magnitude spectrum for a single channel from recent samples.
-    fn compute_fft(
-        samples: &VecDeque<neurohid_types::signal::Sample>,
-        channel: usize,
-    ) -> Vec<f32> {
+    fn compute_fft(samples: &VecDeque<neurohid_types::signal::Sample>, channel: usize) -> Vec<f32> {
         let n = FFT_SIZE;
         // Gather the most recent n values for this channel
         let start = if samples.len() > n {
@@ -85,8 +127,7 @@ impl FftPlotWidget {
 
         // Apply Hanning window
         for (i, v) in real.iter_mut().enumerate() {
-            let w =
-                0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n as f32 - 1.0)).cos());
+            let w = 0.5 * (1.0 - (2.0 * std::f32::consts::PI * i as f32 / (n as f32 - 1.0)).cos());
             *v *= w;
         }
 
@@ -234,6 +275,7 @@ impl FftPlotWidget {
         rect: egui::Rect,
         freq_range: f32,
         hover_pos: Option<egui::Pos2>,
+        pane_index: usize,
     ) {
         let greek_labels: std::collections::HashMap<&str, &str> = [
             ("delta", "d"),
@@ -254,10 +296,8 @@ impl FftPlotWidget {
             let x0 = rect.left() + (f_lo / freq_range) * rect.width();
             let x1 = rect.left() + (f_hi.min(freq_range) / freq_range) * rect.width();
 
-            let band_rect = egui::Rect::from_min_max(
-                egui::pos2(x0, rect.top()),
-                egui::pos2(x1, rect.bottom()),
-            );
+            let band_rect =
+                egui::Rect::from_min_max(egui::pos2(x0, rect.top()), egui::pos2(x1, rect.bottom()));
 
             // Draw shading
             painter.rect_filled(band_rect, 0.0, fill);
@@ -288,9 +328,13 @@ impl FftPlotWidget {
             // Show tooltip if hovering over this band
             if let Some(pos) = hover_pos {
                 if band_rect.contains(pos) {
-                    egui::show_tooltip_at_pointer(ui.ctx(), egui::Id::new(name), |ui| {
-                        ui.label(tooltip);
-                    });
+                    egui::show_tooltip_at_pointer(
+                        ui.ctx(),
+                        egui::Id::new(format!("fft_band_{}_{}", pane_index, name)),
+                        |ui| {
+                            ui.label(tooltip);
+                        },
+                    );
                 }
             }
         }
@@ -331,10 +375,7 @@ impl FftPlotWidget {
 
         // Build tooltip content
         let mut tooltip_lines: Vec<(String, egui::Color32)> = Vec::new();
-        tooltip_lines.push((
-            format!("f = {:.1} Hz", freq),
-            egui::Color32::WHITE,
-        ));
+        tooltip_lines.push((format!("f = {:.1} Hz", freq), egui::Color32::WHITE));
 
         // Add power values for each enabled channel
         for ch in 0..num_channels {
@@ -505,7 +546,7 @@ impl Widget for FftPlotWidget {
         "FFT Plot"
     }
 
-    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
+    fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         let sample_rate = 128.0;
         let nyquist = sample_rate / 2.0;
         let half_bins = FFT_SIZE / 2;
@@ -529,7 +570,7 @@ impl Widget for FftPlotWidget {
             ui.separator();
 
             ui.label("Y-Axis:");
-            egui::ComboBox::from_id_source("fft_scale")
+            egui::ComboBox::from_id_source(format!("fft_scale_{}", pane_index))
                 .selected_text(if self.log_scale { "Log" } else { "Linear" })
                 .width(60.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -541,7 +582,7 @@ impl Widget for FftPlotWidget {
             ui.add(egui::Slider::new(&mut self.smoothing, 0.0..=0.95).max_decimals(2));
 
             ui.label("Max Hz:");
-            egui::ComboBox::from_id_source("fft_maxfreq")
+            egui::ComboBox::from_id_source(format!("fft_maxfreq_{}", pane_index))
                 .selected_text(format!("{:.0}", self.max_freq))
                 .width(50.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -609,10 +650,11 @@ impl Widget for FftPlotWidget {
 
         // Compute FFT for each channel (unless frozen)
         let eeg_samples = ctx.samples_for(WidgetId::FftPlot);
-        let num_channels = eeg_samples
-            .back()
-            .map(|s| s.channel_count())
-            .unwrap_or(5)
+        // Use discovered stream channel count for stability —
+        // avoids cache thrashing when mixed streams cause count to flicker.
+        let num_channels = ctx
+            .channel_count_for(&["EEG"])
+            .unwrap_or_else(|| eeg_samples.back().map(|s| s.channel_count()).unwrap_or(5))
             .min(5);
 
         if !self.frozen {
@@ -674,7 +716,7 @@ impl Widget for FftPlotWidget {
 
         // Draw band shading with tooltips
         let hover_pos = response.hover_pos();
-        Self::draw_band_shading(ui, &painter, plot_rect, freq_range, hover_pos);
+        Self::draw_band_shading(ui, &painter, plot_rect, freq_range, hover_pos, pane_index);
 
         // Draw frequency grid lines
         let freq_ticks = [10.0, 20.0, 30.0, 40.0, 50.0, 60.0f32];
@@ -684,7 +726,10 @@ impl Widget for FftPlotWidget {
             }
             let x = plot_rect.left() + (freq / freq_range) * plot_rect.width();
             painter.line_segment(
-                [egui::pos2(x, plot_rect.top()), egui::pos2(x, plot_rect.bottom())],
+                [
+                    egui::pos2(x, plot_rect.top()),
+                    egui::pos2(x, plot_rect.bottom()),
+                ],
                 egui::Stroke::new(0.5, egui::Color32::from_gray(40)),
             );
             painter.text(
