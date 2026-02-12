@@ -3,12 +3,12 @@
 //! Unified application state for the hub. Contains storage handles, cached
 //! profile/config data, and a snapshot of the running service's state.
 
+use neurohid_storage::{ConfigStore, ProfileStore};
 use neurohid_types::{
     config::SystemConfig,
     device::DiscoveredStream,
     profile::{ProfileId, ProfileMetadata},
 };
-use neurohid_storage::{ProfileStore, ConfigStore};
 
 /// Snapshot of the running service state, updated each frame from
 /// `Arc<RwLock<ServiceState>>` via non-blocking `try_read()`.
@@ -26,8 +26,8 @@ pub struct ServiceSnapshot {
     pub actions_emitted: u64,
     pub errors_detected: u64,
     pub uptime_secs: u64,
-    #[allow(dead_code)] // will be used for IPC status display
     pub ipc_connected: bool,
+    pub ipc_simulated: bool,
     pub calibration_mode: bool,
     pub active_profile_name: Option<String>,
     /// If a service task failed at runtime, (task_name, error_message).
@@ -48,6 +48,7 @@ impl Default for ServiceSnapshot {
             errors_detected: 0,
             uptime_secs: 0,
             ipc_connected: false,
+            ipc_simulated: false,
             calibration_mode: false,
             active_profile_name: None,
             task_error: None,

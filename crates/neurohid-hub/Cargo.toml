@@ -41,3 +41,6 @@ eframe = { workspace = true, features = ["default_fonts", "glow", "x11"] }
 
 [target.'cfg(windows)'.dependencies]
 eframe = { workspace = true, features = ["default_fonts", "glow"] }
+
+[dev-dependencies]
+neurohid-ipc = { path = "../neurohid-ipc" }

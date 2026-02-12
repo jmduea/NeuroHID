@@ -6,12 +6,9 @@
 use std::sync::atomic::Ordering;
 use tokio::sync::broadcast;
 
-use neurohid_types::{
-    config::SystemConfig,
-    profile::ProfileId,
-};
-use neurohid_storage::ProfileStore;
 use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle};
+use neurohid_storage::ProfileStore;
+use neurohid_types::{config::SystemConfig, profile::ProfileId};
 
 use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
@@ -22,6 +19,9 @@ pub struct ServiceManager {
     last_error: Option<String>,
     /// Whether the data bus has been connected to this handle's broadcast receivers.
     bus_connected: bool,
+    /// Cached snapshot from the last successful `try_read()`, returned when the
+    /// lock is contended to avoid discarding `discovered_streams` for a frame.
+    cached_snapshot: ServiceSnapshot,
 }
 
 impl ServiceManager {
@@ -30,6 +30,7 @@ impl ServiceManager {
             handle: None,
             last_error: None,
             bus_connected: false,
+            cached_snapshot: ServiceSnapshot::default(),
         }
     }
 
@@ -99,9 +100,7 @@ impl ServiceManager {
     pub fn sync_data_bus(&mut self, bus: &mut DataBus) {
         if let Some(handle) = &self.handle {
             // Check if service is still active
-            let active = handle.state.try_read()
-                .map(|s| s.active)
-                .unwrap_or(true);
+            let active = handle.state.try_read().map(|s| s.active).unwrap_or(true);
 
             if active && !self.bus_connected {
                 // Create new receivers by resubscribing from the existing ones
@@ -123,16 +122,17 @@ impl ServiceManager {
     }
 
     /// Take a non-blocking snapshot of the service state.
-    pub fn snapshot(&self) -> ServiceSnapshot {
+    pub fn snapshot(&mut self) -> ServiceSnapshot {
         let Some(handle) = &self.handle else {
             return ServiceSnapshot::default();
         };
 
         // try_read() is non-blocking — if the lock is held by a task,
-        // we just return the previous snapshot values (stale by at most one frame).
+        // return the cached snapshot (stale by at most one frame) to avoid
+        // discarding discovered_streams and breaking quality routing.
         let state_guard = match handle.state.try_read() {
             Ok(guard) => guard,
-            Err(_) => return ServiceSnapshot::default(),
+            Err(_) => return self.cached_snapshot.clone(),
         };
 
         let uptime_secs = state_guard
@@ -140,7 +140,7 @@ impl ServiceManager {
             .map(|t| t.elapsed().as_secs())
             .unwrap_or(0);
 
-        ServiceSnapshot {
+        let snap = ServiceSnapshot {
             running: state_guard.active,
             device_connected: state_guard.device_connected,
             device_name: state_guard.device_name.clone(),
@@ -150,11 +150,14 @@ impl ServiceManager {
             errors_detected: state_guard.errors_detected,
             uptime_secs,
             ipc_connected: state_guard.ipc_connected,
+            ipc_simulated: state_guard.ipc_simulated,
             calibration_mode: state_guard.calibration_mode,
             active_profile_name: state_guard.active_profile_name.clone(),
             task_error: state_guard.task_error.clone(),
             discovered_streams: state_guard.discovered_streams.clone(),
-        }
+        };
+        self.cached_snapshot = snap.clone();
+        snap
     }
 
     /// Enter calibration mode (pauses HID emission, enables sample forwarding).
@@ -229,5 +232,117 @@ impl ServiceManager {
                     .try_send(DeviceCommand::Disconnect(id.to_string()));
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::net::TcpListener;
+    use std::thread;
+    use std::time::{Duration, Instant};
+
+    use neurohid_ipc::{IpcClient, IpcConfig, PythonToRust};
+    use neurohid_types::config::{DeviceBackend, SystemConfig};
+
+    use super::ServiceManager;
+    use crate::state::ServiceSnapshot;
+
+    #[test]
+    fn snapshot_tracks_real_ipc_connect_disconnect_transitions() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+
+        let mut manager = ServiceManager::new();
+        let mut config = SystemConfig::default();
+        config.device.backend = DeviceBackend::Mock;
+        config.service.ipc_simulation_enabled = false;
+        config.service.ipc_port = allocate_test_port();
+
+        manager.start(&runtime, config.clone(), None, None);
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| snap.running);
+
+        let initial = manager.snapshot();
+        assert!(!initial.ipc_connected);
+        assert!(!initial.ipc_simulated);
+
+        let mut client = runtime.block_on(connect_test_client(config.service.ipc_port));
+        runtime.block_on(async {
+            client
+                .send(PythonToRust::Ready)
+                .await
+                .expect("ready should send");
+        });
+
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            snap.ipc_connected && !snap.ipc_simulated
+        });
+
+        runtime.block_on(async {
+            client
+                .disconnect()
+                .await
+                .expect("disconnect should succeed");
+        });
+
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            !snap.ipc_connected && !snap.ipc_simulated
+        });
+
+        manager.stop();
+
+        let stopped = manager.snapshot();
+        assert!(!stopped.running);
+        assert!(!stopped.ipc_connected);
+        assert!(!stopped.ipc_simulated);
+    }
+
+    fn wait_for_snapshot(
+        manager: &mut ServiceManager,
+        timeout: Duration,
+        predicate: impl Fn(&ServiceSnapshot) -> bool,
+    ) {
+        let start = Instant::now();
+        loop {
+            let snap = manager.snapshot();
+            if predicate(&snap) {
+                return;
+            }
+
+            if start.elapsed() > timeout {
+                panic!("snapshot did not reach expected state before timeout: {snap:?}");
+            }
+
+            thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    async fn connect_test_client(port: u16) -> IpcClient {
+        let mut client = IpcClient::new(IpcConfig {
+            address: format!("127.0.0.1:{port}"),
+            connect_timeout_ms: 250,
+            ..IpcConfig::default()
+        });
+
+        let start = tokio::time::Instant::now();
+        loop {
+            match client.connect().await {
+                Ok(()) => return client,
+                Err(err) if start.elapsed() < Duration::from_secs(2) => {
+                    tracing::debug!(%err, "Waiting for service IPC server");
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+                Err(err) => panic!("client failed to connect: {err}"),
+            }
+        }
+    }
+
+    fn allocate_test_port() -> u16 {
+        TcpListener::bind("127.0.0.1:0")
+            .expect("ephemeral port bind should succeed")
+            .local_addr()
+            .expect("local addr should resolve")
+            .port()
     }
 }

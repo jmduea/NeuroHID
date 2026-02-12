@@ -124,14 +124,8 @@ impl DevicesScreen {
             );
 
             ui.add_space(4.0);
-            let stream_names: Vec<&str> = snap
-                .discovered_streams
-                .iter()
-                .filter(|s| s.connected)
-                .map(|s| s.name.as_str())
-                .collect();
             ui.label(
-                egui::RichText::new(format!("Aggregate across: {}", stream_names.join(", ")))
+                egui::RichText::new(format!("Aggregate across {} streams", connected_count))
                     .small()
                     .color(egui::Color32::GRAY),
             );
@@ -168,7 +162,7 @@ impl DevicesScreen {
         };
 
         ui.group(|ui| {
-            // Device header row
+            // Device header — vertical card layout
             ui.horizontal(|ui| {
                 ui.colored_label(status_color, "\u{25CF}");
                 ui.label(egui::RichText::new(&device_label).strong().size(15.0));
@@ -182,43 +176,44 @@ impl DevicesScreen {
                     };
                     ui.colored_label(bat_color, format!("\u{1F50B} {}%", bat));
                 }
-                ui.label(
-                    egui::RichText::new(format!(
-                        "{}/{} streams \u{2022} {}",
-                        connected_count, total, status_text
-                    ))
-                    .small()
-                    .color(egui::Color32::LIGHT_GRAY),
-                );
+            });
+            ui.label(
+                egui::RichText::new(format!(
+                    "{}/{} streams \u{2022} {}",
+                    connected_count, total, status_text
+                ))
+                .small()
+                .color(egui::Color32::LIGHT_GRAY),
+            );
+            ui.add_space(4.0);
 
-                // Connect All / Disconnect All (right-aligned)
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if all_connected {
+            // Connect All / Disconnect All buttons
+            ui.horizontal(|ui| {
+                if all_connected {
+                    if ui.button("Disconnect All").clicked() {
+                        let ids: Vec<&str> = streams.iter().map(|s| s.id.as_str()).collect();
+                        service_manager.disconnect_streams(&ids);
+                    }
+                } else {
+                    if ui.button("Connect All").clicked() {
+                        let ids: Vec<&str> = streams
+                            .iter()
+                            .filter(|s| !s.connected)
+                            .map(|s| s.id.as_str())
+                            .collect();
+                        service_manager.connect_streams(&ids);
+                    }
+                    if any_connected {
                         if ui.button("Disconnect All").clicked() {
-                            let ids: Vec<&str> = streams.iter().map(|s| s.id.as_str()).collect();
-                            service_manager.disconnect_streams(&ids);
-                        }
-                    } else {
-                        if ui.button("Connect All").clicked() {
                             let ids: Vec<&str> = streams
                                 .iter()
-                                .filter(|s| !s.connected)
+                                .filter(|s| s.connected)
                                 .map(|s| s.id.as_str())
                                 .collect();
-                            service_manager.connect_streams(&ids);
-                        }
-                        if any_connected {
-                            if ui.button("Disconnect All").clicked() {
-                                let ids: Vec<&str> = streams
-                                    .iter()
-                                    .filter(|s| s.connected)
-                                    .map(|s| s.id.as_str())
-                                    .collect();
-                                service_manager.disconnect_streams(&ids);
-                            }
+                            service_manager.disconnect_streams(&ids);
                         }
                     }
-                });
+                }
             });
 
             // Collapsible stream list
@@ -251,45 +246,43 @@ impl DevicesScreen {
         stream: &DiscoveredStream,
         service_manager: &mut ServiceManager,
     ) {
+        let (color, status) = if stream.connected {
+            (egui::Color32::GREEN, "Connected")
+        } else {
+            (egui::Color32::GRAY, "Available")
+        };
+
         ui.horizontal(|ui| {
             ui.add_space(16.0); // indent
-
-            let (color, status) = if stream.connected {
-                (egui::Color32::GREEN, "Connected")
-            } else {
-                (egui::Color32::GRAY, "Available")
-            };
             ui.colored_label(color, "\u{25CB}"); // hollow bullet for child
-
-            ui.vertical(|ui| {
-                ui.label(egui::RichText::new(&stream.name).strong());
-                ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new(&stream.stream_type)
-                            .small()
-                            .color(egui::Color32::LIGHT_GRAY),
-                    );
-                    ui.label(
-                        egui::RichText::new(format!(
-                            "{}ch @ {:.0} Hz",
-                            stream.channel_count, stream.sample_rate
-                        ))
-                        .small()
-                        .color(egui::Color32::LIGHT_GRAY),
-                    );
-                    ui.label(egui::RichText::new(status).small().color(color));
-                });
-            });
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if stream.connected {
-                    if ui.button("Disconnect").clicked() {
-                        service_manager.disconnect_stream(&stream.id);
-                    }
-                } else if ui.button("Connect").clicked() {
-                    service_manager.connect_stream(&stream.id);
+            ui.label(egui::RichText::new(&stream.name).strong());
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(32.0); // indent metadata
+            ui.label(
+                egui::RichText::new(&stream.stream_type)
+                    .small()
+                    .color(egui::Color32::LIGHT_GRAY),
+            );
+            ui.label(
+                egui::RichText::new(format!(
+                    "{}ch @ {:.0} Hz",
+                    stream.channel_count, stream.sample_rate
+                ))
+                .small()
+                .color(egui::Color32::LIGHT_GRAY),
+            );
+            ui.label(egui::RichText::new(status).small().color(color));
+        });
+        ui.horizontal(|ui| {
+            ui.add_space(32.0); // indent button
+            if stream.connected {
+                if ui.button("Disconnect").clicked() {
+                    service_manager.disconnect_stream(&stream.id);
                 }
-            });
+            } else if ui.button("Connect").clicked() {
+                service_manager.connect_stream(&stream.id);
+            }
         });
 
         // Per-channel quality bars for connected streams
@@ -331,63 +324,52 @@ impl DevicesScreen {
         service_manager: &mut ServiceManager,
     ) {
         ui.group(|ui| {
+            // Status + stream name + battery
+            let (color, status) = if stream.connected {
+                (egui::Color32::GREEN, "Connected")
+            } else {
+                (egui::Color32::GRAY, "Available")
+            };
             ui.horizontal(|ui| {
-                // Status indicator
-                let (color, status) = if stream.connected {
-                    (egui::Color32::GREEN, "Connected")
-                } else {
-                    (egui::Color32::GRAY, "Available")
-                };
                 ui.colored_label(color, "\u{25CF}"); // bullet
-
-                // Stream info
-                ui.vertical(|ui| {
-                    ui.horizontal(|ui| {
-                        ui.label(egui::RichText::new(&stream.name).strong());
-                        // Battery indicator next to name
-                        if let Some(bat) = stream.battery_percent {
-                            let bat_color = if bat > 50 {
-                                egui::Color32::GREEN
-                            } else if bat > 20 {
-                                egui::Color32::YELLOW
-                            } else {
-                                egui::Color32::RED
-                            };
-                            ui.colored_label(bat_color, format!("{}%", bat));
-                        }
-                    });
-                    ui.horizontal(|ui| {
-                        ui.label(
-                            egui::RichText::new(&stream.stream_type)
-                                .small()
-                                .color(egui::Color32::LIGHT_GRAY),
-                        );
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{}ch @ {:.0} Hz",
-                                stream.channel_count, stream.sample_rate
-                            ))
-                            .small()
-                            .color(egui::Color32::LIGHT_GRAY),
-                        );
-                        ui.label(egui::RichText::new(status).small().color(color));
-                    });
-                });
-
-                // Connect/Disconnect button (right-aligned)
-                ui.with_layout(
-                    egui::Layout::right_to_left(egui::Align::Center),
-                    |ui| {
-                        if stream.connected {
-                            if ui.button("Disconnect").clicked() {
-                                service_manager.disconnect_stream(&stream.id);
-                            }
-                        } else if ui.button("Connect").clicked() {
-                            service_manager.connect_stream(&stream.id);
-                        }
-                    },
-                );
+                ui.label(egui::RichText::new(&stream.name).strong());
+                if let Some(bat) = stream.battery_percent {
+                    let bat_color = if bat > 50 {
+                        egui::Color32::GREEN
+                    } else if bat > 20 {
+                        egui::Color32::YELLOW
+                    } else {
+                        egui::Color32::RED
+                    };
+                    ui.colored_label(bat_color, format!("{}%", bat));
+                }
             });
+            // Stream metadata
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new(&stream.stream_type)
+                        .small()
+                        .color(egui::Color32::LIGHT_GRAY),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{}ch @ {:.0} Hz",
+                        stream.channel_count, stream.sample_rate
+                    ))
+                    .small()
+                    .color(egui::Color32::LIGHT_GRAY),
+                );
+                ui.label(egui::RichText::new(status).small().color(color));
+            });
+            ui.add_space(4.0);
+            // Connect/Disconnect button
+            if stream.connected {
+                if ui.button("Disconnect").clicked() {
+                    service_manager.disconnect_stream(&stream.id);
+                }
+            } else if ui.button("Connect").clicked() {
+                service_manager.connect_stream(&stream.id);
+            }
 
             // Per-channel quality bars for connected streams
             if stream.connected {
@@ -424,7 +406,7 @@ impl DevicesScreen {
 /// Tries to find a common prefix among stream names (e.g., "Emotiv" from
 /// "EmotivEEG", "EmotivMotion", "EmotivEQ"). Falls back to the raw
 /// `source_id` if no meaningful prefix is found.
-fn derive_device_label(streams: &[&DiscoveredStream], source_id: &str) -> String {
+pub(crate) fn derive_device_label(streams: &[&DiscoveredStream], source_id: &str) -> String {
     if streams.is_empty() {
         return source_id.to_string();
     }

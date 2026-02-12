@@ -3,19 +3,22 @@
 //! The main `eframe::App` implementation that ties together the sidebar,
 //! status bar, and screen dispatch.
 
+use std::collections::BTreeMap;
+use std::path::PathBuf;
+
 use eframe::egui;
 
-use crate::state::HubState;
 use crate::data_bus::DataBus;
-use crate::service_manager::ServiceManager;
-use crate::stream_console::StreamConsole;
-use crate::screens::Screen;
-use crate::screens::dashboard::DashboardScreen;
-use crate::screens::devices::DevicesScreen;
-use crate::screens::profiles::ProfilesScreen;
 use crate::screens::calibration::CalibrationScreen;
+use crate::screens::dashboard::DashboardScreen;
+use crate::screens::devices::{derive_device_label, DevicesScreen};
+use crate::screens::profiles::ProfilesScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::visualization::VisualizationScreen;
+use crate::screens::Screen;
+use crate::service_manager::ServiceManager;
+use crate::state::HubState;
+use crate::stream_console::StreamConsole;
 
 /// The main hub application.
 pub struct HubApp {
@@ -40,18 +43,22 @@ impl HubApp {
         let (state, init_error) = match runtime.block_on(Self::init_state()) {
             Ok(state) => (state, None),
             Err(e) => {
-                let error_msg = format!("{}", e);
+                let error_msg = e.to_string();
                 tracing::error!("Failed to initialize: {}", error_msg);
-                // Create a minimal fallback state
-                let fallback = runtime.block_on(async {
-                    let config = neurohid_types::config::SystemConfig::default();
-                    let (ps, cs) = neurohid_storage::initialize().await
-                        .unwrap_or_else(|_| {
-                            panic!("Cannot initialize storage at all")
-                        });
-                    HubState::new(ps, cs, config, vec![])
-                });
-                (fallback, Some(error_msg))
+
+                // Create a minimal fallback state without panicking.
+                let (fallback, fallback_error) = runtime.block_on(Self::init_fallback_state());
+                let combined_error = match fallback_error {
+                    Some(fallback_error) => {
+                        format!(
+                            "{} | fallback storage degraded: {}",
+                            error_msg, fallback_error
+                        )
+                    }
+                    None => error_msg,
+                };
+
+                (fallback, Some(combined_error))
             }
         };
 
@@ -88,16 +95,123 @@ impl HubApp {
     }
 
     async fn init_state() -> anyhow::Result<HubState> {
-        let (profile_store, config_store) = neurohid_storage::initialize().await
+        let (profile_store, config_store) = neurohid_storage::initialize()
+            .await
             .map_err(|e| anyhow::anyhow!("Storage init failed: {}", e))?;
 
-        let config = config_store.load().await
+        let config = config_store
+            .load()
+            .await
             .map_err(|e| anyhow::anyhow!("Config load failed: {}", e))?;
 
-        let profiles = profile_store.list_profiles().await
-            .unwrap_or_default();
+        let profiles = profile_store.list_profiles().await.unwrap_or_default();
 
         Ok(HubState::new(profile_store, config_store, config, profiles))
+    }
+
+    async fn init_fallback_state() -> (HubState, Option<String>) {
+        let fallback_root = std::env::temp_dir().join("neurohid-fallback");
+        let paths = match neurohid_storage::DataPaths::new(Some(fallback_root.clone())) {
+            Ok(paths) => paths,
+            Err(e) => {
+                let current_dir_root: PathBuf = PathBuf::from(".neurohid-fallback");
+                let error_msg = format!(
+                    "failed to create fallback paths at {}: {}",
+                    fallback_root.display(),
+                    e
+                );
+                tracing::error!("{}", error_msg);
+
+                match neurohid_storage::DataPaths::new(Some(current_dir_root.clone())) {
+                    Ok(paths) => {
+                        let profile_store = neurohid_storage::ProfileStore::new(
+                            paths.clone(),
+                            neurohid_storage::SecureStorage::default(),
+                        );
+                        let config_store = neurohid_storage::ConfigStore::new(paths);
+                        let state = HubState::new(
+                            profile_store,
+                            config_store,
+                            neurohid_types::config::SystemConfig::default(),
+                            vec![],
+                        );
+                        return (
+                            state,
+                            Some(format!(
+                                "{}; using relative fallback storage at {}",
+                                error_msg,
+                                current_dir_root.display()
+                            )),
+                        );
+                    }
+                    Err(second_error) => {
+                        tracing::error!(
+                            "failed to create relative fallback paths at {}: {}",
+                            current_dir_root.display(),
+                            second_error
+                        );
+                        let paths = neurohid_storage::DataPaths::new(Some(std::env::temp_dir()))
+                            .unwrap_or_else(|_| {
+                                unreachable!("temp-dir fallback path should be valid")
+                            });
+                        let profile_store = neurohid_storage::ProfileStore::new(
+                            paths.clone(),
+                            neurohid_storage::SecureStorage::default(),
+                        );
+                        let config_store = neurohid_storage::ConfigStore::new(paths);
+                        let state = HubState::new(
+                            profile_store,
+                            config_store,
+                            neurohid_types::config::SystemConfig::default(),
+                            vec![],
+                        );
+                        return (
+                            state,
+                            Some(format!(
+                                "{}; secondary fallback failed: {}",
+                                error_msg, second_error
+                            )),
+                        );
+                    }
+                }
+            }
+        };
+
+        if let Err(e) = paths.ensure_directories().await {
+            tracing::warn!(
+                "fallback storage directory initialization failed at {}: {}",
+                paths.root().display(),
+                e
+            );
+            let profile_store = neurohid_storage::ProfileStore::new(
+                paths.clone(),
+                neurohid_storage::SecureStorage::default(),
+            );
+            let config_store = neurohid_storage::ConfigStore::new(paths);
+            let state = HubState::new(
+                profile_store,
+                config_store,
+                neurohid_types::config::SystemConfig::default(),
+                vec![],
+            );
+            return (state, Some(format!("directory init failed: {}", e)));
+        }
+
+        let profile_store = neurohid_storage::ProfileStore::new(
+            paths.clone(),
+            neurohid_storage::SecureStorage::default(),
+        );
+        let config_store = neurohid_storage::ConfigStore::new(paths);
+
+        (
+            HubState::new(
+                profile_store,
+                config_store,
+                neurohid_types::config::SystemConfig::default(),
+                vec![],
+            ),
+            None,
+        )
     }
 
     fn show_sidebar(&mut self, ctx: &egui::Context) {
@@ -137,6 +251,20 @@ impl HubApp {
                     ui.label(format!("Service: {}", status_text));
                 });
 
+                let (ipc_color, ipc_text) = if snap.ipc_connected {
+                    if snap.ipc_simulated {
+                        (egui::Color32::YELLOW, "Simulated")
+                    } else {
+                        (egui::Color32::GREEN, "Connected")
+                    }
+                } else {
+                    (egui::Color32::GRAY, "Disconnected")
+                };
+                ui.horizontal(|ui| {
+                    ui.colored_label(ipc_color, "●");
+                    ui.label(format!("IPC: {}", ipc_text));
+                });
+
                 if let Some((task, _)) = &snap.task_error {
                     ui.horizontal(|ui| {
                         ui.colored_label(egui::Color32::RED, "●");
@@ -149,11 +277,92 @@ impl HubApp {
                 }
 
                 if snap.device_connected {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::GREEN, "●");
-                        let name = snap.device_name.as_deref().unwrap_or("Unknown");
-                        ui.label(format!("Device: {}", name));
-                    });
+                    ui.add_space(4.0);
+                    ui.label(
+                        egui::RichText::new("Devices")
+                            .small()
+                            .strong()
+                            .color(egui::Color32::LIGHT_GRAY),
+                    );
+
+                    // Group streams by source_id for collapsible device tree
+                    let mut groups: BTreeMap<
+                        Option<String>,
+                        Vec<&neurohid_types::device::DiscoveredStream>,
+                    > = BTreeMap::new();
+                    for stream in &snap.discovered_streams {
+                        groups
+                            .entry(stream.source_id.clone())
+                            .or_default()
+                            .push(stream);
+                    }
+
+                    for (source_id, streams) in &groups {
+                        let device_label = match source_id {
+                            Some(src_id) if streams.len() > 1 => {
+                                derive_device_label(streams, src_id)
+                            }
+                            _ => {
+                                // Single stream or no source_id — use the stream name
+                                streams.first().map(|s| s.name.clone()).unwrap_or_default()
+                            }
+                        };
+
+                        let connected = streams.iter().filter(|s| s.connected).count();
+                        let total = streams.len();
+                        let header_color = if connected == total {
+                            egui::Color32::GREEN
+                        } else if connected > 0 {
+                            egui::Color32::YELLOW
+                        } else {
+                            egui::Color32::GRAY
+                        };
+
+                        let header_id =
+                            ui.make_persistent_id(source_id.as_deref().unwrap_or(&device_label));
+                        egui::collapsing_header::CollapsingState::load_with_default_open(
+                            ui.ctx(),
+                            header_id,
+                            false,
+                        )
+                        .show_header(ui, |ui| {
+                            ui.colored_label(header_color, "●");
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "{} ({}/{})",
+                                    device_label, connected, total
+                                ))
+                                .small(),
+                            );
+                        })
+                        .body(|ui| {
+                            for stream in streams {
+                                let s_color = if stream.connected {
+                                    egui::Color32::GREEN
+                                } else {
+                                    egui::Color32::GRAY
+                                };
+                                ui.horizontal(|ui| {
+                                    ui.add_space(8.0);
+                                    ui.colored_label(s_color, "○");
+                                    ui.label(egui::RichText::new(&stream.name).small());
+                                });
+                                ui.horizontal(|ui| {
+                                    ui.add_space(20.0);
+                                    ui.label(
+                                        egui::RichText::new(format!(
+                                            "{} · {}ch · {:.0}Hz",
+                                            stream.stream_type,
+                                            stream.channel_count,
+                                            stream.sample_rate
+                                        ))
+                                        .small()
+                                        .color(egui::Color32::GRAY),
+                                    );
+                                });
+                            }
+                        });
+                    }
                 } else if snap.running {
                     ui.horizontal(|ui| {
                         ui.colored_label(egui::Color32::YELLOW, "●");
@@ -197,7 +406,11 @@ impl HubApp {
                         }
 
                         ui.separator();
-                        let console_label = if self.stream_console.visible { "Console [x]" } else { "Console" };
+                        let console_label = if self.stream_console.visible {
+                            "Console [x]"
+                        } else {
+                            "Console"
+                        };
                         if ui.small_button(console_label).clicked() {
                             self.stream_console.toggle();
                         }
@@ -226,14 +439,16 @@ impl eframe::App for HubApp {
         self.data_bus.poll();
 
         // Update stream console with new data
-        self.stream_console.update(&self.data_bus, &self.state.service_snapshot);
+        self.stream_console
+            .update(&self.data_bus, &self.state.service_snapshot);
 
         // Show sidebar and status bar (always visible)
         self.show_sidebar(ctx);
         self.show_status_bar(ctx);
 
         // Show stream console (renders before CentralPanel to claim bottom space)
-        self.stream_console.show(ctx, &self.data_bus, &self.state.service_snapshot);
+        self.stream_console
+            .show(ctx, &self.data_bus, &self.state.service_snapshot);
 
         // When calibration is active, the CalibrationPanel renders its own
         // CentralPanel directly into the remaining space (after sidebar/status bar).
@@ -259,23 +474,23 @@ impl eframe::App for HubApp {
 
             match self.current_screen {
                 Screen::Dashboard => {
-                    self.dashboard.show(ui, &self.state, &mut self.service_manager, &self.runtime);
+                    self.dashboard
+                        .show(ui, &self.state, &mut self.service_manager, &self.runtime);
                 }
                 Screen::Visualization => {
-                    self.visualization.show(ui, &self.data_bus, &self.state.service_snapshot);
+                    self.visualization
+                        .show(ui, &self.data_bus, &self.state.service_snapshot);
                 }
                 Screen::Devices => {
-                    self.devices.show(ui, &self.state, &mut self.service_manager);
+                    self.devices
+                        .show(ui, &self.state, &mut self.service_manager);
                 }
                 Screen::Profiles => {
                     self.profiles.show(ui, &mut self.state, &self.runtime);
                 }
                 Screen::Calibration => {
-                    self.calibration.show_entry(
-                        ui,
-                        &mut self.state,
-                        &mut self.service_manager,
-                    );
+                    self.calibration
+                        .show_entry(ui, &mut self.state, &mut self.service_manager);
                 }
                 Screen::Settings => {
                     self.settings.show(ui, &mut self.state, &self.runtime);

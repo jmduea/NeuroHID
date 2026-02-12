@@ -2162,6 +2162,7 @@ dependencies = [
  "neurohid-calibration",
  "neurohid-core",
  "neurohid-device",
+ "neurohid-ipc",
  "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
