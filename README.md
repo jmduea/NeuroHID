@@ -94,6 +94,13 @@ neurohid/
         └── bridge/            # IPC client
 ```
 
+## Emotiv Crates
+
+The Emotiv publisher crates are maintained in a dedicated repository:
+
+- <https://github.com/jmduea/emotiv-cortex-rs>
+- crates.io: `emotiv-cortex-v2`, `emotiv-cortex-cli`
+
 ## Key Innovations
 
 ### Error-Related Potentials as Reward
@@ -196,7 +203,7 @@ Areas where help is especially appreciated:
 
 ## License
 
-This project is dual-licensed under MIT and Apache 2.0. Individual crate license files are included where applicable (for example, `crates/emotiv-cortex-v2/LICENSE-MIT` and `crates/emotiv-cortex-v2/LICENSE-APACHE`).
+This project is dual-licensed under MIT and Apache 2.0. The Emotiv crate-specific license files now live in the external `emotiv-cortex-rs` repository.
 
 ## Acknowledgments
 

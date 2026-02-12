@@ -98,6 +98,7 @@ The workspace is organized into internal library crates and two published crates
 - **`neurohid`** — published binary crate (`cargo install neurohid`)
 - **`neurohid-sdk`** — published facade library for Rust BCI developers
 - **Internal crates** — `neurohid-types`, `neurohid-signal`, `neurohid-device`, etc.
+- **External Emotiv crates** — `emotiv-cortex-v2` and `emotiv-cortex-cli` are maintained in `https://github.com/jmduea/emotiv-cortex-rs`
 
 See the root [README.md](./README.md) for the full architecture overview.
 
