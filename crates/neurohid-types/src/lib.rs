@@ -22,23 +22,25 @@
 //! - Coordinates are normalized to [0.0, 1.0] where possible
 //! - Errors use `thiserror` for clean error hierarchies
 
-pub mod signal;
 pub mod action;
-pub mod device;
-pub mod observation;
-pub mod reward;
-pub mod profile;
 pub mod config;
+pub mod device;
 pub mod error;
+pub mod event;
+pub mod observation;
+pub mod profile;
+pub mod reward;
+pub mod signal;
 
 // Re-export commonly used types at the crate root for convenience
-pub use signal::{Sample, ChannelId, ChannelConfig, FeatureVector};
-pub use action::{Action, MouseAction, KeyAction, MouseButton, Key};
-pub use device::{DeviceId, DeviceInfo, DeviceStatus, ConnectionState, DiscoveredStream};
-pub use observation::{Observation, CursorState};
-pub use reward::{RewardSignal, ErrPResult, SignalQuality};
-pub use profile::{ProfileId, CalibrationState};
+pub use action::{Action, Key, KeyAction, MouseAction, MouseButton};
+pub use device::{ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DiscoveredStream};
 pub use error::{Error, Result};
+pub use event::{MarkerPayload, MarkerType, StreamMarker};
+pub use observation::{CursorState, Observation};
+pub use profile::{CalibrationState, ProfileId};
+pub use reward::{ErrPResult, RewardSignal, SignalQuality};
+pub use signal::{ChannelConfig, ChannelId, FeatureVector, Sample};
 
 /// Microseconds since Unix epoch. We use i64 to allow for negative values
 /// (timestamps before epoch) even though we don't expect them in practice.

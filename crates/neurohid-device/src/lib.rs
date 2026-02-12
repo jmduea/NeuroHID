@@ -9,6 +9,8 @@
 //! - **LSL** — Consumes any [Lab Streaming Layer](https://labstreaminglayer.readthedocs.io/)
 //!   stream on the local network. Device-specific software (emotiv-cortex-cli,
 //!   MuseLSL, OpenBCI GUI, etc.) pushes data into LSL; this adapter pulls it in.
+//! - **Serial** — Reads samples from direct USB/UART ports using configurable
+//!   framing (`csv_line` or `binary_i16_le`).
 //! - **Mock Device** — Always available, for testing and development without hardware.
 //!
 //! ## Architecture
@@ -20,14 +22,20 @@
 //!
 //! Consumers of this crate work with them uniformly through the trait interface.
 
+#[cfg(feature = "brainflow")]
+pub mod brainflow;
 #[cfg(feature = "lsl")]
 pub mod lsl;
 pub mod mock;
+pub mod serial;
 pub mod traits;
 
+#[cfg(feature = "brainflow")]
+pub use brainflow::{BrainFlowDevice, BrainFlowProvider};
 #[cfg(feature = "lsl")]
 pub use lsl::{LslDevice, LslProvider};
 pub use mock::MockDeviceConfig;
+pub use serial::{SerialDevice, SerialProvider};
 pub use traits::{Device, DeviceExt, DeviceProvider, SampleStream};
 
 // Re-export commonly used types from neurohid-types for convenience

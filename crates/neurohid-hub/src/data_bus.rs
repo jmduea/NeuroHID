@@ -10,6 +10,7 @@ use tokio::sync::broadcast;
 use neurohid_types::{
     action::Action,
     device::DiscoveredStream,
+    event::StreamMarker,
     signal::{FeatureVector, Sample},
 };
 
@@ -19,6 +20,8 @@ const MAX_SAMPLES: usize = 1280;
 const MAX_FEATURES: usize = 200;
 /// Maximum number of actions to keep.
 const MAX_ACTIONS: usize = 200;
+/// Maximum number of timeline markers to keep.
+const MAX_MARKERS: usize = 512;
 
 /// The data bus collects live data from service broadcast channels and
 /// maintains ring-buffer snapshots that widgets can read each frame.
@@ -26,6 +29,7 @@ pub struct DataBus {
     sample_rx: Option<broadcast::Receiver<Sample>>,
     feature_rx: Option<broadcast::Receiver<FeatureVector>>,
     action_rx: Option<broadcast::Receiver<Action>>,
+    marker_rx: Option<broadcast::Receiver<StreamMarker>>,
 
     /// Ring buffer of recent raw samples (all streams, for backward compat).
     pub samples: VecDeque<Sample>,
@@ -36,6 +40,8 @@ pub struct DataBus {
     pub features: VecDeque<FeatureVector>,
     /// Ring buffer of recent decoded actions.
     pub actions: VecDeque<Action>,
+    /// Ring buffer of recent marker annotations.
+    pub markers: VecDeque<StreamMarker>,
 
     /// Monotonically increasing counter of total samples received.
     /// Unlike `samples.len()`, this never saturates at MAX_SAMPLES.
@@ -49,10 +55,12 @@ impl DataBus {
             sample_rx: None,
             feature_rx: None,
             action_rx: None,
+            marker_rx: None,
             samples: VecDeque::with_capacity(MAX_SAMPLES),
             samples_by_source: HashMap::new(),
             features: VecDeque::with_capacity(MAX_FEATURES),
             actions: VecDeque::with_capacity(MAX_ACTIONS),
+            markers: VecDeque::with_capacity(MAX_MARKERS),
             total_samples_received: 0,
         }
     }
@@ -64,10 +72,12 @@ impl DataBus {
         sample_rx: broadcast::Receiver<Sample>,
         feature_rx: broadcast::Receiver<FeatureVector>,
         action_rx: broadcast::Receiver<Action>,
+        marker_rx: broadcast::Receiver<StreamMarker>,
     ) {
         self.sample_rx = Some(sample_rx);
         self.feature_rx = Some(feature_rx);
         self.action_rx = Some(action_rx);
+        self.marker_rx = Some(marker_rx);
     }
 
     /// Disconnect and clear receivers (called when service stops).
@@ -75,6 +85,7 @@ impl DataBus {
         self.sample_rx = None;
         self.feature_rx = None;
         self.action_rx = None;
+        self.marker_rx = None;
     }
 
     /// Drain all pending messages from broadcast channels into ring buffers.
@@ -141,6 +152,22 @@ impl DataBus {
                             self.actions.pop_front();
                         }
                         self.actions.push_back(action);
+                    }
+                    Err(broadcast::error::TryRecvError::Lagged(_)) => {}
+                    Err(_) => break,
+                }
+            }
+        }
+
+        // Drain markers
+        if let Some(rx) = &mut self.marker_rx {
+            loop {
+                match rx.try_recv() {
+                    Ok(marker) => {
+                        if self.markers.len() >= MAX_MARKERS {
+                            self.markers.pop_front();
+                        }
+                        self.markers.push_back(marker);
                     }
                     Err(broadcast::error::TryRecvError::Lagged(_)) => {}
                     Err(_) => break,

@@ -30,6 +30,7 @@ async-trait = "0.1"
 
 # Lab Streaming Layer
 lsl = { version = "0.1", optional = true }
+serialport = { version = "4.7.3", default-features = false }
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -37,3 +38,4 @@ tokio-test = "0.4"
 [features]
 default = ["lsl"]
 lsl = ["dep:lsl"]
+brainflow = []

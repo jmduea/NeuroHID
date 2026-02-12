@@ -5,6 +5,7 @@
 
 use eframe::egui;
 
+use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 
 pub struct SettingsScreen {
@@ -22,6 +23,7 @@ impl SettingsScreen {
         &mut self,
         ui: &mut egui::Ui,
         state: &mut HubState,
+        service_manager: &ServiceManager,
         runtime: &tokio::runtime::Runtime,
     ) {
         ui.heading("Settings");
@@ -49,6 +51,8 @@ impl SettingsScreen {
         });
 
         ui.add_space(16.0);
+
+        let mut signal_changed_this_frame = false;
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             // Device settings
@@ -87,10 +91,7 @@ impl SettingsScreen {
                         ui.horizontal(|ui| {
                             ui.label("LSL predicate:");
                             let lsl_cfg = cfg.lsl.get_or_insert_with(Default::default);
-                            if ui
-                                .text_edit_singleline(&mut lsl_cfg.predicate)
-                                .changed()
-                            {
+                            if ui.text_edit_singleline(&mut lsl_cfg.predicate).changed() {
                                 changed = true;
                             }
                         });
@@ -104,22 +105,106 @@ impl SettingsScreen {
                         );
                     }
 
+                    if matches!(cfg.backend, neurohid_types::config::DeviceBackend::Serial) {
+                        ui.horizontal(|ui| {
+                            ui.label("Serial port:");
+                            let serial_cfg = cfg.serial.get_or_insert_with(Default::default);
+                            let mut port = serial_cfg.port.clone().unwrap_or_default();
+                            if ui.text_edit_singleline(&mut port).changed() {
+                                serial_cfg.port = if port.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(port)
+                                };
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Baud:");
+                            let serial_cfg = cfg.serial.get_or_insert_with(Default::default);
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut serial_cfg.baud_rate)
+                                        .clamp_range(1_200..=3_000_000),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Framing:");
+                            let serial_cfg = cfg.serial.get_or_insert_with(Default::default);
+                            let current = serial_cfg.framing.clone();
+                            egui::ComboBox::from_id_source("serial_framing")
+                                .selected_text(match serial_cfg.framing {
+                                    neurohid_types::config::SerialFraming::CsvLine => "CSV line",
+                                    neurohid_types::config::SerialFraming::BinaryI16Le => {
+                                        "Binary i16 LE"
+                                    }
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut serial_cfg.framing,
+                                        neurohid_types::config::SerialFraming::CsvLine,
+                                        "CSV line",
+                                    );
+                                    ui.selectable_value(
+                                        &mut serial_cfg.framing,
+                                        neurohid_types::config::SerialFraming::BinaryI16Le,
+                                        "Binary i16 LE",
+                                    );
+                                });
+                            if serial_cfg.framing != current {
+                                changed = true;
+                            }
+                        });
+                    }
+
+                    if matches!(
+                        cfg.backend,
+                        neurohid_types::config::DeviceBackend::BrainFlow
+                    ) {
+                        ui.horizontal(|ui| {
+                            ui.label("Board id:");
+                            let bf_cfg = cfg.brainflow.get_or_insert_with(Default::default);
+                            if ui.add(egui::DragValue::new(&mut bf_cfg.board_id)).changed() {
+                                changed = true;
+                            }
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("Serial port:");
+                            let bf_cfg = cfg.brainflow.get_or_insert_with(Default::default);
+                            let mut port = bf_cfg.serial_port.clone().unwrap_or_default();
+                            if ui.text_edit_singleline(&mut port).changed() {
+                                bf_cfg.serial_port = if port.trim().is_empty() {
+                                    None
+                                } else {
+                                    Some(port)
+                                };
+                                changed = true;
+                            }
+                        });
+                    }
+
                     ui.horizontal(|ui| {
                         ui.label("Preferred device type:");
                         let mut dtype = cfg.preferred_device_type.clone().unwrap_or_default();
                         if ui.text_edit_singleline(&mut dtype).changed() {
-                            cfg.preferred_device_type = if dtype.is_empty() {
-                                None
-                            } else {
-                                Some(dtype)
-                            };
+                            cfg.preferred_device_type =
+                                if dtype.is_empty() { None } else { Some(dtype) };
                             changed = true;
                         }
                     });
 
                     ui.horizontal(|ui| {
                         ui.label("Auto-reconnect:");
-                        if ui.checkbox(&mut cfg.connection.auto_reconnect, "").changed() {
+                        if ui
+                            .checkbox(&mut cfg.connection.auto_reconnect, "")
+                            .changed()
+                        {
                             changed = true;
                         }
                     });
@@ -156,7 +241,10 @@ impl SettingsScreen {
                         }
                         ui.label("Hz:");
                         if ui
-                            .add(egui::DragValue::new(&mut cfg.notch_filter_hz).clamp_range(45.0..=65.0))
+                            .add(
+                                egui::DragValue::new(&mut cfg.notch_filter_hz)
+                                    .clamp_range(45.0..=65.0),
+                            )
                             .changed()
                         {
                             changed = true;
@@ -221,6 +309,7 @@ impl SettingsScreen {
                 });
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
+                signal_changed_this_frame = true;
             }
 
             // Action settings
@@ -233,10 +322,7 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Sensitivity:");
                         if ui
-                            .add(
-                                egui::Slider::new(&mut cfg.mouse_sensitivity, 0.1..=5.0)
-                                    .text("x"),
-                            )
+                            .add(egui::Slider::new(&mut cfg.mouse_sensitivity, 0.1..=5.0).text("x"))
                             .changed()
                         {
                             changed = true;
@@ -263,9 +349,10 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Confidence threshold:");
                         if ui
-                            .add(
-                                egui::Slider::new(&mut cfg.min_confidence_threshold, 0.0..=1.0),
-                            )
+                            .add(egui::Slider::new(
+                                &mut cfg.min_confidence_threshold,
+                                0.0..=1.0,
+                            ))
                             .changed()
                         {
                             changed = true;
@@ -398,6 +485,168 @@ impl SettingsScreen {
                 self.unsaved_changes = true;
             }
 
+            // Outlet settings
+            let changed = egui::CollapsingHeader::new("Outlets")
+                .default_open(false)
+                .show(ui, |ui| {
+                    let mut changed = false;
+                    let cfg = &mut state.config.outlet;
+
+                    ui.horizontal(|ui| {
+                        ui.label("Enable outlets:");
+                        if ui.checkbox(&mut cfg.enabled, "").changed() {
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Publish samples:");
+                        if ui.checkbox(&mut cfg.publish_samples, "").changed() {
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Publish features:");
+                        if ui.checkbox(&mut cfg.publish_features, "").changed() {
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Publish actions:");
+                        if ui.checkbox(&mut cfg.publish_actions, "").changed() {
+                            changed = true;
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label("Publish markers:");
+                        if ui.checkbox(&mut cfg.publish_markers, "").changed() {
+                            changed = true;
+                        }
+                    });
+
+                    if cfg.targets.is_empty() {
+                        cfg.targets
+                            .push(neurohid_types::config::OutletTarget::default());
+                        changed = true;
+                    }
+
+                    if let Some(primary) = cfg.targets.first_mut() {
+                        ui.separator();
+                        ui.label(egui::RichText::new("Primary target").small().strong());
+
+                        ui.horizontal(|ui| {
+                            ui.label("Name:");
+                            if ui.text_edit_singleline(&mut primary.name).changed() {
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Address:");
+                            if ui.text_edit_singleline(&mut primary.address).changed() {
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Transport:");
+                            let old = primary.transport.clone();
+                            egui::ComboBox::from_id_source("outlet_transport_primary")
+                                .selected_text(match primary.transport {
+                                    neurohid_types::config::OutletTransport::TcpJson => "TCP JSON",
+                                    neurohid_types::config::OutletTransport::Lsl => "LSL",
+                                })
+                                .show_ui(ui, |ui| {
+                                    ui.selectable_value(
+                                        &mut primary.transport,
+                                        neurohid_types::config::OutletTransport::TcpJson,
+                                        "TCP JSON",
+                                    );
+                                    ui.selectable_value(
+                                        &mut primary.transport,
+                                        neurohid_types::config::OutletTransport::Lsl,
+                                        "LSL",
+                                    );
+                                });
+                            if primary.transport != old {
+                                changed = true;
+                            }
+                        });
+                    }
+
+                    changed
+                });
+            if changed.body_returned == Some(true) {
+                self.unsaved_changes = true;
+            }
+
+            // UI settings
+            let changed = egui::CollapsingHeader::new("UI")
+                .default_open(false)
+                .show(ui, |ui| {
+                    let mut changed = false;
+                    let cfg = &mut state.config.ui;
+
+                    ui.horizontal(|ui| {
+                        ui.label("Font scale:");
+                        if ui
+                            .add(egui::Slider::new(&mut cfg.font_scale, 0.75..=2.0))
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Theme:");
+                        let current = cfg.theme_mode.clone();
+                        egui::ComboBox::from_id_source("ui_theme_mode")
+                            .selected_text(match cfg.theme_mode {
+                                neurohid_types::config::ThemeMode::System => "System",
+                                neurohid_types::config::ThemeMode::Light => "Light",
+                                neurohid_types::config::ThemeMode::Dark => "Dark",
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut cfg.theme_mode,
+                                    neurohid_types::config::ThemeMode::System,
+                                    "System",
+                                );
+                                ui.selectable_value(
+                                    &mut cfg.theme_mode,
+                                    neurohid_types::config::ThemeMode::Light,
+                                    "Light",
+                                );
+                                ui.selectable_value(
+                                    &mut cfg.theme_mode,
+                                    neurohid_types::config::ThemeMode::Dark,
+                                    "Dark",
+                                );
+                            });
+                        if cfg.theme_mode != current {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Pane resizing:");
+                        if ui.checkbox(&mut cfg.pane_resize_enabled, "").changed() {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Tray mode:");
+                        if ui.checkbox(&mut cfg.tray_mode_enabled, "").changed() {
+                            changed = true;
+                        }
+                    });
+
+                    changed
+                });
+            if changed.body_returned == Some(true) {
+                self.unsaved_changes = true;
+            }
+
             // Storage settings
             let changed = egui::CollapsingHeader::new("Storage")
                 .default_open(false)
@@ -438,5 +687,9 @@ impl SettingsScreen {
                 self.unsaved_changes = true;
             }
         });
+
+        if signal_changed_this_frame {
+            service_manager.update_signal_config(state.config.signal.clone());
+        }
     }
 }

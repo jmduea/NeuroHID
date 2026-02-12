@@ -13,6 +13,7 @@
 //! | `Mock`  | Synthetic sine-wave generator (always available)   |
 //! | `Lsl`   | Lab Streaming Layer — any LSL stream on the network|
 //! | `Auto`  | Tries LSL first, then falls back to Mock           |
+//! | `Serial`| Direct USB/serial adapter input                    |
 //!
 //! ## Architecture
 //!
@@ -36,7 +37,11 @@ use tokio::time::{self, Duration};
 use tokio_util::sync::CancellationToken;
 
 use neurohid_device::mock::MockProvider;
-use neurohid_device::{Device, DeviceProvider, MockDeviceConfig};
+#[cfg(feature = "brainflow")]
+use neurohid_device::BrainFlowProvider;
+#[cfg(feature = "device-lsl")]
+use neurohid_device::LslProvider;
+use neurohid_device::{Device, DeviceProvider, MockDeviceConfig, SerialProvider};
 use neurohid_types::{
     config::{DeviceBackend, DeviceConfig},
     device::{DeviceId, DeviceInfo, DiscoveredStream},
@@ -588,17 +593,65 @@ async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider
 
         DeviceBackend::Auto => {
             tracing::info!("Using Auto device backend (LSL preferred, Mock fallback)");
-            let lsl = create_lsl_provider(config)?;
             let mock = Box::new(MockProvider::new(MockDeviceConfig::default()));
-            Ok(Box::new(AutoProvider::new(lsl, mock)))
+
+            match create_lsl_provider(config) {
+                Ok(lsl) => Ok(Box::new(AutoProvider::new(lsl, mock))),
+                Err(e) => {
+                    tracing::warn!("Auto backend: LSL unavailable ({e}), using Mock-only provider");
+                    Ok(mock)
+                }
+            }
+        }
+
+        DeviceBackend::Serial => {
+            tracing::info!("Using Serial device backend");
+            create_serial_provider(config)
+        }
+
+        DeviceBackend::BrainFlow => {
+            tracing::info!("Using BrainFlow device backend");
+            create_brainflow_provider(config)
         }
     }
 }
 
 /// Create an LSL device provider from the device configuration.
+#[cfg(feature = "device-lsl")]
 fn create_lsl_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
     let lsl_config = config.lsl.clone().unwrap_or_default();
-    Ok(Box::new(neurohid_device::LslProvider::new(lsl_config)))
+    Ok(Box::new(LslProvider::new(lsl_config)))
+}
+
+/// Build-time fallback for LSL when the feature is not enabled.
+#[cfg(not(feature = "device-lsl"))]
+fn create_lsl_provider(_config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
+    Err(DeviceError::UnsupportedDevice {
+        device_type: "LSL backend requires the `device-lsl` feature".to_string(),
+    }
+    .into())
+}
+
+/// Create a Serial device provider from the device configuration.
+fn create_serial_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
+    let serial_config = config.serial.clone().unwrap_or_default();
+    Ok(Box::new(SerialProvider::new(serial_config)))
+}
+
+/// Create a BrainFlow provider from the device configuration.
+#[cfg(feature = "brainflow")]
+fn create_brainflow_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
+    let brainflow_config = config.brainflow.clone().unwrap_or_default();
+    Ok(Box::new(BrainFlowProvider::new(brainflow_config)))
+}
+
+/// Build-time fallback for BrainFlow when the feature is not enabled.
+#[cfg(not(feature = "brainflow"))]
+fn create_brainflow_provider(_config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
+    Err(DeviceError::UnsupportedDevice {
+        device_type: "BrainFlow backend requires the `brainflow` feature".to_string(),
+    }
+    .into())
 }
 
 // ─── Auto Provider ───────────────────────────────────────────────────────────

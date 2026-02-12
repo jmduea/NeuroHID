@@ -12,9 +12,10 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     action::Action,
-    config::SystemConfig,
+    config::{SignalConfig, SystemConfig},
     device::DiscoveredStream,
     error::Result,
+    event::StreamMarker,
     profile::ProfileId,
     signal::{FeatureVector, Sample},
 };
@@ -30,7 +31,14 @@ pub enum DeviceCommand {
     Disconnect(String),
 }
 
-use crate::tasks::{ActionTask, DeviceTask, IpcTask, SignalTask};
+/// Commands sent from the hub to the SignalTask for live reconfiguration.
+#[derive(Debug, Clone)]
+pub enum SignalCommand {
+    /// Replace the active signal-processing configuration at runtime.
+    UpdateConfig(SignalConfig),
+}
+
+use crate::tasks::{ActionTask, DeviceTask, IpcTask, OutletTask, SignalTask};
 
 /// The main service that coordinates all NeuroHID operations.
 ///
@@ -168,6 +176,12 @@ pub struct ServiceHandle {
 
     /// Broadcast receiver for decoded actions (for visualization widgets).
     pub action_broadcast_rx: broadcast::Receiver<Action>,
+
+    /// Broadcast receiver for marker/event annotations.
+    pub marker_broadcast_rx: broadcast::Receiver<StreamMarker>,
+
+    /// Send commands to the SignalTask (e.g. runtime filter updates).
+    pub signal_command_tx: mpsc::Sender<SignalCommand>,
 }
 
 impl NeuroHidService {
@@ -209,21 +223,26 @@ impl NeuroHidService {
 
         // Channel for stream management commands from the GUI.
         let (device_cmd_tx, device_cmd_rx) = mpsc::channel::<DeviceCommand>(16);
+        // Channel for runtime signal reconfiguration from the GUI.
+        let (signal_cmd_tx, signal_cmd_rx) = mpsc::channel::<SignalCommand>(16);
 
         // Broadcast channels for live data visualization in the hub.
         // These fan-out to multiple widget subscribers.
         let (sample_broadcast_tx, sample_broadcast_rx) = broadcast::channel::<Sample>(512);
         let (feature_broadcast_tx, feature_broadcast_rx) = broadcast::channel::<FeatureVector>(128);
         let (action_broadcast_tx, action_broadcast_rx) = broadcast::channel::<Action>(128);
+        let (marker_broadcast_tx, marker_broadcast_rx) = broadcast::channel::<StreamMarker>(256);
 
         let join_handle = tokio::spawn(async move {
             self.run_inner(
                 Some(calibration_flag_clone),
                 Some(cal_sample_tx),
                 Some(device_cmd_rx),
+                Some(signal_cmd_rx),
                 Some(sample_broadcast_tx),
                 Some(feature_broadcast_tx),
                 Some(action_broadcast_tx),
+                Some(marker_broadcast_tx),
             )
             .await
         });
@@ -238,6 +257,8 @@ impl NeuroHidService {
             sample_broadcast_rx,
             feature_broadcast_rx,
             action_broadcast_rx,
+            marker_broadcast_rx,
+            signal_command_tx: signal_cmd_tx,
         }
     }
 
@@ -245,7 +266,8 @@ impl NeuroHidService {
     ///
     /// This is the entry point for the standalone headless binary.
     pub async fn run(self) -> Result<()> {
-        self.run_inner(None, None, None, None, None, None).await
+        self.run_inner(None, None, None, None, None, None, None, None)
+            .await
     }
 
     /// Internal run loop shared by both `run()` and `spawn()`.
@@ -254,9 +276,11 @@ impl NeuroHidService {
         calibration_flag: Option<Arc<AtomicBool>>,
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
         device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
+        signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
         sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
         feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
         action_broadcast_tx: Option<broadcast::Sender<Action>>,
+        marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
     ) -> Result<()> {
         tracing::info!("Starting service tasks");
 
@@ -286,6 +310,34 @@ impl NeuroHidService {
         let shutdown_signal = self.shutdown_rx.resubscribe();
         let shutdown_ipc = self.shutdown_rx.resubscribe();
         let shutdown_action = self.shutdown_rx.resubscribe();
+        let shutdown_outlet = self.shutdown_rx.resubscribe();
+
+        let marker_tx_for_signal = marker_broadcast_tx.clone();
+        let marker_tx_for_ipc = marker_broadcast_tx.clone();
+        let marker_tx_for_action = marker_broadcast_tx;
+
+        // Optional outlet fan-out task: subscribes to the same broadcast channels
+        // used by hub widgets and republishes to configured network targets.
+        let outlet_config = self.config.outlet.clone();
+        let outlet_sample_rx = sample_broadcast_tx.as_ref().map(|tx| tx.subscribe());
+        let outlet_feature_rx = feature_broadcast_tx.as_ref().map(|tx| tx.subscribe());
+        let outlet_action_rx = action_broadcast_tx.as_ref().map(|tx| tx.subscribe());
+        let outlet_marker_rx = marker_tx_for_action.as_ref().map(|tx| tx.subscribe());
+        let mut outlet_handle = if outlet_config.enabled {
+            Some(tokio::spawn(async move {
+                tracing::info!("Outlet task starting");
+                let task = OutletTask::new(
+                    outlet_config,
+                    outlet_sample_rx,
+                    outlet_feature_rx,
+                    outlet_action_rx,
+                    outlet_marker_rx,
+                );
+                task.run(shutdown_outlet).await
+            }))
+        } else {
+            None
+        };
 
         // Spawn the device task. This connects to the EEG device and streams
         // samples into the sample channel.
@@ -316,8 +368,10 @@ impl NeuroHidService {
                 feature_tx,
                 errp_rx,
                 state_signal,
+                signal_command_rx,
                 sample_broadcast_tx,
                 feature_broadcast_tx,
+                marker_tx_for_signal,
             );
             task.run(shutdown_signal).await
         });
@@ -327,7 +381,14 @@ impl NeuroHidService {
         let ipc_config = self.config.service.clone();
         let mut ipc_handle = tokio::spawn(async move {
             tracing::info!("IPC task starting");
-            let task = IpcTask::new(ipc_config, feature_rx, action_tx, errp_tx, state_ipc);
+            let task = IpcTask::new(
+                ipc_config,
+                feature_rx,
+                action_tx,
+                errp_tx,
+                state_ipc,
+                marker_tx_for_ipc,
+            );
             task.run(shutdown_ipc).await
         });
 
@@ -343,6 +404,7 @@ impl NeuroHidService {
                 state_action,
                 cal_flag_for_action,
                 action_broadcast_tx,
+                marker_tx_for_action,
             );
             task.run(shutdown_action).await
         });
@@ -475,6 +537,9 @@ impl NeuroHidService {
         }
         if !action_done {
             action_handle.abort();
+        }
+        if let Some(handle) = &mut outlet_handle {
+            handle.abort();
         }
 
         // Mark service as inactive, store critical failure, and clean up

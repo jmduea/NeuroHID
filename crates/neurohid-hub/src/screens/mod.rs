@@ -3,10 +3,11 @@
 //! Each screen renders into the hub's central panel area. The active screen
 //! is determined by sidebar navigation in `app.rs`.
 
+pub mod calibration;
 pub mod dashboard;
 pub mod devices;
 pub mod profiles;
-pub mod calibration;
+pub mod python_lab;
 pub mod settings;
 pub mod visualization;
 
@@ -18,6 +19,7 @@ pub enum Screen {
     Devices,
     Profiles,
     Calibration,
+    PythonLab,
     Settings,
 }
 
@@ -29,6 +31,7 @@ impl Screen {
             Screen::Devices => "Devices",
             Screen::Profiles => "Profiles",
             Screen::Calibration => "Calibration",
+            Screen::PythonLab => "Python Lab",
             Screen::Settings => "Settings",
         }
     }
@@ -40,6 +43,7 @@ impl Screen {
             Screen::Devices,
             Screen::Profiles,
             Screen::Calibration,
+            Screen::PythonLab,
             Screen::Settings,
         ]
     }

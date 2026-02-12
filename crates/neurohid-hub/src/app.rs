@@ -13,6 +13,7 @@ use crate::screens::calibration::CalibrationScreen;
 use crate::screens::dashboard::DashboardScreen;
 use crate::screens::devices::{derive_device_label, DevicesScreen};
 use crate::screens::profiles::ProfilesScreen;
+use crate::screens::python_lab::PythonLabScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::visualization::VisualizationScreen;
 use crate::screens::Screen;
@@ -34,6 +35,7 @@ pub struct HubApp {
     devices: DevicesScreen,
     profiles: ProfilesScreen,
     calibration: CalibrationScreen,
+    python_lab: PythonLabScreen,
     settings: SettingsScreen,
 }
 
@@ -74,6 +76,7 @@ impl HubApp {
             devices: DevicesScreen::new(),
             profiles: ProfilesScreen::new(),
             calibration: CalibrationScreen::new(),
+            python_lab: PythonLabScreen::new(),
             settings: SettingsScreen::new(),
         };
 
@@ -425,10 +428,23 @@ impl HubApp {
                 });
             });
     }
+
+    fn apply_ui_preferences(&self, ctx: &egui::Context) {
+        let ui_cfg = &self.state.config.ui;
+        ctx.set_pixels_per_point(ui_cfg.font_scale.clamp(0.75, 2.0));
+
+        match ui_cfg.theme_mode {
+            neurohid_types::config::ThemeMode::Light => ctx.set_visuals(egui::Visuals::light()),
+            neurohid_types::config::ThemeMode::Dark => ctx.set_visuals(egui::Visuals::dark()),
+            neurohid_types::config::ThemeMode::System => {}
+        }
+    }
 }
 
 impl eframe::App for HubApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.apply_ui_preferences(ctx);
+
         // Poll service state (non-blocking)
         self.state.service_snapshot = self.service_manager.snapshot();
 
@@ -492,8 +508,12 @@ impl eframe::App for HubApp {
                     self.calibration
                         .show_entry(ui, &mut self.state, &mut self.service_manager);
                 }
+                Screen::PythonLab => {
+                    self.python_lab.show(ui);
+                }
                 Screen::Settings => {
-                    self.settings.show(ui, &mut self.state, &self.runtime);
+                    self.settings
+                        .show(ui, &mut self.state, &self.service_manager, &self.runtime);
                 }
             }
         });

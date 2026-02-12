@@ -3,16 +3,22 @@
 //! The widget trait, widget identifier enum, and factory for instantiating
 //! widgets by ID. Widgets are the building blocks of the Visualization screen.
 
+pub mod accelerometer;
 pub mod action_preview;
 pub mod band_power;
 pub mod decoder_monitor;
 pub mod fft_plot;
+pub mod focus;
+pub mod headplot;
 pub mod signal_quality;
+pub mod spectrogram;
+pub mod stream_metadata;
 pub mod time_series;
 
 use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
 use eframe::egui;
+use neurohid_types::device::DiscoveredStream;
 use neurohid_types::signal::Sample;
 use std::collections::VecDeque;
 
@@ -25,6 +31,11 @@ pub enum WidgetId {
     SignalQuality,
     DecoderMonitor,
     ActionPreview,
+    Accelerometer,
+    Spectrogram,
+    Focus,
+    Headplot,
+    StreamMetadata,
 }
 
 impl WidgetId {
@@ -36,6 +47,11 @@ impl WidgetId {
         WidgetId::SignalQuality,
         WidgetId::DecoderMonitor,
         WidgetId::ActionPreview,
+        WidgetId::Accelerometer,
+        WidgetId::Spectrogram,
+        WidgetId::Focus,
+        WidgetId::Headplot,
+        WidgetId::StreamMetadata,
     ];
 
     /// Human-readable label for display in dropdown menus.
@@ -47,6 +63,11 @@ impl WidgetId {
             WidgetId::SignalQuality => "Signal Quality",
             WidgetId::DecoderMonitor => "Decoder Monitor",
             WidgetId::ActionPreview => "Action Preview",
+            WidgetId::Accelerometer => "Accelerometer",
+            WidgetId::Spectrogram => "Spectrogram",
+            WidgetId::Focus => "Focus",
+            WidgetId::Headplot => "Headplot",
+            WidgetId::StreamMetadata => "Stream Metadata",
         }
     }
 
@@ -61,6 +82,11 @@ impl WidgetId {
             WidgetId::SignalQuality => &["EEG"],
             WidgetId::DecoderMonitor => &["EEG"],
             WidgetId::ActionPreview => &[], // reads actions, not samples
+            WidgetId::Accelerometer => &["Motion", "ACC"],
+            WidgetId::Spectrogram => &["EEG"],
+            WidgetId::Focus => &["EEG", "FFT"],
+            WidgetId::Headplot => &["EEG"],
+            WidgetId::StreamMetadata => &[],
         }
     }
 }
@@ -118,6 +144,54 @@ impl<'a> WidgetContext<'a> {
         }
         None
     }
+
+    /// Get samples for a specific discovered stream/source id.
+    pub fn samples_for_source(&self, source_id: &str) -> Option<&'a VecDeque<Sample>> {
+        self.bus.samples_by_source.get(source_id)
+    }
+
+    /// Get discovered streams whose type matches the given widget's accepted
+    /// source stream types.
+    pub fn candidate_sources_for(&self, widget_id: WidgetId) -> Vec<&'a DiscoveredStream> {
+        let accepted = widget_id.accepted_stream_types();
+        if accepted.is_empty() {
+            return Vec::new();
+        }
+
+        self.snapshot
+            .discovered_streams
+            .iter()
+            .filter(|stream| {
+                let type_prefix = stream.stream_type.split('/').next().unwrap_or("");
+                accepted
+                    .iter()
+                    .any(|wanted| type_prefix.eq_ignore_ascii_case(wanted))
+            })
+            .collect()
+    }
+
+    /// Resolve samples for a widget, optionally forcing a specific source.
+    pub fn samples_for_widget_source(
+        &self,
+        widget_id: WidgetId,
+        source_id: Option<&str>,
+    ) -> &'a VecDeque<Sample> {
+        if let Some(id) = source_id {
+            if let Some(samples) = self.samples_for_source(id) {
+                return samples;
+            }
+        }
+        self.samples_for(widget_id)
+    }
+
+    /// Resolve channel count from a discovered source id.
+    pub fn channel_count_for_source(&self, source_id: &str) -> Option<usize> {
+        self.snapshot
+            .discovered_streams
+            .iter()
+            .find(|s| s.id == source_id && s.channel_count > 0)
+            .map(|s| s.channel_count as usize)
+    }
 }
 
 /// The trait implemented by all visualization widgets.
@@ -145,5 +219,10 @@ pub fn create_widget(id: WidgetId) -> Box<dyn Widget> {
         WidgetId::SignalQuality => Box::new(signal_quality::SignalQualityWidget::new()),
         WidgetId::DecoderMonitor => Box::new(decoder_monitor::DecoderMonitorWidget::new()),
         WidgetId::ActionPreview => Box::new(action_preview::ActionPreviewWidget::new()),
+        WidgetId::Accelerometer => Box::new(accelerometer::AccelerometerWidget::new()),
+        WidgetId::Spectrogram => Box::new(spectrogram::SpectrogramWidget::new()),
+        WidgetId::Focus => Box::new(focus::FocusWidget::new()),
+        WidgetId::Headplot => Box::new(headplot::HeadplotWidget::new()),
+        WidgetId::StreamMetadata => Box::new(stream_metadata::StreamMetadataWidget::new()),
     }
 }

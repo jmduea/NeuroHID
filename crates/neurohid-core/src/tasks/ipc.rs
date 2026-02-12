@@ -24,6 +24,7 @@ use neurohid_types::{
     action::Action,
     config::ServiceConfig,
     error::{Error, IpcError, Result},
+    event::{MarkerPayload, MarkerType, StreamMarker},
     reward::ErrPResult,
     signal::FeatureVector,
 };
@@ -41,6 +42,7 @@ pub struct IpcTask {
     action_tx: mpsc::Sender<Action>,
     errp_tx: mpsc::Sender<ErrPResult>,
     state: Arc<RwLock<ServiceState>>,
+    marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
 
     // Sequence numbers for message ordering
     send_sequence: u64,
@@ -54,6 +56,7 @@ impl IpcTask {
         action_tx: mpsc::Sender<Action>,
         errp_tx: mpsc::Sender<ErrPResult>,
         state: Arc<RwLock<ServiceState>>,
+        marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
     ) -> Self {
         Self {
             config,
@@ -61,6 +64,7 @@ impl IpcTask {
             action_tx,
             errp_tx,
             state,
+            marker_broadcast_tx,
             send_sequence: 0,
         }
     }
@@ -192,6 +196,16 @@ impl IpcTask {
             PythonToRust::ErrPResult { result, sequence } => {
                 tracing::trace!(sequence, "Received ErrP result from Python");
 
+                if let Some(tx) = &self.marker_broadcast_tx {
+                    let marker = StreamMarker::now(MarkerType::ErrpWindowResult).with_payload(
+                        MarkerPayload::ErrpResult {
+                            sequence,
+                            error_probability: result.error_probability,
+                        },
+                    );
+                    let _ = tx.send(marker);
+                }
+
                 if self.errp_tx.send(result).await.is_err() {
                     tracing::warn!("ErrP receiver dropped");
                 }
@@ -281,6 +295,15 @@ impl IpcTask {
 
     fn build_feature_batch(&mut self, features: &[FeatureVector]) -> RustToPython {
         self.send_sequence += 1;
+        if let Some(tx) = &self.marker_broadcast_tx {
+            let marker = StreamMarker::now(MarkerType::ErrpWindowStart).with_payload(
+                MarkerPayload::ErrpWindow {
+                    sequence: self.send_sequence,
+                    action_timestamp: neurohid_types::now_micros(),
+                },
+            );
+            let _ = tx.send(marker);
+        }
 
         RustToPython::FeatureBatch {
             features: features.to_vec(),
@@ -347,7 +370,14 @@ mod tests {
         let state = Arc::new(RwLock::new(ServiceState::default()));
         let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
 
-        let task = IpcTask::new(config, feature_rx, action_tx, errp_tx, Arc::clone(&state));
+        let task = IpcTask::new(
+            config,
+            feature_rx,
+            action_tx,
+            errp_tx,
+            Arc::clone(&state),
+            None,
+        );
         let run_handle = tokio::spawn(async move { task.run(shutdown_rx).await });
 
         wait_for_connection_state(&state, true, true).await;
@@ -401,6 +431,7 @@ mod tests {
             action_tx,
             errp_tx,
             Arc::clone(&state),
+            None,
         );
         let run_handle = tokio::spawn(async move { task.run(shutdown_rx).await });
 
@@ -495,6 +526,7 @@ mod tests {
             action_tx,
             errp_tx,
             Arc::clone(&state),
+            None,
         );
         let run_handle = tokio::spawn(async move { task.run(shutdown_rx).await });
 

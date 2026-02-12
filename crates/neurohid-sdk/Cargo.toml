@@ -17,6 +17,7 @@ types = ["dep:neurohid-types"]
 signal = ["dep:neurohid-signal"]
 device = ["dep:neurohid-device"]
 device-lsl = ["device", "neurohid-device/lsl"]
+device-brainflow = ["device", "neurohid-device/brainflow"]
 platform = ["dep:neurohid-platform"]
 storage = ["dep:neurohid-storage"]
 ipc = ["dep:neurohid-ipc"]
@@ -26,6 +27,7 @@ full = [
     "signal",
     "device",
     "device-lsl",
+    "device-brainflow",
     "platform",
     "storage",
     "ipc",

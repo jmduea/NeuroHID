@@ -19,11 +19,12 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use neurohid_types::{
     config::SignalConfig,
     error::Result,
+    event::{MarkerPayload, MarkerType, StreamMarker},
     reward::ErrPResult,
     signal::{FeatureVector, Sample},
 };
 
-use crate::service::ServiceState;
+use crate::service::{ServiceState, SignalCommand};
 
 /// Default key for samples without a source_id (e.g., mock device).
 const DEFAULT_STREAM_KEY: &str = "__default__";
@@ -73,15 +74,20 @@ pub struct SignalTask {
     feature_tx: mpsc::Sender<FeatureVector>,
     errp_rx: mpsc::Receiver<ErrPResult>,
     state: Arc<RwLock<ServiceState>>,
+    signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
 
     /// Broadcast channel for forwarding raw samples to hub visualization widgets.
     sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
     /// Broadcast channel for forwarding features to hub visualization widgets.
     feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
+    /// Broadcast channel for forwarding timeline markers.
+    marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
 
     // Internal state for signal processing
     stream_buffers: HashMap<String, StreamBuffer>,
     sample_count: u64,
+    last_head_movement_marker_us: i64,
+    head_movement_threshold: f32,
 }
 
 impl SignalTask {
@@ -103,8 +109,10 @@ impl SignalTask {
         feature_tx: mpsc::Sender<FeatureVector>,
         errp_rx: mpsc::Receiver<ErrPResult>,
         state: Arc<RwLock<ServiceState>>,
+        signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
         sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
         feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
+        marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
     ) -> Self {
         Self {
             config,
@@ -112,10 +120,14 @@ impl SignalTask {
             feature_tx,
             errp_rx,
             state,
+            signal_command_rx,
             sample_broadcast_tx,
             feature_broadcast_tx,
+            marker_broadcast_tx,
             stream_buffers: HashMap::new(),
             sample_count: 0,
+            last_head_movement_marker_us: 0,
+            head_movement_threshold: 0.4,
         }
     }
 
@@ -124,6 +136,18 @@ impl SignalTask {
         tracing::info!("Signal processing task started");
 
         loop {
+            // Apply all pending runtime config updates without blocking the stream.
+            if let Some(rx) = &mut self.signal_command_rx {
+                while let Ok(cmd) = rx.try_recv() {
+                    match cmd {
+                        SignalCommand::UpdateConfig(cfg) => {
+                            self.config = cfg;
+                            tracing::info!("SignalTask config updated at runtime");
+                        }
+                    }
+                }
+            }
+
             tokio::select! {
                 // Check for shutdown
                 _ = shutdown.recv() => {
@@ -141,6 +165,8 @@ impl SignalTask {
                             if let Some(tx) = &self.sample_broadcast_tx {
                                 let _ = tx.send(sample.clone());
                             }
+
+                            self.maybe_emit_head_movement_marker(&sample);
 
                             // Route sample to the correct per-stream buffer
                             let stream_key = sample.source_id.clone()
@@ -300,6 +326,42 @@ impl SignalTask {
         }
 
         FeatureVector::new(features)
+    }
+
+    fn maybe_emit_head_movement_marker(&mut self, sample: &Sample) {
+        let Some(tx) = &self.marker_broadcast_tx else {
+            return;
+        };
+
+        let source_id = sample.source_id.as_deref().unwrap_or_default();
+        let lower = source_id.to_ascii_lowercase();
+        let motion_like =
+            lower.contains("motion") || lower.contains("acc") || lower.contains("imu");
+        if !motion_like || sample.values.len() < 3 {
+            return;
+        }
+
+        let x = sample.values[0];
+        let y = sample.values[1];
+        let z = sample.values[2];
+        let magnitude = (x * x + y * y + z * z).sqrt();
+        if magnitude < self.head_movement_threshold {
+            return;
+        }
+
+        let ts = sample.device_timestamp.unwrap_or(sample.system_timestamp);
+        if ts.saturating_sub(self.last_head_movement_marker_us) < 250_000 {
+            return;
+        }
+        self.last_head_movement_marker_us = ts;
+
+        let mut marker = StreamMarker::now(MarkerType::HeadMovement)
+            .with_payload(MarkerPayload::HeadMovement { magnitude });
+        marker.timestamp = ts;
+        if let Some(source_id) = &sample.source_id {
+            marker = marker.with_source_id(source_id.clone());
+        }
+        let _ = tx.send(marker);
     }
 }
 

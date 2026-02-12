@@ -90,6 +90,8 @@ pub struct FftPlotWidget {
     max_freq: f32,
     /// Whether FFT updates are frozen.
     frozen: bool,
+    /// Optional bound source stream id.
+    selected_source: Option<String>,
 }
 
 impl FftPlotWidget {
@@ -101,6 +103,7 @@ impl FftPlotWidget {
             channel_enabled: [true; 5],
             max_freq: 60.0,
             frozen: false,
+            selected_source: None,
         }
     }
 
@@ -550,6 +553,18 @@ impl Widget for FftPlotWidget {
         let sample_rate = 128.0;
         let nyquist = sample_rate / 2.0;
         let half_bins = FFT_SIZE / 2;
+        let source_options = ctx.candidate_sources_for(WidgetId::FftPlot);
+        if !source_options.is_empty() {
+            let valid = self
+                .selected_source
+                .as_ref()
+                .map(|id| source_options.iter().any(|s| s.id == *id))
+                .unwrap_or(false);
+            if !valid {
+                self.selected_source = Some(source_options[0].id.clone());
+                self.cached_fft.clear();
+            }
+        }
 
         // Settings bar
         ui.horizontal(|ui| {
@@ -590,6 +605,30 @@ impl Widget for FftPlotWidget {
                         ui.selectable_value(&mut self.max_freq, v, format!("{:.0}", v));
                     }
                 });
+
+            if !source_options.is_empty() {
+                ui.label("Source:");
+                let prev = self.selected_source.clone();
+                egui::ComboBox::from_id_source(format!("fft_src_{}", pane_index))
+                    .selected_text(
+                        self.selected_source
+                            .as_deref()
+                            .unwrap_or("<auto>")
+                            .to_string(),
+                    )
+                    .show_ui(ui, |ui| {
+                        for source in &source_options {
+                            ui.selectable_value(
+                                &mut self.selected_source,
+                                Some(source.id.clone()),
+                                format!("{} ({})", source.name, source.id),
+                            );
+                        }
+                    });
+                if self.selected_source != prev {
+                    self.cached_fft.clear();
+                }
+            }
 
             // Channel toggles
             ui.separator();
@@ -641,7 +680,9 @@ impl Widget for FftPlotWidget {
             }
         });
 
-        if ctx.samples_for(WidgetId::FftPlot).len() < 64 {
+        let eeg_samples =
+            ctx.samples_for_widget_source(WidgetId::FftPlot, self.selected_source.as_deref());
+        if eeg_samples.len() < 64 {
             ui.centered_and_justified(|ui| {
                 ui.label(egui::RichText::new("Collecting data...").weak());
             });
@@ -649,11 +690,11 @@ impl Widget for FftPlotWidget {
         }
 
         // Compute FFT for each channel (unless frozen)
-        let eeg_samples = ctx.samples_for(WidgetId::FftPlot);
         // Use discovered stream channel count for stability —
         // avoids cache thrashing when mixed streams cause count to flicker.
         let num_channels = ctx
-            .channel_count_for(&["EEG"])
+            .channel_count_for_source(self.selected_source.as_deref().unwrap_or_default())
+            .or_else(|| ctx.channel_count_for(&["EEG"]))
             .unwrap_or_else(|| eeg_samples.back().map(|s| s.channel_count()).unwrap_or(5))
             .min(5);
 

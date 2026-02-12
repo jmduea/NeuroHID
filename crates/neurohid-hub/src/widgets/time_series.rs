@@ -5,6 +5,7 @@
 
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
+use neurohid_types::event::{MarkerType, StreamMarker};
 
 /// Channel colors matching common EEG GUI conventions.
 const CHANNEL_COLORS: &[egui::Color32] = &[
@@ -43,6 +44,17 @@ pub struct TimeSeriesWidget {
     dc_offset: [f32; 8],
     /// Whether the DC offset has been initialised from data.
     dc_initialized: [bool; 8],
+    /// Show marker overlays.
+    show_markers: bool,
+    /// Marker-type filters.
+    show_marker_click: bool,
+    show_marker_movement: bool,
+    show_marker_head: bool,
+    show_marker_errp: bool,
+    /// Optional source-id substring filter.
+    marker_source_filter: String,
+    /// Optional bound source stream id.
+    selected_source: Option<String>,
 }
 
 impl TimeSeriesWidget {
@@ -56,7 +68,37 @@ impl TimeSeriesWidget {
             paused_samples: Vec::new(),
             dc_offset: [0.0; 8],
             dc_initialized: [false; 8],
+            show_markers: true,
+            show_marker_click: true,
+            show_marker_movement: true,
+            show_marker_head: true,
+            show_marker_errp: true,
+            marker_source_filter: String::new(),
+            selected_source: None,
         }
+    }
+
+    fn marker_passes_filters(&self, marker: &StreamMarker) -> bool {
+        let type_ok = match marker.marker_type {
+            MarkerType::MouseClick => self.show_marker_click,
+            MarkerType::CursorMovement => self.show_marker_movement,
+            MarkerType::HeadMovement => self.show_marker_head,
+            MarkerType::ErrpWindowStart | MarkerType::ErrpWindowResult => self.show_marker_errp,
+            _ => true,
+        };
+        if !type_ok {
+            return false;
+        }
+
+        let filter = self.marker_source_filter.trim();
+        if filter.is_empty() {
+            return true;
+        }
+        marker
+            .source_id
+            .as_deref()
+            .map(|s| s.contains(filter))
+            .unwrap_or(false)
     }
 
     /// Draw the amplitude scale indicator on the left edge of a channel.
@@ -411,6 +453,17 @@ impl Widget for TimeSeriesWidget {
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
         let sample_rate = 128.0f32;
+        let source_options = ctx.candidate_sources_for(WidgetId::TimeSeries);
+        if !source_options.is_empty() {
+            let valid = self
+                .selected_source
+                .as_ref()
+                .map(|id| source_options.iter().any(|s| s.id == *id))
+                .unwrap_or(false);
+            if !valid {
+                self.selected_source = Some(source_options[0].id.clone());
+            }
+        }
 
         // Settings bar
         ui.horizontal(|ui| {
@@ -429,7 +482,10 @@ impl Widget for TimeSeriesWidget {
                 if self.paused {
                     // Cache current samples when pausing
                     let window_samples = (self.window_secs * sample_rate) as usize;
-                    let samples = ctx.samples_for(WidgetId::TimeSeries);
+                    let samples = ctx.samples_for_widget_source(
+                        WidgetId::TimeSeries,
+                        self.selected_source.as_deref(),
+                    );
                     let start = if samples.len() > window_samples {
                         samples.len() - window_samples
                     } else {
@@ -471,17 +527,42 @@ impl Widget for TimeSeriesWidget {
                     }
                 });
 
+            if !source_options.is_empty() {
+                ui.separator();
+                ui.label("Source:");
+                egui::ComboBox::from_id_source(format!("ts_src_{}", pane_index))
+                    .selected_text(
+                        self.selected_source
+                            .as_deref()
+                            .unwrap_or("<auto>")
+                            .to_string(),
+                    )
+                    .show_ui(ui, |ui| {
+                        for source in &source_options {
+                            ui.selectable_value(
+                                &mut self.selected_source,
+                                Some(source.id.clone()),
+                                format!("{} ({})", source.name, source.id),
+                            );
+                        }
+                    });
+            }
+
             // Channel toggles
             ui.separator();
             // Use the discovered stream's channel count for stability —
             // avoids flickering when the flat buffer mixes stream types.
             let num_ch = ctx
-                .channel_count_for(&["EEG"])
+                .channel_count_for_source(self.selected_source.as_deref().unwrap_or_default())
+                .or_else(|| ctx.channel_count_for(&["EEG"]))
                 .unwrap_or_else(|| {
-                    ctx.samples_for(WidgetId::TimeSeries)
-                        .back()
-                        .map(|s| s.channel_count())
-                        .unwrap_or(5)
+                    ctx.samples_for_widget_source(
+                        WidgetId::TimeSeries,
+                        self.selected_source.as_deref(),
+                    )
+                    .back()
+                    .map(|s| s.channel_count())
+                    .unwrap_or(5)
                 })
                 .min(8);
             for ch in 0..num_ch {
@@ -500,9 +581,26 @@ impl Widget for TimeSeriesWidget {
             }
 
             ui.separator();
+            ui.checkbox(&mut self.show_markers, "Markers");
+            if self.show_markers {
+                ui.checkbox(&mut self.show_marker_click, "Click");
+                ui.checkbox(&mut self.show_marker_movement, "Move");
+                ui.checkbox(&mut self.show_marker_head, "Head");
+                ui.checkbox(&mut self.show_marker_errp, "ErrP");
+                ui.label("Src:");
+                ui.add(
+                    egui::TextEdit::singleline(&mut self.marker_source_filter)
+                        .desired_width(70.0)
+                        .hint_text("id"),
+                );
+            }
+
+            ui.separator();
 
             // Sample rate and count display
-            let total_samples = ctx.samples_for(WidgetId::TimeSeries).len();
+            let total_samples = ctx
+                .samples_for_widget_source(WidgetId::TimeSeries, self.selected_source.as_deref())
+                .len();
             ui.label(
                 egui::RichText::new(format!("{:.0} Hz | {} samples", sample_rate, total_samples))
                     .weak()
@@ -517,7 +615,8 @@ impl Widget for TimeSeriesWidget {
         let visible_samples: Vec<&neurohid_types::signal::Sample> = if self.paused {
             self.paused_samples.iter().collect()
         } else {
-            let samples = ctx.samples_for(WidgetId::TimeSeries);
+            let samples = ctx
+                .samples_for_widget_source(WidgetId::TimeSeries, self.selected_source.as_deref());
             let start = if samples.len() > window_samples {
                 samples.len() - window_samples
             } else {
@@ -534,7 +633,8 @@ impl Widget for TimeSeriesWidget {
         // Use discovered stream channel count for stability;
         // fall back to sample-derived count only if no stream metadata.
         let num_channels = ctx
-            .channel_count_for(&["EEG"])
+            .channel_count_for_source(self.selected_source.as_deref().unwrap_or_default())
+            .or_else(|| ctx.channel_count_for(&["EEG"]))
             .unwrap_or_else(|| visible_samples[0].channel_count())
             .min(8);
 
@@ -733,6 +833,45 @@ impl Widget for TimeSeriesWidget {
         // Draw time axis at bottom
         let painter = ui.painter_at(total_rect);
         Self::draw_time_axis(&painter, plot_rect, self.window_secs);
+
+        // Draw marker overlays aligned to the current time window.
+        if self.show_markers {
+            let now_us = visible_samples
+                .last()
+                .map(|s| s.system_timestamp)
+                .unwrap_or_default();
+            let window_us = (self.window_secs * 1_000_000.0).max(1.0) as i64;
+            let min_us = now_us.saturating_sub(window_us);
+
+            for marker in ctx.bus.markers.iter() {
+                if marker.timestamp < min_us || marker.timestamp > now_us {
+                    continue;
+                }
+                if !self.marker_passes_filters(marker) {
+                    continue;
+                }
+
+                let t = (marker.timestamp - min_us) as f32 / window_us as f32;
+                let x = plot_rect.left() + t.clamp(0.0, 1.0) * plot_rect.width();
+                let color = match marker.marker_type {
+                    MarkerType::MouseClick => egui::Color32::from_rgb(129, 199, 132),
+                    MarkerType::CursorMovement => egui::Color32::from_rgb(100, 181, 246),
+                    MarkerType::HeadMovement => egui::Color32::from_rgb(255, 193, 7),
+                    MarkerType::ErrpWindowStart => egui::Color32::from_rgb(244, 67, 54),
+                    MarkerType::ErrpWindowResult => egui::Color32::from_rgb(206, 147, 216),
+                    _ => egui::Color32::LIGHT_GRAY,
+                };
+
+                painter.line_segment(
+                    [
+                        egui::pos2(x, plot_rect.top()),
+                        egui::pos2(x, plot_rect.bottom()),
+                    ],
+                    egui::Stroke::new(1.0, color.gamma_multiply(0.7)),
+                );
+                painter.circle_filled(egui::pos2(x, plot_rect.top() + 6.0), 2.5, color);
+            }
+        }
 
         // Draw crosshair if hovering
         if let Some(hover_pos) = response.hover_pos() {

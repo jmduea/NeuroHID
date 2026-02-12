@@ -6,9 +6,12 @@
 use std::sync::atomic::Ordering;
 use tokio::sync::broadcast;
 
-use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle};
+use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
 use neurohid_storage::ProfileStore;
-use neurohid_types::{config::SystemConfig, profile::ProfileId};
+use neurohid_types::{
+    config::{SignalConfig, SystemConfig},
+    profile::ProfileId,
+};
 
 use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
@@ -107,7 +110,8 @@ impl ServiceManager {
                 let sample_rx = handle.sample_broadcast_rx.resubscribe();
                 let feature_rx = handle.feature_broadcast_rx.resubscribe();
                 let action_rx = handle.action_broadcast_rx.resubscribe();
-                bus.connect(sample_rx, feature_rx, action_rx);
+                let marker_rx = handle.marker_broadcast_rx.resubscribe();
+                bus.connect(sample_rx, feature_rx, action_rx, marker_rx);
                 self.bus_connected = true;
                 tracing::info!("Data bus connected to service broadcasts");
             } else if !active && self.bus_connected {
@@ -231,6 +235,15 @@ impl ServiceManager {
                     .device_command_tx
                     .try_send(DeviceCommand::Disconnect(id.to_string()));
             }
+        }
+    }
+
+    /// Push a live signal configuration update into the running signal task.
+    pub fn update_signal_config(&self, cfg: SignalConfig) {
+        if let Some(handle) = &self.handle {
+            let _ = handle
+                .signal_command_tx
+                .try_send(SignalCommand::UpdateConfig(cfg));
         }
     }
 }

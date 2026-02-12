@@ -6,6 +6,8 @@ Device abstraction layer for biosensor hardware in NeuroHID.
 
 - Unified traits for device discovery, connection, and streaming
 - LSL (Lab Streaming Layer) backend for real hardware (feature-gated)
+- BrainFlow backend adapter with normalized board metadata (feature-gated)
+- Serial backend for USB/UART adapters (`csv_line` and `binary_i16_le` framing)
 - Mock backend for testing and development
 
 ## Usage
@@ -23,6 +25,12 @@ To build without Lab Streaming Layer support:
 
 ```bash
 cargo build -p neurohid-device --no-default-features
+```
+
+To build with BrainFlow backend support:
+
+```bash
+cargo build -p neurohid-device --no-default-features --features brainflow
 ```
 
 ## License

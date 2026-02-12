@@ -18,7 +18,12 @@ use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
 use neurohid_platform::{create_platform, MouseMovement, Platform};
-use neurohid_types::{action::Action, config::ActionConfig, error::Result};
+use neurohid_types::{
+    action::{Action, MouseButton},
+    config::ActionConfig,
+    error::Result,
+    event::{MarkerPayload, MarkerType, StreamMarker},
+};
 
 use crate::service::ServiceState;
 
@@ -33,6 +38,8 @@ pub struct ActionTask {
 
     /// Broadcast channel for forwarding actions to hub visualization widgets.
     action_broadcast_tx: Option<broadcast::Sender<Action>>,
+    /// Broadcast channel for forwarding marker annotations.
+    marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
 
     // State for smoothing and debouncing
     // Reserved for future absolute->relative position tracking.
@@ -49,6 +56,7 @@ impl ActionTask {
         state: Arc<RwLock<ServiceState>>,
         calibration_mode: Option<Arc<AtomicBool>>,
         action_broadcast_tx: Option<broadcast::Sender<Action>>,
+        marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
     ) -> Self {
         Self {
             config,
@@ -56,6 +64,7 @@ impl ActionTask {
             state,
             calibration_mode,
             action_broadcast_tx,
+            marker_broadcast_tx,
             _last_mouse_pos: (0.0, 0.0),
             last_action_time: std::time::Instant::now(),
             smoothed_velocity: (0.0, 0.0),
@@ -130,6 +139,7 @@ impl ActionTask {
                             if let Some(tx) = &self.action_broadcast_tx {
                                 let _ = tx.send(action.clone());
                             }
+                            self.emit_markers(&action);
 
                             // If no platform is available, skip HID emission
                             // but keep broadcasting for visualizations.
@@ -272,5 +282,43 @@ impl ActionTask {
         self.smoothed_velocity.1 = alpha * dy + (1.0 - alpha) * self.smoothed_velocity.1;
 
         self.smoothed_velocity
+    }
+
+    fn emit_markers(&self, action: &Action) {
+        let Some(tx) = &self.marker_broadcast_tx else {
+            return;
+        };
+
+        if let Some(mouse) = &action.mouse {
+            if let Some(mv) = &mouse.movement {
+                let marker = StreamMarker::now(MarkerType::CursorMovement).with_payload(
+                    MarkerPayload::CursorMovement {
+                        dx: mv.dx,
+                        dy: mv.dy,
+                        magnitude: mv.magnitude(),
+                    },
+                );
+                let _ = tx.send(marker);
+            }
+
+            for btn in &mouse.buttons {
+                let marker = StreamMarker::now(MarkerType::MouseClick).with_payload(
+                    MarkerPayload::MouseClick {
+                        button: mouse_button_label(btn.button).to_string(),
+                        pressed: btn.pressed,
+                    },
+                );
+                let _ = tx.send(marker);
+            }
+        }
+    }
+}
+
+fn mouse_button_label(button: MouseButton) -> &'static str {
+    match button {
+        MouseButton::Left => "left",
+        MouseButton::Right => "right",
+        MouseButton::Middle => "middle",
+        MouseButton::Extra(_) => "extra",
     }
 }

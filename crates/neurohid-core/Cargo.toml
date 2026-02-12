@@ -11,9 +11,14 @@ description = "NeuroHID core service - the main background process"
 name = "neurohid_core"
 path = "src/lib.rs"
 
+[features]
+default = ["device-lsl"]
+device-lsl = ["neurohid-device/lsl", "dep:lsl"]
+brainflow = ["neurohid-device/brainflow"]
+
 [dependencies]
 neurohid-types = { path = "../neurohid-types" }
-neurohid-device = { path = "../neurohid-device" }
+neurohid-device = { path = "../neurohid-device", default-features = false }
 neurohid-signal = { path = "../neurohid-signal" }
 neurohid-platform = { path = "../neurohid-platform" }
 neurohid-storage = { path = "../neurohid-storage" }
@@ -38,6 +43,7 @@ async-trait = "0.1"
 # Logging
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+lsl = { version = "0.1", optional = true }
 
 [dev-dependencies]
 tokio-test = "0.4"

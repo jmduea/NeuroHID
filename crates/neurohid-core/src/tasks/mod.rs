@@ -9,12 +9,14 @@
 //! the result to the next worker. This design keeps each piece simple and makes
 //! it easy to test them independently.
 
-mod device;
-mod signal;
-mod ipc;
 mod action;
+mod device;
+mod ipc;
+mod outlet;
+mod signal;
 
-pub use device::DeviceTask;
-pub use signal::SignalTask;
-pub use ipc::IpcTask;
 pub use action::ActionTask;
+pub use device::DeviceTask;
+pub use ipc::IpcTask;
+pub use outlet::OutletTask;
+pub use signal::SignalTask;

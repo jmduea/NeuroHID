@@ -34,8 +34,16 @@ pub struct SystemConfig {
     /// Configuration for profile/storage
     pub storage: StorageConfig,
 
+    /// Configuration for outbound streaming/outlet publishing.
+    #[serde(default)]
+    pub outlet: OutletConfig,
+
     /// Configuration for the service itself
     pub service: ServiceConfig,
+
+    /// Configuration for hub UI behavior and persistence.
+    #[serde(default)]
+    pub ui: UiConfig,
 }
 
 /// Which device backend to use for data acquisition.
@@ -46,6 +54,10 @@ pub enum DeviceBackend {
     Mock,
     /// Lab Streaming Layer — consume any LSL stream on the local network.
     Lsl,
+    /// Direct USB/serial adapter backend.
+    Serial,
+    /// Native BrainFlow backend.
+    BrainFlow,
     /// Auto-detect: try LSL first, then fall back to Mock.
     #[default]
     Auto,
@@ -53,8 +65,13 @@ pub enum DeviceBackend {
 
 impl DeviceBackend {
     /// All variants in display order, for use in UI selectors.
-    pub const ALL: &'static [DeviceBackend] =
-        &[DeviceBackend::Auto, DeviceBackend::Lsl, DeviceBackend::Mock];
+    pub const ALL: &'static [DeviceBackend] = &[
+        DeviceBackend::Auto,
+        DeviceBackend::Lsl,
+        DeviceBackend::Serial,
+        DeviceBackend::BrainFlow,
+        DeviceBackend::Mock,
+    ];
 }
 
 impl std::fmt::Display for DeviceBackend {
@@ -62,6 +79,8 @@ impl std::fmt::Display for DeviceBackend {
         match self {
             DeviceBackend::Mock => write!(f, "Mock"),
             DeviceBackend::Lsl => write!(f, "LSL"),
+            DeviceBackend::Serial => write!(f, "Serial"),
+            DeviceBackend::BrainFlow => write!(f, "BrainFlow"),
             DeviceBackend::Auto => write!(f, "Auto"),
         }
     }
@@ -100,6 +119,77 @@ impl Default for LslConfig {
     }
 }
 
+/// Framing mode for serial sample decoding.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SerialFraming {
+    /// Comma separated values, one sample per line.
+    #[default]
+    CsvLine,
+    /// Raw bytes where each little-endian i16 word is a channel sample.
+    BinaryI16Le,
+}
+
+/// Configuration for USB/serial adapter backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SerialConfig {
+    /// Explicit serial device path (e.g., `/dev/ttyUSB0`, `COM3`).
+    #[serde(default)]
+    pub port: Option<String>,
+    /// Baud rate.
+    #[serde(default = "default_serial_baud")]
+    pub baud_rate: u32,
+    /// Framing mode.
+    #[serde(default)]
+    pub framing: SerialFraming,
+    /// Number of channels expected in each sample.
+    #[serde(default = "default_serial_channels")]
+    pub channels: usize,
+}
+
+fn default_serial_baud() -> u32 {
+    115_200
+}
+
+fn default_serial_channels() -> usize {
+    8
+}
+
+impl Default for SerialConfig {
+    fn default() -> Self {
+        Self {
+            port: None,
+            baud_rate: default_serial_baud(),
+            framing: SerialFraming::default(),
+            channels: default_serial_channels(),
+        }
+    }
+}
+
+/// Configuration for native BrainFlow backend.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BrainFlowConfig {
+    /// Board id understood by BrainFlow/OpenBCI.
+    #[serde(default = "default_brainflow_board_id")]
+    pub board_id: i32,
+    /// Optional serial port for board connection.
+    #[serde(default)]
+    pub serial_port: Option<String>,
+}
+
+fn default_brainflow_board_id() -> i32 {
+    0
+}
+
+impl Default for BrainFlowConfig {
+    fn default() -> Self {
+        Self {
+            board_id: default_brainflow_board_id(),
+            serial_port: None,
+        }
+    }
+}
+
 /// Configuration for device connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeviceConfig {
@@ -119,6 +209,14 @@ pub struct DeviceConfig {
     /// LSL-specific configuration (only used when backend is Lsl or Auto).
     #[serde(default)]
     pub lsl: Option<LslConfig>,
+
+    /// Serial-specific configuration (used when backend is Serial).
+    #[serde(default)]
+    pub serial: Option<SerialConfig>,
+
+    /// BrainFlow-specific configuration (used when backend is BrainFlow).
+    #[serde(default)]
+    pub brainflow: Option<BrainFlowConfig>,
 }
 
 impl Default for DeviceConfig {
@@ -129,6 +227,8 @@ impl Default for DeviceConfig {
             preferred_device_id: None,
             connection: ConnectionSettings::default(),
             lsl: None,
+            serial: None,
+            brainflow: None,
         }
     }
 }
@@ -307,6 +407,125 @@ impl Default for StorageConfig {
             session_log_retention_days: 30,
             auto_backup_enabled: true,
             backup_interval_hours: 24,
+        }
+    }
+}
+
+/// Transport options for outbound outlets.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OutletTransport {
+    /// Publish newline-delimited JSON over TCP.
+    #[default]
+    TcpJson,
+    /// Publish as LSL outlet stream(s).
+    Lsl,
+}
+
+/// A single outlet target.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutletTarget {
+    /// Stable name used for display/debug.
+    pub name: String,
+    /// Transport kind.
+    #[serde(default)]
+    pub transport: OutletTransport,
+    /// Transport address. TCP examples: `127.0.0.1:49000`.
+    pub address: String,
+    /// Whether this target is enabled.
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+impl Default for OutletTarget {
+    fn default() -> Self {
+        Self {
+            name: "local-json".to_string(),
+            transport: OutletTransport::default(),
+            address: "127.0.0.1:49000".to_string(),
+            enabled: true,
+        }
+    }
+}
+
+/// Configuration for configurable network outlets.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OutletConfig {
+    /// Master switch for outlet publishing.
+    #[serde(default)]
+    pub enabled: bool,
+    /// Destination targets.
+    #[serde(default)]
+    pub targets: Vec<OutletTarget>,
+    /// Publish raw samples.
+    #[serde(default)]
+    pub publish_samples: bool,
+    /// Publish extracted features.
+    #[serde(default = "default_true")]
+    pub publish_features: bool,
+    /// Publish decoded actions.
+    #[serde(default = "default_true")]
+    pub publish_actions: bool,
+    /// Publish markers/events.
+    #[serde(default = "default_true")]
+    pub publish_markers: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for OutletConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            targets: vec![OutletTarget::default()],
+            publish_samples: false,
+            publish_features: true,
+            publish_actions: true,
+            publish_markers: true,
+        }
+    }
+}
+
+/// Hub theme mode.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ThemeMode {
+    #[default]
+    System,
+    Light,
+    Dark,
+}
+
+/// Persisted UI preferences for the hub.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UiConfig {
+    /// Font scale multiplier (1.0 = default).
+    #[serde(default = "default_font_scale")]
+    pub font_scale: f32,
+    /// Theme preference.
+    #[serde(default)]
+    pub theme_mode: ThemeMode,
+    /// Whether pane resizing is enabled in visualization layouts.
+    #[serde(default = "default_true")]
+    pub pane_resize_enabled: bool,
+    /// Whether tray mode behavior is enabled.
+    #[serde(default)]
+    pub tray_mode_enabled: bool,
+}
+
+fn default_font_scale() -> f32 {
+    1.0
+}
+
+impl Default for UiConfig {
+    fn default() -> Self {
+        Self {
+            font_scale: default_font_scale(),
+            theme_mode: ThemeMode::default(),
+            pane_resize_enabled: true,
+            tray_mode_enabled: false,
         }
     }
 }
