@@ -42,11 +42,11 @@ pub struct NeuroHidService {
     /// System configuration
     config: SystemConfig,
 
-    /// Profile storage — will be used for profile reloading
+    /// Profile storage handle retained for runtime profile operations.
     #[allow(dead_code)]
     profile_store: Option<ProfileStore>,
 
-    /// Active profile ID — will be used when profile data loading is wired
+    /// Active profile identifier retained for profile-aware task wiring.
     #[allow(dead_code)]
     profile_id: Option<ProfileId>,
 
@@ -66,7 +66,8 @@ pub struct ServiceState {
     /// Whether the service is currently active (processing and emitting actions)
     pub active: bool,
 
-    /// Whether online learning is enabled — will be used for learning control path
+    /// Whether online learning is enabled.
+    /// Reserved for cross-task learning control wiring.
     #[allow(dead_code)]
     pub learning_enabled: bool,
 
@@ -97,6 +98,9 @@ pub struct ServiceState {
     /// Whether the IPC bridge to Python is connected
     pub ipc_connected: bool,
 
+    /// Whether IPC is currently running in simulated mode.
+    pub ipc_simulated: bool,
+
     /// Whether the service is in calibration mode (pauses HID emission)
     pub calibration_mode: bool,
 
@@ -123,6 +127,7 @@ impl Default for ServiceState {
             started_at: None,
             active_profile_name: None,
             ipc_connected: false,
+            ipc_simulated: false,
             calibration_mode: false,
             task_error: None,
             discovered_streams: Vec::new(),
@@ -273,6 +278,7 @@ impl NeuroHidService {
         // Clone shared state for each task
         let state_device = Arc::clone(&self.shared_state);
         let state_signal = Arc::clone(&self.shared_state);
+        let state_ipc = Arc::clone(&self.shared_state);
         let state_action = Arc::clone(&self.shared_state);
 
         // Clone shutdown receiver for each task (broadcast channels support multiple receivers)
@@ -321,7 +327,7 @@ impl NeuroHidService {
         let ipc_config = self.config.service.clone();
         let mut ipc_handle = tokio::spawn(async move {
             tracing::info!("IPC task starting");
-            let task = IpcTask::new(ipc_config, feature_rx, action_tx, errp_tx);
+            let task = IpcTask::new(ipc_config, feature_rx, action_tx, errp_tx, state_ipc);
             task.run(shutdown_ipc).await
         });
 
@@ -483,6 +489,8 @@ impl NeuroHidService {
             }
             state.device_connected = false;
             state.device_name = None;
+            state.ipc_connected = false;
+            state.ipc_simulated = false;
             for stream in &mut state.discovered_streams {
                 stream.connected = false;
             }

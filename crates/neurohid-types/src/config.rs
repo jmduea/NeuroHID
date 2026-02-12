@@ -53,11 +53,8 @@ pub enum DeviceBackend {
 
 impl DeviceBackend {
     /// All variants in display order, for use in UI selectors.
-    pub const ALL: &'static [DeviceBackend] = &[
-        DeviceBackend::Auto,
-        DeviceBackend::Lsl,
-        DeviceBackend::Mock,
-    ];
+    pub const ALL: &'static [DeviceBackend] =
+        &[DeviceBackend::Auto, DeviceBackend::Lsl, DeviceBackend::Mock];
 }
 
 impl std::fmt::Display for DeviceBackend {
@@ -323,6 +320,11 @@ pub struct ServiceConfig {
     /// Port for TCP localhost IPC (Python bridge communication)
     pub ipc_port: u16,
 
+    /// Whether to use the built-in simulated IPC bridge when no real
+    /// Python process bridge is configured.
+    #[serde(default = "default_ipc_simulation_enabled")]
+    pub ipc_simulation_enabled: bool,
+
     /// Whether to show system tray icon
     pub show_tray_icon: bool,
 
@@ -336,11 +338,16 @@ pub struct ServiceConfig {
     pub log_file_path: Option<String>,
 }
 
+fn default_ipc_simulation_enabled() -> bool {
+    true
+}
+
 impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
             auto_start: false,
             ipc_port: 47384,
+            ipc_simulation_enabled: true,
             show_tray_icon: true,
             notifications_enabled: true,
             log_level: "info".to_string(),
