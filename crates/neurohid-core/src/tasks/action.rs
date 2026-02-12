@@ -13,16 +13,12 @@
 //! 3. **Safety**: We respect confidence thresholds and debouncing to prevent
 //!    accidental clicks or key presses
 
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
-use neurohid_types::{
-    config::ActionConfig,
-    action::Action,
-    error::Result,
-};
-use neurohid_platform::{Platform, create_platform, MouseMovement};
+use neurohid_platform::{create_platform, MouseMovement, Platform};
+use neurohid_types::{action::Action, config::ActionConfig, error::Result};
 
 use crate::service::ServiceState;
 
@@ -39,8 +35,8 @@ pub struct ActionTask {
     action_broadcast_tx: Option<broadcast::Sender<Action>>,
 
     // State for smoothing and debouncing
-    #[allow(dead_code)] // will be used for absolute->relative position tracking
-    last_mouse_pos: (f32, f32),
+    // Reserved for future absolute->relative position tracking.
+    _last_mouse_pos: (f32, f32),
     last_action_time: std::time::Instant,
     smoothed_velocity: (f32, f32),
 }
@@ -60,7 +56,7 @@ impl ActionTask {
             state,
             calibration_mode,
             action_broadcast_tx,
-            last_mouse_pos: (0.0, 0.0),
+            _last_mouse_pos: (0.0, 0.0),
             last_action_time: std::time::Instant::now(),
             smoothed_velocity: (0.0, 0.0),
         }
