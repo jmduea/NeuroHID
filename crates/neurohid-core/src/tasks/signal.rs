@@ -12,7 +12,7 @@
 //! buffer and independent feature extraction. Features from all streams are
 //! merged into a single output channel.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
 
@@ -30,16 +30,39 @@ const DEFAULT_STREAM_KEY: &str = "__default__";
 
 /// Per-stream processing state.
 struct StreamBuffer {
-    samples: Vec<Sample>,
+    samples: VecDeque<Sample>,
     samples_since_extraction: usize,
+    estimated_sample_rate_hz: f32,
+    last_sample_timestamp_micros: Option<i64>,
 }
 
 impl StreamBuffer {
-    fn new() -> Self {
+    fn new(buffer_capacity: usize) -> Self {
         Self {
-            samples: Vec::with_capacity(1024),
+            samples: VecDeque::with_capacity(buffer_capacity.max(1)),
             samples_since_extraction: 0,
+            estimated_sample_rate_hz: 128.0,
+            last_sample_timestamp_micros: None,
         }
+    }
+
+    fn update_sample_rate_estimate(&mut self, sample: &Sample) {
+        let timestamp = sample.device_timestamp.unwrap_or(sample.system_timestamp);
+
+        if let Some(previous_timestamp) = self.last_sample_timestamp_micros {
+            let delta_micros = timestamp.saturating_sub(previous_timestamp);
+            if delta_micros > 0 {
+                let instantaneous_rate_hz = 1_000_000.0 / delta_micros as f32;
+                if instantaneous_rate_hz.is_finite()
+                    && (8.0..=2048.0).contains(&instantaneous_rate_hz)
+                {
+                    self.estimated_sample_rate_hz =
+                        self.estimated_sample_rate_hz * 0.9 + instantaneous_rate_hz * 0.1;
+                }
+            }
+        }
+
+        self.last_sample_timestamp_micros = Some(timestamp);
     }
 }
 
@@ -62,6 +85,17 @@ pub struct SignalTask {
 }
 
 impl SignalTask {
+    fn samples_for_duration_ms(duration_ms: u32, sample_rate_hz: f32) -> usize {
+        let duration_secs = duration_ms.max(1) as f32 / 1000.0;
+        let sample_rate_hz = if sample_rate_hz.is_finite() {
+            sample_rate_hz.clamp(8.0, 2048.0)
+        } else {
+            128.0
+        };
+
+        (duration_secs * sample_rate_hz).round().max(1.0) as usize
+    }
+
     /// Creates a new signal task.
     pub fn new(
         config: SignalConfig,
@@ -89,15 +123,6 @@ impl SignalTask {
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
         tracing::info!("Signal processing task started");
 
-        // Calculate how many samples we need for one feature window.
-        // For example, with 128 Hz sampling and 500ms window, we need 64 samples.
-        let samples_per_window = (self.config.feature_window_ms as f32 / 1000.0 * 128.0) as usize;
-
-        // Calculate how many samples between feature extractions.
-        // For example, with 50ms step, we extract features every 6.4 samples.
-        let samples_per_step = (self.config.feature_step_ms as f32 / 1000.0 * 128.0) as usize;
-        let samples_per_step = samples_per_step.max(1); // At least 1
-
         loop {
             tokio::select! {
                 // Check for shutdown
@@ -123,14 +148,25 @@ impl SignalTask {
 
                             let buf = self.stream_buffers
                                 .entry(stream_key)
-                                .or_insert_with(StreamBuffer::new);
+                                .or_insert_with(|| StreamBuffer::new(self.config.buffer_size_samples));
 
-                            buf.samples.push(sample);
+                            buf.update_sample_rate_estimate(&sample);
+
+                            let samples_per_window = Self::samples_for_duration_ms(
+                                self.config.feature_window_ms,
+                                buf.estimated_sample_rate_hz,
+                            );
+                            let samples_per_step = Self::samples_for_duration_ms(
+                                self.config.feature_step_ms,
+                                buf.estimated_sample_rate_hz,
+                            );
+
+                            buf.samples.push_back(sample);
                             buf.samples_since_extraction += 1;
 
                             // Keep buffer from growing unbounded
                             while buf.samples.len() > self.config.buffer_size_samples {
-                                buf.samples.remove(0);
+                                let _ = buf.samples.pop_front();
                             }
 
                             // Check if it's time to extract features for this stream
@@ -140,8 +176,9 @@ impl SignalTask {
                                 buf.samples_since_extraction = 0;
 
                                 // Extract features from the most recent window
-                                let window_start = buf.samples.len() - samples_per_window;
-                                let window = &buf.samples[window_start..];
+                                let samples = buf.samples.make_contiguous();
+                                let window_start = samples.len() - samples_per_window;
+                                let window = &samples[window_start..];
 
                                 let features = Self::extract_features(window);
 
@@ -191,7 +228,7 @@ impl SignalTask {
         let mut stream_count = 0u32;
 
         for buf in self.stream_buffers.values() {
-            if let Some(last) = buf.samples.last() {
+            if let Some(last) = buf.samples.back() {
                 if let Some(quality) = &last.quality {
                     if !quality.is_empty() {
                         let avg = quality.iter().sum::<f32>() / quality.len() as f32;
@@ -263,5 +300,28 @@ impl SignalTask {
         }
 
         FeatureVector::new(features)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::SignalTask;
+
+    #[test]
+    fn samples_for_duration_uses_expected_rate() {
+        assert_eq!(SignalTask::samples_for_duration_ms(500, 128.0), 64);
+        assert_eq!(SignalTask::samples_for_duration_ms(50, 128.0), 6);
+    }
+
+    #[test]
+    fn samples_for_duration_clamps_invalid_rate() {
+        assert_eq!(SignalTask::samples_for_duration_ms(500, f32::NAN), 64);
+        assert_eq!(SignalTask::samples_for_duration_ms(500, 0.0), 4);
+    }
+
+    #[test]
+    fn samples_for_duration_never_returns_zero() {
+        assert_eq!(SignalTask::samples_for_duration_ms(0, 256.0), 1);
+        assert_eq!(SignalTask::samples_for_duration_ms(1, 8.0), 1);
     }
 }
