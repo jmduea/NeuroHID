@@ -70,6 +70,8 @@ NeuroHID uses a hybrid Rust/Python architecture:
 - Hot reload Python code without restarting the service
 - Clear boundary makes testing and debugging easier
 
+Current status: the IPC task defaults to a simulated bridge for MVP development. Set `service.ipc_simulation_enabled = false` in your config to require a real Python bridge (the service will report IPC unavailable until that bridge is implemented).
+
 ## Project Structure
 
 ```
@@ -124,7 +126,7 @@ Applications don't know NeuroHID exists. They receive standard HID events—mous
 **Software:**
 
 - Rust 1.75+
-- Python 3.10+
+- Python 3.12+
 - PyTorch 2.0+
 
 ### Building
@@ -149,12 +151,12 @@ uv sync
 cargo run --release -p neurohid
 
 # Start the background service
-cargo run --release -p neurohid-core
+cargo run --release -p neurohid --bin neurohid-service
 ```
 
 ## Development Roadmap
 
-See [ROADMAP.md](./ROADMAP.md) for the detailed development plan.
+The current implementation roadmap is tracked in repository issues and milestones.
 
 **Phase 1 (Weeks 1-3): Foundation**
 
@@ -194,7 +196,7 @@ Areas where help is especially appreciated:
 
 ## License
 
-This project is dual-licensed under MIT and Apache 2.0. See [LICENSE-MIT](./LICENSE-MIT) and [LICENSE-APACHE](./LICENSE-APACHE).
+This project is dual-licensed under MIT and Apache 2.0. Individual crate license files are included where applicable (for example, `crates/emotiv-cortex-v2/LICENSE-MIT` and `crates/emotiv-cortex-v2/LICENSE-APACHE`).
 
 ## Acknowledgments
 

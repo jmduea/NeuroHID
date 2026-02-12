@@ -11,16 +11,13 @@ Thank you for your interest in contributing to NeuroHID! This guide will help yo
 
 ### Python Environment
 
-For the ML module in `python/neurohid-ml/`:
+For the ML module in `python/`:
 
-- Python 3.10+
-- Virtual environment recommended
+- uv
 
 ```bash
-cd python/neurohid-ml
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-pip install -e .
+cd python
+uv sync
 ```
 
 ### LSL (Lab Streaming Layer)
@@ -58,6 +55,15 @@ cargo run -p neurohid --bin neurohid-service
 # Run with verbose logging
 RUST_LOG=neurohid=debug cargo run -p neurohid --bin neurohid
 ```
+
+### IPC Mode
+
+The core currently defaults to a simulated IPC bridge for MVP development.
+
+- Default behavior: `service.ipc_simulation_enabled = true`
+- To require a real Python bridge: set `service.ipc_simulation_enabled = false`
+
+When disabled before the real bridge is wired, the service reports IPC as unavailable.
 
 ## Testing
 
