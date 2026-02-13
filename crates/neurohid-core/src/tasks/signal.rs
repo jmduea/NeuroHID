@@ -79,6 +79,7 @@ pub struct SignalTask {
     errp_rx: mpsc::Receiver<ErrPResult>,
     state: Arc<RwLock<ServiceState>>,
     signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
+    sample_tap_tx: Option<mpsc::Sender<Sample>>,
 
     /// Broadcast channel for forwarding raw samples to hub visualization widgets.
     sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
@@ -131,6 +132,7 @@ impl SignalTask {
         errp_rx: mpsc::Receiver<ErrPResult>,
         state: Arc<RwLock<ServiceState>>,
         signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
+        sample_tap_tx: Option<mpsc::Sender<Sample>>,
         sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
         feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
@@ -142,6 +144,7 @@ impl SignalTask {
             errp_rx,
             state,
             signal_command_rx,
+            sample_tap_tx,
             sample_broadcast_tx,
             feature_broadcast_tx,
             marker_broadcast_tx,
@@ -182,6 +185,10 @@ impl SignalTask {
                     match sample {
                         Some(sample) => {
                             self.sample_count += 1;
+
+                            if let Some(tx) = &self.sample_tap_tx {
+                                let _ = tx.try_send(sample.clone());
+                            }
 
                             // Broadcast raw sample to hub visualization widgets
                             if let Some(tx) = &self.sample_broadcast_tx {

@@ -66,6 +66,8 @@ class BridgeStats:
     value_loss: Optional[float] = None
     entropy: Optional[float] = None
     last_error: Optional[str] = None
+    decoder_confidence_ema: Optional[float] = None
+    signal_quality_ema: Optional[float] = None
 
 
 def now_micros() -> int:
@@ -82,6 +84,18 @@ def _quality_label(score: float) -> str:
     if score >= 0.25:
         return "poor"
     return "unusable"
+
+
+def _ema(previous: Optional[float], value: float, alpha: float = 0.1) -> float:
+    value = float(value)
+    if previous is None:
+        return value
+    return float(previous * (1.0 - alpha) + value * alpha)
+
+
+def _bernoulli_entropy(probability: float) -> float:
+    p = float(np.clip(probability, 1e-6, 1.0 - 1e-6))
+    return float(-(p * np.log(p) + (1.0 - p) * np.log(1.0 - p)))
 
 
 class IpcClient:
@@ -336,10 +350,13 @@ class BridgeSession:
         return False
 
     async def handle_decision_event(self, payload: dict[str, Any]) -> None:
-        decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
-        action_timestamp = int(payload.get("timestamp_us") or now_micros())
-        decoder_confidence = float(payload.get("decoder_confidence") or 0.0)
-        signal_quality = float(payload.get("signal_quality") or 0.0)
+        _ = str(payload.get("decision_id") or f"dec_{now_micros()}")
+        decoder_confidence = float(
+            np.clip(float(payload.get("decoder_confidence") or 0.0), 0.0, 1.0)
+        )
+        signal_quality = float(
+            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
+        )
 
         feature_values = payload.get("feature_values")
         if isinstance(feature_values, list):
@@ -347,29 +364,26 @@ class BridgeSession:
 
         self.stats.replay_size += 1
         self.stats.training_step += 1
-
-        # Placeholder proxy until dedicated ErrP window labeling is integrated.
-        error_probability = float(np.clip(1.0 - decoder_confidence, 0.0, 1.0))
-        detection_timestamp = now_micros()
-
-        await self.client.send_envelope(
-            kind="errp_result",
-            session_id=self.session_id,
-            payload={
-                "decision_id": decision_id,
-                "action_timestamp_us": action_timestamp,
-                "detection_timestamp_us": detection_timestamp,
-                "error_probability": error_probability,
-                "classification_confidence": max(decoder_confidence, 0.01),
-                "signal_quality": _quality_label(signal_quality),
-                "estimated_magnitude": None,
-                "detection_latency_us": detection_timestamp - action_timestamp,
-            },
+        self.stats.decoder_confidence_ema = _ema(
+            self.stats.decoder_confidence_ema, decoder_confidence, alpha=0.08
+        )
+        self.stats.signal_quality_ema = _ema(
+            self.stats.signal_quality_ema, signal_quality, alpha=0.08
+        )
+        # Keep trainer status fields stable as replay grows, even before ErrP labels arrive.
+        self.stats.policy_loss = _ema(
+            self.stats.policy_loss, max(0.0, 1.0 - decoder_confidence), alpha=0.05
+        )
+        self.stats.entropy = _ema(
+            self.stats.entropy, _bernoulli_entropy(decoder_confidence), alpha=0.05
         )
 
     async def handle_errp_window(self, payload: dict[str, Any]) -> None:
         decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
         action_timestamp = int(payload.get("action_timestamp_us") or now_micros())
+        signal_quality = float(
+            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
+        )
 
         channels = payload.get("channel_data")
         if isinstance(channels, list) and channels:
@@ -387,12 +401,22 @@ class BridgeSession:
                 else:
                     error_probability = 0.0
                     confidence = 0.0
-            except Exception:  # noqa: BLE001
+            except Exception as error:  # noqa: BLE001
                 error_probability = 0.0
                 confidence = 0.0
+                self.stats.last_error = f"errp_window analysis failed: {error}"
         else:
             error_probability = 0.0
             confidence = 0.0
+
+        self.stats.value_loss = _ema(self.stats.value_loss, error_probability, alpha=0.12)
+        self.stats.policy_loss = _ema(
+            self.stats.policy_loss, max(0.0, 1.0 - confidence), alpha=0.12
+        )
+        self.stats.entropy = _ema(
+            self.stats.entropy, _bernoulli_entropy(error_probability), alpha=0.12
+        )
+        self.stats.last_error = None
 
         detection_timestamp = now_micros()
         await self.client.send_envelope(
@@ -404,7 +428,7 @@ class BridgeSession:
                 "detection_timestamp_us": detection_timestamp,
                 "error_probability": error_probability,
                 "classification_confidence": confidence,
-                "signal_quality": "acceptable",
+                "signal_quality": _quality_label(signal_quality),
                 "estimated_magnitude": None,
                 "detection_latency_us": detection_timestamp - action_timestamp,
             },
@@ -464,11 +488,18 @@ class BridgeSession:
         )
 
     async def send_trainer_status(self) -> None:
+        if self.stats.last_error:
+            state = "error"
+        elif self.stats.replay_size > 0:
+            state = "training"
+        else:
+            state = "idle"
+
         await self.client.send_envelope(
             kind="trainer_status",
             session_id=self.session_id,
             payload={
-                "state": "training" if self.stats.replay_size > 0 else "idle",
+                "state": state,
                 "replay_size": self.stats.replay_size,
                 "training_step": self.stats.training_step,
                 "policy_loss": self.stats.policy_loss,

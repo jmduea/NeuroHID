@@ -125,6 +125,13 @@ pub struct RuntimeSnapshot {
     pub fallback_model_kind: Option<String>,
     pub trainer_replay_size: Option<u64>,
     pub trainer_step: Option<u64>,
+    pub trainer_policy_loss: Option<f32>,
+    pub trainer_value_loss: Option<f32>,
+    pub trainer_entropy: Option<f32>,
+    pub trainer_last_error: Option<String>,
+    pub candidate_promotions_succeeded: u64,
+    pub candidate_promotions_rejected: u64,
+    pub candidate_last_outcome: Option<String>,
     pub ml_protocol_version: Option<u16>,
 }
 
@@ -166,6 +173,13 @@ impl Default for RuntimeSnapshot {
             fallback_model_kind: None,
             trainer_replay_size: None,
             trainer_step: None,
+            trainer_policy_loss: None,
+            trainer_value_loss: None,
+            trainer_entropy: None,
+            trainer_last_error: None,
+            candidate_promotions_succeeded: 0,
+            candidate_promotions_rejected: 0,
+            candidate_last_outcome: None,
             ml_protocol_version: None,
         }
     }
@@ -270,6 +284,13 @@ impl RuntimeHandle {
             fallback_model_kind: state.fallback_model_kind.clone(),
             trainer_replay_size: state.trainer_replay_size,
             trainer_step: state.trainer_step,
+            trainer_policy_loss: state.trainer_policy_loss,
+            trainer_value_loss: state.trainer_value_loss,
+            trainer_entropy: state.trainer_entropy,
+            trainer_last_error: state.trainer_last_error.clone(),
+            candidate_promotions_succeeded: state.candidate_promotions_succeeded,
+            candidate_promotions_rejected: state.candidate_promotions_rejected,
+            candidate_last_outcome: state.candidate_last_outcome.clone(),
             ml_protocol_version: state.ml_protocol_version,
         }
     }
@@ -345,7 +366,10 @@ impl RuntimeHandle {
                     replay_size: snap.trainer_replay_size.unwrap_or(0),
                     training_step: snap.trainer_step.unwrap_or(0),
                     last_heartbeat_us: self.handle.last_ml_heartbeat_us(),
-                    last_error: snap.task_error.map(|(_, e)| e),
+                    last_error: snap
+                        .trainer_last_error
+                        .clone()
+                        .or_else(|| snap.task_error.map(|(_, e)| e)),
                     protocol_version: snap.ml_protocol_version,
                 };
                 ControlResponse::trainer_snapshot(request_id, trainer)
@@ -401,6 +425,13 @@ impl From<RuntimeSnapshot> for ControlSnapshot {
             fallback_model_kind: value.fallback_model_kind,
             trainer_replay_size: value.trainer_replay_size,
             trainer_step: value.trainer_step,
+            trainer_policy_loss: value.trainer_policy_loss,
+            trainer_value_loss: value.trainer_value_loss,
+            trainer_entropy: value.trainer_entropy,
+            trainer_last_error: value.trainer_last_error,
+            candidate_promotions_succeeded: value.candidate_promotions_succeeded,
+            candidate_promotions_rejected: value.candidate_promotions_rejected,
+            candidate_last_outcome: value.candidate_last_outcome,
             ml_protocol_version: value.ml_protocol_version,
             device_connected: value.device_connected,
             task_error: value.task_error,

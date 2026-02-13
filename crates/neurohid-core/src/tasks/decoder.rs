@@ -336,6 +336,11 @@ impl DecoderTask {
     async fn promote_candidate_model(&mut self) {
         let Some(profile_id) = self.active_profile_id.clone() else {
             tracing::warn!("Ignoring candidate promotion without active profile");
+            self.record_candidate_outcome(
+                false,
+                "candidate promotion rejected: no active profile".to_string(),
+            )
+            .await;
             return;
         };
         let Some(store) = self.profile_store.clone() else {
@@ -343,6 +348,14 @@ impl DecoderTask {
                 "Ignoring candidate promotion for profile {} without profile store",
                 profile_id
             );
+            self.record_candidate_outcome(
+                false,
+                format!(
+                    "candidate promotion rejected for profile {}: profile store unavailable",
+                    profile_id
+                ),
+            )
+            .await;
             return;
         };
 
@@ -354,6 +367,14 @@ impl DecoderTask {
                     profile_id,
                     reason
                 );
+                self.record_candidate_outcome(
+                    false,
+                    format!(
+                        "candidate promotion rejected for profile {}: {}",
+                        profile_id, reason
+                    ),
+                )
+                .await;
                 return;
             }
         }
@@ -368,6 +389,14 @@ impl DecoderTask {
                 profile_id,
                 error
             );
+            self.record_candidate_outcome(
+                false,
+                format!(
+                    "candidate promotion failed for profile {}: {}",
+                    profile_id, error
+                ),
+            )
+            .await;
             return;
         }
 
@@ -437,9 +466,24 @@ impl DecoderTask {
                     self.set_decoder_status(self.active_model.as_ref()).await;
                 }
 
+                self.record_candidate_outcome(
+                    false,
+                    format!(
+                        "candidate promotion failed activation for profile {} and was rejected",
+                        profile_id
+                    ),
+                )
+                .await;
+
                 return;
             }
         }
+
+        self.record_candidate_outcome(
+            true,
+            format!("candidate promotion succeeded for profile {}", profile_id),
+        )
+        .await;
 
         if let Err(error) = store.clear_decoder_candidate(&profile_id).await {
             tracing::warn!(
@@ -656,6 +700,18 @@ impl DecoderTask {
             "lightweight_rust" => RuntimeModeState::Fallback,
             _ => RuntimeModeState::Degraded,
         };
+    }
+
+    async fn record_candidate_outcome(&self, succeeded: bool, message: String) {
+        let mut state = self.state.write().await;
+        if succeeded {
+            state.candidate_promotions_succeeded =
+                state.candidate_promotions_succeeded.saturating_add(1);
+        } else {
+            state.candidate_promotions_rejected =
+                state.candidate_promotions_rejected.saturating_add(1);
+        }
+        state.candidate_last_outcome = Some(message);
     }
 }
 

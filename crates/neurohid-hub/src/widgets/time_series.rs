@@ -455,7 +455,7 @@ impl Widget for TimeSeriesWidget {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
-        /// TODO: Get actual sample rate from stream metadata, and update when source changes.
+        // TODO: Get actual sample rate from stream metadata, and update when source changes.
         let sample_rate = 128.0f32;
         let source_options = ctx.candidate_sources_for(WidgetId::TimeSeries);
         if !source_options.is_empty() {

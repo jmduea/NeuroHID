@@ -17,6 +17,7 @@ futures = { workspace = true }
 # Serialization (we use JSON for debuggability, can optimize later)
 serde = { workspace = true }
 serde_json = { workspace = true }
+prost = "0.13"
 
 # Error handling
 thiserror = { workspace = true }

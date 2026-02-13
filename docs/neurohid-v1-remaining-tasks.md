@@ -4,48 +4,53 @@ This checklist captures what is still open after the Runtime ML Protocol v2 + na
 
 ## Priority 0 (release blockers)
 
-- [ ] Fix DSP window sizing edge case that still causes fallback warnings (`window has 63 samples, need at least 64 for Welch PSD`) in live runs.
+- [x] Fix DSP window sizing edge case that still causes fallback warnings (`window has 63 samples, need at least 64 for Welch PSD`) in live runs.
   - Target: no repeated feature-extraction fallback spam under nominal 128 Hz streams.
   - Suggested area: `crates/neurohid-core/src/tasks/signal.rs` window/step calculation and extractor input sizing.
 
-- [ ] Complete runtime-generated `errp_window` payload path.
+- [x] Complete runtime-generated `errp_window` payload path.
   - Current path sends `decision_event` and receives `errp_result`, but explicit ErrP windows are not yet emitted from runtime bridge.
   - Target: runtime emits `errp_window` with correlated `decision_id`, trainer responds with `errp_result`.
 
-- [ ] Harden candidate model promotion security/validation for external trainer-provided artifact paths.
+- [x] Harden candidate model promotion security/validation for external trainer-provided artifact paths.
   - Current path imports from `candidate_model_ready.artifact_dir` then promotes.
   - Target: restrict import roots, enforce path policy, and add additional manifest/metrics sanity checks before import.
 
-- [ ] Add end-to-end Windows named-pipe integration tests (control + ML channels).
+- [x] Add end-to-end Windows named-pipe integration tests (control + ML channels).
   - Include connect/disconnect/reconnect and bridge stall/recovery transitions.
 
 ## Priority 1 (important for v1 quality)
 
-- [ ] Add Hub controls for v2 control commands:
+- [x] Add Hub controls for v2 control commands:
   - `SetLearningEnabled`
   - `MlBridgeReconnect`
   - `SetFallbackPolicy`
   - `TrainerSnapshot` display
 
-- [ ] Add explicit desktop/user notifications for runtime mode transitions (`full` <-> `fallback` <-> `degraded`) in Hub UX.
+- [x] Add explicit desktop/user notifications for runtime mode transitions (`full` <-> `fallback` <-> `degraded`) in Hub UX.
   - Runtime logs transition alerts with cooldown, but UI notification flow should surface them consistently.
 
-- [ ] Replace placeholder trainer behavior in Python bridge.
+- [x] Replace placeholder trainer behavior in Python bridge.
   - Current bridge uses proxy/error heuristics for `decision_event` -> `errp_result`.
   - Target: real trainer/replay integration with stable status metrics.
 
-- [ ] Make external-mode named-pipe control client more robust.
+- [x] Make external-mode named-pipe control client more robust.
   - Add retry/backoff and timeout behavior parity with TCP control path.
 
 ## Priority 2 (performance and polish)
 
-- [ ] Run the protocol encoding benchmark gate for JSON v2 vs protobuf (RFC Phase 6).
+- [x] Run the protocol encoding benchmark gate for JSON v2 vs protobuf (RFC Phase 6).
   - Only migrate payload encoding if benchmark thresholds are met.
+  - 2026-02-13 gate result (`cargo run -p neurohid-ipc --bin protocol_encoding_gate`):
+    - JSON: encode `93657.2 ns/msg`, decode `88664.4 ns/msg`, size `4931.0 bytes/msg`
+    - Protobuf-shaped: encode `4036.8 ns/msg`, decode `10568.1 ns/msg`, size `1055.7 bytes/msg`
+    - Decision: `MIGRATE_TO_PROTOBUF` (thresholds exceeded).
 
-- [ ] Add observability dashboards for trainer metrics over time.
+- [x] Add observability dashboards for trainer metrics over time.
   - Replay size, training step, losses/entropy trends, candidate promote/reject outcomes.
+  - Implemented in Hub Dashboard with rolling sparklines and candidate outcome history.
 
-- [ ] Resolve remaining low-value warnings in hub widgets (`unused doc comment` style warnings).
+- [x] Resolve remaining low-value warnings in hub widgets (`unused doc comment` style warnings).
 
 ## Validation matrix to complete
 

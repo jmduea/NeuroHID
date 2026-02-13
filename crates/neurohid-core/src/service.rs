@@ -151,6 +151,27 @@ pub struct ServiceState {
     /// Trainer step when reported by bridge.
     pub trainer_step: Option<u64>,
 
+    /// Trainer policy loss when reported by bridge.
+    pub trainer_policy_loss: Option<f32>,
+
+    /// Trainer value loss when reported by bridge.
+    pub trainer_value_loss: Option<f32>,
+
+    /// Trainer entropy when reported by bridge.
+    pub trainer_entropy: Option<f32>,
+
+    /// Last trainer-side status/error message.
+    pub trainer_last_error: Option<String>,
+
+    /// Count of candidate promotions accepted by runtime.
+    pub candidate_promotions_succeeded: u64,
+
+    /// Count of candidate promotions rejected by runtime guardrails/validation.
+    pub candidate_promotions_rejected: u64,
+
+    /// Last candidate promotion outcome message.
+    pub candidate_last_outcome: Option<String>,
+
     /// Runtime mode classification for fallback/degraded behavior.
     pub runtime_mode_state: RuntimeModeState,
 
@@ -235,6 +256,13 @@ impl Default for ServiceState {
             ml_protocol_version: None,
             trainer_replay_size: None,
             trainer_step: None,
+            trainer_policy_loss: None,
+            trainer_value_loss: None,
+            trainer_entropy: None,
+            trainer_last_error: None,
+            candidate_promotions_succeeded: 0,
+            candidate_promotions_rejected: 0,
+            candidate_last_outcome: None,
             runtime_mode_state: RuntimeModeState::Degraded,
             enabled_capabilities: Vec::new(),
             limited_capabilities_message: None,
@@ -491,6 +519,8 @@ impl NeuroHidService {
 
         // ErrP results flow from IPC back to signal task (for online learning coordination)
         let (errp_tx, errp_rx) = mpsc::channel(64);
+        // Raw samples are mirrored into IPC for runtime-generated ErrP windows.
+        let (errp_sample_tx, errp_sample_rx) = mpsc::channel(1024);
 
         // Clone shared state for each task
         let state_device = Arc::clone(&self.shared_state);
@@ -596,6 +626,7 @@ impl NeuroHidService {
                 errp_rx,
                 state_signal,
                 signal_command_rx,
+                Some(errp_sample_tx),
                 sample_broadcast_tx,
                 feature_broadcast_tx,
                 marker_tx_for_signal,
@@ -637,6 +668,8 @@ impl NeuroHidService {
                 ipc_config,
                 decision_event_rx,
                 errp_tx,
+                errp_sample_rx,
+                self.config.errp.clone(),
                 state_ipc,
                 marker_tx_for_ipc,
                 profile_store_for_ipc,
@@ -695,6 +728,13 @@ impl NeuroHidService {
             state.ml_protocol_version = Some(2);
             state.trainer_replay_size = None;
             state.trainer_step = None;
+            state.trainer_policy_loss = None;
+            state.trainer_value_loss = None;
+            state.trainer_entropy = None;
+            state.trainer_last_error = None;
+            state.candidate_promotions_succeeded = 0;
+            state.candidate_promotions_rejected = 0;
+            state.candidate_last_outcome = None;
             state.runtime_mode_state = RuntimeModeState::Degraded;
             state.enabled_capabilities.clear();
             state.limited_capabilities_message = None;
@@ -953,6 +993,13 @@ impl NeuroHidService {
             state.ml_bridge_last_heartbeat_us = None;
             state.trainer_replay_size = None;
             state.trainer_step = None;
+            state.trainer_policy_loss = None;
+            state.trainer_value_loss = None;
+            state.trainer_entropy = None;
+            state.trainer_last_error = None;
+            state.candidate_promotions_succeeded = 0;
+            state.candidate_promotions_rejected = 0;
+            state.candidate_last_outcome = None;
             state.runtime_mode_state = RuntimeModeState::Degraded;
             state.enabled_capabilities.clear();
             state.limited_capabilities_message = None;

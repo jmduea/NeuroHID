@@ -364,9 +364,12 @@ impl PythonLabScreen {
                 ui.colored_label(bridge_color, format!("ML bridge: {}", bridge_text));
 
                 ui.label(
-                    egui::RichText::new(format!("runtime mode: {:?}", service_snapshot.runtime_mode_state))
-                        .small()
-                        .weak(),
+                    egui::RichText::new(format!(
+                        "runtime mode: {:?}",
+                        service_snapshot.runtime_mode_state
+                    ))
+                    .small()
+                    .weak(),
                 );
             });
 
@@ -376,14 +379,8 @@ impl PythonLabScreen {
                         .small()
                         .weak(),
                 );
-                ui.add(
-                    egui::Slider::new(&mut self.monitor_rows, 3..=40)
-                        .text("rows"),
-                );
-                ui.add(
-                    egui::Slider::new(&mut self.monitor_preview_values, 4..=64)
-                        .text("values"),
-                );
+                ui.add(egui::Slider::new(&mut self.monitor_rows, 3..=40).text("rows"));
+                ui.add(egui::Slider::new(&mut self.monitor_preview_values, 4..=64).text("values"));
             });
 
             if let Some(latest) = data_bus.features.back() {
@@ -396,7 +393,11 @@ impl PythonLabScreen {
                     .small(),
                 );
             } else {
-                ui.label(egui::RichText::new("No feature vectors yet.").small().weak());
+                ui.label(
+                    egui::RichText::new("No feature vectors yet.")
+                        .small()
+                        .weak(),
+                );
             }
 
             egui::ScrollArea::vertical()

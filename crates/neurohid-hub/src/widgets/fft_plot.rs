@@ -552,7 +552,7 @@ impl Widget for FftPlotWidget {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
-        ///TODO: Get actual sample rate from stream metadata
+        // TODO: Get actual sample rate from stream metadata
         let sample_rate = 128.0;
         let nyquist = sample_rate / 2.0;
         let half_bins = FFT_SIZE / 2;

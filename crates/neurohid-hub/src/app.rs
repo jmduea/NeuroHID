@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 use eframe::egui;
+use neurohid_types::control::RuntimeModeState;
 
 use crate::data_bus::DataBus;
 use crate::screens::calibration::CalibrationScreen;
@@ -29,6 +30,8 @@ pub struct HubApp {
     service_manager: ServiceManager,
     last_service_running: Option<bool>,
     last_latency_degraded: Option<bool>,
+    last_runtime_mode_running: Option<bool>,
+    last_runtime_mode_state: Option<RuntimeModeState>,
     data_bus: DataBus,
     stream_console: StreamConsole,
     // Screen instances
@@ -73,6 +76,8 @@ impl HubApp {
             service_manager: ServiceManager::new(),
             last_service_running: None,
             last_latency_degraded: None,
+            last_runtime_mode_running: None,
+            last_runtime_mode_state: None,
             data_bus: DataBus::new(),
             stream_console: StreamConsole::new(),
             dashboard: DashboardScreen::new(),
@@ -480,6 +485,46 @@ impl HubApp {
         }
     }
 
+    fn maybe_notify_runtime_mode_transition(&mut self) {
+        let snapshot = &self.state.service_snapshot;
+        let was_running = self.last_runtime_mode_running.replace(snapshot.running);
+        let previous_mode = self
+            .last_runtime_mode_state
+            .replace(snapshot.runtime_mode_state);
+
+        if !self.state.config.service.notifications_enabled {
+            return;
+        }
+
+        let (Some(was_running), Some(previous_mode)) = (was_running, previous_mode) else {
+            return;
+        };
+        if !was_running || !snapshot.running || previous_mode == snapshot.runtime_mode_state {
+            return;
+        }
+
+        let (title, fallback_body) = match snapshot.runtime_mode_state {
+            RuntimeModeState::Full => (
+                "NeuroHID runtime mode: full",
+                "Runtime recovered to full capability mode.",
+            ),
+            RuntimeModeState::Fallback => (
+                "NeuroHID runtime mode: fallback",
+                "Runtime entered fallback mode; capabilities may be limited.",
+            ),
+            RuntimeModeState::Degraded => (
+                "NeuroHID runtime mode: degraded",
+                "Runtime entered degraded mode; HID output may be limited or disabled.",
+            ),
+        };
+
+        let body = snapshot
+            .limited_capabilities_message
+            .as_deref()
+            .unwrap_or(fallback_body);
+        self.send_desktop_notification(title, body);
+    }
+
     fn send_desktop_notification(&self, title: &str, body: &str) {
         if let Err(error) = desktop_notify(title, body) {
             tracing::debug!(
@@ -505,6 +550,7 @@ impl eframe::App for HubApp {
         // Poll service state (non-blocking)
         self.state.service_snapshot = self.service_manager.snapshot();
         self.maybe_notify_latency_transition();
+        self.maybe_notify_runtime_mode_transition();
 
         // Connect/disconnect the data bus based on service state
         self.service_manager.sync_data_bus(&mut self.data_bus);

@@ -12,9 +12,13 @@ use tokio::sync::broadcast;
 use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    config::{ControlTransport, ServiceConfig, ServiceRuntimeMode, SignalConfig, SystemConfig},
+    config::{
+        ControlTransport, FallbackPolicy, ServiceConfig, ServiceRuntimeMode, SignalConfig,
+        SystemConfig,
+    },
     control::{
         ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
+        TrainerSnapshot,
     },
     profile::ProfileId,
 };
@@ -25,6 +29,10 @@ use crate::state::ServiceSnapshot;
 const EXTERNAL_SNAPSHOT_POLL_INTERVAL: Duration = Duration::from_millis(250);
 const EXTERNAL_CONNECT_TIMEOUT: Duration = Duration::from_millis(120);
 const EXTERNAL_IO_TIMEOUT: Duration = Duration::from_millis(250);
+#[cfg(windows)]
+const EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS: usize = 6;
+#[cfg(windows)]
+const EXTERNAL_NAMED_PIPE_RETRY_BASE_DELAY: Duration = Duration::from_millis(40);
 
 /// Manages service/runtime lifecycle for the hub.
 pub struct ServiceManager {
@@ -314,6 +322,107 @@ impl ServiceManager {
         }
     }
 
+    /// Enable or disable runtime learning.
+    pub fn set_learning_enabled(&self, enabled: bool) {
+        match self.runtime_mode {
+            ServiceRuntimeMode::Embedded => {
+                if let Some(handle) = &self.handle {
+                    handle.set_learning_enabled(enabled);
+                }
+            }
+            ServiceRuntimeMode::External => {
+                self.send_external_command(ControlCommand::SetLearningEnabled { enabled });
+            }
+        }
+    }
+
+    /// Trigger an ML bridge reconnect attempt.
+    pub fn ml_bridge_reconnect(&self) {
+        match self.runtime_mode {
+            ServiceRuntimeMode::Embedded => {
+                if let Some(handle) = &self.handle {
+                    handle.ml_bridge_reconnect();
+                }
+            }
+            ServiceRuntimeMode::External => {
+                self.send_external_command(ControlCommand::MlBridgeReconnect);
+            }
+        }
+    }
+
+    /// Push fallback policy settings into the running runtime.
+    pub fn set_fallback_policy(&self, policy: FallbackPolicy) {
+        match self.runtime_mode {
+            ServiceRuntimeMode::Embedded => {
+                if let Some(handle) = &self.handle {
+                    handle.set_fallback_policy(policy);
+                }
+            }
+            ServiceRuntimeMode::External => {
+                self.send_external_command(ControlCommand::SetFallbackPolicy { policy });
+            }
+        }
+    }
+
+    /// Query the trainer-side snapshot exposed by the runtime.
+    pub fn trainer_snapshot(&mut self) -> Option<TrainerSnapshot> {
+        match self.runtime_mode {
+            ServiceRuntimeMode::Embedded => {
+                let handle = self.handle.as_ref()?;
+                let state = handle.state.try_read().ok()?;
+                Some(TrainerSnapshot {
+                    trainer_connected: state.ml_bridge_connected,
+                    trainer_state: if state.ml_bridge_stalled {
+                        "stalled".to_string()
+                    } else if state.ml_bridge_connected {
+                        "connected".to_string()
+                    } else {
+                        "disconnected".to_string()
+                    },
+                    replay_size: state.trainer_replay_size.unwrap_or(0),
+                    training_step: state.trainer_step.unwrap_or(0),
+                    last_heartbeat_us: state.ml_bridge_last_heartbeat_us,
+                    last_error: state
+                        .trainer_last_error
+                        .clone()
+                        .or_else(|| state.task_error.clone().map(|(_, error)| error)),
+                    protocol_version: state.ml_protocol_version,
+                })
+            }
+            ServiceRuntimeMode::External => {
+                let endpoint = self.control_endpoint_label();
+                match self
+                    .send_control_request(ControlRequest::new(ControlCommand::TrainerSnapshot))
+                {
+                    Ok(response) => match response.payload {
+                        ControlResponsePayload::TrainerSnapshot { snapshot } => Some(snapshot),
+                        ControlResponsePayload::Error { message } => {
+                            self.set_last_error(format!(
+                                "External runtime trainer snapshot failed from {}: {}",
+                                endpoint, message
+                            ));
+                            None
+                        }
+                        ControlResponsePayload::Ack | ControlResponsePayload::Snapshot { .. } => {
+                            self.set_last_error(format!(
+                                "External runtime at {} returned unexpected payload for trainer snapshot",
+                                endpoint
+                            ));
+                            None
+                        }
+                    },
+                    Err(error) => {
+                        self.set_last_error(format!(
+                            "Failed to query trainer snapshot from external runtime at {}: {}",
+                            endpoint, error
+                        ));
+                        None
+                    }
+                }
+            }
+        }
+    }
+
     /// Update active profile status used by runtime action gating.
     pub fn set_active_profile(
         &self,
@@ -532,6 +641,13 @@ impl ServiceManager {
             fallback_model_kind: state_guard.fallback_model_kind.clone(),
             trainer_replay_size: state_guard.trainer_replay_size,
             trainer_step: state_guard.trainer_step,
+            trainer_policy_loss: state_guard.trainer_policy_loss,
+            trainer_value_loss: state_guard.trainer_value_loss,
+            trainer_entropy: state_guard.trainer_entropy,
+            trainer_last_error: state_guard.trainer_last_error.clone(),
+            candidate_promotions_succeeded: state_guard.candidate_promotions_succeeded,
+            candidate_promotions_rejected: state_guard.candidate_promotions_rejected,
+            candidate_last_outcome: state_guard.candidate_last_outcome.clone(),
             ml_protocol_version: state_guard.ml_protocol_version,
             calibration_mode: state_guard.calibration_mode,
             output_enabled: state_guard.output_enabled,
@@ -701,41 +817,67 @@ impl ServiceManager {
     ) -> Result<ControlResponse, String> {
         #[cfg(windows)]
         {
-            let mut stream = std::fs::OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&self.external_control_pipe_name)
-                .map_err(|e| {
-                    format!(
-                        "failed to open control named pipe '{}': {}",
-                        self.external_control_pipe_name, e
-                    )
-                })?;
-
             let payload = serde_json::to_string(&request)
                 .map_err(|e| format!("failed to encode request payload: {}", e))?;
-            stream
-                .write_all(payload.as_bytes())
-                .map_err(|e| format!("failed to write request payload: {}", e))?;
-            stream
-                .write_all(b"\n")
-                .map_err(|e| format!("failed to terminate request line: {}", e))?;
-            stream
-                .flush()
-                .map_err(|e| format!("failed to flush request payload: {}", e))?;
+            let mut last_error = None;
 
-            let mut reader = BufReader::new(stream);
-            let mut line = String::new();
-            reader
-                .read_line(&mut line)
-                .map_err(|e| format!("failed to read response payload: {}", e))?;
+            for attempt in 0..EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS {
+                let open_result = std::fs::OpenOptions::new()
+                    .read(true)
+                    .write(true)
+                    .open(&self.external_control_pipe_name);
 
-            if line.trim().is_empty() {
-                return Err("received empty response from control endpoint".to_string());
+                let mut stream = match open_result {
+                    Ok(stream) => stream,
+                    Err(error) => {
+                        last_error = Some(error.to_string());
+                        if !named_pipe_retryable_error(&error)
+                            || attempt + 1 >= EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS
+                        {
+                            break;
+                        }
+
+                        let backoff = named_pipe_backoff_delay(attempt);
+                        std::thread::sleep(backoff);
+                        continue;
+                    }
+                };
+
+                if let Err(error) = stream.write_all(payload.as_bytes()) {
+                    last_error = Some(format!("failed to write request payload: {}", error));
+                    continue;
+                }
+                if let Err(error) = stream.write_all(b"\n") {
+                    last_error = Some(format!("failed to terminate request line: {}", error));
+                    continue;
+                }
+                if let Err(error) = stream.flush() {
+                    last_error = Some(format!("failed to flush request payload: {}", error));
+                    continue;
+                }
+
+                let mut reader = BufReader::new(stream);
+                let mut line = String::new();
+                if let Err(error) = reader.read_line(&mut line) {
+                    last_error = Some(format!("failed to read response payload: {}", error));
+                    continue;
+                }
+
+                if line.trim().is_empty() {
+                    last_error = Some("received empty response from control endpoint".to_string());
+                    continue;
+                }
+
+                return serde_json::from_str::<ControlResponse>(line.trim())
+                    .map_err(|e| format!("failed to decode control response: {}", e));
             }
 
-            return serde_json::from_str::<ControlResponse>(line.trim())
-                .map_err(|e| format!("failed to decode control response: {}", e));
+            return Err(format!(
+                "failed to open control named pipe '{}' after {} attempts: {}",
+                self.external_control_pipe_name,
+                EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS,
+                last_error.unwrap_or_else(|| "unknown error".to_string())
+            ));
         }
         #[cfg(not(windows))]
         {
@@ -772,6 +914,13 @@ impl ServiceManager {
             fallback_model_kind: snapshot.fallback_model_kind,
             trainer_replay_size: snapshot.trainer_replay_size,
             trainer_step: snapshot.trainer_step,
+            trainer_policy_loss: snapshot.trainer_policy_loss,
+            trainer_value_loss: snapshot.trainer_value_loss,
+            trainer_entropy: snapshot.trainer_entropy,
+            trainer_last_error: snapshot.trainer_last_error,
+            candidate_promotions_succeeded: snapshot.candidate_promotions_succeeded,
+            candidate_promotions_rejected: snapshot.candidate_promotions_rejected,
+            candidate_last_outcome: snapshot.candidate_last_outcome,
             ml_protocol_version: snapshot.ml_protocol_version,
             calibration_mode: snapshot.calibration_mode,
             output_enabled: snapshot.output_enabled,
@@ -801,6 +950,22 @@ impl ServiceManager {
     }
 }
 
+#[cfg(windows)]
+fn named_pipe_retryable_error(error: &std::io::Error) -> bool {
+    matches!(
+        error.raw_os_error(),
+        Some(2)  // ERROR_FILE_NOT_FOUND
+            | Some(121) // ERROR_SEM_TIMEOUT
+            | Some(231) // ERROR_PIPE_BUSY
+    )
+}
+
+#[cfg(windows)]
+fn named_pipe_backoff_delay(attempt: usize) -> Duration {
+    let shift = attempt.min(4) as u32;
+    EXTERNAL_NAMED_PIPE_RETRY_BASE_DELAY.saturating_mul(1u32 << shift)
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::{BufRead, BufReader, Write};
@@ -808,6 +973,8 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    #[cfg(windows)]
+    use neurohid_ipc::{HelloV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2};
     use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport};
     use neurohid_types::{
         config::{ControlTransport, DeviceBackend, MlTransport, ServiceRuntimeMode, SystemConfig},
@@ -816,6 +983,10 @@ mod tests {
             ControlSnapshot, RuntimeModeState,
         },
     };
+    #[cfg(windows)]
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
+    #[cfg(windows)]
+    use tokio::net::windows::named_pipe::ServerOptions;
 
     use super::ServiceManager;
     use crate::state::ServiceSnapshot;
@@ -905,6 +1076,128 @@ mod tests {
             .expect("mock control server thread should join");
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn snapshot_tracks_named_pipe_reconnect_and_stall_recovery() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+
+        let mut manager = ServiceManager::new();
+        let mut config = SystemConfig::default();
+        config.device.backend = DeviceBackend::Mock;
+        config.service.ipc_simulation_enabled = false;
+        config.service.ml_transport = MlTransport::NamedPipe;
+        config.service.ml_pipe_name = unique_pipe_name("neurohid_ml_test");
+        config.service.ml_stall_timeout_ms = 120;
+        config.service.ml_heartbeat_interval_ms = 50;
+
+        manager.start(&runtime, config.clone(), None, None);
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| snap.running);
+
+        let mut client =
+            runtime.block_on(connect_test_named_pipe_client(&config.service.ml_pipe_name));
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            snap.ipc_connected && snap.ml_bridge_connected
+        });
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            snap.ml_bridge_stalled
+        });
+
+        runtime.block_on(async {
+            let hello = HelloV2 {
+                protocol: "neurohid_runtime_ml_v2".to_string(),
+                role: RuntimeMlRoleV2::Trainer,
+                capabilities: vec!["errp_result".to_string()],
+                profile_id: None,
+                feature_schema_version: None,
+                action_schema_version: None,
+                decoder_model_version: None,
+                trainer_name: Some("test-trainer".to_string()),
+                trainer_version: Some("0.0.0".to_string()),
+            };
+            let envelope = RuntimeMlEnvelopeV2::new(
+                RuntimeMlKindV2::Hello,
+                1,
+                "named-pipe-test".to_string(),
+                &hello,
+            )
+            .expect("hello envelope should encode");
+            client
+                .send(envelope)
+                .await
+                .expect("hello send should succeed");
+        });
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            !snap.ml_bridge_stalled
+        });
+
+        runtime.block_on(async {
+            client
+                .disconnect()
+                .await
+                .expect("disconnect should succeed");
+        });
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            !snap.ipc_connected
+        });
+
+        let mut reconnect_client =
+            runtime.block_on(connect_test_named_pipe_client(&config.service.ml_pipe_name));
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            snap.ipc_connected
+        });
+        runtime.block_on(async {
+            reconnect_client
+                .disconnect()
+                .await
+                .expect("disconnect should succeed");
+        });
+
+        manager.stop();
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| !snap.running);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn external_mode_routes_snapshot_and_commands_over_named_pipe() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+
+        let pipe_name = unique_pipe_name("neurohid_control_test");
+        let server_join = spawn_mock_named_pipe_control_server(pipe_name.clone());
+
+        let mut manager = ServiceManager::new();
+        let mut config = SystemConfig::default();
+        config.service.runtime_mode = ServiceRuntimeMode::External;
+        config.service.control_transport = ControlTransport::NamedPipe;
+        config.service.control_pipe_name = pipe_name;
+
+        manager.configure(&config);
+        manager.start(&runtime, config, None, None);
+
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| snap.running);
+        manager.enter_calibration_mode();
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            snap.calibration_mode
+        });
+
+        manager.set_output_enabled(false);
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            !snap.output_enabled
+        });
+
+        manager.stop();
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| !snap.running);
+
+        server_join
+            .join()
+            .expect("mock named-pipe control server should join");
+    }
+
     fn wait_for_snapshot(
         manager: &mut ServiceManager,
         timeout: Duration,
@@ -942,6 +1235,28 @@ mod tests {
                     tokio::time::sleep(Duration::from_millis(25)).await;
                 }
                 Err(err) => panic!("client failed to connect: {err}"),
+            }
+        }
+    }
+
+    #[cfg(windows)]
+    async fn connect_test_named_pipe_client(pipe_name: &str) -> IpcClient {
+        let mut client = IpcClient::new(IpcConfig {
+            transport: IpcTransport::NamedPipe,
+            pipe_name: pipe_name.to_string(),
+            connect_timeout_ms: 250,
+            ..IpcConfig::default()
+        });
+
+        let start = tokio::time::Instant::now();
+        loop {
+            match client.connect().await {
+                Ok(()) => return client,
+                Err(err) if start.elapsed() < Duration::from_secs(3) => {
+                    tracing::debug!(%err, pipe = %pipe_name, "Waiting for named-pipe IPC server");
+                    tokio::time::sleep(Duration::from_millis(25)).await;
+                }
+                Err(err) => panic!("named-pipe client failed to connect: {err}"),
             }
         }
     }
@@ -1000,6 +1315,15 @@ mod tests {
                             fallback_model_kind: Some("onnx".to_string()),
                             trainer_replay_size: Some(200),
                             trainer_step: Some(33),
+                            trainer_policy_loss: Some(0.11),
+                            trainer_value_loss: Some(0.22),
+                            trainer_entropy: Some(0.03),
+                            trainer_last_error: None,
+                            candidate_promotions_succeeded: 2,
+                            candidate_promotions_rejected: 1,
+                            candidate_last_outcome: Some(
+                                "candidate promotion accepted".to_string(),
+                            ),
                             ml_protocol_version: Some(2),
                             device_connected: true,
                             task_error: None,
@@ -1048,6 +1372,168 @@ mod tests {
         })
     }
 
+    #[cfg(windows)]
+    fn spawn_mock_named_pipe_control_server(pipe_name: String) -> thread::JoinHandle<()> {
+        thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("named-pipe mock runtime should build");
+
+            runtime.block_on(async move {
+                let mut running = true;
+                let mut calibration_mode = false;
+                let mut output_enabled = true;
+
+                while running {
+                    let server = ServerOptions::new()
+                        .create(&pipe_name)
+                        .expect("named-pipe control server create should succeed");
+                    server
+                        .connect()
+                        .await
+                        .expect("named-pipe control server connect should succeed");
+
+                    let (read_half, mut write_half) = tokio::io::split(server);
+                    let mut reader = AsyncBufReader::new(read_half);
+                    let mut line = String::new();
+
+                    loop {
+                        line.clear();
+                        let read = reader
+                            .read_line(&mut line)
+                            .await
+                            .expect("named-pipe control read should succeed");
+                        if read == 0 {
+                            break;
+                        }
+
+                        let parsed: Result<ControlRequest, _> = serde_json::from_str(line.trim());
+                        let response = match parsed {
+                            Ok(request) => match request.command {
+                                ControlCommand::Snapshot => ControlResponse::snapshot(
+                                    request.request_id,
+                                    ControlSnapshot {
+                                        running,
+                                        uptime_secs: 42,
+                                        calibration_mode,
+                                        output_enabled,
+                                        profile_ready: true,
+                                        decoder_ready: true,
+                                        decoder_model_version: Some("test-v1".to_string()),
+                                        active_profile_name: Some("test-profile".to_string()),
+                                        device_name: Some("Mock Device".to_string()),
+                                        device_battery: Some(88),
+                                        signal_quality: 0.9,
+                                        signal_latency_last_us: 100,
+                                        signal_latency_p95_us: 150,
+                                        decode_latency_last_us: 200,
+                                        decode_latency_p95_us: 240,
+                                        action_latency_last_us: 300,
+                                        action_latency_p95_us: 360,
+                                        latency_degraded: false,
+                                        latency_alert_message: None,
+                                        actions_emitted: 10,
+                                        errors_detected: 1,
+                                        ipc_connected: true,
+                                        ipc_simulated: false,
+                                        learning_enabled: true,
+                                        ml_bridge_connected: true,
+                                        ml_bridge_stalled: false,
+                                        runtime_mode_state: RuntimeModeState::Full,
+                                        enabled_capabilities: vec![
+                                            "cursor_move".to_string(),
+                                            "click".to_string(),
+                                            "keyboard".to_string(),
+                                        ],
+                                        limited_capabilities_message: None,
+                                        fallback_model_kind: Some("onnx".to_string()),
+                                        trainer_replay_size: Some(200),
+                                        trainer_step: Some(33),
+                                        trainer_policy_loss: Some(0.11),
+                                        trainer_value_loss: Some(0.22),
+                                        trainer_entropy: Some(0.03),
+                                        trainer_last_error: None,
+                                        candidate_promotions_succeeded: 2,
+                                        candidate_promotions_rejected: 1,
+                                        candidate_last_outcome: Some(
+                                            "candidate promotion accepted".to_string(),
+                                        ),
+                                        ml_protocol_version: Some(2),
+                                        device_connected: true,
+                                        task_error: None,
+                                        discovered_streams: vec![],
+                                    },
+                                ),
+                                ControlCommand::SetCalibrationMode { enabled } => {
+                                    calibration_mode = enabled;
+                                    ControlResponse::ack(request.request_id)
+                                }
+                                ControlCommand::SetOutputEnabled { enabled } => {
+                                    output_enabled = enabled;
+                                    ControlResponse::ack(request.request_id)
+                                }
+                                ControlCommand::Shutdown => {
+                                    running = false;
+                                    ControlResponse::ack(request.request_id)
+                                }
+                                ControlCommand::SetLearningEnabled { .. }
+                                | ControlCommand::MlBridgeReconnect
+                                | ControlCommand::SetFallbackPolicy { .. } => {
+                                    ControlResponse::ack(request.request_id)
+                                }
+                                ControlCommand::TrainerSnapshot => {
+                                    ControlResponse::trainer_snapshot(
+                                        request.request_id,
+                                        neurohid_types::control::TrainerSnapshot {
+                                            trainer_connected: true,
+                                            trainer_state: "training".to_string(),
+                                            replay_size: 200,
+                                            training_step: 33,
+                                            last_heartbeat_us: Some(1),
+                                            last_error: None,
+                                            protocol_version: Some(2),
+                                        },
+                                    )
+                                }
+                                _ => ControlResponse {
+                                    request_id: request.request_id,
+                                    payload: ControlResponsePayload::Error {
+                                        message: "unsupported command in named-pipe mock server"
+                                            .to_string(),
+                                    },
+                                },
+                            },
+                            Err(error) => ControlResponse::error(
+                                None,
+                                format!("invalid request payload: {}", error),
+                            ),
+                        };
+
+                        let payload = serde_json::to_string(&response)
+                            .expect("named-pipe control response should serialize");
+                        write_half
+                            .write_all(payload.as_bytes())
+                            .await
+                            .expect("named-pipe control response write should succeed");
+                        write_half
+                            .write_all(b"\n")
+                            .await
+                            .expect("named-pipe control response newline should succeed");
+                        write_half
+                            .flush()
+                            .await
+                            .expect("named-pipe control response flush should succeed");
+
+                        if !running {
+                            return;
+                        }
+                    }
+                }
+            });
+        })
+    }
+
     fn read_control_request(stream: &TcpStream) -> ControlRequest {
         let mut line = String::new();
         let mut reader = BufReader::new(
@@ -1080,5 +1566,15 @@ mod tests {
             .local_addr()
             .expect("local addr should resolve")
             .port()
+    }
+
+    #[cfg(windows)]
+    fn unique_pipe_name(prefix: &str) -> String {
+        format!(
+            r"\\.\pipe\{}_{}_{}",
+            prefix,
+            std::process::id(),
+            allocate_test_port()
+        )
     }
 }

@@ -21,10 +21,20 @@ pub struct ProfileStore {
     secure: SecureStorage,
 }
 
+const MIN_CANDIDATE_MODEL_BYTES: usize = 1_024;
+const MAX_CANDIDATE_MODEL_BYTES: usize = 128 * 1024 * 1024;
+const MAX_CANDIDATE_FUTURE_SKEW_US: i64 = 5 * 60 * 1_000_000;
+const MAX_CANDIDATE_GENERATION_DELTA_US: i64 = 24 * 60 * 60 * 1_000_000;
+
 impl ProfileStore {
     /// Creates a new ProfileStore.
     pub fn new(paths: DataPaths, secure: SecureStorage) -> Self {
         Self { paths, secure }
+    }
+
+    /// Root directory used by this profile store.
+    pub fn data_root(&self) -> &Path {
+        self.paths.root()
     }
 
     /// Lists all available profiles.
@@ -341,6 +351,74 @@ impl ProfileStore {
                 location: metrics_path.display().to_string(),
                 details,
             })?;
+
+        if model_bytes.len() < MIN_CANDIDATE_MODEL_BYTES {
+            return Err(StorageError::DataCorruption {
+                location: model_path.display().to_string(),
+                details: format!(
+                    "candidate ONNX artifact is too small ({} bytes, minimum {})",
+                    model_bytes.len(),
+                    MIN_CANDIDATE_MODEL_BYTES
+                ),
+            }
+            .into());
+        }
+        if model_bytes.len() > MAX_CANDIDATE_MODEL_BYTES {
+            return Err(StorageError::DataCorruption {
+                location: model_path.display().to_string(),
+                details: format!(
+                    "candidate ONNX artifact is too large ({} bytes, maximum {})",
+                    model_bytes.len(),
+                    MAX_CANDIDATE_MODEL_BYTES
+                ),
+            }
+            .into());
+        }
+
+        if metrics.generated_at < manifest.trained_at {
+            return Err(StorageError::DataCorruption {
+                location: metrics_path.display().to_string(),
+                details: format!(
+                    "metrics.generated_at {} precedes manifest.trained_at {}",
+                    metrics.generated_at, manifest.trained_at
+                ),
+            }
+            .into());
+        }
+
+        let generation_delta_us = metrics.generated_at.saturating_sub(manifest.trained_at);
+        if generation_delta_us > MAX_CANDIDATE_GENERATION_DELTA_US {
+            return Err(StorageError::DataCorruption {
+                location: metrics_path.display().to_string(),
+                details: format!(
+                    "candidate metrics generated {} us after training (maximum {})",
+                    generation_delta_us, MAX_CANDIDATE_GENERATION_DELTA_US
+                ),
+            }
+            .into());
+        }
+
+        let now_us = neurohid_types::now_micros();
+        if manifest.trained_at > now_us.saturating_add(MAX_CANDIDATE_FUTURE_SKEW_US) {
+            return Err(StorageError::DataCorruption {
+                location: manifest_path.display().to_string(),
+                details: format!(
+                    "manifest.trained_at {} is too far in the future (now {}, max skew {})",
+                    manifest.trained_at, now_us, MAX_CANDIDATE_FUTURE_SKEW_US
+                ),
+            }
+            .into());
+        }
+        if metrics.generated_at > now_us.saturating_add(MAX_CANDIDATE_FUTURE_SKEW_US) {
+            return Err(StorageError::DataCorruption {
+                location: metrics_path.display().to_string(),
+                details: format!(
+                    "metrics.generated_at {} is too far in the future (now {}, max skew {})",
+                    metrics.generated_at, now_us, MAX_CANDIDATE_FUTURE_SKEW_US
+                ),
+            }
+            .into());
+        }
 
         self.save_decoder_candidate_model_onnx(id, &model_bytes)
             .await?;
