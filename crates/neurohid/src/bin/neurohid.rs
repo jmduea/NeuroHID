@@ -62,7 +62,7 @@ fn main() {
     match eframe::run_native(
         "NeuroHID Hub",
         options,
-        Box::new(move |cc| Box::new(HubApp::new(cc, runtime))),
+        Box::new(move |cc| Ok(Box::new(HubApp::new(cc, runtime)))),
     ) {
         Ok(()) => {}
         Err(e) => {

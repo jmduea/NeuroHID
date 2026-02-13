@@ -7,7 +7,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose, Engine as _};
-use rand::RngCore;
+use rand::Rng;
 
 use crate::{APP_IDENTIFIER, KEYCHAIN_SERVICE};
 use neurohid_types::error::{Result, StorageError};

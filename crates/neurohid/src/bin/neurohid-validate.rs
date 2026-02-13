@@ -181,8 +181,10 @@ impl SnapshotStats {
 
 #[derive(Default, Clone, Copy)]
 struct ResourceSummary {
+    #[cfg(target_os = "linux")]
     max_cpu_percent: f64,
     max_rss_mb: f64,
+    #[cfg(target_os = "linux")]
     samples: u64,
 }
 
@@ -241,6 +243,7 @@ impl ServiceProcess {
         Ok(process)
     }
 
+    #[cfg(target_os = "linux")]
     fn pid(&self) -> u32 {
         self.child.id()
     }
@@ -353,7 +356,10 @@ fn run_soak(service_bin: &Path, args: &SoakArgs) -> Result<()> {
     let reconnect_interval = Duration::from_secs(args.reconnect_interval_secs.max(1));
 
     let mut snapshot_stats = SnapshotStats::default();
+    #[cfg(target_os = "linux")]
     let mut resource_summary = ResourceSummary::default();
+    #[cfg(not(target_os = "linux"))]
+    let _resource_summary = ResourceSummary::default();
     let mut reconnect_requests = 0_u64;
     let mut reconnect_errors = 0_u64;
     let mut next_reconnect = Instant::now() + reconnect_interval;
@@ -457,7 +463,9 @@ fn run_latency_matrix(service_bin: &Path, args: &LatencyMatrixArgs) -> Result<()
     for scenario in scenarios {
         let mut process = ServiceProcess::launch(service_bin, &scenario, None)?;
         let mut snapshot_stats = SnapshotStats::default();
-        let mut resource_summary = ResourceSummary::default();
+        let resource_summary = ResourceSummary::default();
+        #[cfg(target_os = "linux")]
+        let mut resource_summary = resource_summary;
         let start = Instant::now();
         let interval = Duration::from_millis(args.snapshot_interval_ms.max(100));
         #[cfg(target_os = "linux")]

@@ -116,7 +116,7 @@ impl FeatureExtractor {
     /// Extract features from a window, without temporal context.
     ///
     /// Temporal features (50 dims) will be zero-filled. Use
-    /// [`extract_with_temporal`] for the full 180-dim vector.
+    /// [`FeatureExtractor::extract_with_temporal`] for the full 180-dim vector.
     pub fn extract(&mut self, window: &SignalWindow) -> Result<FeatureVector, SignalError> {
         self.extract_with_temporal(window, None)
     }

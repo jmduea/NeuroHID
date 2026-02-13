@@ -50,15 +50,15 @@ keyring = { version = "3.6.3", features = [
     "windows-native",
 ] }
 aes-gcm = "0.10.3"
-rand = "0.9.2"
+rand = "0.10.0"
 base64 = "0.22.1"
 
 # Time
 chrono = { version = "0.4.43", features = ["serde"] }
 
 # GUI framework
-egui = "0.27"
-eframe = { version = "0.27", default-features = false }
+egui = "0.33.3"
+eframe = { version = "0.33.3", default-features = false }
 
 # Testing
 approx = "0.5.1"
