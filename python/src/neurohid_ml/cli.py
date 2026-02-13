@@ -12,9 +12,6 @@ import tempfile
 import time
 from typing import Sequence
 
-from neurohid_ml.bridge import main_async as bridge_main_async
-from neurohid_ml.trainer import TrainerConfig, train_candidate_model
-
 
 def _add_training_hyperparameter_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model-version", type=str, default="candidate-0")
@@ -28,7 +25,9 @@ def _add_training_hyperparameter_args(parser: argparse.ArgumentParser) -> None:
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     argv_list = list(argv) if argv is not None else sys.argv[1:]
-    if not argv_list or argv_list[0].startswith("-"):
+    if not argv_list:
+        argv_list = ["bridge", *argv_list]
+    elif argv_list[0].startswith("-") and argv_list[0] not in {"-h", "--help"}:
         argv_list = ["bridge", *argv_list]
 
     parser = argparse.ArgumentParser(description="NeuroHID ML tools")
@@ -143,7 +142,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv_list)
 
 
-def _trainer_config_from_args(args: argparse.Namespace) -> TrainerConfig:
+def _trainer_config_from_args(args: argparse.Namespace):
+    from neurohid_ml.trainer import TrainerConfig
+
     return TrainerConfig(
         epochs=args.epochs,
         learning_rate=args.learning_rate,
@@ -155,6 +156,8 @@ def _trainer_config_from_args(args: argparse.Namespace) -> TrainerConfig:
 
 
 def _print_training_outputs(output_dir: Path, args: argparse.Namespace) -> None:
+    from neurohid_ml.trainer import train_candidate_model
+
     session_logs = [Path(p) for p in getattr(args, "session_log", [])]
     if args.session_dir:
         session_logs.extend(sorted(args.session_dir.glob("session_*.json")))
@@ -342,6 +345,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
 
     if args.command == "bridge":
+        from neurohid_ml.bridge import main_async as bridge_main_async
+
         asyncio.run(bridge_main_async(args.host, args.port))
         return
 
