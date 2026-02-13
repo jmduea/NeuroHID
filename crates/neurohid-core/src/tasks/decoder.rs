@@ -15,6 +15,7 @@ use neurohid_storage::ProfileStore;
 use neurohid_types::{
     action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement},
     config::DecoderConfig,
+    control::RuntimeModeState,
     error::{DecoderError, Error, Result},
     learning::{CandidateGuardrails, TrainingEpisode},
     model::ModelManifest,
@@ -25,6 +26,7 @@ use neurohid_types::{
 use crate::service::{DecoderCommand, ServiceState};
 use crate::tasks::latency::RollingLatency;
 use crate::tasks::session_logger::EpisodeLogRecord;
+use crate::tasks::DecisionEventRecord;
 
 const LATENCY_WINDOW_SIZE: usize = 512;
 
@@ -114,11 +116,13 @@ pub struct DecoderTask {
     profile_store: Option<ProfileStore>,
     active_profile_id: Option<ProfileId>,
     decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
-    feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+    decision_event_tx: Option<mpsc::Sender<DecisionEventRecord>>,
     episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
     active_model: Option<LoadedModel>,
     loader: Arc<dyn ArtifactLoader>,
     decode_latency: RollingLatency,
+    fallback_enabled: bool,
+    decision_sequence: u64,
 }
 
 impl DecoderTask {
@@ -131,8 +135,9 @@ impl DecoderTask {
         profile_store: Option<ProfileStore>,
         profile_id: Option<ProfileId>,
         decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
-        feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+        decision_event_tx: Option<mpsc::Sender<DecisionEventRecord>>,
         episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
+        fallback_enabled: bool,
     ) -> Self {
         Self::new_inner(
             config,
@@ -142,8 +147,9 @@ impl DecoderTask {
             profile_store,
             profile_id,
             decoder_command_rx,
-            feature_forward_tx,
+            decision_event_tx,
             episode_log_tx,
+            fallback_enabled,
             Arc::new(OnnxArtifactLoader),
         )
     }
@@ -158,8 +164,9 @@ impl DecoderTask {
         profile_store: Option<ProfileStore>,
         profile_id: Option<ProfileId>,
         decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
-        feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+        decision_event_tx: Option<mpsc::Sender<DecisionEventRecord>>,
         episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
+        fallback_enabled: bool,
         loader: Arc<dyn ArtifactLoader>,
     ) -> Self {
         Self::new_inner(
@@ -170,8 +177,9 @@ impl DecoderTask {
             profile_store,
             profile_id,
             decoder_command_rx,
-            feature_forward_tx,
+            decision_event_tx,
             episode_log_tx,
+            fallback_enabled,
             loader,
         )
     }
@@ -185,8 +193,9 @@ impl DecoderTask {
         profile_store: Option<ProfileStore>,
         profile_id: Option<ProfileId>,
         decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
-        feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+        decision_event_tx: Option<mpsc::Sender<DecisionEventRecord>>,
         episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
+        fallback_enabled: bool,
         loader: Arc<dyn ArtifactLoader>,
     ) -> Self {
         Self {
@@ -197,11 +206,13 @@ impl DecoderTask {
             profile_store,
             active_profile_id: profile_id,
             decoder_command_rx,
-            feature_forward_tx,
+            decision_event_tx,
             episode_log_tx,
             active_model: None,
             loader,
             decode_latency: RollingLatency::new(LATENCY_WINDOW_SIZE),
+            fallback_enabled,
+            decision_sequence: 0,
         }
     }
 
@@ -242,28 +253,51 @@ impl DecoderTask {
                         break;
                     };
 
-                    if let Some(tx) = &self.feature_forward_tx {
-                        let _ = tx.send(feature.clone()).await;
-                    }
-
-                    let Some(model) = self.active_model.clone() else {
+                    let inference = if let Some(model) = self.active_model.clone() {
+                        run_inference(&model, &feature).map(|action| {
+                            (
+                                action,
+                                Some(model.manifest.model_version.clone()),
+                                "onnx".to_string(),
+                            )
+                        })
+                    } else if self.fallback_enabled {
+                        Ok((
+                            lightweight_fallback_action(&feature),
+                            Some("lightweight-rust".to_string()),
+                            "lightweight_rust".to_string(),
+                        ))
+                    } else {
                         continue;
                     };
 
-                    match run_inference(&model, &feature) {
-                        Ok(action) => {
+                    match inference {
+                        Ok((mut action, model_version, model_kind)) => {
+                            self.decision_sequence = self.decision_sequence.saturating_add(1);
+                            let decision_id = format!("dec_{}", self.decision_sequence);
+                            action.decision_id = Some(decision_id.clone());
                             self.record_decode_latency(feature.timestamp).await;
                             if action.is_none() {
                                 continue;
                             }
-                            self.log_episode(&feature, &action, &model.manifest).await;
+                            self.log_episode_with_version(&feature, &action, model_version.clone())
+                                .await;
+                            self.forward_decision_event(
+                                &decision_id,
+                                &feature,
+                                &action,
+                                model_version.clone(),
+                            )
+                            .await;
                             if self.action_tx.send(action).await.is_err() {
                                 tracing::warn!("Action receiver dropped");
                                 break;
                             }
-                        }
+                            self.set_runtime_mode_for_model_kind(&model_kind).await;
+                        },
                         Err(err) => {
                             tracing::warn!("Decoder inference failed: {}", err);
+                            self.set_runtime_mode_for_model_kind("none").await;
                         }
                     }
                 }
@@ -520,6 +554,16 @@ impl DecoderTask {
         let mut state = self.state.write().await;
         state.decoder_ready = loaded.is_some();
         state.decoder_model_version = loaded.map(|m| m.manifest.model_version.clone());
+        if loaded.is_some() {
+            state.fallback_model_kind = Some("onnx".to_string());
+            state.runtime_mode_state = RuntimeModeState::Full;
+        } else if self.fallback_enabled {
+            state.fallback_model_kind = Some("lightweight_rust".to_string());
+            state.runtime_mode_state = RuntimeModeState::Fallback;
+        } else {
+            state.fallback_model_kind = Some("none".to_string());
+            state.runtime_mode_state = RuntimeModeState::Degraded;
+        }
     }
 
     async fn record_decode_latency(&mut self, feature_timestamp: i64) {
@@ -534,11 +578,11 @@ impl DecoderTask {
         state.decode_latency_p95_us = self.decode_latency.p95_us();
     }
 
-    async fn log_episode(
+    async fn log_episode_with_version(
         &self,
         feature: &FeatureVector,
         action: &Action,
-        manifest: &ModelManifest,
+        model_version: Option<String>,
     ) {
         let Some(tx) = &self.episode_log_tx else {
             return;
@@ -554,7 +598,7 @@ impl DecoderTask {
             action: action.clone(),
             decoder_confidence: action.confidence,
             signal_quality,
-            decoder_model_version: Some(manifest.model_version.clone()),
+            decoder_model_version: model_version,
             errp_error_probability: None,
             errp_confidence: None,
         };
@@ -567,6 +611,51 @@ impl DecoderTask {
                 error
             );
         }
+    }
+
+    async fn forward_decision_event(
+        &self,
+        decision_id: &str,
+        feature: &FeatureVector,
+        action: &Action,
+        model_version: Option<String>,
+    ) {
+        let Some(tx) = &self.decision_event_tx else {
+            return;
+        };
+        let signal_quality = self.state.read().await.signal_quality;
+        let event = DecisionEventRecord {
+            decision_id: decision_id.to_string(),
+            timestamp_us: feature.timestamp,
+            feature_values: feature.values.clone(),
+            action: action.clone(),
+            decoder_confidence: action.confidence,
+            signal_quality,
+            decoder_model_version: model_version,
+            stream_id: None,
+        };
+        if let Err(error) = tx.try_send(event) {
+            tracing::trace!(
+                "Dropped decision event due to ML bridge backpressure: {}",
+                error
+            );
+        }
+    }
+
+    async fn set_runtime_mode_for_model_kind(&self, model_kind: &str) {
+        let mut state = self.state.write().await;
+        state.fallback_model_kind = Some(model_kind.to_string());
+        state.runtime_mode_state = match model_kind {
+            "onnx" => {
+                if state.ml_bridge_connected && !state.ml_bridge_stalled {
+                    RuntimeModeState::Full
+                } else {
+                    RuntimeModeState::Fallback
+                }
+            }
+            "lightweight_rust" => RuntimeModeState::Fallback,
+            _ => RuntimeModeState::Degraded,
+        };
     }
 }
 
@@ -606,6 +695,33 @@ fn run_inference(model: &LoadedModel, feature: &FeatureVector) -> Result<Action>
 
     let values = model.model.infer(&normalized)?;
     Ok(action_from_output(&values, feature.timestamp))
+}
+
+fn lightweight_fallback_action(feature: &FeatureVector) -> Action {
+    let dx = feature
+        .values
+        .first()
+        .copied()
+        .unwrap_or(0.0)
+        .clamp(-1.0, 1.0);
+    let dy = feature
+        .values
+        .get(1)
+        .copied()
+        .unwrap_or(0.0)
+        .clamp(-1.0, 1.0);
+    let confidence = feature
+        .values
+        .get(2)
+        .copied()
+        .map(to_probability)
+        .unwrap_or_else(|| (dx.abs() + dy.abs()).clamp(0.0, 1.0));
+    let mut action = Action::none().with_confidence(confidence);
+    if dx.abs() > 0.01 || dy.abs() > 0.01 {
+        action.mouse = Some(MouseAction::move_relative(dx, dy));
+        action.timestamp = feature.timestamp;
+    }
+    action
 }
 
 fn action_from_output(values: &[f32], timestamp: i64) -> Action {
@@ -670,6 +786,7 @@ fn action_from_output(values: &[f32], timestamp: i64) -> Action {
         mouse,
         keyboard: None,
         confidence,
+        decision_id: None,
     }
 }
 
@@ -809,6 +926,7 @@ mod tests {
             None,
             None,
             None,
+            true,
             loader,
         );
         (task, state)

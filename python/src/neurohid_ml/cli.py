@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import argparse
 import asyncio
+import argparse
+import os
 import shutil
 from pathlib import Path
 import subprocess
@@ -34,8 +35,15 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     subparsers = parser.add_subparsers(dest="command")
 
     bridge = subparsers.add_parser("bridge", help="run the realtime IPC bridge")
+    bridge.add_argument(
+        "--transport",
+        choices=["named_pipe", "tcp_loopback"],
+        default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
+        help="bridge transport mode (named_pipe is default on Windows)",
+    )
     bridge.add_argument("--host", default="127.0.0.1")
     bridge.add_argument("--port", type=int, default=47384)
+    bridge.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v2")
 
     trainer = subparsers.add_parser(
         "train-candidate",
@@ -138,6 +146,16 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="run one polling iteration and exit",
     )
     _add_training_hyperparameter_args(worker)
+
+    lab_kernel = subparsers.add_parser(
+        "lab-kernel",
+        help="run stdio notebook-kernel adapter for in-app Python Lab",
+    )
+    lab_kernel.add_argument(
+        "--stdio",
+        action="store_true",
+        help="use JSON-lines stdio protocol (default behavior)",
+    )
 
     return parser.parse_args(argv_list)
 
@@ -347,7 +365,14 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "bridge":
         from neurohid_ml.bridge import main_async as bridge_main_async
 
-        asyncio.run(bridge_main_async(args.host, args.port))
+        asyncio.run(
+            bridge_main_async(
+                host=args.host,
+                port=args.port,
+                transport=args.transport,
+                pipe_name=args.pipe_name,
+            )
+        )
         return
 
     if args.command == "train-candidate":
@@ -360,6 +385,14 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.command == "trainer-worker":
         _run_trainer_worker(args)
+        return
+
+    if args.command == "lab-kernel":
+        from neurohid_ml.lab_kernel import run_stdio
+
+        if not args.stdio:
+            print("lab-kernel defaults to stdio protocol; running stdio adapter.")
+        run_stdio()
         return
 
     raise SystemExit(f"Unknown command: {args.command}")

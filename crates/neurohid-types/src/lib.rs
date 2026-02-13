@@ -28,6 +28,7 @@ pub mod control;
 pub mod device;
 pub mod error;
 pub mod event;
+pub mod ipc_v2;
 pub mod learning;
 pub mod model;
 pub mod observation;
@@ -39,10 +40,16 @@ pub mod signal;
 pub use action::{Action, Key, KeyAction, MouseAction, MouseButton};
 pub use control::{
     ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
+    RuntimeModeState, TrainerSnapshot,
 };
 pub use device::{ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DiscoveredStream};
 pub use error::{Error, Result};
 pub use event::{MarkerPayload, MarkerType, StreamMarker};
+pub use ipc_v2::{
+    AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2, PingV2,
+    PongV2, ProtocolErrorV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2,
+    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
+};
 pub use learning::{
     CandidateGuardrails, CandidateModelMetrics, TrainingEpisode, TrainingSessionLog,
 };

@@ -88,6 +88,8 @@ impl HubApp {
             hub.state.init_error = Some(err);
         }
 
+        hub.service_manager.configure(&hub.state.config);
+
         if hub.state.config.service.auto_start {
             let profile_store = Some(hub.state.profile_store.clone());
             let profile_id = hub.state.active_profile_id.clone();
@@ -497,6 +499,9 @@ impl eframe::App for HubApp {
             self.current_screen = Screen::Dashboard;
         }
 
+        // Keep manager mode/endpoint in sync with persisted runtime settings.
+        self.service_manager.configure(&self.state.config);
+
         // Poll service state (non-blocking)
         self.state.service_snapshot = self.service_manager.snapshot();
         self.maybe_notify_latency_transition();
@@ -563,7 +568,12 @@ impl eframe::App for HubApp {
                         .show_entry(ui, &mut self.state, &mut self.service_manager);
                 }
                 Screen::PythonLab => {
-                    self.python_lab.show(ui);
+                    self.python_lab.show(
+                        ui,
+                        &self.state.config.ui.lab_kernel_command,
+                        &self.data_bus,
+                        &self.state.service_snapshot,
+                    );
                 }
                 Screen::Settings => {
                     self.settings

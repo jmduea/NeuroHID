@@ -19,6 +19,21 @@ mod outlet;
 mod session_logger;
 mod signal;
 
+use neurohid_types::{action::Action, Timestamp};
+
+/// Decoder-emitted event forwarded to the runtime ML bridge.
+#[derive(Debug, Clone)]
+pub struct DecisionEventRecord {
+    pub decision_id: String,
+    pub timestamp_us: Timestamp,
+    pub feature_values: Vec<f32>,
+    pub action: Action,
+    pub decoder_confidence: f32,
+    pub signal_quality: f32,
+    pub decoder_model_version: Option<String>,
+    pub stream_id: Option<String>,
+}
+
 pub use action::ActionTask;
 pub use decoder::DecoderTask;
 pub use device::DeviceTask;

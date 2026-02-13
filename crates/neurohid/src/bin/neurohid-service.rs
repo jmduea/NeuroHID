@@ -11,7 +11,7 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    config::SystemConfig,
+    config::{ControlTransport, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse},
     profile::ProfileId,
 };
@@ -305,6 +305,7 @@ async fn run_managed_runtime(
     runtime: RuntimeContext,
     control_port: Option<u16>,
 ) -> anyhow::Result<()> {
+    let service_config = runtime.config.service.clone();
     let mut builder = RuntimeBuilder::new(runtime.config).with_profile_store(runtime.profile_store);
     if let Some(profile_id) = runtime.profile_id {
         builder = builder.with_profile_id(profile_id);
@@ -313,7 +314,7 @@ async fn run_managed_runtime(
     tracing::info!("Managed runtime started");
 
     if let Some(port) = control_port {
-        tracing::info!("Starting control protocol server on 127.0.0.1:{port}");
+        tracing::info!("Starting control protocol server on 127.0.0.1:{port} (tcp)");
         tokio::select! {
             result = run_tcp_control_server(port, &runtime_handle) => {
                 if let Err(error) = result {
@@ -324,6 +325,35 @@ async fn run_managed_runtime(
                 tracing::info!("Shutdown signal received");
             }
             _ = wait_until_runtime_stopped(&runtime_handle) => {}
+        }
+    } else if service_config.control_transport == ControlTransport::NamedPipe {
+        #[cfg(windows)]
+        {
+            tracing::info!(
+                "Starting control protocol server on named pipe {}",
+                service_config.control_pipe_name
+            );
+            tokio::select! {
+                result = run_named_pipe_control_server(&service_config.control_pipe_name, &runtime_handle) => {
+                    if let Err(error) = result {
+                        tracing::warn!("Control protocol named-pipe server exited with error: {}", error);
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!("Shutdown signal received");
+                }
+                _ = wait_until_runtime_stopped(&runtime_handle) => {}
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            tracing::warn!("Named pipe control transport requested on non-Windows host; falling back to runtime-only mode.");
+            tokio::select! {
+                _ = tokio::signal::ctrl_c() => {
+                    tracing::info!("Shutdown signal received");
+                }
+                _ = wait_until_runtime_stopped(&runtime_handle) => {}
+            }
         }
     } else {
         tokio::select! {
@@ -362,6 +392,64 @@ async fn run_tcp_control_server(port: u16, runtime: &RuntimeHandle) -> anyhow::R
 
         if let Err(error) = handle_control_client(stream, runtime).await {
             tracing::warn!("Control client {} disconnected with error: {}", peer, error);
+        }
+    }
+}
+
+#[cfg(windows)]
+async fn run_named_pipe_control_server(
+    pipe_name: &str,
+    runtime: &RuntimeHandle,
+) -> anyhow::Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::net::windows::named_pipe::ServerOptions;
+
+    loop {
+        let server = ServerOptions::new().create(pipe_name).map_err(|e| {
+            anyhow::anyhow!("Failed to create control named pipe {}: {}", pipe_name, e)
+        })?;
+        server
+            .connect()
+            .await
+            .map_err(|e| anyhow::anyhow!("Control named pipe connect failed: {}", e))?;
+        let (read_half, mut write_half) = tokio::io::split(server);
+        let mut reader = BufReader::new(read_half);
+        let mut line = String::new();
+
+        loop {
+            line.clear();
+            let read = reader.read_line(&mut line).await?;
+            if read == 0 {
+                break;
+            }
+
+            let payload = line.trim();
+            if payload.is_empty() {
+                continue;
+            }
+
+            let parsed: Result<ControlRequest, _> = serde_json::from_str(payload);
+            let (response, should_shutdown) = match parsed {
+                Ok(request) => {
+                    let should_shutdown = matches!(request.command, ControlCommand::Shutdown);
+                    let response = runtime.dispatch_control_request(request);
+                    (response, should_shutdown)
+                }
+                Err(error) => (
+                    ControlResponse::error(None, format!("invalid control request: {}", error)),
+                    false,
+                ),
+            };
+
+            let response_json = serde_json::to_string(&response)
+                .map_err(|e| anyhow::anyhow!("Failed to serialize control response: {}", e))?;
+            write_half.write_all(response_json.as_bytes()).await?;
+            write_half.write_all(b"\n").await?;
+            write_half.flush().await?;
+
+            if should_shutdown {
+                break;
+            }
         }
     }
 }

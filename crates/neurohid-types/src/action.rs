@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 
 /// A complete action the decoder can output.
 /// This may contain multiple sub-actions (e.g., move mouse AND click).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Action {
     /// Timestamp when this action was decided
     pub timestamp: Timestamp,
@@ -29,6 +29,11 @@ pub struct Action {
     /// Confidence score for this action (0.0 to 1.0)
     /// Higher values mean the decoder is more certain
     pub confidence: f32,
+
+    /// Stable decision identifier used to correlate runtime events
+    /// (decision -> ErrP window -> ErrP result -> training episode).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_id: Option<String>,
 }
 
 impl Action {
@@ -39,6 +44,7 @@ impl Action {
             mouse: None,
             keyboard: None,
             confidence: 1.0,
+            decision_id: None,
         }
     }
 
@@ -49,6 +55,7 @@ impl Action {
             mouse: Some(action),
             keyboard: None,
             confidence: 1.0,
+            decision_id: None,
         }
     }
 
@@ -59,6 +66,7 @@ impl Action {
             mouse: None,
             keyboard: Some(action),
             confidence: 1.0,
+            decision_id: None,
         }
     }
 
@@ -75,7 +83,7 @@ impl Action {
 }
 
 /// Mouse-related actions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct MouseAction {
     /// Relative movement (in normalized units, will be scaled by sensitivity)
     pub movement: Option<MouseMovement>,
@@ -151,7 +159,7 @@ impl MouseAction {
 
 /// Relative mouse movement.
 /// Values are in normalized units; the platform layer will apply sensitivity scaling.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MouseMovement {
     /// Horizontal movement (positive = right)
     pub dx: f32,
@@ -182,7 +190,7 @@ pub enum MouseButton {
 }
 
 /// A mouse button state change event.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct MouseButtonEvent {
     pub button: MouseButton,
     /// true = pressed, false = released
@@ -190,7 +198,7 @@ pub struct MouseButtonEvent {
 }
 
 /// Scroll wheel movement.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct ScrollMovement {
     /// Horizontal scroll (positive = right)
     pub dx: f32,
@@ -199,7 +207,7 @@ pub struct ScrollMovement {
 }
 
 /// Keyboard-related actions.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct KeyAction {
     /// Key events to emit
     pub events: Vec<KeyEvent>,
@@ -238,7 +246,7 @@ impl KeyAction {
 }
 
 /// A keyboard key state change event.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct KeyEvent {
     pub key: Key,
     /// true = pressed, false = released

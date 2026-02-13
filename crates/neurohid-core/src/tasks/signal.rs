@@ -107,6 +107,22 @@ impl SignalTask {
         (duration_secs * sample_rate_hz).round().max(1.0) as usize
     }
 
+    /// Choose a Welch segment length that is valid for the current window.
+    ///
+    /// Uses the largest power-of-two <= `sample_count`, capped at 256.
+    fn welch_segment_len_for_window(sample_count: usize) -> usize {
+        if sample_count <= 1 {
+            return sample_count.max(1);
+        }
+
+        let max_allowed = sample_count.min(256);
+        let mut segment_len = 1usize;
+        while segment_len.saturating_mul(2) <= max_allowed {
+            segment_len *= 2;
+        }
+        segment_len
+    }
+
     /// Creates a new signal task.
     pub fn new(
         config: SignalConfig,
@@ -254,6 +270,9 @@ impl SignalTask {
                 errp = self.errp_rx.recv() => {
                     if let Some(result) = errp {
                         let mut state = self.state.write().await;
+                        let success = (1.0 - result.error_probability).clamp(0.0, 1.0);
+                        state.rolling_success_score =
+                            state.rolling_success_score * 0.9 + success * 0.1;
                         if result.error_probability > 0.5 {
                             state.errors_detected += 1;
                         }
@@ -340,6 +359,7 @@ impl SignalTask {
                 128.0
             },
             channel_count,
+            welch_segment_len: Self::welch_segment_len_for_window(window.len()),
             ..DspFeatureConfig::default()
         });
 
@@ -456,5 +476,15 @@ mod tests {
     fn samples_for_duration_never_returns_zero() {
         assert_eq!(SignalTask::samples_for_duration_ms(0, 256.0), 1);
         assert_eq!(SignalTask::samples_for_duration_ms(1, 8.0), 1);
+    }
+
+    #[test]
+    fn welch_segment_len_is_power_of_two_within_window() {
+        assert_eq!(SignalTask::welch_segment_len_for_window(1), 1);
+        assert_eq!(SignalTask::welch_segment_len_for_window(2), 2);
+        assert_eq!(SignalTask::welch_segment_len_for_window(63), 32);
+        assert_eq!(SignalTask::welch_segment_len_for_window(64), 64);
+        assert_eq!(SignalTask::welch_segment_len_for_window(200), 128);
+        assert_eq!(SignalTask::welch_segment_len_for_window(1024), 256);
     }
 }

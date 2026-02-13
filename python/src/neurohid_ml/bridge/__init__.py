@@ -1,421 +1,556 @@
-"""
-Bridge Module - IPC Communication with Rust Core
+"""Runtime ML bridge (protocol v2) for NeuroHID.
 
-This module provides the Python side of the IPC connection to the Rust core
-service. It handles connecting to the TCP localhost socket, sending and
-receiving messages, and converting between Python objects and the JSON protocol.
-
-The bridge runs in its own thread/async task to avoid blocking the ML
-inference loop. Messages are queued for sending and received messages
-are dispatched to the appropriate handlers.
+This module implements the trainer-side endpoint for the NeuroHID runtime ML
+protocol v2. On Windows it defaults to named pipes; on non-Windows it defaults
+to TCP loopback for development.
 """
+
+from __future__ import annotations
 
 import argparse
 import asyncio
 import json
+import os
 import struct
+import time
 from dataclasses import dataclass
-from typing import Optional, Callable, Any
+from enum import Enum
+from typing import Any, BinaryIO, Optional
 
 import numpy as np
 
-from neurohid_ml.decoder import Decoder, DecoderConfig
 from neurohid_ml.errp import ErrPConfig, ErrPDetector
 
-# Default IPC port — must match neurohid-ipc DEFAULT_IPC_PORT
-DEFAULT_IPC_PORT = 47384
+RUNTIME_ML_PROTOCOL_V2 = 2
+DEFAULT_IPC_PORT = 47_384
+DEFAULT_PIPE_NAME = r"\\.\pipe\neurohid.ml.v2"
+DEFAULT_HOST = "127.0.0.1"
+
+
+class IpcTransport(str, Enum):
+    """Transport mode used by the trainer bridge."""
+
+    NAMED_PIPE = "named_pipe"
+    TCP_LOOPBACK = "tcp_loopback"
 
 
 @dataclass
 class IpcConfig:
-    """Configuration for the IPC connection."""
+    """Configuration for trainer<->runtime ML bridge connectivity."""
 
-    # TCP host and port for IPC communication
-    host: str = "127.0.0.1"
+    transport: IpcTransport | str = (
+        IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK
+    )
+    host: str = DEFAULT_HOST
     port: int = DEFAULT_IPC_PORT
-
-    # Connection timeouts
+    pipe_name: str = DEFAULT_PIPE_NAME
     connect_timeout_sec: float = 5.0
-    recv_timeout_sec: float = 0.1
-
-    # Reconnection settings
+    recv_timeout_sec: float = 0.2
     auto_reconnect: bool = True
     reconnect_delay_sec: float = 1.0
-    max_reconnect_attempts: int = 10
+    max_reconnect_attempts: int = 0
+    heartbeat_interval_sec: float = 0.5
+
+    def __post_init__(self) -> None:
+        if isinstance(self.transport, str):
+            self.transport = IpcTransport(self.transport)
+
+
+@dataclass
+class BridgeStats:
+    """Lightweight trainer runtime stats surfaced via `trainer_status`."""
+
+    replay_size: int = 0
+    training_step: int = 0
+    policy_loss: Optional[float] = None
+    value_loss: Optional[float] = None
+    entropy: Optional[float] = None
+    last_error: Optional[str] = None
+
+
+def now_micros() -> int:
+    """Current unix timestamp in microseconds."""
+
+    return time.time_ns() // 1_000
+
+
+def _quality_label(score: float) -> str:
+    if score >= 0.75:
+        return "good"
+    if score >= 0.5:
+        return "acceptable"
+    if score >= 0.25:
+        return "poor"
+    return "unusable"
 
 
 class IpcClient:
-    """Client for communicating with the Rust core service.
-
-    This class manages the connection to the Rust service and provides
-    methods for sending features and receiving actions. It handles
-    connection management, reconnection, and message framing.
-
-    Example usage:
-        client = IpcClient(IpcConfig())
-        await client.connect()
-
-        # Send features and get action
-        action = await client.send_features(features)
-
-        # Send ErrP result
-        await client.send_errp_result(errp_result)
-    """
+    """Trainer-side IPC client with v2 envelope framing."""
 
     def __init__(self, config: IpcConfig):
         self.config = config
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
+        self.pipe: Optional[BinaryIO] = None
         self.connected = False
         self.sequence = 0
 
-        # Callbacks for received messages
-        self._on_feature_batch: Optional[Callable] = None
-        self._on_errp_window: Optional[Callable] = None
-        self._on_shutdown: Optional[Callable] = None
-
     async def connect(self) -> bool:
-        """Connect to the Rust core service.
+        """Connect to runtime bridge endpoint."""
 
-        Returns True if connection succeeded, False otherwise.
-        """
         try:
-            self.reader, self.writer = await asyncio.wait_for(
-                asyncio.open_connection(self.config.host, self.config.port),
-                timeout=self.config.connect_timeout_sec
-            )
+            if self.config.transport == IpcTransport.TCP_LOOPBACK:
+                self.reader, self.writer = await asyncio.wait_for(
+                    asyncio.open_connection(self.config.host, self.config.port),
+                    timeout=self.config.connect_timeout_sec,
+                )
+                sock = self.writer.get_extra_info("socket")
+                if sock is not None:
+                    import socket
 
-            # Disable Nagle's algorithm for lower latency
-            sock = self.writer.get_extra_info("socket")
-            if sock is not None:
-                import socket
-                sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            else:
+                if os.name != "nt":
+                    raise RuntimeError(
+                        "named_pipe transport is only supported on Windows hosts"
+                    )
+                self.pipe = await asyncio.wait_for(
+                    asyncio.to_thread(self._open_named_pipe_blocking),
+                    timeout=self.config.connect_timeout_sec,
+                )
 
             self.connected = True
-
-            # Send ready message
-            await self._send_message({"type": "Ready"})
-
             return True
-
-        except ConnectionRefusedError:
-            print(
-                f"Connection refused at {self.config.host}:{self.config.port}"
-            )
-            print("Is the Rust service running?")
-            return False
-        except asyncio.TimeoutError:
-            print("Connection timed out")
-            return False
-        except Exception as e:
-            print(f"Connection failed: {e}")
+        except Exception as error:  # noqa: BLE001
+            endpoint = self.endpoint_label()
+            print(f"Bridge connect failed ({endpoint}): {error}")
+            self.connected = False
+            self.reader = None
+            self.writer = None
+            self.pipe = None
             return False
 
-    async def disconnect(self):
-        """Disconnect from the service."""
-        if self.writer:
+    async def disconnect(self) -> None:
+        """Disconnect and release transport handles."""
+
+        if self.writer is not None:
             self.writer.close()
             await self.writer.wait_closed()
-
-        self.reader = None
         self.writer = None
+        self.reader = None
+
+        if self.pipe is not None:
+            pipe = self.pipe
+            self.pipe = None
+            await asyncio.to_thread(pipe.close)
+
         self.connected = False
 
-    async def send_action(
-        self,
-        mouse_dx: float,
-        mouse_dy: float,
-        discrete_action: int,
-        confidence: float,
-        inference_latency_us: int
-    ):
-        """Send a decoded action to the Rust service.
+    async def send_envelope(self, kind: str, session_id: str, payload: dict[str, Any]) -> None:
+        """Send one protocol v2 envelope to runtime."""
 
-        Args:
-            mouse_dx: Horizontal mouse movement
-            mouse_dy: Vertical mouse movement
-            discrete_action: Index of discrete action (0=no-op, etc.)
-            confidence: Confidence in the action (0.0-1.0)
-            inference_latency_us: How long inference took in microseconds
-        """
         self.sequence += 1
-
-        message = {
-            "type": "Action",
-            "action": {
-                "mouse": {
-                    "movement": {"dx": mouse_dx, "dy": mouse_dy},
-                    "buttons": [],
-                    "scroll": None,
-                },
-                "keyboard": None,
-                "confidence": confidence,
-                "timestamp": 0,  # Will be set by Rust
-            },
-            "sequence": self.sequence,
-            "inference_latency_us": inference_latency_us,
+        envelope = {
+            "v": RUNTIME_ML_PROTOCOL_V2,
+            "kind": kind,
+            "seq": self.sequence,
+            "sent_at_us": now_micros(),
+            "session_id": session_id,
+            "payload": payload,
         }
+        await self._send_raw_message(envelope)
 
-        await self._send_message(message)
+    async def receive_envelope(self) -> Optional[dict[str, Any]]:
+        """Receive one envelope if available, else `None` on timeout."""
 
-    async def send_errp_result(
-        self,
-        error_probability: float,
-        confidence: float,
-        sequence: int
-    ):
-        """Send an ErrP detection result to the Rust service.
-
-        Args:
-            error_probability: Probability that an error was detected (0.0-1.0)
-            confidence: Confidence in the detection
-            sequence: Sequence number of the ErrP window this corresponds to
-        """
-        message = {
-            "type": "ErrPResult",
-            "result": {
-                "error_probability": error_probability,
-                "classification_confidence": confidence,
-                "signal_quality": "Good",  # Simplified
-                "magnitude": None,
-            },
-            "sequence": sequence,
-        }
-
-        await self._send_message(message)
-
-    async def receive_message(self) -> Optional[dict]:
-        """Receive a message from the Rust service.
-
-        Returns the message as a dictionary, or None if no message available.
-        """
-        if not self.connected or not self.reader:
+        if not self.connected:
             return None
 
         try:
-            # Read length prefix (4 bytes, little-endian)
-            length_bytes = await asyncio.wait_for(
-                self.reader.readexactly(4),
-                timeout=self.config.recv_timeout_sec
-            )
-            length = struct.unpack('<I', length_bytes)[0]
+            if self.config.transport == IpcTransport.TCP_LOOPBACK:
+                if self.reader is None:
+                    return None
+                length_buf = await asyncio.wait_for(
+                    self.reader.readexactly(4), timeout=self.config.recv_timeout_sec
+                )
+                length = struct.unpack("<I", length_buf)[0]
+                body = await self.reader.readexactly(length)
+            else:
+                if self.pipe is None:
+                    return None
+                # Named pipe reads are performed on a worker thread and may block
+                # until runtime sends a frame. We avoid per-read timeouts here to
+                # prevent spawning leaked background reads.
+                length_buf = await asyncio.to_thread(self._pipe_read_exact, 4)
+                length = struct.unpack("<I", length_buf)[0]
+                body = await asyncio.to_thread(self._pipe_read_exact, length)
 
-            # Read message body
-            body_bytes = await self.reader.readexactly(length)
-            message = json.loads(body_bytes.decode('utf-8'))
-
-            return message
-
-        except asyncio.TimeoutError:
-            # No message available, that's fine
+            decoded = json.loads(body.decode("utf-8"))
+            if isinstance(decoded, dict):
+                return decoded
             return None
-        except asyncio.IncompleteReadError:
-            # Connection closed
+        except asyncio.TimeoutError:
+            return None
+        except Exception as error:  # noqa: BLE001
+            print(f"Bridge receive failed: {error}")
             self.connected = False
             return None
-        except Exception as e:
-            print(f"Error receiving message: {e}")
-            return None
 
-    async def _send_message(self, message: dict):
-        """Send a message to the Rust service."""
-        if not self.connected or not self.writer:
-            raise ConnectionError("Not connected to service")
+    def endpoint_label(self) -> str:
+        if self.config.transport == IpcTransport.NAMED_PIPE:
+            return self.config.pipe_name
+        return f"{self.config.host}:{self.config.port}"
 
-        # Encode message as JSON
-        body = json.dumps(message).encode('utf-8')
+    async def _send_raw_message(self, message: dict[str, Any]) -> None:
+        if not self.connected:
+            raise ConnectionError("Bridge is not connected")
 
-        # Create length-prefixed frame
-        frame = struct.pack('<I', len(body)) + body
+        payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
+        frame = struct.pack("<I", len(payload)) + payload
 
-        # Send
-        self.writer.write(frame)
-        await self.writer.drain()
+        if self.config.transport == IpcTransport.TCP_LOOPBACK:
+            if self.writer is None:
+                raise ConnectionError("TCP writer unavailable")
+            self.writer.write(frame)
+            await self.writer.drain()
+            return
 
-    def on_feature_batch(self, callback: Callable[[dict], None]):
-        """Register a callback for when feature batches are received."""
-        self._on_feature_batch = callback
+        if self.pipe is None:
+            raise ConnectionError("Named pipe handle unavailable")
 
-    def on_errp_window(self, callback: Callable[[dict], None]):
-        """Register a callback for when ErrP windows are received."""
-        self._on_errp_window = callback
+        await asyncio.to_thread(self.pipe.write, frame)
+        await asyncio.to_thread(self.pipe.flush)
 
-    def on_shutdown(self, callback: Callable[[], None]):
-        """Register a callback for when shutdown is requested."""
-        self._on_shutdown = callback
+    def _open_named_pipe_blocking(self) -> BinaryIO:
+        deadline = time.monotonic() + self.config.connect_timeout_sec
+        last_error: Optional[Exception] = None
 
-    async def run_receive_loop(self):
-        """Run the message receive loop.
+        while time.monotonic() < deadline:
+            try:
+                # Unbuffered read/write binary mode works for byte-stream pipes.
+                return open(self.config.pipe_name, "r+b", buffering=0)
+            except OSError as error:
+                last_error = error
+                time.sleep(0.1)
 
-        This continuously receives messages and dispatches them to the
-        appropriate callbacks. Run this in a separate task.
-        """
-        while self.connected:
-            message = await self.receive_message()
+        raise TimeoutError(
+            f"timed out opening named pipe {self.config.pipe_name}: {last_error}"
+        )
 
-            if message is None:
-                await asyncio.sleep(0.001)  # Brief sleep to avoid busy-waiting
-                continue
+    def _pipe_read_exact(self, size: int) -> bytes:
+        if self.pipe is None:
+            raise ConnectionError("Named pipe handle unavailable")
 
-            msg_type = message.get("type")
-
-            if msg_type == "FeatureBatch" and self._on_feature_batch:
-                self._on_feature_batch(message)
-            elif msg_type == "ErrPWindow" and self._on_errp_window:
-                self._on_errp_window(message)
-            elif msg_type == "Shutdown":
-                if self._on_shutdown:
-                    self._on_shutdown()
-                break
-            elif msg_type == "Ping":
-                # Respond to ping with pong
-                await self._send_message({
-                    "type": "Pong",
-                    "timestamp": message.get("timestamp", 0),
-                    "python_timestamp": int(
-                        asyncio.get_event_loop().time() * 1_000_000
-                    ),
-                })
+        data = bytearray()
+        while len(data) < size:
+            chunk = self.pipe.read(size - len(data))
+            if not chunk:
+                raise EOFError("named pipe closed")
+            data.extend(chunk)
+        return bytes(data)
 
 
-async def run_bridge_session(client: IpcClient):
-    """Run one connected bridge session until disconnect/shutdown."""
-    decoder: Optional[Decoder] = None
-    errp = ErrPDetector(ErrPConfig())
+class BridgeSession:
+    """Stateful protocol v2 bridge session handler."""
 
-    while client.connected:
-        message = await client.receive_message()
-        if message is None:
+    def __init__(self, client: IpcClient):
+        self.client = client
+        self.session_id = str(now_micros())
+        self.stats = BridgeStats()
+        self.errp = ErrPDetector(ErrPConfig())
+        self.last_status_sent_at = 0.0
+
+    async def run(self) -> None:
+        """Run the connected bridge loop until disconnect/shutdown."""
+
+        await self.send_hello()
+
+        while self.client.connected:
+            envelope = await self.client.receive_envelope()
+            if envelope is not None:
+                should_stop = await self.handle_runtime_message(envelope)
+                if should_stop:
+                    break
+
+            now = time.monotonic()
+            if now - self.last_status_sent_at >= self.client.config.heartbeat_interval_sec:
+                await self.send_trainer_status()
+                self.last_status_sent_at = now
+
             await asyncio.sleep(0.001)
-            continue
 
-        msg_type = message.get("type")
+    async def handle_runtime_message(self, envelope: dict[str, Any]) -> bool:
+        """Handle one runtime->trainer envelope. Returns True to stop session."""
 
-        if msg_type == "FeatureBatch":
-            features = message.get("features", [])
-            if not features:
-                continue
-
-            sequence = int(message.get("sequence", 0))
-
-            for feature in features:
-                values = feature.get("values", [])
-                if not values:
-                    continue
-
-                vector = np.asarray(values, dtype=np.float32)
-                if decoder is None or decoder.config.input_dim != vector.shape[0]:
-                    decoder = Decoder(DecoderConfig(input_dim=vector.shape[0]))
-
-                action = decoder.get_action(vector)
-                continuous = action.get("continuous", [0.0, 0.0])
-                discrete = int(action.get("discrete", 0))
-                confidence = float(action.get("confidence", 0.0))
-
-                await client.send_action(
-                    mouse_dx=float(continuous[0]),
-                    mouse_dy=float(continuous[1]),
-                    discrete_action=discrete,
-                    confidence=confidence,
-                    inference_latency_us=5000,
-                )
-
-            if errp.is_calibrated:
-                # Emit neutral ErrP by default until Rust sends explicit windows.
-                await client.send_errp_result(
-                    error_probability=0.0,
-                    confidence=0.0,
-                    sequence=sequence,
-                )
-
-        elif msg_type == "ErrPWindow":
-            windows = message.get("window_features", [])
-            sequence = int(message.get("sequence", 0))
-
-            if not windows:
-                await client.send_errp_result(
-                    error_probability=0.0,
-                    confidence=0.0,
-                    sequence=sequence,
-                )
-                continue
-
-            matrix = np.asarray(
-                [w.get("values", []) for w in windows],
-                dtype=np.float32,
+        version = int(envelope.get("v", 0))
+        if version != RUNTIME_ML_PROTOCOL_V2:
+            await self.send_protocol_error(
+                code="unsupported_version",
+                message=(
+                    f"runtime sent unsupported protocol version {version}; "
+                    f"expected {RUNTIME_ML_PROTOCOL_V2}"
+                ),
+                recoverable=True,
             )
-            if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
-                await client.send_errp_result(
-                    error_probability=0.0,
-                    confidence=0.0,
-                    sequence=sequence,
-                )
-                continue
+            return False
 
-            if errp.is_calibrated:
-                detected = errp.detect(matrix)
-                await client.send_errp_result(
-                    error_probability=float(detected.error_probability),
-                    confidence=float(detected.confidence),
-                    sequence=sequence,
-                )
-            else:
-                await client.send_errp_result(
-                    error_probability=0.0,
-                    confidence=0.0,
-                    sequence=sequence,
-                )
+        kind = str(envelope.get("kind", ""))
+        payload = envelope.get("payload")
+        if not isinstance(payload, dict):
+            payload = {}
 
-        elif msg_type == "Shutdown":
-            break
+        if kind == "hello":
+            await self.send_ack("hello", int(envelope.get("seq", 0)))
+            return False
 
-        elif msg_type == "Ping":
-            await client._send_message(
-                {
-                    "type": "Pong",
-                    "timestamp": message.get("timestamp", 0),
-                    "python_timestamp": int(
-                        asyncio.get_event_loop().time() * 1_000_000
-                    ),
-                }
+        if kind == "session_boundary":
+            event = str(payload.get("event", ""))
+            if event == "start":
+                self.stats = BridgeStats()
+            return False
+
+        if kind == "decision_event":
+            await self.handle_decision_event(payload)
+            return False
+
+        if kind == "errp_window":
+            await self.handle_errp_window(payload)
+            return False
+
+        if kind == "runtime_telemetry":
+            return False
+
+        if kind == "ping":
+            await self.send_pong(payload)
+            return False
+
+        if kind == "shutdown":
+            return True
+
+        # Unknown runtime message kinds are recoverable.
+        await self.send_protocol_error(
+            code="unsupported_kind",
+            message=f"trainer does not handle runtime message kind '{kind}'",
+            recoverable=True,
+        )
+        return False
+
+    async def handle_decision_event(self, payload: dict[str, Any]) -> None:
+        decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
+        action_timestamp = int(payload.get("timestamp_us") or now_micros())
+        decoder_confidence = float(payload.get("decoder_confidence") or 0.0)
+        signal_quality = float(payload.get("signal_quality") or 0.0)
+
+        feature_values = payload.get("feature_values")
+        if isinstance(feature_values, list):
+            np.asarray(feature_values, dtype=np.float32)
+
+        self.stats.replay_size += 1
+        self.stats.training_step += 1
+
+        # Placeholder proxy until dedicated ErrP window labeling is integrated.
+        error_probability = float(np.clip(1.0 - decoder_confidence, 0.0, 1.0))
+        detection_timestamp = now_micros()
+
+        await self.client.send_envelope(
+            kind="errp_result",
+            session_id=self.session_id,
+            payload={
+                "decision_id": decision_id,
+                "action_timestamp_us": action_timestamp,
+                "detection_timestamp_us": detection_timestamp,
+                "error_probability": error_probability,
+                "classification_confidence": max(decoder_confidence, 0.01),
+                "signal_quality": _quality_label(signal_quality),
+                "estimated_magnitude": None,
+                "detection_latency_us": detection_timestamp - action_timestamp,
+            },
+        )
+
+    async def handle_errp_window(self, payload: dict[str, Any]) -> None:
+        decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
+        action_timestamp = int(payload.get("action_timestamp_us") or now_micros())
+
+        channels = payload.get("channel_data")
+        if isinstance(channels, list) and channels:
+            try:
+                matrix = np.asarray(channels, dtype=np.float32)
+                if matrix.ndim == 2 and matrix.shape[0] > 0 and matrix.shape[1] > 0:
+                    if self.errp.is_calibrated:
+                        # Current detector expects [samples, channels].
+                        detected = self.errp.detect(matrix.T)
+                        error_probability = float(np.clip(detected.error_probability, 0.0, 1.0))
+                        confidence = float(np.clip(detected.confidence, 0.0, 1.0))
+                    else:
+                        error_probability = 0.0
+                        confidence = 0.0
+                else:
+                    error_probability = 0.0
+                    confidence = 0.0
+            except Exception:  # noqa: BLE001
+                error_probability = 0.0
+                confidence = 0.0
+        else:
+            error_probability = 0.0
+            confidence = 0.0
+
+        detection_timestamp = now_micros()
+        await self.client.send_envelope(
+            kind="errp_result",
+            session_id=self.session_id,
+            payload={
+                "decision_id": decision_id,
+                "action_timestamp_us": action_timestamp,
+                "detection_timestamp_us": detection_timestamp,
+                "error_probability": error_probability,
+                "classification_confidence": confidence,
+                "signal_quality": "acceptable",
+                "estimated_magnitude": None,
+                "detection_latency_us": detection_timestamp - action_timestamp,
+            },
+        )
+
+    async def send_hello(self) -> None:
+        await self.client.send_envelope(
+            kind="hello",
+            session_id=self.session_id,
+            payload={
+                "protocol": "neurohid_runtime_ml_v2",
+                "role": "trainer",
+                "capabilities": [
+                    "errp_result",
+                    "trainer_status",
+                    "candidate_model_ready",
+                ],
+                "profile_id": None,
+                "feature_schema_version": None,
+                "action_schema_version": None,
+                "decoder_model_version": None,
+                "trainer_name": "neurohid-ml",
+                "trainer_version": "0.1.0",
+            },
+        )
+
+    async def send_pong(self, ping_payload: dict[str, Any]) -> None:
+        await self.client.send_envelope(
+            kind="pong",
+            session_id=self.session_id,
+            payload={
+                "ping_id": str(ping_payload.get("ping_id") or ""),
+                "timestamp_us": now_micros(),
+            },
+        )
+
+    async def send_ack(self, ack_kind: str, ack_seq: int) -> None:
+        await self.client.send_envelope(
+            kind="ack",
+            session_id=self.session_id,
+            payload={
+                "ack_kind": ack_kind,
+                "ack_seq": ack_seq,
+            },
+        )
+
+    async def send_protocol_error(self, code: str, message: str, recoverable: bool) -> None:
+        self.stats.last_error = message
+        await self.client.send_envelope(
+            kind="error",
+            session_id=self.session_id,
+            payload={
+                "code": code,
+                "message": message,
+                "recoverable": recoverable,
+            },
+        )
+
+    async def send_trainer_status(self) -> None:
+        await self.client.send_envelope(
+            kind="trainer_status",
+            session_id=self.session_id,
+            payload={
+                "state": "training" if self.stats.replay_size > 0 else "idle",
+                "replay_size": self.stats.replay_size,
+                "training_step": self.stats.training_step,
+                "policy_loss": self.stats.policy_loss,
+                "value_loss": self.stats.value_loss,
+                "entropy": self.stats.entropy,
+                "last_error": self.stats.last_error,
+            },
+        )
+
+
+async def main_async(
+    host: str = DEFAULT_HOST,
+    port: int = DEFAULT_IPC_PORT,
+    transport: str | IpcTransport | None = None,
+    pipe_name: str = DEFAULT_PIPE_NAME,
+) -> None:
+    """Run reconnecting trainer bridge loop."""
+
+    config = IpcConfig(
+        host=host,
+        port=port,
+        pipe_name=pipe_name,
+        transport=(
+            transport
+            if transport is not None
+            else (
+                IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK
             )
+        ),
+    )
 
-
-async def main_async(host: str, port: int):
-    config = IpcConfig(host=host, port=port)
     attempts = 0
-
     while True:
         client = IpcClient(config)
-        print(f"Connecting to {config.host}:{config.port}...")
+        print(f"Connecting trainer bridge to {client.endpoint_label()}...")
         connected = await client.connect()
+
         if connected:
             attempts = 0
-            print("Connected to Rust core")
-            await run_bridge_session(client)
-            await client.disconnect()
-            print("Disconnected from Rust core")
+            print("Trainer bridge connected")
+            session = BridgeSession(client)
+            try:
+                await session.run()
+            finally:
+                await client.disconnect()
+            print("Trainer bridge disconnected")
         else:
             attempts += 1
 
         if not config.auto_reconnect:
             return
-        if (
-            config.max_reconnect_attempts > 0
-            and attempts >= config.max_reconnect_attempts
-        ):
-            print("Max reconnect attempts reached, exiting")
+        if config.max_reconnect_attempts > 0 and attempts >= config.max_reconnect_attempts:
+            print("Max reconnect attempts reached; exiting")
             return
 
         await asyncio.sleep(config.reconnect_delay_sec)
 
 
-def main():
-    parser = argparse.ArgumentParser(description="NeuroHID Python bridge")
-    parser.add_argument("--host", default="127.0.0.1")
+def main() -> None:
+    parser = argparse.ArgumentParser(description="NeuroHID runtime ML bridge (v2)")
+    parser.add_argument(
+        "--transport",
+        choices=[transport.value for transport in IpcTransport],
+        default=(
+            IpcTransport.NAMED_PIPE.value
+            if os.name == "nt"
+            else IpcTransport.TCP_LOOPBACK.value
+        ),
+    )
+    parser.add_argument("--host", default=DEFAULT_HOST)
     parser.add_argument("--port", type=int, default=DEFAULT_IPC_PORT)
+    parser.add_argument("--pipe-name", default=DEFAULT_PIPE_NAME)
+
     args = parser.parse_args()
-    asyncio.run(main_async(args.host, args.port))
+    asyncio.run(
+        main_async(
+            host=args.host,
+            port=args.port,
+            transport=args.transport,
+            pipe_name=args.pipe_name,
+        )
+    )
 
 
 if __name__ == "__main__":

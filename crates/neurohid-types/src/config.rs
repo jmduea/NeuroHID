@@ -520,10 +520,17 @@ pub struct UiConfig {
     /// Whether tray mode behavior is enabled.
     #[serde(default)]
     pub tray_mode_enabled: bool,
+    /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
+    #[serde(default = "default_lab_kernel_command")]
+    pub lab_kernel_command: String,
 }
 
 fn default_font_scale() -> f32 {
     1.0
+}
+
+fn default_lab_kernel_command() -> String {
+    "uv run --directory python neurohid-ml lab-kernel --stdio".to_string()
 }
 
 impl Default for UiConfig {
@@ -534,6 +541,7 @@ impl Default for UiConfig {
             theme_mode: ThemeMode::default(),
             pane_resize_enabled: true,
             tray_mode_enabled: false,
+            lab_kernel_command: default_lab_kernel_command(),
         }
     }
 }
@@ -547,6 +555,105 @@ pub enum UiMode {
     Standard,
     /// Power-user/research mode with advanced tooling.
     Advanced,
+}
+
+/// Runtime hosting mode for the service control surface.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ServiceRuntimeMode {
+    /// Hub owns and runs the runtime process in-process.
+    #[default]
+    Embedded,
+    /// Hub connects to an already-running external `neurohid-service`.
+    External,
+}
+
+impl ServiceRuntimeMode {
+    /// All runtime mode variants in display order.
+    pub const ALL: &'static [ServiceRuntimeMode] =
+        &[ServiceRuntimeMode::Embedded, ServiceRuntimeMode::External];
+}
+
+impl std::fmt::Display for ServiceRuntimeMode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ServiceRuntimeMode::Embedded => write!(f, "Embedded"),
+            ServiceRuntimeMode::External => write!(f, "External"),
+        }
+    }
+}
+
+/// Transport for hub/runtime control protocol.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ControlTransport {
+    /// Windows named pipe transport.
+    #[default]
+    NamedPipe,
+    /// Localhost TCP fallback for non-Windows development.
+    TcpLoopback,
+}
+
+/// Transport for runtime<->trainer ML bridge.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MlTransport {
+    /// Windows named pipe transport.
+    #[default]
+    NamedPipe,
+    /// Localhost TCP fallback for non-Windows development.
+    TcpLoopback,
+}
+
+/// Strategy used when the primary deep model path is unavailable.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FallbackModelStrategy {
+    /// Use a lightweight Rust model for degraded/fallback operation.
+    #[default]
+    LightweightRust,
+}
+
+/// Runtime capability gating policy in fallback mode.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FallbackPolicy {
+    /// Master switch for fallback behavior.
+    pub enabled: bool,
+    /// Model strategy used for fallback inference.
+    pub model_strategy: FallbackModelStrategy,
+    /// Rolling evaluation window for capability confidence/success scores.
+    pub gate_window_secs: u64,
+    /// Movement gating minimums.
+    pub movement_min_confidence: f32,
+    pub movement_min_success_score: f32,
+    /// Click gating minimums.
+    pub click_min_confidence: f32,
+    pub click_min_success_score: f32,
+    /// Keyboard gating minimums.
+    pub keyboard_min_confidence: f32,
+    pub keyboard_min_success_score: f32,
+    /// Hold time before re-enabling a previously disabled capability.
+    pub capability_reenable_hold_secs: u64,
+    /// Cooldown between repeated fallback/degraded notifications.
+    pub notification_cooldown_secs: u64,
+}
+
+impl Default for FallbackPolicy {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            model_strategy: FallbackModelStrategy::default(),
+            gate_window_secs: 60,
+            movement_min_confidence: 0.65,
+            movement_min_success_score: 0.70,
+            click_min_confidence: 0.80,
+            click_min_success_score: 0.80,
+            keyboard_min_confidence: 0.85,
+            keyboard_min_success_score: 0.85,
+            capability_reenable_hold_secs: 15,
+            notification_cooldown_secs: 120,
+        }
+    }
 }
 
 /// Configuration for automatic recalibration prompts.
@@ -576,16 +683,52 @@ impl Default for RecalibrationConfig {
 /// Configuration for the background service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ServiceConfig {
+    /// Runtime hosting mode for hub control.
+    #[serde(default)]
+    pub runtime_mode: ServiceRuntimeMode,
+
+    /// Host used for runtime control protocol connections in external mode.
+    #[serde(default = "default_control_host")]
+    pub control_host: String,
+
+    /// Port used for runtime control protocol connections in external mode.
+    #[serde(default = "default_control_port")]
+    pub control_port: u16,
+
+    /// Transport used for runtime control protocol.
+    #[serde(default)]
+    pub control_transport: ControlTransport,
+
+    /// Named pipe used for runtime control protocol.
+    #[serde(default = "default_control_pipe_name")]
+    pub control_pipe_name: String,
+
     /// Whether the service should start automatically on login
     pub auto_start: bool,
 
     /// Port for TCP localhost IPC (Python bridge communication)
     pub ipc_port: u16,
 
+    /// Transport used for runtime ML bridge communications.
+    #[serde(default)]
+    pub ml_transport: MlTransport,
+
+    /// Named pipe used for runtime ML bridge communications.
+    #[serde(default = "default_ml_pipe_name")]
+    pub ml_pipe_name: String,
+
     /// Whether to use the built-in simulated IPC bridge when no real
     /// Python process bridge is configured.
     #[serde(default = "default_ipc_simulation_enabled")]
     pub ipc_simulation_enabled: bool,
+
+    /// Maximum trainer heartbeat staleness before bridge is marked stalled.
+    #[serde(default = "default_ml_stall_timeout_ms")]
+    pub ml_stall_timeout_ms: u64,
+
+    /// Expected heartbeat interval for runtime<->trainer bridge.
+    #[serde(default = "default_ml_heartbeat_interval_ms")]
+    pub ml_heartbeat_interval_ms: u64,
 
     /// Whether to show system tray icon
     pub show_tray_icon: bool,
@@ -602,23 +745,61 @@ pub struct ServiceConfig {
     /// Latency alert policy for runtime decode/action p95 metrics.
     #[serde(default)]
     pub latency_alert: LatencyAlertConfig,
+
+    /// Capability gating and model fallback policy.
+    #[serde(default)]
+    pub fallback_policy: FallbackPolicy,
 }
 
 fn default_ipc_simulation_enabled() -> bool {
     true
 }
 
+fn default_control_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_control_port() -> u16 {
+    47_385
+}
+
+fn default_control_pipe_name() -> String {
+    r"\\.\pipe\neurohid.control.v2".to_string()
+}
+
+fn default_ml_pipe_name() -> String {
+    r"\\.\pipe\neurohid.ml.v2".to_string()
+}
+
+fn default_ml_stall_timeout_ms() -> u64 {
+    1_500
+}
+
+fn default_ml_heartbeat_interval_ms() -> u64 {
+    500
+}
+
 impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
+            runtime_mode: ServiceRuntimeMode::default(),
+            control_host: default_control_host(),
+            control_port: default_control_port(),
+            control_transport: ControlTransport::default(),
+            control_pipe_name: default_control_pipe_name(),
             auto_start: false,
             ipc_port: 47384,
+            ml_transport: MlTransport::default(),
+            ml_pipe_name: default_ml_pipe_name(),
             ipc_simulation_enabled: true,
+            ml_stall_timeout_ms: default_ml_stall_timeout_ms(),
+            ml_heartbeat_interval_ms: default_ml_heartbeat_interval_ms(),
             show_tray_icon: true,
             notifications_enabled: true,
             log_level: "info".to_string(),
             log_file_path: None,
             latency_alert: LatencyAlertConfig::default(),
+            fallback_policy: FallbackPolicy::default(),
         }
     }
 }

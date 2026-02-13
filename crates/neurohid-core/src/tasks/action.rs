@@ -13,20 +13,85 @@
 //! 3. **Safety**: We respect confidence thresholds and debouncing to prevent
 //!    accidental clicks or key presses
 
+use std::collections::VecDeque;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, RwLock};
 
 use neurohid_platform::{create_platform, MouseMovement, Platform};
 use neurohid_types::{
     action::{Action, MouseButton},
     config::ActionConfig,
+    control::RuntimeModeState,
     error::Result,
     event::{MarkerPayload, MarkerType, StreamMarker},
 };
 
 use crate::service::ServiceState;
 use crate::tasks::latency::RollingLatency;
+
+#[derive(Debug, Clone, Copy)]
+enum CapabilityKind {
+    CursorMove,
+    Click,
+    Keyboard,
+}
+
+#[derive(Default)]
+struct CapabilityGate {
+    samples: VecDeque<(Instant, f32, f32)>,
+    eligible_since: Option<Instant>,
+    enabled: bool,
+}
+
+impl CapabilityGate {
+    fn update(
+        &mut self,
+        now: Instant,
+        confidence: f32,
+        success: f32,
+        min_confidence: f32,
+        min_success: f32,
+        window: Duration,
+        reenable_hold: Duration,
+    ) {
+        self.samples.push_back((now, confidence, success));
+        while let Some((ts, _, _)) = self.samples.front() {
+            if now.duration_since(*ts) > window {
+                let _ = self.samples.pop_front();
+            } else {
+                break;
+            }
+        }
+
+        if self.samples.is_empty() {
+            self.enabled = false;
+            self.eligible_since = None;
+            return;
+        }
+
+        let count = self.samples.len() as f32;
+        let avg_conf = self.samples.iter().map(|(_, c, _)| *c).sum::<f32>() / count;
+        let avg_success = self.samples.iter().map(|(_, _, s)| *s).sum::<f32>() / count;
+        let passing = avg_conf >= min_confidence && avg_success >= min_success;
+
+        if !passing {
+            self.enabled = false;
+            self.eligible_since = None;
+            return;
+        }
+
+        if self.enabled {
+            return;
+        }
+
+        let eligible_since = self.eligible_since.get_or_insert(now);
+        if now.duration_since(*eligible_since) >= reenable_hold {
+            self.enabled = true;
+        }
+    }
+}
 
 /// The action task emits HID events based on decoded intentions.
 pub struct ActionTask {
@@ -47,9 +112,12 @@ pub struct ActionTask {
     // State for smoothing and debouncing
     // Reserved for future absolute->relative position tracking.
     _last_mouse_pos: (f32, f32),
-    last_action_time: std::time::Instant,
+    last_action_time: Instant,
     smoothed_velocity: (f32, f32),
     action_latency: RollingLatency,
+    cursor_gate: CapabilityGate,
+    click_gate: CapabilityGate,
+    keyboard_gate: CapabilityGate,
 }
 
 impl ActionTask {
@@ -72,9 +140,12 @@ impl ActionTask {
             action_broadcast_tx,
             marker_broadcast_tx,
             _last_mouse_pos: (0.0, 0.0),
-            last_action_time: std::time::Instant::now(),
+            last_action_time: Instant::now(),
             smoothed_velocity: (0.0, 0.0),
             action_latency: RollingLatency::new(512),
+            cursor_gate: CapabilityGate::default(),
+            click_gate: CapabilityGate::default(),
+            keyboard_gate: CapabilityGate::default(),
         }
     }
 
@@ -191,20 +262,31 @@ impl ActionTask {
                                 continue;
                             }
 
+                            let mut gated_action = action.clone();
+                            if self
+                                .apply_fallback_capability_gating(&mut gated_action, action.confidence)
+                                .await
+                            {
+                                // Continue with gated action.
+                            } else {
+                                continue;
+                            }
+
                             // Check debounce timer for discrete actions
-                            let now = std::time::Instant::now();
+                            let now = Instant::now();
                             let ms_since_last = now.duration_since(self.last_action_time).as_millis() as u32;
 
                             // Execute the action
-                            if let Err(e) = self.execute_action(&mut **p, &action, ms_since_last) {
+                            if let Err(e) = self.execute_action(&mut **p, &gated_action, ms_since_last) {
                                 tracing::warn!("Failed to execute action: {}", e);
                             } else {
                                 actions_emitted += 1;
                                 self.last_action_time = now;
 
-                                if action.timestamp > 0 {
+                                if gated_action.timestamp > 0 {
                                     let now_micros = neurohid_types::now_micros();
-                                    let latency_us = now_micros.saturating_sub(action.timestamp) as u64;
+                                    let latency_us =
+                                        now_micros.saturating_sub(gated_action.timestamp) as u64;
                                     self.action_latency.record(latency_us);
                                 }
 
@@ -226,6 +308,212 @@ impl ActionTask {
 
         tracing::info!("Action task emitted {} actions", actions_emitted);
         Ok(())
+    }
+
+    async fn apply_fallback_capability_gating(
+        &mut self,
+        action: &mut Action,
+        confidence: f32,
+    ) -> bool {
+        let now = Instant::now();
+        let (fallback_policy, success_score, ml_connected, ml_stalled, model_kind) = {
+            let state = self.state.read().await;
+            (
+                state.fallback_policy.clone(),
+                state.rolling_success_score,
+                state.ml_bridge_connected,
+                state.ml_bridge_stalled,
+                state.fallback_model_kind.clone(),
+            )
+        };
+
+        let fallback_mode = fallback_policy.enabled
+            && (ml_stalled || !ml_connected || model_kind.as_deref() != Some("onnx"));
+        if !fallback_mode {
+            self.publish_capability_state(
+                RuntimeModeState::Full,
+                vec![
+                    "cursor_move".to_string(),
+                    "click".to_string(),
+                    "keyboard".to_string(),
+                ],
+                None,
+            )
+            .await;
+            return !action.is_none();
+        }
+
+        let window = Duration::from_secs(fallback_policy.gate_window_secs.max(1));
+        let reenable = Duration::from_secs(fallback_policy.capability_reenable_hold_secs.max(1));
+
+        self.update_gate(
+            CapabilityKind::CursorMove,
+            now,
+            confidence,
+            success_score,
+            fallback_policy.movement_min_confidence,
+            fallback_policy.movement_min_success_score,
+            window,
+            reenable,
+        );
+        self.update_gate(
+            CapabilityKind::Click,
+            now,
+            confidence,
+            success_score,
+            fallback_policy.click_min_confidence,
+            fallback_policy.click_min_success_score,
+            window,
+            reenable,
+        );
+        self.update_gate(
+            CapabilityKind::Keyboard,
+            now,
+            confidence,
+            success_score,
+            fallback_policy.keyboard_min_confidence,
+            fallback_policy.keyboard_min_success_score,
+            window,
+            reenable,
+        );
+
+        let cursor_enabled = self.cursor_gate.enabled;
+        let click_enabled = self.click_gate.enabled;
+        let keyboard_enabled = self.keyboard_gate.enabled;
+
+        if let Some(mouse) = &mut action.mouse {
+            if !cursor_enabled {
+                mouse.movement = None;
+                mouse.scroll = None;
+            }
+            if !click_enabled {
+                mouse.buttons.clear();
+            }
+            if mouse.movement.is_none() && mouse.buttons.is_empty() && mouse.scroll.is_none() {
+                action.mouse = None;
+            }
+        }
+        if !keyboard_enabled {
+            action.keyboard = None;
+        }
+
+        let mut enabled = Vec::new();
+        if cursor_enabled {
+            enabled.push("cursor_move".to_string());
+        }
+        if click_enabled {
+            enabled.push("click".to_string());
+        }
+        if keyboard_enabled {
+            enabled.push("keyboard".to_string());
+        }
+
+        let message = if enabled.is_empty() {
+            Some(
+                "Runtime fallback active; no capabilities meet confidence/success thresholds."
+                    .to_string(),
+            )
+        } else {
+            let disabled: Vec<&str> = ["cursor_move", "click", "keyboard"]
+                .into_iter()
+                .filter(|cap| !enabled.iter().any(|enabled_cap| enabled_cap == cap))
+                .collect();
+            if disabled.is_empty() {
+                Some("Runtime fallback active with full capability set.".to_string())
+            } else {
+                Some(format!(
+                    "Runtime fallback active; limited capabilities (disabled: {}).",
+                    disabled.join(", ")
+                ))
+            }
+        };
+
+        let mode = if enabled.is_empty() {
+            RuntimeModeState::Degraded
+        } else {
+            RuntimeModeState::Fallback
+        };
+        self.publish_capability_state(mode, enabled, message).await;
+        !action.is_none()
+    }
+
+    fn update_gate(
+        &mut self,
+        kind: CapabilityKind,
+        now: Instant,
+        confidence: f32,
+        success: f32,
+        min_confidence: f32,
+        min_success: f32,
+        window: Duration,
+        reenable_hold: Duration,
+    ) {
+        let gate = match kind {
+            CapabilityKind::CursorMove => &mut self.cursor_gate,
+            CapabilityKind::Click => &mut self.click_gate,
+            CapabilityKind::Keyboard => &mut self.keyboard_gate,
+        };
+        gate.update(
+            now,
+            confidence,
+            success,
+            min_confidence,
+            min_success,
+            window,
+            reenable_hold,
+        );
+    }
+
+    async fn publish_capability_state(
+        &self,
+        runtime_mode_state: RuntimeModeState,
+        enabled_capabilities: Vec<String>,
+        limited_message: Option<String>,
+    ) {
+        let mut state = self.state.write().await;
+        let previous_mode = state.runtime_mode_state;
+        let fallback_policy = state.fallback_policy.clone();
+        let now_us = neurohid_types::now_micros();
+        state.runtime_mode_state = runtime_mode_state;
+        state.enabled_capabilities = enabled_capabilities;
+        state.limited_capabilities_message = limited_message.clone();
+
+        let cooldown_us = fallback_policy
+            .notification_cooldown_secs
+            .saturating_mul(1_000_000) as i64;
+        let should_alert = previous_mode != runtime_mode_state
+            && state
+                .last_runtime_mode_alert_us
+                .is_none_or(|last| now_us.saturating_sub(last) >= cooldown_us);
+
+        if should_alert {
+            state.last_runtime_mode_alert_us = Some(now_us);
+            drop(state);
+
+            match runtime_mode_state {
+                RuntimeModeState::Full => {
+                    tracing::info!("Runtime recovered to full capability mode");
+                }
+                RuntimeModeState::Fallback => {
+                    tracing::warn!(
+                        "{}",
+                        limited_message.unwrap_or_else(|| {
+                            "Runtime entered fallback mode; capabilities may be limited."
+                                .to_string()
+                        })
+                    );
+                }
+                RuntimeModeState::Degraded => {
+                    tracing::warn!(
+                        "{}",
+                        limited_message.unwrap_or_else(|| {
+                            "Runtime entered degraded mode; HID output is limited or disabled."
+                                .to_string()
+                        })
+                    );
+                }
+            }
+        }
     }
 
     /// Executes a single action using the platform HID interface.

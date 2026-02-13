@@ -6,8 +6,9 @@
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 
+/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
 const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
-
+/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
 const CHANNEL_COLORS: &[egui::Color32] = &[
     egui::Color32::from_rgb(129, 199, 132),
     egui::Color32::from_rgb(100, 181, 246),
@@ -16,6 +17,7 @@ const CHANNEL_COLORS: &[egui::Color32] = &[
     egui::Color32::from_rgb(206, 147, 216),
 ];
 
+///TODO: Make configurable, or derive from stream metadata if available. Could also infer from channel names + standard EEG Layouts.
 /// Electrode positions on head diagram (normalized 0-100 coordinate space).
 /// Top-down view: nose at top, left ear on left.
 const ELECTRODE_POSITIONS: &[(usize, f32, f32)] = &[
@@ -26,12 +28,13 @@ const ELECTRODE_POSITIONS: &[(usize, f32, f32)] = &[
     (4, 50.0, 70.0), // Pz - parietal center
 ];
 
+///TODO: Make thresholds configurable, or derive from device metadata if available.
 /// Threshold helpers - based on Emotiv Insight expectations.
 const RMS_GOOD: f32 = 100.0; // Good if RMS < 100 uV
 const RMS_WARN: f32 = 300.0; // Warning if RMS 100-300 uV
 const RAILED_GOOD: f32 = 1.0; // < 1% railed
 const RAILED_WARN: f32 = 5.0; // 1-5% railed
-
+///TODO: Another configurable
 /// Number of recent samples to analyze for quality metrics.
 const WINDOW_SAMPLES: usize = 256; // ~2 seconds at 128 Hz
 

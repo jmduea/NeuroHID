@@ -1,8 +1,8 @@
 //! # NeuroHID IPC Layer
 //!
 //! This crate provides inter-process communication between the Rust core service
-//! and the Python ML layer. The two processes communicate over a TCP socket on
-//! localhost, with the Rust side acting as the server and Python as the client.
+//! and the trainer bridge process. Transport is named pipes on Windows (default)
+//! with optional localhost TCP fallback for non-Windows development.
 //!
 //! ## Architecture
 //!
@@ -42,22 +42,20 @@
 //! ## Usage (Rust Side)
 //!
 //! ```ignore
-//! use neurohid_ipc::{IpcServer, RustToPython, PythonToRust};
+//! use neurohid_ipc::{IpcConfig, IpcServer, RuntimeMlEnvelopeV2, RuntimeMlKindV2};
 //!
 //! // Start the IPC server
 //! let server = IpcServer::new(IpcConfig::default()).await?;
 //!
-//! // Wait for Python to connect
+//! // Wait for trainer bridge to connect
 //! let connection = server.accept().await?;
 //!
-//! // Send features
-//! connection.send(RustToPython::FeatureBatch { ... }).await?;
+//! // Send decision event envelope
+//! let msg = RuntimeMlEnvelopeV2::new(RuntimeMlKindV2::DecisionEvent, 1, "session", &payload)?;
+//! connection.send(msg).await?;
 //!
-//! // Receive actions
+//! // Receive a reply envelope
 //! let msg = connection.recv().await?;
-//! if let PythonToRust::Action { action, .. } = msg {
-//!     execute_action(action);
-//! }
 //! ```
 
 pub mod client;
@@ -65,8 +63,11 @@ pub mod protocol;
 pub mod server;
 
 pub use protocol::{
-    default_address, IpcConfig, ModelMetadata, ModelType, ObservationContext, PythonToRust,
-    RustToPython, TrainingMetrics, DEFAULT_IPC_PORT,
+    default_address, AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2,
+    HelloV2, IpcConfig, IpcTransport, PingV2, PongV2, ProtocolErrorV2, RuntimeMlEnvelopeV2,
+    RuntimeMlKindV2, RuntimeMlRoleV2, RuntimeTelemetryV2, SessionBoundaryEventV2,
+    SessionBoundaryV2, ShutdownV2, TrainerStatusV2, DEFAULT_IPC_PORT, DEFAULT_ML_PIPE_NAME,
+    RUNTIME_ML_PROTOCOL_V2,
 };
 
 // Server is used by Rust core

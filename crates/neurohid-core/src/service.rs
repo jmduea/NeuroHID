@@ -12,7 +12,8 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     action::Action,
-    config::{DecoderConfig, LatencyAlertConfig, SignalConfig, SystemConfig},
+    config::{DecoderConfig, FallbackPolicy, LatencyAlertConfig, SignalConfig, SystemConfig},
+    control::RuntimeModeState,
     device::DiscoveredStream,
     error::Result,
     event::StreamMarker,
@@ -50,8 +51,8 @@ pub enum DecoderCommand {
 }
 
 use crate::tasks::{
-    ActionTask, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask, LatencyAlertMonitorTask,
-    OutletTask, SessionLoggerTask, SignalTask,
+    ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask,
+    LatencyAlertMonitorTask, OutletTask, SessionLoggerTask, SignalTask,
 };
 
 /// The main service that coordinates all NeuroHID operations.
@@ -132,6 +133,45 @@ pub struct ServiceState {
     /// Whether IPC is currently running in simulated mode.
     pub ipc_simulated: bool,
 
+    /// Whether the runtime ML bridge is currently connected.
+    pub ml_bridge_connected: bool,
+
+    /// Whether runtime ML bridge heartbeat is stale.
+    pub ml_bridge_stalled: bool,
+
+    /// Last runtime ML bridge heartbeat timestamp (micros).
+    pub ml_bridge_last_heartbeat_us: Option<i64>,
+
+    /// Effective protocol version for runtime ML bridge.
+    pub ml_protocol_version: Option<u16>,
+
+    /// Trainer replay size when reported by bridge.
+    pub trainer_replay_size: Option<u64>,
+
+    /// Trainer step when reported by bridge.
+    pub trainer_step: Option<u64>,
+
+    /// Runtime mode classification for fallback/degraded behavior.
+    pub runtime_mode_state: RuntimeModeState,
+
+    /// Currently enabled action capabilities.
+    pub enabled_capabilities: Vec<String>,
+
+    /// Human-readable fallback/degraded capability message.
+    pub limited_capabilities_message: Option<String>,
+
+    /// Last timestamp when a runtime mode alert was emitted.
+    pub last_runtime_mode_alert_us: Option<i64>,
+
+    /// Current model kind used by decoder path (`onnx`, `lightweight_rust`, `none`).
+    pub fallback_model_kind: Option<String>,
+
+    /// Rolling success score derived from ErrP results.
+    pub rolling_success_score: f32,
+
+    /// Active fallback policy, mutable via control protocol.
+    pub fallback_policy: FallbackPolicy,
+
     /// Whether the service is in calibration mode (pauses HID emission)
     pub calibration_mode: bool,
 
@@ -189,6 +229,19 @@ impl Default for ServiceState {
             decoder_model_version: None,
             ipc_connected: false,
             ipc_simulated: false,
+            ml_bridge_connected: false,
+            ml_bridge_stalled: false,
+            ml_bridge_last_heartbeat_us: None,
+            ml_protocol_version: None,
+            trainer_replay_size: None,
+            trainer_step: None,
+            runtime_mode_state: RuntimeModeState::Degraded,
+            enabled_capabilities: Vec::new(),
+            limited_capabilities_message: None,
+            last_runtime_mode_alert_us: None,
+            fallback_model_kind: None,
+            rolling_success_score: 1.0,
+            fallback_policy: FallbackPolicy::default(),
             calibration_mode: false,
             output_enabled: true,
             decode_latency_last_us: 0,
@@ -297,6 +350,7 @@ impl NeuroHidService {
             state.active_profile_name = active_profile_name;
             state.profile_ready = profile_ready;
             state.output_enabled = config.action.enabled;
+            state.fallback_policy = config.service.fallback_policy.clone();
         }
 
         Ok(Self {
@@ -330,6 +384,7 @@ impl NeuroHidService {
         let (signal_cmd_tx, signal_cmd_rx) = mpsc::channel::<SignalCommand>(16);
         // Channel for runtime decoder control commands from GUI/runtime API.
         let (decoder_cmd_tx, decoder_cmd_rx) = mpsc::channel::<DecoderCommand>(16);
+        let decoder_cmd_tx_for_run_inner = decoder_cmd_tx.clone();
 
         // Broadcast channels for live data visualization in the hub.
         // These fan-out to multiple widget subscribers.
@@ -345,6 +400,7 @@ impl NeuroHidService {
                 Some(cal_sample_tx),
                 Some(device_cmd_rx),
                 Some(signal_cmd_rx),
+                Some(decoder_cmd_tx_for_run_inner),
                 Some(decoder_cmd_rx),
                 Some(sample_broadcast_tx),
                 Some(feature_broadcast_tx),
@@ -375,8 +431,21 @@ impl NeuroHidService {
     ///
     /// This is the entry point for the standalone headless binary.
     pub async fn run(self) -> Result<()> {
-        self.run_inner(None, None, None, None, None, None, None, None, None, None)
-            .await
+        let (decoder_cmd_tx, decoder_cmd_rx) = mpsc::channel::<DecoderCommand>(16);
+        self.run_inner(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Some(decoder_cmd_tx),
+            Some(decoder_cmd_rx),
+            None,
+            None,
+            None,
+            None,
+        )
+        .await
     }
 
     /// Internal run loop shared by both `run()` and `spawn()`.
@@ -387,6 +456,7 @@ impl NeuroHidService {
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
         device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
         signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
+        decoder_command_tx: Option<mpsc::Sender<DecoderCommand>>,
         decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
         sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
         feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
@@ -403,9 +473,8 @@ impl NeuroHidService {
 
         // Features flow from signal task to decoder task.
         let (feature_tx, feature_rx) = mpsc::channel(64);
-        // Features are then forwarded to IPC from the decoder task, so Rust
-        // inference stays on the control loop while Python remains auxiliary.
-        let (feature_ipc_tx, feature_ipc_rx) = mpsc::channel(64);
+        // Decision events are forwarded to the ML bridge from decoder output.
+        let (decision_event_tx, decision_event_rx) = mpsc::channel::<DecisionEventRecord>(64);
 
         // Actions flow from decoder task to action task.
         let (action_tx, action_rx) = mpsc::channel(64);
@@ -539,6 +608,7 @@ impl NeuroHidService {
         let decoder_config: DecoderConfig = self.config.decoder.clone();
         let profile_store_for_decoder = self.profile_store.clone();
         let profile_id_for_decoder = self.profile_id.clone();
+        let fallback_enabled = self.config.service.fallback_policy.enabled;
         let mut decoder_handle = tokio::spawn(async move {
             tracing::info!("Decoder task starting");
             let task = DecoderTask::new(
@@ -549,8 +619,9 @@ impl NeuroHidService {
                 profile_store_for_decoder,
                 profile_id_for_decoder,
                 decoder_command_rx,
-                Some(feature_ipc_tx),
+                Some(decision_event_tx),
                 episode_log_tx,
+                fallback_enabled,
             );
             task.run(shutdown_decoder).await
         });
@@ -558,15 +629,18 @@ impl NeuroHidService {
         // Spawn the IPC task. This remains available for Python-side ErrP and
         // training workflows, but action emission is handled by DecoderTask.
         let ipc_config = self.config.service.clone();
+        let profile_store_for_ipc = self.profile_store.clone();
+        let decoder_command_tx_for_ipc = decoder_command_tx.clone();
         let mut ipc_handle = tokio::spawn(async move {
             tracing::info!("IPC task starting");
             let task = IpcTask::new(
                 ipc_config,
-                feature_ipc_rx,
-                None,
+                decision_event_rx,
                 errp_tx,
                 state_ipc,
                 marker_tx_for_ipc,
+                profile_store_for_ipc,
+                decoder_command_tx_for_ipc,
             );
             task.run(shutdown_ipc).await
         });
@@ -613,6 +687,21 @@ impl NeuroHidService {
             state.action_latency_p95_us = 0;
             state.latency_degraded = false;
             state.latency_alert_message = None;
+            state.ipc_connected = false;
+            state.ipc_simulated = false;
+            state.ml_bridge_connected = false;
+            state.ml_bridge_stalled = false;
+            state.ml_bridge_last_heartbeat_us = None;
+            state.ml_protocol_version = Some(2);
+            state.trainer_replay_size = None;
+            state.trainer_step = None;
+            state.runtime_mode_state = RuntimeModeState::Degraded;
+            state.enabled_capabilities.clear();
+            state.limited_capabilities_message = None;
+            state.last_runtime_mode_alert_us = None;
+            state.fallback_model_kind = None;
+            state.rolling_success_score = 1.0;
+            state.fallback_policy = self.config.service.fallback_policy.clone();
             state.task_error = None;
         }
 
@@ -859,6 +948,16 @@ impl NeuroHidService {
             state.decoder_model_version = None;
             state.ipc_connected = false;
             state.ipc_simulated = false;
+            state.ml_bridge_connected = false;
+            state.ml_bridge_stalled = false;
+            state.ml_bridge_last_heartbeat_us = None;
+            state.trainer_replay_size = None;
+            state.trainer_step = None;
+            state.runtime_mode_state = RuntimeModeState::Degraded;
+            state.enabled_capabilities.clear();
+            state.limited_capabilities_message = None;
+            state.last_runtime_mode_alert_us = None;
+            state.fallback_model_kind = None;
             state.calibration_mode = false;
             state.decode_latency_last_us = 0;
             state.decode_latency_p95_us = 0;
@@ -901,6 +1000,47 @@ impl ServiceHandle {
             let mut state = self.state.blocking_write();
             state.output_enabled = enabled;
         }
+    }
+
+    /// Toggle runtime learning state.
+    pub fn set_learning_enabled(&self, enabled: bool) {
+        if let Ok(mut state) = self.state.try_write() {
+            state.learning_enabled = enabled;
+        } else if tokio::runtime::Handle::try_current().is_err() {
+            let mut state = self.state.blocking_write();
+            state.learning_enabled = enabled;
+        }
+    }
+
+    /// Request ML bridge reconnect.
+    ///
+    /// Current bridge loop reconnects automatically, so this clears the
+    /// stale flag and lets the runtime re-enter fallback/full as telemetry updates.
+    pub fn ml_bridge_reconnect(&self) {
+        if let Ok(mut state) = self.state.try_write() {
+            state.ml_bridge_stalled = false;
+        } else if tokio::runtime::Handle::try_current().is_err() {
+            let mut state = self.state.blocking_write();
+            state.ml_bridge_stalled = false;
+        }
+    }
+
+    /// Update fallback policy used by action capability gating.
+    pub fn set_fallback_policy(&self, policy: FallbackPolicy) {
+        if let Ok(mut state) = self.state.try_write() {
+            state.fallback_policy = policy;
+        } else if tokio::runtime::Handle::try_current().is_err() {
+            let mut state = self.state.blocking_write();
+            state.fallback_policy = policy;
+        }
+    }
+
+    /// Last heartbeat timestamp reported by ML bridge.
+    pub fn last_ml_heartbeat_us(&self) -> Option<i64> {
+        if let Ok(state) = self.state.try_read() {
+            return state.ml_bridge_last_heartbeat_us;
+        }
+        None
     }
 
     /// Request decoder model reload for the current active profile.

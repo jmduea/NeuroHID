@@ -455,6 +455,62 @@ impl SettingsScreen {
                     let cfg = &mut state.config.service;
 
                     ui.horizontal(|ui| {
+                        ui.label("Runtime mode:");
+                        let current_mode = cfg.runtime_mode.clone();
+                        egui::ComboBox::from_id_source("service_runtime_mode")
+                            .selected_text(format!("{}", cfg.runtime_mode))
+                            .show_ui(ui, |ui| {
+                                for variant in neurohid_types::config::ServiceRuntimeMode::ALL {
+                                    ui.selectable_value(
+                                        &mut cfg.runtime_mode,
+                                        variant.clone(),
+                                        format!("{}", variant),
+                                    );
+                                }
+                            });
+                        if cfg.runtime_mode != current_mode {
+                            changed = true;
+                        }
+                    });
+
+                    if cfg.runtime_mode == neurohid_types::config::ServiceRuntimeMode::External {
+                        ui.horizontal(|ui| {
+                            ui.label("Control host:");
+                            if ui.text_edit_singleline(&mut cfg.control_host).changed() {
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Control port:");
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut cfg.control_port)
+                                        .clamp_range(1..=65_535),
+                                )
+                                .changed()
+                            {
+                                changed = true;
+                            }
+                        });
+                        ui.label(
+                            egui::RichText::new(
+                                "External mode expects a running `neurohid-service --control-port` endpoint.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                    } else {
+                        ui.label(
+                            egui::RichText::new(
+                                "Embedded mode runs the runtime inside the hub process.",
+                            )
+                            .small()
+                            .weak(),
+                        );
+                    }
+
+                    ui.horizontal(|ui| {
                         ui.label("Log level:");
                         let levels = ["trace", "debug", "info", "warn", "error"];
                         let current = levels.iter().position(|&l| l == cfg.log_level).unwrap_or(2);
@@ -734,6 +790,13 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Tray mode:");
                         if ui.checkbox(&mut cfg.tray_mode_enabled, "").changed() {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Lab kernel cmd:");
+                        if ui.text_edit_singleline(&mut cfg.lab_kernel_command).changed() {
                             changed = true;
                         }
                     });

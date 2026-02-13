@@ -9,7 +9,11 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use eframe::egui;
 use neurohid_storage::ProfileStore;
-use neurohid_types::{config::UiMode, profile::ProfileId};
+use neurohid_types::{
+    config::{ServiceRuntimeMode, UiMode},
+    control::RuntimeModeState,
+    profile::ProfileId,
+};
 
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
@@ -71,6 +75,11 @@ impl DashboardScreen {
                     ui.colored_label(color, "●");
                     ui.label(text);
                 });
+                ui.label(
+                    egui::RichText::new(format!("Mode: {}", state.config.service.runtime_mode))
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
 
                 if snap.running {
                     let mins = snap.uptime_secs / 60;
@@ -108,12 +117,62 @@ impl DashboardScreen {
                     ui.label(decoder_text);
                 });
 
+                ui.horizontal(|ui| {
+                    let (bridge_color, bridge_text) = if snap.ml_bridge_connected {
+                        if snap.ml_bridge_stalled {
+                            (egui::Color32::YELLOW, "ML bridge stalled")
+                        } else {
+                            (egui::Color32::GREEN, "ML bridge connected")
+                        }
+                    } else {
+                        (egui::Color32::GRAY, "ML bridge disconnected")
+                    };
+                    ui.colored_label(bridge_color, "●");
+                    ui.label(bridge_text);
+                });
+
+                let (mode_color, mode_text) = match snap.runtime_mode_state {
+                    RuntimeModeState::Full => (egui::Color32::GREEN, "Runtime mode: full"),
+                    RuntimeModeState::Fallback => (egui::Color32::YELLOW, "Runtime mode: fallback"),
+                    RuntimeModeState::Degraded => (egui::Color32::RED, "Runtime mode: degraded"),
+                };
+                ui.colored_label(mode_color, mode_text);
+
                 if let Some(version) = &snap.decoder_model_version {
                     ui.label(
                         egui::RichText::new(format!("Model: {}", version))
                             .small()
                             .color(egui::Color32::GRAY),
                     );
+                }
+                if let Some(model_kind) = &snap.fallback_model_kind {
+                    ui.label(
+                        egui::RichText::new(format!("Active model path: {}", model_kind))
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
+                }
+
+                let capability_text = if snap.enabled_capabilities.is_empty() {
+                    "Enabled capabilities: none".to_string()
+                } else {
+                    format!(
+                        "Enabled capabilities: {}",
+                        snap.enabled_capabilities.join(", ")
+                    )
+                };
+                ui.label(
+                    egui::RichText::new(capability_text)
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
+                if let Some(message) = &snap.limited_capabilities_message {
+                    let color = if snap.runtime_mode_state == RuntimeModeState::Degraded {
+                        egui::Color32::RED
+                    } else {
+                        egui::Color32::YELLOW
+                    };
+                    ui.colored_label(color, message);
                 }
 
                 ui.label(
@@ -152,7 +211,14 @@ impl DashboardScreen {
                 ui.add_space(8.0);
 
                 if snap.running {
-                    if ui.button("Stop Service").clicked() {
+                    let stop_label = if state.config.service.runtime_mode
+                        == ServiceRuntimeMode::External
+                    {
+                        "Request Shutdown"
+                    } else {
+                        "Stop Service"
+                    };
+                    if ui.button(stop_label).clicked() {
                         service_manager.stop();
                     }
 
@@ -199,12 +265,28 @@ impl DashboardScreen {
                         }
                     }
                 } else {
-                    if ui.button("Start Service").clicked() {
+                    let start_label = if state.config.service.runtime_mode
+                        == ServiceRuntimeMode::External
+                    {
+                        "Probe External Service"
+                    } else {
+                        "Start Service"
+                    };
+                    if ui.button(start_label).clicked() {
                         service_manager.start(
                             runtime,
                             state.config.clone(),
                             Some(state.profile_store.clone()),
                             state.active_profile_id.clone(),
+                        );
+                    }
+                    if state.config.service.runtime_mode == ServiceRuntimeMode::External {
+                        ui.label(
+                            egui::RichText::new(
+                                "External mode requires `neurohid-service --control-port` to be running.",
+                            )
+                            .small()
+                            .color(egui::Color32::YELLOW),
                         );
                     }
                     if state.active_profile_id.is_none() {

@@ -14,6 +14,7 @@ use neurohid_types::{
     signal::{FeatureVector, Sample},
 };
 
+/// TODO: Make these configurable.
 /// Maximum number of raw samples to keep in the ring buffer (≈10s at 128 Hz).
 const MAX_SAMPLES: usize = 1280;
 /// Maximum number of feature vectors to keep.
@@ -88,6 +89,7 @@ impl DataBus {
         self.marker_rx = None;
     }
 
+    /// TODO: Reconsider this design choice.
     /// Drain all pending messages from broadcast channels into ring buffers.
     /// Called once per frame from the GUI thread (non-blocking).
     pub fn poll(&mut self) {

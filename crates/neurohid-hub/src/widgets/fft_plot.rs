@@ -7,6 +7,7 @@ use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use std::collections::VecDeque;
 
+///TODO: Dynamic colors based on theme, channel count
 const CHANNEL_COLORS: &[egui::Color32] = &[
     egui::Color32::from_rgb(129, 199, 132),
     egui::Color32::from_rgb(100, 181, 246),
@@ -15,6 +16,7 @@ const CHANNEL_COLORS: &[egui::Color32] = &[
     egui::Color32::from_rgb(206, 147, 216),
 ];
 
+///TODO: Dynamic channel names based on stream metadata
 const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
 /// Number of FFT bins (power of 2).
@@ -550,6 +552,7 @@ impl Widget for FftPlotWidget {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
+        ///TODO: Get actual sample rate from stream metadata
         let sample_rate = 128.0;
         let nyquist = sample_rate / 2.0;
         let half_bins = FFT_SIZE / 2;

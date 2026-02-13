@@ -8,7 +8,11 @@ use tokio::sync::broadcast;
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     config::SystemConfig,
-    control::{ControlCommand, ControlRequest, ControlResponse, ControlSnapshot},
+    control::{
+        ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, RuntimeModeState,
+        TrainerSnapshot,
+    },
+    device::DiscoveredStream,
     error::{Error, Result},
     profile::ProfileId,
 };
@@ -87,12 +91,15 @@ pub enum RuntimeCommand {
 #[derive(Debug, Clone)]
 pub struct RuntimeSnapshot {
     pub running: bool,
+    pub uptime_secs: u64,
     pub calibration_mode: bool,
     pub output_enabled: bool,
     pub profile_ready: bool,
     pub decoder_ready: bool,
     pub decoder_model_version: Option<String>,
     pub active_profile_name: Option<String>,
+    pub device_name: Option<String>,
+    pub device_battery: Option<u8>,
     pub signal_quality: f32,
     pub decode_latency_last_us: u64,
     pub decode_latency_p95_us: u64,
@@ -106,18 +113,34 @@ pub struct RuntimeSnapshot {
     pub errors_detected: u64,
     pub device_connected: bool,
     pub ipc_connected: bool,
+    pub ipc_simulated: bool,
+    pub task_error: Option<(String, String)>,
+    pub discovered_streams: Vec<DiscoveredStream>,
+    pub learning_enabled: bool,
+    pub ml_bridge_connected: bool,
+    pub ml_bridge_stalled: bool,
+    pub runtime_mode_state: RuntimeModeState,
+    pub enabled_capabilities: Vec<String>,
+    pub limited_capabilities_message: Option<String>,
+    pub fallback_model_kind: Option<String>,
+    pub trainer_replay_size: Option<u64>,
+    pub trainer_step: Option<u64>,
+    pub ml_protocol_version: Option<u16>,
 }
 
 impl Default for RuntimeSnapshot {
     fn default() -> Self {
         Self {
             running: false,
+            uptime_secs: 0,
             calibration_mode: false,
             output_enabled: true,
             profile_ready: false,
             decoder_ready: false,
             decoder_model_version: None,
             active_profile_name: None,
+            device_name: None,
+            device_battery: None,
             signal_quality: 0.0,
             decode_latency_last_us: 0,
             decode_latency_p95_us: 0,
@@ -131,6 +154,19 @@ impl Default for RuntimeSnapshot {
             errors_detected: 0,
             device_connected: false,
             ipc_connected: false,
+            ipc_simulated: false,
+            task_error: None,
+            discovered_streams: vec![],
+            learning_enabled: true,
+            ml_bridge_connected: false,
+            ml_bridge_stalled: false,
+            runtime_mode_state: RuntimeModeState::Degraded,
+            enabled_capabilities: Vec::new(),
+            limited_capabilities_message: None,
+            fallback_model_kind: None,
+            trainer_replay_size: None,
+            trainer_step: None,
+            ml_protocol_version: None,
         }
     }
 }
@@ -196,15 +232,19 @@ impl RuntimeHandle {
         let Ok(state) = self.handle.state.try_read() else {
             return RuntimeSnapshot::default();
         };
+        let uptime_secs = state.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0);
 
         RuntimeSnapshot {
             running: state.active,
+            uptime_secs,
             calibration_mode: state.calibration_mode,
             output_enabled: state.output_enabled,
             profile_ready: state.profile_ready,
             decoder_ready: state.decoder_ready,
             decoder_model_version: state.decoder_model_version.clone(),
             active_profile_name: state.active_profile_name.clone(),
+            device_name: state.device_name.clone(),
+            device_battery: state.device_battery,
             signal_quality: state.signal_quality,
             decode_latency_last_us: state.decode_latency_last_us,
             decode_latency_p95_us: state.decode_latency_p95_us,
@@ -218,6 +258,19 @@ impl RuntimeHandle {
             errors_detected: state.errors_detected,
             device_connected: state.device_connected,
             ipc_connected: state.ipc_connected,
+            ipc_simulated: state.ipc_simulated,
+            task_error: state.task_error.clone(),
+            discovered_streams: state.discovered_streams.clone(),
+            learning_enabled: state.learning_enabled,
+            ml_bridge_connected: state.ml_bridge_connected,
+            ml_bridge_stalled: state.ml_bridge_stalled,
+            runtime_mode_state: state.runtime_mode_state,
+            enabled_capabilities: state.enabled_capabilities.clone(),
+            limited_capabilities_message: state.limited_capabilities_message.clone(),
+            fallback_model_kind: state.fallback_model_kind.clone(),
+            trainer_replay_size: state.trainer_replay_size,
+            trainer_step: state.trainer_step,
+            ml_protocol_version: state.ml_protocol_version,
         }
     }
 
@@ -270,6 +323,37 @@ impl RuntimeHandle {
                     Err(error) => ControlResponse::error(request_id, error.to_string()),
                 }
             }
+            ControlCommand::SetLearningEnabled { enabled } => {
+                self.handle.set_learning_enabled(enabled);
+                ControlResponse::ack(request_id)
+            }
+            ControlCommand::MlBridgeReconnect => {
+                self.handle.ml_bridge_reconnect();
+                ControlResponse::ack(request_id)
+            }
+            ControlCommand::TrainerSnapshot => {
+                let snap = self.snapshot();
+                let trainer = TrainerSnapshot {
+                    trainer_connected: snap.ml_bridge_connected,
+                    trainer_state: if snap.ml_bridge_stalled {
+                        "stalled".to_string()
+                    } else if snap.ml_bridge_connected {
+                        "connected".to_string()
+                    } else {
+                        "disconnected".to_string()
+                    },
+                    replay_size: snap.trainer_replay_size.unwrap_or(0),
+                    training_step: snap.trainer_step.unwrap_or(0),
+                    last_heartbeat_us: self.handle.last_ml_heartbeat_us(),
+                    last_error: snap.task_error.map(|(_, e)| e),
+                    protocol_version: snap.ml_protocol_version,
+                };
+                ControlResponse::trainer_snapshot(request_id, trainer)
+            }
+            ControlCommand::SetFallbackPolicy { policy } => {
+                self.handle.set_fallback_policy(policy);
+                ControlResponse::ack(request_id)
+            }
         }
     }
 
@@ -286,11 +370,15 @@ impl From<RuntimeSnapshot> for ControlSnapshot {
     fn from(value: RuntimeSnapshot) -> Self {
         Self {
             running: value.running,
+            uptime_secs: value.uptime_secs,
             calibration_mode: value.calibration_mode,
             output_enabled: value.output_enabled,
             profile_ready: value.profile_ready,
             decoder_ready: value.decoder_ready,
             decoder_model_version: value.decoder_model_version,
+            active_profile_name: value.active_profile_name,
+            device_name: value.device_name,
+            device_battery: value.device_battery,
             signal_quality: value.signal_quality,
             signal_latency_last_us: value.signal_latency_last_us,
             signal_latency_p95_us: value.signal_latency_p95_us,
@@ -298,10 +386,25 @@ impl From<RuntimeSnapshot> for ControlSnapshot {
             decode_latency_p95_us: value.decode_latency_p95_us,
             action_latency_last_us: value.action_latency_last_us,
             action_latency_p95_us: value.action_latency_p95_us,
+            latency_degraded: value.latency_degraded,
+            latency_alert_message: value.latency_alert_message,
             actions_emitted: value.actions_emitted,
             errors_detected: value.errors_detected,
             ipc_connected: value.ipc_connected,
+            ipc_simulated: value.ipc_simulated,
+            learning_enabled: value.learning_enabled,
+            ml_bridge_connected: value.ml_bridge_connected,
+            ml_bridge_stalled: value.ml_bridge_stalled,
+            runtime_mode_state: value.runtime_mode_state,
+            enabled_capabilities: value.enabled_capabilities,
+            limited_capabilities_message: value.limited_capabilities_message,
+            fallback_model_kind: value.fallback_model_kind,
+            trainer_replay_size: value.trainer_replay_size,
+            trainer_step: value.trainer_step,
+            ml_protocol_version: value.ml_protocol_version,
             device_connected: value.device_connected,
+            task_error: value.task_error,
+            discovered_streams: value.discovered_streams,
         }
     }
 }

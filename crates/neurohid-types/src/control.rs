@@ -3,6 +3,7 @@
 //! Serializable request/response contracts for local service control channels
 //! (for example Windows named pipes or localhost loopback sockets).
 
+use crate::{config::FallbackPolicy, device::DiscoveredStream};
 use serde::{Deserialize, Serialize};
 
 /// Request sent from control clients to a running service instance.
@@ -46,17 +47,50 @@ pub enum ControlCommand {
     ConnectStream { stream_id: String },
     /// Disconnect one discovered stream.
     DisconnectStream { stream_id: String },
+    /// Toggle online learning state.
+    SetLearningEnabled { enabled: bool },
+    /// Force a reconnect attempt for the runtime ML bridge.
+    MlBridgeReconnect,
+    /// Fetch trainer-side status snapshot cached by runtime.
+    TrainerSnapshot,
+    /// Replace runtime fallback policy.
+    SetFallbackPolicy { policy: FallbackPolicy },
+}
+
+/// Runtime mode classification derived from model/bridge health.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum RuntimeModeState {
+    Full,
+    Fallback,
+    Degraded,
+}
+
+/// Trainer status snapshot exported over the control channel.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TrainerSnapshot {
+    pub trainer_connected: bool,
+    pub trainer_state: String,
+    pub replay_size: u64,
+    pub training_step: u64,
+    pub last_heartbeat_us: Option<i64>,
+    pub last_error: Option<String>,
+    pub protocol_version: Option<u16>,
 }
 
 /// Serializable runtime snapshot for control clients.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ControlSnapshot {
     pub running: bool,
+    pub uptime_secs: u64,
     pub calibration_mode: bool,
     pub output_enabled: bool,
     pub profile_ready: bool,
     pub decoder_ready: bool,
     pub decoder_model_version: Option<String>,
+    pub active_profile_name: Option<String>,
+    pub device_name: Option<String>,
+    pub device_battery: Option<u8>,
     pub signal_quality: f32,
     pub signal_latency_last_us: u64,
     pub signal_latency_p95_us: u64,
@@ -64,10 +98,25 @@ pub struct ControlSnapshot {
     pub decode_latency_p95_us: u64,
     pub action_latency_last_us: u64,
     pub action_latency_p95_us: u64,
+    pub latency_degraded: bool,
+    pub latency_alert_message: Option<String>,
     pub actions_emitted: u64,
     pub errors_detected: u64,
     pub ipc_connected: bool,
+    pub ipc_simulated: bool,
+    pub learning_enabled: bool,
+    pub ml_bridge_connected: bool,
+    pub ml_bridge_stalled: bool,
+    pub runtime_mode_state: RuntimeModeState,
+    pub enabled_capabilities: Vec<String>,
+    pub limited_capabilities_message: Option<String>,
+    pub fallback_model_kind: Option<String>,
+    pub trainer_replay_size: Option<u64>,
+    pub trainer_step: Option<u64>,
+    pub ml_protocol_version: Option<u16>,
     pub device_connected: bool,
+    pub task_error: Option<(String, String)>,
+    pub discovered_streams: Vec<DiscoveredStream>,
 }
 
 /// Response emitted by control servers.
@@ -100,6 +149,13 @@ impl ControlResponse {
             payload: ControlResponsePayload::Error { message },
         }
     }
+
+    pub fn trainer_snapshot(request_id: Option<String>, snapshot: TrainerSnapshot) -> Self {
+        Self {
+            request_id,
+            payload: ControlResponsePayload::TrainerSnapshot { snapshot },
+        }
+    }
 }
 
 /// Control response variants.
@@ -110,6 +166,8 @@ pub enum ControlResponsePayload {
     Ack,
     /// Current runtime status snapshot.
     Snapshot { snapshot: ControlSnapshot },
+    /// Runtime-cached trainer status.
+    TrainerSnapshot { snapshot: TrainerSnapshot },
     /// Command rejected/failed.
     Error { message: String },
 }
@@ -118,6 +176,7 @@ pub enum ControlResponsePayload {
 mod tests {
     use super::{
         ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
+        RuntimeModeState,
     };
 
     #[test]
@@ -137,11 +196,15 @@ mod tests {
     fn snapshot_response_roundtrips_json() {
         let snapshot = ControlSnapshot {
             running: true,
+            uptime_secs: 123,
             calibration_mode: false,
             output_enabled: true,
             profile_ready: true,
             decoder_ready: true,
             decoder_model_version: Some("v1".to_string()),
+            active_profile_name: Some("default".to_string()),
+            device_name: Some("Mock EEG".to_string()),
+            device_battery: Some(100),
             signal_quality: 0.8,
             signal_latency_last_us: 1000,
             signal_latency_p95_us: 1300,
@@ -149,10 +212,29 @@ mod tests {
             decode_latency_p95_us: 1200,
             action_latency_last_us: 1400,
             action_latency_p95_us: 2000,
+            latency_degraded: false,
+            latency_alert_message: None,
             actions_emitted: 42,
             errors_detected: 1,
             ipc_connected: true,
+            ipc_simulated: false,
+            learning_enabled: true,
+            ml_bridge_connected: true,
+            ml_bridge_stalled: false,
+            runtime_mode_state: RuntimeModeState::Full,
+            enabled_capabilities: vec![
+                "cursor_move".to_string(),
+                "click".to_string(),
+                "keyboard".to_string(),
+            ],
+            limited_capabilities_message: None,
+            fallback_model_kind: Some("onnx".to_string()),
+            trainer_replay_size: Some(100),
+            trainer_step: Some(12),
+            ml_protocol_version: Some(2),
             device_connected: true,
+            task_error: None,
+            discovered_streams: vec![],
         };
 
         let response = ControlResponse::snapshot(Some("id-1".to_string()), snapshot.clone());

@@ -7,6 +7,7 @@ use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use neurohid_types::event::{MarkerType, StreamMarker};
 
+/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
 /// Channel colors matching common EEG GUI conventions.
 const CHANNEL_COLORS: &[egui::Color32] = &[
     egui::Color32::from_rgb(129, 199, 132), // green
@@ -19,8 +20,10 @@ const CHANNEL_COLORS: &[egui::Color32] = &[
     egui::Color32::from_rgb(240, 98, 146),  // pink
 ];
 
+/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
 const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
+/// TODO: Create a shared style module?
 /// Left margin for amplitude scale indicator
 const LEFT_MARGIN: f32 = 45.0;
 /// Bottom margin for time axis
@@ -452,6 +455,7 @@ impl Widget for TimeSeriesWidget {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
+        /// TODO: Get actual sample rate from stream metadata, and update when source changes.
         let sample_rate = 128.0f32;
         let source_options = ctx.candidate_sources_for(WidgetId::TimeSeries);
         if !source_options.is_empty() {

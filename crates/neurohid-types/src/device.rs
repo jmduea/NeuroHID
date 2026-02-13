@@ -23,6 +23,7 @@ impl std::fmt::Display for DeviceId {
     }
 }
 
+/// TODO: Hardcode only devices that we have an integration for, otherwise discover device name/type dynamically.
 /// The type/model of a device.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DeviceType {
@@ -45,6 +46,7 @@ pub enum DeviceType {
 }
 
 impl DeviceType {
+    /// TODO: Could be derived from device metadata instead of hardcoded, let integrations provide this info if we want to hardcode it.
     /// Get the expected channel count for this device type
     pub fn expected_channel_count(&self) -> Option<usize> {
         match self {
@@ -58,7 +60,7 @@ impl DeviceType {
             DeviceType::Unknown(_) => None,
         }
     }
-
+    /// TODO: Same as above. Derive if possible or let integrations provide.
     /// Get the expected sampling rate for this device type
     pub fn expected_sampling_rate(&self) -> Option<f32> {
         match self {
@@ -108,7 +110,7 @@ pub struct DeviceInfo {
 /// This is a lightweight, UI-friendly representation used for stream
 /// discovery and management. Unlike `DeviceInfo`, it doesn't carry
 /// channel configuration details — those are populated after connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct DiscoveredStream {
     /// Unique identifier (source_id or stream name if source_id is empty)
     pub id: String,

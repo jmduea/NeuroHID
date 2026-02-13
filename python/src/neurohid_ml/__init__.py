@@ -7,7 +7,8 @@ This package contains the machine learning components for NeuroHID:
 - bridge: IPC client for communicating with the Rust core service
 
 The package is designed to run as a separate process from the Rust core,
-communicating via a local socket. This architecture provides:
+communicating via local IPC transport (named pipe on Windows, loopback TCP
+for non-Windows development). This architecture provides:
 1. Process isolation (Python crashes don't stop the Rust service)
 2. Full access to the PyTorch ecosystem
 3. Hot-reloading of ML code without restarting the service

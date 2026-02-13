@@ -153,6 +153,7 @@ pub struct FeatureVector {
     /// The feature values
     pub values: Vec<f32>,
 
+    /// TODO: Probably should include start/end timestamps of the window these features were extract from
     /// Timestamp of the center of the window these features were extracted from
     pub timestamp: Timestamp,
 
