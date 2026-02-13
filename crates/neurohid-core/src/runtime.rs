@@ -228,3 +228,72 @@ impl RuntimeHandle {
             .map_err(|e| Error::Internal(format!("runtime join failed: {e}")))?
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use neurohid_types::config::{DeviceBackend, SystemConfig};
+
+    use super::{RuntimeBuilder, RuntimeCommand};
+
+    async fn wait_for<F>(timeout: Duration, mut predicate: F)
+    where
+        F: FnMut() -> bool,
+    {
+        let deadline = tokio::time::Instant::now() + timeout;
+        while tokio::time::Instant::now() < deadline {
+            if predicate() {
+                return;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+        panic!("timed out waiting for runtime condition");
+    }
+
+    #[tokio::test]
+    async fn managed_runtime_handles_control_commands_and_shutdown() {
+        let mut config = SystemConfig::default();
+        config.device.backend = DeviceBackend::Mock;
+        config.service.ipc_simulation_enabled = true;
+        config.action.enabled = false;
+
+        let runtime = RuntimeBuilder::new(config)
+            .start()
+            .await
+            .expect("runtime should start");
+
+        wait_for(Duration::from_secs(3), || runtime.snapshot().running).await;
+
+        runtime
+            .command(RuntimeCommand::ToggleCalibration { enabled: true })
+            .expect("toggle calibration should succeed");
+        wait_for(Duration::from_secs(1), || {
+            runtime.snapshot().calibration_mode
+        })
+        .await;
+
+        runtime
+            .command(RuntimeCommand::ToggleOutput { enabled: false })
+            .expect("toggle output should succeed");
+        wait_for(Duration::from_secs(1), || {
+            !runtime.snapshot().output_enabled
+        })
+        .await;
+
+        runtime
+            .command(RuntimeCommand::RescanStreams)
+            .expect("rescan should succeed");
+        runtime
+            .command(RuntimeCommand::ReloadModel)
+            .expect("reload model should succeed");
+        runtime
+            .command(RuntimeCommand::PromoteCandidateModel)
+            .expect("promote candidate should succeed");
+
+        runtime
+            .command(RuntimeCommand::Stop)
+            .expect("stop should succeed");
+        runtime.wait().await.expect("runtime should stop cleanly");
+    }
+}

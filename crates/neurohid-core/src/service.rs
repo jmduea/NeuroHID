@@ -636,6 +636,78 @@ impl NeuroHidService {
         let mut session_logger_done = session_logger_handle.is_none();
 
         loop {
+            // Non-critical optional tasks are tracked via `is_finished()` to avoid
+            // guarding `select!` branches with `.expect(...)` on `Option<JoinHandle<_>>`.
+            if !latency_monitor_done {
+                if let Some(handle) = latency_monitor_handle.as_mut() {
+                    if handle.is_finished() {
+                        latency_monitor_done = true;
+                        match handle.await {
+                            Ok(Ok(())) => tracing::info!("Latency monitor task completed"),
+                            Ok(Err(e)) => {
+                                tracing::warn!("Latency monitor task failed (non-critical): {}", e);
+                                let mut state = self.shared_state.write().await;
+                                if state.task_error.is_none() {
+                                    state.task_error = Some((
+                                        "latency_monitor".into(),
+                                        format!("{} — latency alerts disabled", e),
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Latency monitor task panicked (non-critical): {}",
+                                    e
+                                );
+                                let mut state = self.shared_state.write().await;
+                                if state.task_error.is_none() {
+                                    state.task_error = Some((
+                                        "latency_monitor".into(),
+                                        format!("panicked: {}", e),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    latency_monitor_done = true;
+                }
+            }
+
+            if !session_logger_done {
+                if let Some(handle) = session_logger_handle.as_mut() {
+                    if handle.is_finished() {
+                        session_logger_done = true;
+                        match handle.await {
+                            Ok(Ok(())) => tracing::info!("Session logger task completed"),
+                            Ok(Err(e)) => {
+                                tracing::warn!("Session logger task failed (non-critical): {}", e);
+                                let mut state = self.shared_state.write().await;
+                                if state.task_error.is_none() {
+                                    state.task_error = Some((
+                                        "session_logger".into(),
+                                        format!("{} — session logging disabled", e),
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Session logger task panicked (non-critical): {}",
+                                    e
+                                );
+                                let mut state = self.shared_state.write().await;
+                                if state.task_error.is_none() {
+                                    state.task_error =
+                                        Some(("session_logger".into(), format!("panicked: {}", e)));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    session_logger_done = true;
+                }
+            }
+
             tokio::select! {
                 // Shutdown signal received (user-initiated, no error)
                 _ = self.shutdown_rx.recv() => {
@@ -746,61 +818,6 @@ impl NeuroHidService {
                     // Continue the loop — data pipeline is unaffected.
                 }
 
-                result = latency_monitor_handle.as_mut().expect("checked by guard"), if !latency_monitor_done => {
-                    latency_monitor_done = true;
-                    match result {
-                        Ok(Ok(())) => tracing::info!("Latency monitor task completed"),
-                        Ok(Err(e)) => {
-                            tracing::warn!("Latency monitor task failed (non-critical): {}", e);
-                            let mut state = self.shared_state.write().await;
-                            if state.task_error.is_none() {
-                                state.task_error = Some((
-                                    "latency_monitor".into(),
-                                    format!("{} — latency alerts disabled", e),
-                                ));
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Latency monitor task panicked (non-critical): {}", e);
-                            let mut state = self.shared_state.write().await;
-                            if state.task_error.is_none() {
-                                state.task_error = Some((
-                                    "latency_monitor".into(),
-                                    format!("panicked: {}", e),
-                                ));
-                            }
-                        }
-                    }
-                    // Continue the loop — monitor failure should not stop runtime.
-                }
-
-                result = session_logger_handle.as_mut().expect("checked by guard"), if !session_logger_done => {
-                    session_logger_done = true;
-                    match result {
-                        Ok(Ok(())) => tracing::info!("Session logger task completed"),
-                        Ok(Err(e)) => {
-                            tracing::warn!("Session logger task failed (non-critical): {}", e);
-                            let mut state = self.shared_state.write().await;
-                            if state.task_error.is_none() {
-                                state.task_error = Some((
-                                    "session_logger".into(),
-                                    format!("{} — session logging disabled", e),
-                                ));
-                            }
-                        }
-                        Err(e) => {
-                            tracing::warn!("Session logger task panicked (non-critical): {}", e);
-                            let mut state = self.shared_state.write().await;
-                            if state.task_error.is_none() {
-                                state.task_error = Some((
-                                    "session_logger".into(),
-                                    format!("panicked: {}", e),
-                                ));
-                            }
-                        }
-                    }
-                    // Continue the loop — logger failure should not stop runtime.
-                }
             }
         }
 
