@@ -75,6 +75,12 @@ Current status: the IPC task supports both simulation and the real Python bridge
 Set `service.ipc_simulation_enabled = false` to require a connected
 `neurohid-ml bridge` process.
 
+For mixed LSL publishers (for example Emotiv multi-stream output), NeuroHID now
+classifies streams by metadata at runtime and routes them by capability.
+EEG-like streams feed decoder feature extraction, while auxiliary streams
+(quality/metrics/motion/control) remain connected and observable without
+crashing the service.
+
 ## Project Structure
 
 ```

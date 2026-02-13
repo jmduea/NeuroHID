@@ -40,6 +40,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python test workflow standardized on `uv` + `pytest` in CI and contributor guidance
 - Hub visualization layout engine in `neurohid-hub` now uses `egui_tiles` for pane tiling/resizing/drag-rearrangement while preserving existing layout presets and per-pane widget selection
 - Hub now persists visualization pane arrangement, widget assignments, and layout preset across launches via UI config state
+- Mixed LSL stream handling now classifies streams by metadata and routes only EEG-like streams into decoder feature extraction, while non-EEG streams remain connected and observable without crashing the service
+- Signal feature extraction now gracefully handles low-channel streams (including 1-channel sources) by bounds-checking frontal asymmetry indices instead of panicking
 
 ### Removed
 

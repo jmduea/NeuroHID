@@ -689,7 +689,9 @@ impl IpcTask {
                 break;
             }
 
-            let pending = self.pending_errp_windows.pop_front().expect("front exists");
+            let Some(pending) = self.pending_errp_windows.pop_front() else {
+                break;
+            };
             let payload = self.build_errp_window_payload(&pending);
             let msg = self.build_envelope(RuntimeMlKindV2::ErrpWindow, &payload)?;
             connection.send(msg).await?;

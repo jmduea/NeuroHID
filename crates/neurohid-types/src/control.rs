@@ -124,6 +124,14 @@ pub struct ControlSnapshot {
     pub device_connected: bool,
     pub task_error: Option<(String, String)>,
     pub discovered_streams: Vec<DiscoveredStream>,
+    #[serde(default)]
+    pub routed_eeg_streams: u64,
+    #[serde(default)]
+    pub routed_motion_streams: u64,
+    #[serde(default)]
+    pub routed_auxiliary_streams: u64,
+    #[serde(default)]
+    pub routed_unknown_streams: u64,
 }
 
 /// Response emitted by control servers.
@@ -250,6 +258,10 @@ mod tests {
             device_connected: true,
             task_error: None,
             discovered_streams: vec![],
+            routed_eeg_streams: 1,
+            routed_motion_streams: 0,
+            routed_auxiliary_streams: 0,
+            routed_unknown_streams: 0,
         };
 
         let response = ControlResponse::snapshot(Some("id-1".to_string()), snapshot.clone());

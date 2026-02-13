@@ -150,6 +150,10 @@ impl DashboardScreen {
             .iter()
             .filter(|stream| stream.connected)
             .count();
+        let routed_total = snap.routed_eeg_streams
+            + snap.routed_motion_streams
+            + snap.routed_auxiliary_streams
+            + snap.routed_unknown_streams;
 
         ui.group(|ui| {
             ui.label(egui::RichText::new("System Snapshot").small().strong());
@@ -176,6 +180,22 @@ impl DashboardScreen {
                 ui.label(format!("Signal: {:.0}%", snap.signal_quality * 100.0));
                 ui.separator();
                 ui.label(format!("Devices: {}/{}", connected_streams, total_streams));
+                if routed_total > 0 {
+                    ui.separator();
+                    ui.label("Routes:");
+
+                    ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "●");
+                    ui.label(format!("EEG {}", snap.routed_eeg_streams));
+
+                    ui.colored_label(egui::Color32::from_rgb(80, 170, 255), "●");
+                    ui.label(format!("Motion {}", snap.routed_motion_streams));
+
+                    ui.colored_label(egui::Color32::from_rgb(255, 180, 70), "●");
+                    ui.label(format!("Aux {}", snap.routed_auxiliary_streams));
+
+                    ui.colored_label(egui::Color32::from_rgb(190, 140, 255), "●");
+                    ui.label(format!("Unknown {}", snap.routed_unknown_streams));
+                }
                 ui.separator();
                 ui.label(format!("Actions: {}", snap.actions_emitted));
                 ui.separator();
@@ -421,6 +441,19 @@ impl DashboardScreen {
                     .small()
                     .color(egui::Color32::GRAY),
             );
+            if routed_total > 0 {
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Stream routes: EEG {} | Motion {} | Auxiliary {} | Unknown {}",
+                        snap.routed_eeg_streams,
+                        snap.routed_motion_streams,
+                        snap.routed_auxiliary_streams,
+                        snap.routed_unknown_streams
+                    ))
+                    .small()
+                    .color(egui::Color32::GRAY),
+                );
+            }
             if let Some(message) = &snap.limited_capabilities_message {
                 let color = if snap.runtime_mode_state == RuntimeModeState::Degraded {
                     egui::Color32::RED

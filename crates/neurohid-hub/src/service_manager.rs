@@ -688,6 +688,10 @@ impl ServiceManager {
             active_profile_name: state_guard.active_profile_name.clone(),
             task_error: state_guard.task_error.clone(),
             discovered_streams: state_guard.discovered_streams.clone(),
+            routed_eeg_streams: state_guard.routed_eeg_streams,
+            routed_motion_streams: state_guard.routed_motion_streams,
+            routed_auxiliary_streams: state_guard.routed_auxiliary_streams,
+            routed_unknown_streams: state_guard.routed_unknown_streams,
         };
         self.cached_snapshot = snap.clone();
         snap
@@ -1051,6 +1055,10 @@ impl ServiceManager {
             action_latency_p95_us: snapshot.action_latency_p95_us,
             task_error: snapshot.task_error,
             discovered_streams: snapshot.discovered_streams,
+            routed_eeg_streams: snapshot.routed_eeg_streams,
+            routed_motion_streams: snapshot.routed_motion_streams,
+            routed_auxiliary_streams: snapshot.routed_auxiliary_streams,
+            routed_unknown_streams: snapshot.routed_unknown_streams,
         }
     }
 
@@ -1462,6 +1470,10 @@ mod tests {
                             device_connected: true,
                             task_error: None,
                             discovered_streams: vec![],
+                            routed_eeg_streams: 1,
+                            routed_motion_streams: 1,
+                            routed_auxiliary_streams: 2,
+                            routed_unknown_streams: 0,
                         },
                     ),
                     ControlCommand::SetCalibrationMode { enabled } => {
@@ -1597,6 +1609,10 @@ mod tests {
                                         device_connected: true,
                                         task_error: None,
                                         discovered_streams: vec![],
+                                        routed_eeg_streams: 1,
+                                        routed_motion_streams: 1,
+                                        routed_auxiliary_streams: 2,
+                                        routed_unknown_streams: 0,
                                     },
                                 ),
                                 ControlCommand::SetCalibrationMode { enabled } => {

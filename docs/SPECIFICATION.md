@@ -246,6 +246,13 @@ For the Emotiv Insight, input samples have the following characteristics:
 
 Samples arrive via WebSocket in JSON format from the Emotiv Cortex API. Each sample includes channel voltages, quality indicators per channel, and timestamps.
 
+When data enters through LSL multi-stream publishers, NeuroHID performs
+metadata-based stream classification before decoding-oriented feature
+extraction. EEG-like streams are routed to the spectral/statistical decoder
+feature path. Auxiliary streams (for example motion, quality, metrics, and
+command channels) remain connected and observable for downstream tooling and
+future functionality, but are not forced through EEG-only feature assumptions.
+
 ### 4.3 Preprocessing
 
 **Artifact Rejection**: Consumer EEG is contaminated by various artifacts including eye blinks (large amplitude deflections in frontal channels), muscle activity (high-frequency broadband noise), and electrode movement (baseline drift). We implement simple artifact detection by flagging samples where any channel exceeds a threshold (typically ±100 µV) or where channel-to-channel correlation drops below expected levels. Flagged samples are excluded from feature windows.

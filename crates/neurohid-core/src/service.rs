@@ -230,6 +230,18 @@ pub struct ServiceState {
     /// LSL streams discovered on the network.
     /// Updated periodically by the DeviceTask.
     pub discovered_streams: Vec<DiscoveredStream>,
+
+    /// Number of streams currently classified as EEG-routed.
+    pub routed_eeg_streams: u64,
+
+    /// Number of streams currently classified as motion-routed.
+    pub routed_motion_streams: u64,
+
+    /// Number of streams currently classified as auxiliary-routed.
+    pub routed_auxiliary_streams: u64,
+
+    /// Number of streams currently classified as unknown-routed.
+    pub routed_unknown_streams: u64,
 }
 
 impl Default for ServiceState {
@@ -282,6 +294,10 @@ impl Default for ServiceState {
             latency_alert_message: None,
             task_error: None,
             discovered_streams: Vec::new(),
+            routed_eeg_streams: 0,
+            routed_motion_streams: 0,
+            routed_auxiliary_streams: 0,
+            routed_unknown_streams: 0,
         }
     }
 }

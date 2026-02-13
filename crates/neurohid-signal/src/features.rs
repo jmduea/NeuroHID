@@ -255,13 +255,18 @@ impl FeatureExtractor {
 
         // 3b. Frontal asymmetry per band (5 asymmetries)
         let (fl, fr) = self.config.frontal_pair;
+        let frontal_pair_in_bounds = fl < channel_psds.len() && fr < channel_psds.len();
         for band in &BANDS {
             let (f_lo, f_hi) = band.range_hz();
             let f_hi = f_hi.min(self.config.sample_rate_hz / 2.0 - freq_resolution);
             let bin_lo = (f_lo / freq_resolution).ceil() as usize;
             let bin_hi = (f_hi / freq_resolution).floor() as usize;
 
-            let asym = if bin_hi < channel_psds[fl].len() && bin_lo <= bin_hi {
+            let asym = if frontal_pair_in_bounds
+                && bin_hi < channel_psds[fl].len()
+                && bin_hi < channel_psds[fr].len()
+                && bin_lo <= bin_hi
+            {
                 let power_left: f32 = channel_psds[fl][bin_lo..=bin_hi].iter().sum();
                 let power_right: f32 = channel_psds[fr][bin_lo..=bin_hi].iter().sum();
                 // log asymmetry: log(right) - log(left), per Spec §4.4
@@ -820,5 +825,20 @@ mod tests {
         let window = make_test_window(32, 5); // too short for 64-sample FFT
         let result = extractor.extract(&window);
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_extract_single_channel_with_default_frontal_pair_does_not_panic() {
+        let config = FeatureConfig {
+            channel_count: 1,
+            ..Default::default()
+        };
+        let mut extractor = FeatureExtractor::new(config);
+        let window = make_test_window(128, 1);
+
+        let result = extractor.extract(&window);
+        assert!(result.is_ok());
+        let fv = result.unwrap();
+        assert_eq!(fv.dim(), extractor.feature_dim());
     }
 }

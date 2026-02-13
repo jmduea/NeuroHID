@@ -21,6 +21,7 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 use neurohid_types::{
     config::SignalConfig,
+    device::DiscoveredStream,
     error::Result,
     event::{MarkerPayload, MarkerType, StreamMarker},
     observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
@@ -35,6 +36,14 @@ use crate::tasks::latency::RollingLatency;
 const DEFAULT_STREAM_KEY: &str = "__default__";
 const SIGNAL_SUMMARY_EVERY_SAMPLES: u64 = 2_048;
 const SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES: u64 = 512;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StreamRoute {
+    Eeg,
+    Motion,
+    Auxiliary,
+    Unknown,
+}
 
 /// Per-stream processing state.
 struct StreamBuffer {
@@ -98,6 +107,7 @@ pub struct SignalTask {
     head_movement_threshold: f32,
     signal_latency: RollingLatency,
     emit_gate: EmitGate,
+    stream_routes: HashMap<String, StreamRoute>,
 }
 
 impl SignalTask {
@@ -163,7 +173,79 @@ impl SignalTask {
             head_movement_threshold: 0.4,
             signal_latency: RollingLatency::new(512),
             emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Signal)),
+            stream_routes: HashMap::new(),
         }
+    }
+
+    fn classify_stream_route(
+        stream_key: &str,
+        discovered: Option<&DiscoveredStream>,
+        sample: &Sample,
+    ) -> StreamRoute {
+        let stream_name = discovered.map_or_else(String::new, |s| s.name.to_ascii_lowercase());
+        let stream_type = discovered.map_or_else(String::new, |s| s.stream_type.to_ascii_lowercase());
+        let stream_key_lower = stream_key.to_ascii_lowercase();
+        let combined = format!("{stream_type} {stream_name} {stream_key_lower}");
+
+        let channel_count = discovered
+            .map(|s| s.channel_count.max(0) as usize)
+            .unwrap_or_else(|| sample.values.len());
+
+        let is_motion = ["motion", "acc", "imu", "gyro"]
+            .iter()
+            .any(|token| combined.contains(token));
+        if is_motion {
+            return StreamRoute::Motion;
+        }
+
+        let is_auxiliary = [
+            "quality",
+            "metric",
+            "bandpower",
+            "mental",
+            "facial",
+            "marker",
+            "command",
+            "devicequality",
+        ]
+        .iter()
+        .any(|token| combined.contains(token));
+        if is_auxiliary {
+            return StreamRoute::Auxiliary;
+        }
+
+        let is_eeg = combined.contains("eeg");
+        if is_eeg && channel_count >= 2 {
+            return StreamRoute::Eeg;
+        }
+
+        StreamRoute::Unknown
+    }
+
+    fn route_allows_feature_extraction(route: StreamRoute) -> bool {
+        matches!(route, StreamRoute::Eeg)
+    }
+
+    async fn publish_stream_route_counts(&self) {
+        let mut eeg = 0u64;
+        let mut motion = 0u64;
+        let mut auxiliary = 0u64;
+        let mut unknown = 0u64;
+
+        for route in self.stream_routes.values() {
+            match route {
+                StreamRoute::Eeg => eeg += 1,
+                StreamRoute::Motion => motion += 1,
+                StreamRoute::Auxiliary => auxiliary += 1,
+                StreamRoute::Unknown => unknown += 1,
+            }
+        }
+
+        let mut state = self.state.write().await;
+        state.routed_eeg_streams = eeg;
+        state.routed_motion_streams = motion;
+        state.routed_auxiliary_streams = auxiliary;
+        state.routed_unknown_streams = unknown;
     }
 
     /// Runs the signal task until shutdown is signaled.
@@ -219,6 +301,40 @@ impl SignalTask {
                             let stream_key = sample.source_id.clone()
                                 .unwrap_or_else(|| DEFAULT_STREAM_KEY.to_string());
 
+                            let discovered_stream = self
+                                .state
+                                .try_read()
+                                .ok()
+                                .and_then(|state| {
+                                    state
+                                        .discovered_streams
+                                        .iter()
+                                        .find(|stream| stream.id == stream_key)
+                                        .cloned()
+                                });
+                            let route = Self::classify_stream_route(
+                                &stream_key,
+                                discovered_stream.as_ref(),
+                                &sample,
+                            );
+                            if self.stream_routes.get(&stream_key).copied() != Some(route) {
+                                self.stream_routes.insert(stream_key.clone(), route);
+                                tracing::info!(
+                                    stream_id = %stream_key,
+                                    route = ?route,
+                                    stream_type = discovered_stream
+                                        .as_ref()
+                                        .map(|s| s.stream_type.as_str())
+                                        .unwrap_or("unknown"),
+                                    channel_count = discovered_stream
+                                        .as_ref()
+                                        .map(|s| s.channel_count)
+                                        .unwrap_or(sample.values.len() as i32),
+                                    "Signal routing classified stream"
+                                );
+                                self.publish_stream_route_counts().await;
+                            }
+
                             let buf = self.stream_buffers
                                 .entry(stream_key.clone())
                                 .or_insert_with(|| StreamBuffer::new(self.config.buffer_size_samples));
@@ -248,9 +364,8 @@ impl SignalTask {
                             {
                                 buf.samples_since_extraction = 0;
 
-                                // Extract features from the most recent window.
-                                // Capture the newest sample timestamp so we can track
-                                // signal-stage latency (sample -> feature output).
+                                // Capture newest sample timestamp so we can track
+                                // signal-stage latency regardless of stream route.
                                 let (features, newest_sample_timestamp) = {
                                     let samples = buf.samples.make_contiguous();
                                     let window_start = samples.len() - samples_per_window;
@@ -267,8 +382,23 @@ impl SignalTask {
                                             sample.device_timestamp.unwrap_or(sample.system_timestamp)
                                         })
                                         .unwrap_or(0);
-                                    let mut features =
-                                        Self::extract_features(window, buf.estimated_sample_rate_hz);
+                                    let maybe_features = if Self::route_allows_feature_extraction(route)
+                                    {
+                                        Some(Self::extract_features(
+                                            window,
+                                            buf.estimated_sample_rate_hz,
+                                        ))
+                                    } else {
+                                        None
+                                    };
+                                    let mut features = maybe_features.unwrap_or_else(|| FeatureVector {
+                                        timestamp: newest_sample_timestamp,
+                                        values: Vec::new(),
+                                        labels: None,
+                                        stream_id: None,
+                                        window_start_us: None,
+                                        window_end_us: None,
+                                    });
                                     features.timestamp = newest_sample_timestamp;
                                     features.stream_id =
                                         (stream_key != DEFAULT_STREAM_KEY).then(|| stream_key.clone());
@@ -279,30 +409,40 @@ impl SignalTask {
 
                                 self.record_signal_latency(newest_sample_timestamp).await;
 
-                                // Broadcast features to hub visualization widgets
-                                if let Some(tx) = &self.feature_broadcast_tx {
-                                    let _ = tx.send(features.clone());
-                                }
+                                if Self::route_allows_feature_extraction(route) {
+                                    // Broadcast features to hub visualization widgets
+                                    if let Some(tx) = &self.feature_broadcast_tx {
+                                        let _ = tx.send(features.clone());
+                                    }
 
-                                // Send features to IPC task
-                                if tracing::enabled!(tracing::Level::DEBUG)
-                                    && self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
-                                    && self.emit_gate.allow_debug()
+                                    // Send features to decoder pipeline
+                                    if tracing::enabled!(tracing::Level::DEBUG)
+                                        && self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
+                                        && self.emit_gate.allow_debug()
+                                    {
+                                        tracing::debug!(
+                                            event = obs::event::FEATURE_WINDOW_EMITTED,
+                                            decision_id = obs::field::UNKNOWN,
+                                            stream_id = features.stream_id.as_deref().unwrap_or(DEFAULT_STREAM_KEY),
+                                            feature_dim = features.dim(),
+                                            window_start_us = features.window_start_us.unwrap_or_default(),
+                                            window_end_us = features.window_end_us.unwrap_or_default(),
+                                            "Signal feature window emitted"
+                                        );
+                                    }
+
+                                    if self.feature_tx.send(features).await.is_err() {
+                                        tracing::warn!(stream_id = %stream_key, "Feature receiver dropped");
+                                        break;
+                                    }
+                                } else if self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
+                                    && self.emit_gate.allow_info()
                                 {
-                                    tracing::debug!(
-                                        event = obs::event::FEATURE_WINDOW_EMITTED,
-                                        decision_id = obs::field::UNKNOWN,
-                                        stream_id = features.stream_id.as_deref().unwrap_or(DEFAULT_STREAM_KEY),
-                                        feature_dim = features.dim(),
-                                        window_start_us = features.window_start_us.unwrap_or_default(),
-                                        window_end_us = features.window_end_us.unwrap_or_default(),
-                                        "Signal feature window emitted"
+                                    tracing::info!(
+                                        stream_id = %stream_key,
+                                        route = ?route,
+                                        "Skipping decoder feature extraction for non-EEG stream"
                                     );
-                                }
-
-                                if self.feature_tx.send(features).await.is_err() {
-                                    tracing::warn!(stream_id = %stream_key, "Feature receiver dropped");
-                                    break;
                                 }
                             }
 
@@ -527,6 +667,9 @@ impl SignalTask {
 #[cfg(test)]
 mod tests {
     use super::SignalTask;
+    use super::StreamRoute;
+    use neurohid_types::device::DiscoveredStream;
+    use neurohid_types::signal::Sample;
 
     #[test]
     fn samples_for_duration_uses_expected_rate() {
@@ -554,5 +697,47 @@ mod tests {
         assert_eq!(SignalTask::welch_segment_len_for_window(64), 64);
         assert_eq!(SignalTask::welch_segment_len_for_window(200), 128);
         assert_eq!(SignalTask::welch_segment_len_for_window(1024), 256);
+    }
+
+    #[test]
+    fn classify_stream_route_maps_emotiv_eeg() {
+        let discovered = DiscoveredStream {
+            id: "src::EmotivEEG".to_string(),
+            name: "EmotivEEG".to_string(),
+            stream_type: "EEG".to_string(),
+            channel_count: 5,
+            sample_rate: 128.0,
+            connected: true,
+            battery_percent: None,
+            channel_quality: None,
+            source_id: Some("src".to_string()),
+        };
+        let sample = Sample::new(vec![0.0; 5]);
+
+        let route = SignalTask::classify_stream_route("src::EmotivEEG", Some(&discovered), &sample);
+        assert_eq!(route, StreamRoute::Eeg);
+    }
+
+    #[test]
+    fn classify_stream_route_maps_emotiv_mental_to_auxiliary() {
+        let discovered = DiscoveredStream {
+            id: "src::EmotivMentalCommands".to_string(),
+            name: "EmotivMentalCommands".to_string(),
+            stream_type: "MentalCommand".to_string(),
+            channel_count: 1,
+            sample_rate: 0.0,
+            connected: true,
+            battery_percent: None,
+            channel_quality: None,
+            source_id: Some("src".to_string()),
+        };
+        let sample = Sample::new(vec![0.5]);
+
+        let route = SignalTask::classify_stream_route(
+            "src::EmotivMentalCommands",
+            Some(&discovered),
+            &sample,
+        );
+        assert_eq!(route, StreamRoute::Auxiliary);
     }
 }

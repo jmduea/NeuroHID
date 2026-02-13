@@ -64,6 +64,14 @@ pub struct ServiceSnapshot {
     pub task_error: Option<(String, String)>,
     /// LSL streams discovered on the network.
     pub discovered_streams: Vec<DiscoveredStream>,
+    /// Streams currently routed to EEG feature extraction.
+    pub routed_eeg_streams: u64,
+    /// Streams currently routed to motion handling.
+    pub routed_motion_streams: u64,
+    /// Streams currently routed to auxiliary handling.
+    pub routed_auxiliary_streams: u64,
+    /// Streams currently routed as unknown.
+    pub routed_unknown_streams: u64,
 }
 
 impl Default for ServiceSnapshot {
@@ -112,6 +120,10 @@ impl Default for ServiceSnapshot {
             active_profile_name: None,
             task_error: None,
             discovered_streams: Vec::new(),
+            routed_eeg_streams: 0,
+            routed_motion_streams: 0,
+            routed_auxiliary_streams: 0,
+            routed_unknown_streams: 0,
         }
     }
 }

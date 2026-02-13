@@ -107,7 +107,10 @@ impl DeviceTask {
         provider: Box<dyn DeviceProvider>,
         mut shutdown: broadcast::Receiver<()>,
     ) -> Result<()> {
-        let mut command_rx = self.device_command_rx.unwrap();
+        let Some(mut command_rx) = self.device_command_rx else {
+            tracing::warn!("Interactive device mode requested without command receiver");
+            return Ok(());
+        };
         let mut active_streams: HashMap<String, ActiveStream> = HashMap::new();
         let mut rescan_interval = time::interval(Duration::from_secs(10));
 

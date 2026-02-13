@@ -312,6 +312,53 @@ impl HubApp {
                             .color(egui::Color32::LIGHT_GRAY),
                     );
 
+                    let routed_total = snap.routed_eeg_streams
+                        + snap.routed_motion_streams
+                        + snap.routed_auxiliary_streams
+                        + snap.routed_unknown_streams;
+                    if routed_total > 0 {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.label(
+                                egui::RichText::new("Routes")
+                                    .small()
+                                    .color(egui::Color32::GRAY),
+                            );
+
+                            ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "●");
+                            ui.label(
+                                egui::RichText::new(format!("EEG {}", snap.routed_eeg_streams))
+                                    .small(),
+                            );
+
+                            ui.colored_label(egui::Color32::from_rgb(80, 170, 255), "●");
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Motion {}",
+                                    snap.routed_motion_streams
+                                ))
+                                .small(),
+                            );
+
+                            ui.colored_label(egui::Color32::from_rgb(255, 180, 70), "●");
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Aux {}",
+                                    snap.routed_auxiliary_streams
+                                ))
+                                .small(),
+                            );
+
+                            ui.colored_label(egui::Color32::from_rgb(190, 140, 255), "●");
+                            ui.label(
+                                egui::RichText::new(format!(
+                                    "Unknown {}",
+                                    snap.routed_unknown_streams
+                                ))
+                                .small(),
+                            );
+                        });
+                    }
+
                     // Group streams by source_id for collapsible device tree
                     let mut groups: BTreeMap<
                         Option<String>,
