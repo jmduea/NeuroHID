@@ -542,6 +542,7 @@ impl NeuroHidService {
         let marker_tx_for_signal = marker_broadcast_tx.clone();
         let marker_tx_for_ipc = marker_broadcast_tx.clone();
         let marker_tx_for_action = marker_broadcast_tx;
+        let observability_config = self.config.service.observability.clone();
 
         // Optional outlet fan-out task: subscribes to the same broadcast channels
         // used by hub widgets and republishes to configured network targets.
@@ -617,6 +618,7 @@ impl NeuroHidService {
         // Spawn the signal processing task. This reads samples, applies filters,
         // extracts features, and sends them to the IPC channel.
         let signal_config = self.config.signal.clone();
+        let signal_observability = observability_config.clone();
         let mut signal_handle = tokio::spawn(async move {
             tracing::info!("Signal task starting");
             let task = SignalTask::new(
@@ -630,6 +632,7 @@ impl NeuroHidService {
                 sample_broadcast_tx,
                 feature_broadcast_tx,
                 marker_tx_for_signal,
+                signal_observability,
             );
             task.run(shutdown_signal).await
         });
@@ -640,6 +643,7 @@ impl NeuroHidService {
         let profile_store_for_decoder = self.profile_store.clone();
         let profile_id_for_decoder = self.profile_id.clone();
         let fallback_enabled = self.config.service.fallback_policy.enabled;
+        let decoder_observability = observability_config.clone();
         let mut decoder_handle = tokio::spawn(async move {
             tracing::info!("Decoder task starting");
             let task = DecoderTask::new(
@@ -653,6 +657,7 @@ impl NeuroHidService {
                 Some(decision_event_tx),
                 episode_log_tx,
                 fallback_enabled,
+                decoder_observability,
             );
             task.run(shutdown_decoder).await
         });
@@ -662,6 +667,7 @@ impl NeuroHidService {
         let ipc_config = self.config.service.clone();
         let profile_store_for_ipc = self.profile_store.clone();
         let decoder_command_tx_for_ipc = decoder_command_tx.clone();
+        let ipc_observability = observability_config.clone();
         let mut ipc_handle = tokio::spawn(async move {
             tracing::info!("IPC task starting");
             let task = IpcTask::new(
@@ -674,6 +680,7 @@ impl NeuroHidService {
                 marker_tx_for_ipc,
                 profile_store_for_ipc,
                 decoder_command_tx_for_ipc,
+                ipc_observability,
             );
             task.run(shutdown_ipc).await
         });
@@ -683,6 +690,7 @@ impl NeuroHidService {
         let action_config = self.config.action.clone();
         let cal_flag_for_action = calibration_flag.as_ref().map(Arc::clone);
         let output_flag_for_action = output_enabled_flag.as_ref().map(Arc::clone);
+        let action_observability = observability_config;
         let mut action_handle = tokio::spawn(async move {
             tracing::info!("Action task starting");
             let task = ActionTask::new(
@@ -693,6 +701,7 @@ impl NeuroHidService {
                 output_flag_for_action,
                 action_broadcast_tx,
                 marker_tx_for_action,
+                action_observability,
             );
             task.run(shutdown_action).await
         });

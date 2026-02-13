@@ -19,6 +19,7 @@ use neurohid_types::{
     error::{DecoderError, Error, Result},
     learning::{CandidateGuardrails, TrainingEpisode},
     model::ModelManifest,
+    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
     profile::ProfileId,
     signal::FeatureVector,
 };
@@ -29,6 +30,7 @@ use crate::tasks::session_logger::EpisodeLogRecord;
 use crate::tasks::DecisionEventRecord;
 
 const LATENCY_WINDOW_SIZE: usize = 512;
+const DECODER_SUMMARY_EVERY_DECISIONS: u64 = 256;
 
 type OnnxPlan = SimplePlan<TypedFact, Box<dyn TypedOp>, TypedModel>;
 
@@ -123,6 +125,7 @@ pub struct DecoderTask {
     decode_latency: RollingLatency,
     fallback_enabled: bool,
     decision_sequence: u64,
+    emit_gate: EmitGate,
 }
 
 impl DecoderTask {
@@ -138,6 +141,7 @@ impl DecoderTask {
         decision_event_tx: Option<mpsc::Sender<DecisionEventRecord>>,
         episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
         fallback_enabled: bool,
+        observability: ObservabilityConfig,
     ) -> Self {
         Self::new_inner(
             config,
@@ -151,6 +155,7 @@ impl DecoderTask {
             episode_log_tx,
             fallback_enabled,
             Arc::new(OnnxArtifactLoader),
+            observability,
         )
     }
 
@@ -168,6 +173,7 @@ impl DecoderTask {
         episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
         fallback_enabled: bool,
         loader: Arc<dyn ArtifactLoader>,
+        observability: ObservabilityConfig,
     ) -> Self {
         Self::new_inner(
             config,
@@ -181,6 +187,7 @@ impl DecoderTask {
             episode_log_tx,
             fallback_enabled,
             loader,
+            observability,
         )
     }
 
@@ -197,6 +204,7 @@ impl DecoderTask {
         episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
         fallback_enabled: bool,
         loader: Arc<dyn ArtifactLoader>,
+        observability: ObservabilityConfig,
     ) -> Self {
         Self {
             config,
@@ -213,11 +221,17 @@ impl DecoderTask {
             decode_latency: RollingLatency::new(LATENCY_WINDOW_SIZE),
             fallback_enabled,
             decision_sequence: 0,
+            emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Decoder)),
         }
     }
 
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
-        tracing::info!("Decoder task started");
+        tracing::info!(
+            event = obs::event::TASK_STARTED,
+            span = obs::span::DECODER_RUN,
+            stage = obs::stage::DECODER,
+            "Decoder task started"
+        );
 
         self.switch_profile(self.active_profile_id.clone()).await;
 
@@ -244,7 +258,7 @@ impl DecoderTask {
 
             tokio::select! {
                 _ = shutdown.recv() => {
-                    tracing::info!("Decoder task received shutdown signal");
+                    tracing::info!(event = obs::event::TASK_STOPPED, "Decoder task received shutdown signal");
                     break;
                 }
                 feature = self.feature_rx.recv() => {
@@ -252,6 +266,17 @@ impl DecoderTask {
                         tracing::info!("Decoder input feature channel closed");
                         break;
                     };
+
+                    if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
+                        tracing::debug!(
+                            event = obs::event::FEATURE_WINDOW_EMITTED,
+                            decision_id = obs::field::UNKNOWN,
+                            stream_id = feature.stream_id.as_deref().unwrap_or("__default__"),
+                            feature_timestamp_us = feature.timestamp,
+                            feature_dim = feature.dim(),
+                            "Decoder received feature vector"
+                        );
+                    }
 
                     let inference = if let Some(model) = self.active_model.clone() {
                         run_inference(&model, &feature).map(|action| {
@@ -287,8 +312,34 @@ impl DecoderTask {
                                 &feature,
                                 &action,
                                 model_version.clone(),
+                                feature.stream_id.as_deref(),
                             )
                             .await;
+
+                            if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
+                                tracing::debug!(
+                                    event = obs::event::DECISION_EMITTED,
+                                    decision_id = %decision_id,
+                                    stream_id = feature.stream_id.as_deref().unwrap_or("__default__"),
+                                    confidence = action.confidence,
+                                    model_kind = %model_kind,
+                                    "Decoder emitted decision"
+                                );
+                            }
+
+                            if self.decision_sequence % DECODER_SUMMARY_EVERY_DECISIONS == 0
+                                && self.emit_gate.allow_info()
+                            {
+                                tracing::info!(
+                                    event = obs::event::TASK_SUMMARY,
+                                    decision_id = obs::field::UNKNOWN,
+                                    stream_id = obs::field::UNKNOWN,
+                                    decisions_emitted = self.decision_sequence,
+                                    model_kind = %model_kind,
+                                    "Decoder periodic summary"
+                                );
+                            }
+
                             if self.action_tx.send(action).await.is_err() {
                                 tracing::warn!("Action receiver dropped");
                                 break;
@@ -305,7 +356,7 @@ impl DecoderTask {
         }
 
         self.set_decoder_status(None).await;
-        tracing::info!("Decoder task stopped");
+        tracing::info!(event = obs::event::TASK_STOPPED, "Decoder task stopped");
         Ok(())
     }
 
@@ -663,6 +714,7 @@ impl DecoderTask {
         feature: &FeatureVector,
         action: &Action,
         model_version: Option<String>,
+        stream_id: Option<&str>,
     ) {
         let Some(tx) = &self.decision_event_tx else {
             return;
@@ -676,7 +728,7 @@ impl DecoderTask {
             decoder_confidence: action.confidence,
             signal_quality,
             decoder_model_version: model_version,
-            stream_id: None,
+            stream_id: stream_id.map(std::borrow::ToOwned::to_owned),
         };
         if let Err(error) = tx.try_send(event) {
             tracing::trace!(
@@ -984,6 +1036,7 @@ mod tests {
             None,
             true,
             loader,
+            neurohid_types::observability::ObservabilityConfig::default(),
         );
         (task, state)
     }

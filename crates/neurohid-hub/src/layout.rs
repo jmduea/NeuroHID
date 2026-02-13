@@ -1,12 +1,12 @@
 //! # Layout Engine
 //!
 //! Manages the multi-pane widget layout for the Visualization screen.
-//! Users choose a layout configuration (e.g., 2x2, 1+2) and assign
-//! a widget to each pane via a dropdown. Supports drag-and-drop to
-//! swap widgets between panes.
+//! Users choose a layout configuration (e.g., 2x2, 1+2), assign
+//! a widget to each pane, and can drag/resize panes via `egui_tiles`.
 
 use crate::widgets::{create_widget, Widget, WidgetContext, WidgetId};
-use eframe::egui::{self, Color32, CornerRadius, CursorIcon, Margin, Stroke};
+use eframe::egui;
+use egui_tiles::{Behavior, EditAction, Tile, TileId, Tiles, Tree, UiResponse};
 
 /// Available layout configurations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -46,6 +46,29 @@ impl LayoutConfig {
         }
     }
 
+    pub fn key(&self) -> &'static str {
+        match self {
+            LayoutConfig::Single => "single",
+            LayoutConfig::TwoColumns => "two_columns",
+            LayoutConfig::TwoRows => "two_rows",
+            LayoutConfig::Grid2x2 => "grid2x2",
+            LayoutConfig::OneLeftTwoRight => "one_left_two_right",
+            LayoutConfig::TwoLeftOneRight => "two_left_one_right",
+        }
+    }
+
+    pub fn from_key(value: &str) -> Option<Self> {
+        match value {
+            "single" => Some(LayoutConfig::Single),
+            "two_columns" => Some(LayoutConfig::TwoColumns),
+            "two_rows" => Some(LayoutConfig::TwoRows),
+            "grid2x2" => Some(LayoutConfig::Grid2x2),
+            "one_left_two_right" => Some(LayoutConfig::OneLeftTwoRight),
+            "two_left_one_right" => Some(LayoutConfig::TwoLeftOneRight),
+            _ => None,
+        }
+    }
+
     /// Number of panes in this layout.
     pub fn pane_count(&self) -> usize {
         match self {
@@ -57,110 +80,199 @@ impl LayoutConfig {
     }
 }
 
-/// A single pane in the layout — holds the selected widget ID and widget instance.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 struct Pane {
+    slot: usize,
     widget_id: WidgetId,
-    widget: Box<dyn Widget>,
 }
 
-/// Result of rendering a single pane, used for drag-drop state tracking.
-struct PaneRenderResult {
-    _is_hovered: bool,
+impl Pane {
+    fn new(slot: usize, widget_id: WidgetId) -> Self {
+        Self { slot, widget_id }
+    }
 }
 
-/// Color constants for drag-and-drop visual feedback.
-mod colors {
-    use super::Color32;
-
-    /// Material blue for active drag highlighting.
-    pub const DRAG_HIGHLIGHT: Color32 = Color32::from_rgb(66, 165, 245);
-    /// Subtle green for valid drop target.
-    pub const DROP_TARGET: Color32 = Color32::from_rgb(76, 175, 80);
-    /// Dark pane background.
-    pub const PANE_BG: Color32 = Color32::from_gray(25);
-    /// Subtle pane border.
-    pub const PANE_BORDER: Color32 = Color32::from_gray(50);
-    /// Header bar background.
-    pub const HEADER_BG: Color32 = Color32::from_gray(35);
-    /// Drag handle color (normal).
-    pub const DRAG_HANDLE: Color32 = Color32::from_gray(120);
-    /// Drag handle color (hovered).
-    pub const DRAG_HANDLE_HOVER: Color32 = Color32::from_gray(180);
+pub struct PersistedLayoutState {
+    pub layout_preset: String,
+    pub pane_widgets: Vec<String>,
+    pub tree_json: Option<String>,
 }
 
 /// The layout manager for the Visualization workspace.
 pub struct LayoutManager {
     pub config: LayoutConfig,
-    panes: Vec<Pane>,
-    /// Index of the pane currently being dragged, if any.
-    drag_source: Option<usize>,
+    pane_widget_ids: Vec<WidgetId>,
+    tree: Tree<Pane>,
+    widget_instances: Vec<Box<dyn Widget>>,
+    dirty: bool,
 }
 
 impl LayoutManager {
     /// Create a new layout manager with default widget assignments.
     pub fn new() -> Self {
-        let defaults = [
+        Self::from_persisted("grid2x2", &[], None)
+    }
+
+    /// Restore layout manager from persisted keys and serialized tree state.
+    pub fn from_persisted(
+        layout_preset: &str,
+        pane_widgets: &[String],
+        tree_json: Option<&str>,
+    ) -> Self {
+        let config = LayoutConfig::from_key(layout_preset).unwrap_or(LayoutConfig::Grid2x2);
+        let pane_count = config.pane_count();
+
+        let mut pane_widget_ids: Vec<WidgetId> = (0..pane_count).map(Self::default_widget_for).collect();
+        for (index, key) in pane_widgets.iter().take(pane_count).enumerate() {
+            if let Some(widget_id) = widget_from_key(key) {
+                pane_widget_ids[index] = widget_id;
+            }
+        }
+
+        let mut tree = Self::build_tree(config, &pane_widget_ids);
+        if let Some(raw) = tree_json {
+            if let Ok(parsed_tree) = serde_json::from_str::<Tree<Pane>>(raw) {
+                if let Some(from_tree) = Self::assignments_from_tree(&parsed_tree, pane_count) {
+                    pane_widget_ids = from_tree;
+                    tree = parsed_tree;
+                }
+            }
+        }
+
+        let widget_instances = pane_widget_ids
+            .iter()
+            .copied()
+            .map(create_widget)
+            .collect();
+
+        Self {
+            config,
+            pane_widget_ids,
+            tree,
+            widget_instances,
+            dirty: false,
+        }
+    }
+
+    fn assignments_from_tree(tree: &Tree<Pane>, pane_count: usize) -> Option<Vec<WidgetId>> {
+        let mut assignments = vec![None; pane_count];
+        let mut pane_tiles = 0usize;
+
+        for (_, tile) in tree.tiles.iter() {
+            if let Tile::Pane(pane) = tile {
+                pane_tiles = pane_tiles.saturating_add(1);
+                if pane.slot >= pane_count {
+                    return None;
+                }
+                if assignments[pane.slot].is_some() {
+                    return None;
+                }
+                assignments[pane.slot] = Some(pane.widget_id);
+            }
+        }
+
+        if pane_tiles != pane_count {
+            return None;
+        }
+
+        assignments.into_iter().collect()
+    }
+
+    fn default_widget_for(index: usize) -> WidgetId {
+        const DEFAULTS: [WidgetId; 4] = [
             WidgetId::TimeSeries,
             WidgetId::FftPlot,
             WidgetId::BandPower,
             WidgetId::SignalQuality,
         ];
+        DEFAULTS[index % DEFAULTS.len()]
+    }
 
-        let config = LayoutConfig::Grid2x2;
-        let panes = (0..config.pane_count())
-            .map(|i| {
-                let id = defaults[i % defaults.len()];
-                Pane {
-                    widget_id: id,
-                    widget: create_widget(id),
-                }
-            })
+    fn ensure_assignment_count(&mut self, count: usize) {
+        while self.pane_widget_ids.len() < count {
+            let idx = self.pane_widget_ids.len();
+            self.pane_widget_ids.push(Self::default_widget_for(idx));
+            self.widget_instances
+                .push(create_widget(*self.pane_widget_ids.last().unwrap_or(&WidgetId::SignalQuality)));
+        }
+        self.pane_widget_ids.truncate(count);
+        self.widget_instances.truncate(count);
+    }
+
+    fn build_tree(config: LayoutConfig, assignments: &[WidgetId]) -> Tree<Pane> {
+        let mut tiles = Tiles::default();
+        let pane_ids: Vec<TileId> = assignments
+            .iter()
+            .copied()
+            .enumerate()
+            .map(|(slot, id)| tiles.insert_pane(Pane::new(slot, id)))
             .collect();
 
-        Self {
-            config,
-            panes,
-            drag_source: None,
-        }
+        let root = match config {
+            LayoutConfig::Single => pane_ids[0],
+            LayoutConfig::TwoColumns => tiles.insert_horizontal_tile(vec![pane_ids[0], pane_ids[1]]),
+            LayoutConfig::TwoRows => tiles.insert_vertical_tile(vec![pane_ids[0], pane_ids[1]]),
+            LayoutConfig::Grid2x2 => {
+                tiles.insert_grid_tile(vec![pane_ids[0], pane_ids[1], pane_ids[2], pane_ids[3]])
+            }
+            LayoutConfig::OneLeftTwoRight => {
+                let right = tiles.insert_vertical_tile(vec![pane_ids[1], pane_ids[2]]);
+                tiles.insert_horizontal_tile(vec![pane_ids[0], right])
+            }
+            LayoutConfig::TwoLeftOneRight => {
+                let left = tiles.insert_vertical_tile(vec![pane_ids[0], pane_ids[1]]);
+                tiles.insert_horizontal_tile(vec![left, pane_ids[2]])
+            }
+        };
+
+        Tree::new("visualization_layout_tree", root, tiles)
     }
 
     /// Change the layout configuration, keeping as many pane assignments
     /// as possible and filling new panes with defaults.
     pub fn set_layout(&mut self, config: LayoutConfig) {
-        let new_count = config.pane_count();
-        let defaults = [
-            WidgetId::TimeSeries,
-            WidgetId::FftPlot,
-            WidgetId::BandPower,
-            WidgetId::SignalQuality,
-        ];
-
-        // Clear any active drag when layout changes
-        self.drag_source = None;
-
-        // Grow panes if needed
-        while self.panes.len() < new_count {
-            let idx = self.panes.len();
-            let id = defaults[idx % defaults.len()];
-            self.panes.push(Pane {
-                widget_id: id,
-                widget: create_widget(id),
-            });
+        if self.config == config {
+            return;
         }
-        // Shrink if needed
-        self.panes.truncate(new_count);
+
+        self.ensure_assignment_count(config.pane_count());
         self.config = config;
+        self.tree = Self::build_tree(self.config, &self.pane_widget_ids);
+        self.dirty = true;
     }
 
     /// Change the widget in a specific pane.
     #[allow(dead_code)]
     pub fn set_pane_widget(&mut self, pane_index: usize, widget_id: WidgetId) {
-        if let Some(pane) = self.panes.get_mut(pane_index) {
-            if pane.widget_id != widget_id {
-                pane.widget_id = widget_id;
-                pane.widget = create_widget(widget_id);
+        if let Some(current) = self.pane_widget_ids.get_mut(pane_index) {
+            if *current != widget_id {
+                *current = widget_id;
+                if let Some(widget) = self.widget_instances.get_mut(pane_index) {
+                    *widget = create_widget(widget_id);
+                }
+                self.tree = Self::build_tree(self.config, &self.pane_widget_ids);
+                self.dirty = true;
             }
         }
+    }
+
+    pub fn take_persisted_state(&mut self) -> Option<PersistedLayoutState> {
+        if !self.dirty {
+            return None;
+        }
+
+        self.dirty = false;
+        Some(PersistedLayoutState {
+            layout_preset: self.config.key().to_string(),
+            pane_widgets: self
+                .pane_widget_ids
+                .iter()
+                .copied()
+                .map(widget_to_key)
+                .map(str::to_string)
+                .collect(),
+            tree_json: serde_json::to_string(&self.tree).ok(),
+        })
     }
 
     /// Render the layout toolbar (layout selector).
@@ -186,311 +298,138 @@ impl LayoutManager {
 
     /// Render all panes with their widgets.
     pub fn show_panes(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
-        match self.config {
-            LayoutConfig::Single => {
-                self.show_single_pane(ui, 0, ctx);
-            }
-            LayoutConfig::TwoColumns => {
-                let available = ui.available_size();
-                let top_down = egui::Layout::top_down(egui::Align::Min);
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(available.x * 0.5 - 4.0, available.y),
-                        top_down,
-                        |ui| {
-                            self.show_single_pane(ui, 0, ctx);
-                        },
-                    );
-                    ui.allocate_ui_with_layout(
-                        egui::vec2(available.x * 0.5 - 4.0, available.y),
-                        top_down,
-                        |ui| {
-                            self.show_single_pane(ui, 1, ctx);
-                        },
-                    );
-                });
-            }
-            LayoutConfig::TwoRows => {
-                let available = ui.available_size();
-                ui.allocate_ui(egui::vec2(available.x, available.y * 0.5 - 4.0), |ui| {
-                    self.show_single_pane(ui, 0, ctx);
-                });
-                ui.allocate_ui(egui::vec2(available.x, available.y * 0.5 - 4.0), |ui| {
-                    self.show_single_pane(ui, 1, ctx);
-                });
-            }
-            LayoutConfig::Grid2x2 => {
-                let available = ui.available_size();
-                let half_w = available.x * 0.5 - 4.0;
-                let half_h = available.y * 0.5 - 4.0;
-                let top_down = egui::Layout::top_down(egui::Align::Min);
-
-                ui.allocate_ui(egui::vec2(available.x, half_h), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.allocate_ui_with_layout(egui::vec2(half_w, half_h), top_down, |ui| {
-                            self.show_single_pane(ui, 0, ctx);
-                        });
-                        ui.allocate_ui_with_layout(egui::vec2(half_w, half_h), top_down, |ui| {
-                            self.show_single_pane(ui, 1, ctx);
-                        });
-                    });
-                });
-                ui.allocate_ui(egui::vec2(available.x, half_h), |ui| {
-                    ui.horizontal(|ui| {
-                        ui.allocate_ui_with_layout(egui::vec2(half_w, half_h), top_down, |ui| {
-                            self.show_single_pane(ui, 2, ctx);
-                        });
-                        ui.allocate_ui_with_layout(egui::vec2(half_w, half_h), top_down, |ui| {
-                            self.show_single_pane(ui, 3, ctx);
-                        });
-                    });
-                });
-            }
-            LayoutConfig::OneLeftTwoRight => {
-                let available = ui.available_size();
-                let left_w = available.x * 0.5 - 4.0;
-                let right_w = available.x * 0.5 - 4.0;
-                let half_h = available.y * 0.5 - 4.0;
-                let top_down = egui::Layout::top_down(egui::Align::Min);
-
-                ui.horizontal(|ui| {
-                    ui.allocate_ui_with_layout(egui::vec2(left_w, available.y), top_down, |ui| {
-                        self.show_single_pane(ui, 0, ctx);
-                    });
-                    ui.vertical(|ui| {
-                        ui.allocate_ui(egui::vec2(right_w, half_h), |ui| {
-                            self.show_single_pane(ui, 1, ctx);
-                        });
-                        ui.allocate_ui(egui::vec2(right_w, half_h), |ui| {
-                            self.show_single_pane(ui, 2, ctx);
-                        });
-                    });
-                });
-            }
-            LayoutConfig::TwoLeftOneRight => {
-                let available = ui.available_size();
-                let left_w = available.x * 0.5 - 4.0;
-                let right_w = available.x * 0.5 - 4.0;
-                let half_h = available.y * 0.5 - 4.0;
-                let top_down = egui::Layout::top_down(egui::Align::Min);
-
-                ui.horizontal(|ui| {
-                    ui.vertical(|ui| {
-                        ui.allocate_ui(egui::vec2(left_w, half_h), |ui| {
-                            self.show_single_pane(ui, 0, ctx);
-                        });
-                        ui.allocate_ui(egui::vec2(left_w, half_h), |ui| {
-                            self.show_single_pane(ui, 1, ctx);
-                        });
-                    });
-                    ui.allocate_ui_with_layout(egui::vec2(right_w, available.y), top_down, |ui| {
-                        self.show_single_pane(ui, 2, ctx);
-                    });
-                });
-            }
-        }
-
-        // Clear drag state if pointer released anywhere
-        let pointer_released = ui.input(|i| i.pointer.any_released());
-        if pointer_released && self.drag_source.is_some() {
-            self.drag_source = None;
+        let mut behavior = LayoutBehavior {
+            widget_ids: &mut self.pane_widget_ids,
+            widget_instances: &mut self.widget_instances,
+            widget_ctx: ctx,
+            changed: false,
+        };
+        self.tree.ui(&mut behavior, ui);
+        if behavior.changed {
+            self.dirty = true;
         }
     }
+}
 
-    /// Render a single pane: drag handle + widget selector dropdown + widget content.
-    fn show_single_pane(
-        &mut self,
-        ui: &mut egui::Ui,
-        index: usize,
-        ctx: &WidgetContext<'_>,
-    ) -> PaneRenderResult {
-        let is_drag_source = self.drag_source == Some(index);
-        let is_dragging = self.drag_source.is_some();
-        let is_potential_drop_target = is_dragging && !is_drag_source;
+struct LayoutBehavior<'a, 'b> {
+    widget_ids: &'a mut [WidgetId],
+    widget_instances: &'a mut [Box<dyn Widget>],
+    widget_ctx: &'a WidgetContext<'b>,
+    changed: bool,
+}
 
-        // Determine border style based on drag state
-        let border_stroke = if is_drag_source {
-            Stroke::new(2.0, colors::DRAG_HIGHLIGHT)
-        } else if is_potential_drop_target {
-            Stroke::new(1.5, colors::DROP_TARGET.gamma_multiply(0.6))
-        } else {
-            Stroke::new(1.0, colors::PANE_BORDER)
-        };
+impl Behavior<Pane> for LayoutBehavior<'_, '_> {
+    fn tab_title_for_pane(&mut self, pane: &Pane) -> egui::WidgetText {
+        format!("#{} {}", pane.slot + 1, pane.widget_id.label()).into()
+    }
 
-        // Custom frame for the pane
-        let pane_frame = egui::Frame::NONE
-            .fill(colors::PANE_BG)
-            .stroke(border_stroke)
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::same(4));
-
-        let frame_response = pane_frame.show(ui, |ui| {
-            ui.set_min_size(ui.available_size());
-
-            // Header bar with drag handle and widget selector
-            let header_frame = egui::Frame::NONE
-                .fill(colors::HEADER_BG)
-                .corner_radius(CornerRadius {
-                    nw: 4,
-                    ne: 4,
-                    sw: 0,
-                    se: 0,
-                })
-                .inner_margin(Margin::symmetric(6, 4));
-
-            header_frame.show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    // Drag handle
-                    let handle_response = self.show_drag_handle(ui, index);
-
-                    // Handle drag start
-                    if handle_response.drag_started() {
-                        self.drag_source = Some(index);
+    fn pane_ui(&mut self, ui: &mut egui::Ui, tile_id: TileId, pane: &mut Pane) -> UiResponse {
+        ui.horizontal(|ui| {
+            ui.label("Widget:");
+            let mut selected = pane.widget_id;
+            egui::ComboBox::from_id_salt(("pane_widget", tile_id))
+                .selected_text(selected.label())
+                .show_ui(ui, |ui| {
+                    for &wid in WidgetId::ALL {
+                        ui.selectable_value(&mut selected, wid, wid.label());
                     }
-
-                    ui.add_space(4.0);
-
-                    // Widget selector dropdown - need to get pane data
-                    if let Some(pane) = self.panes.get_mut(index) {
-                        let current_label = pane.widget_id.label();
-                        let combo_id = format!("pane_widget_{}", index);
-                        let mut new_id = pane.widget_id;
-                        egui::ComboBox::from_id_salt(combo_id)
-                            .selected_text(current_label)
-                            .width(140.0)
-                            .show_ui(ui, |ui: &mut egui::Ui| {
-                                for &wid in WidgetId::ALL {
-                                    ui.selectable_value(&mut new_id, wid, wid.label());
-                                }
-                            });
-                        if new_id != pane.widget_id {
-                            pane.widget_id = new_id;
-                            pane.widget = create_widget(new_id);
-                        }
-                    }
-
-                    // Spacer to push any additional controls to the right
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Optional: pane index indicator (subtle)
-                        ui.label(
-                            egui::RichText::new(format!("#{}", index + 1))
-                                .small()
-                                .color(Color32::from_gray(80)),
-                        );
-                    });
                 });
-            });
 
-            // Check if this pane is hovered (for drop target detection)
-            let pane_rect = ui.available_rect_before_wrap();
-            let is_hovered = ui.rect_contains_pointer(pane_rect);
-
-            // Show drop indicator if this is a potential drop target and hovered
-            if is_potential_drop_target && is_hovered {
-                // Draw a more prominent drop indicator
-                ui.painter().rect_stroke(
-                    pane_rect.shrink(2.0),
-                    CornerRadius::same(4),
-                    Stroke::new(2.0, colors::DROP_TARGET),
-                    egui::StrokeKind::Outside,
-                );
-
-                // "Drop here" text overlay
-                let center = pane_rect.center();
-                ui.painter().text(
-                    center,
-                    egui::Align2::CENTER_CENTER,
-                    "Drop to swap",
-                    egui::FontId::proportional(14.0),
-                    colors::DROP_TARGET,
-                );
-
-                // Handle the drop
-                let pointer_released = ui.input(|i| i.pointer.any_released());
-                if pointer_released {
-                    if let Some(source) = self.drag_source {
-                        if source != index {
-                            // Perform the swap
-                            self.panes.swap(source, index);
-                        }
-                        self.drag_source = None;
-                    }
+            if selected != pane.widget_id {
+                pane.widget_id = selected;
+                if let Some(slot_value) = self.widget_ids.get_mut(pane.slot) {
+                    *slot_value = selected;
                 }
-            }
-
-            ui.add_space(4.0);
-
-            // Widget content area — wrapped in a ScrollArea so that
-            // content-heavy widgets (e.g. SignalQuality with head diagram,
-            // table and quality bars) cannot overflow the pane boundary
-            // and leak into the console panel below.
-            if ui.available_size().y < 40.0 {
-                ui.centered_and_justified(|ui| {
-                    ui.label(
-                        egui::RichText::new("Panel too small")
-                            .small()
-                            .color(Color32::from_gray(100)),
-                    );
-                });
-            } else if let Some(pane) = self.panes.get_mut(index) {
-                let remaining_height = ui.available_height();
-                egui::ScrollArea::vertical()
-                    .id_salt(format!("pane_scroll_{}", index))
-                    .max_height(remaining_height)
-                    .auto_shrink([false, false])
-                    .show(ui, |ui| {
-                        pane.widget.show(ui, ctx, index);
-                    });
+                if let Some(widget) = self.widget_instances.get_mut(pane.slot) {
+                    *widget = create_widget(selected);
+                }
+                self.changed = true;
             }
         });
 
-        // Check if this pane is hovered (for drop target detection)
-        let is_hovered = frame_response
-            .response
-            .rect
-            .contains(ui.ctx().pointer_hover_pos().unwrap_or(egui::Pos2::ZERO));
+        ui.separator();
 
-        PaneRenderResult {
-            _is_hovered: is_hovered,
+        if ui.available_height() < 40.0 {
+            ui.centered_and_justified(|ui| {
+                ui.label(egui::RichText::new("Panel too small").small());
+            });
+            return UiResponse::None;
+        }
+
+        egui::ScrollArea::vertical()
+            .id_salt(("pane_scroll", tile_id))
+            .auto_shrink([false, false])
+            .show(ui, |ui| {
+                if let Some(widget) = self.widget_instances.get_mut(pane.slot) {
+                    widget.show(ui, self.widget_ctx, pane.slot);
+                } else {
+                    ui.colored_label(egui::Color32::YELLOW, "Missing widget instance");
+                }
+            });
+
+        UiResponse::None
+    }
+
+    fn on_edit(&mut self, _edit_action: EditAction) {
+        self.changed = true;
+    }
+
+    fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
+        0.0
+    }
+
+    fn min_size(&self) -> f32 {
+        140.0
+    }
+
+    fn simplification_options(&self) -> egui_tiles::SimplificationOptions {
+        egui_tiles::SimplificationOptions {
+            all_panes_must_have_tabs: false,
+            ..Default::default()
         }
     }
 
-    /// Render the drag handle and return its response for drag detection.
-    fn show_drag_handle(&self, ui: &mut egui::Ui, _index: usize) -> egui::Response {
-        // Allocate space for the drag handle
-        let (rect, response) = ui.allocate_exact_size(egui::vec2(20.0, 20.0), egui::Sense::drag());
+    fn retain_pane(&mut self, _pane: &Pane) -> bool {
+        true
+    }
 
-        // Determine handle color based on state
-        let handle_color = if response.dragged() {
-            colors::DRAG_HIGHLIGHT
-        } else if response.hovered() {
-            colors::DRAG_HANDLE_HOVER
-        } else {
-            colors::DRAG_HANDLE
-        };
-
-        // Draw the grip icon (6-dot pattern)
-        let painter = ui.painter();
-        let center = rect.center();
-        let dot_radius = 1.5;
-        let spacing = 4.0;
-
-        // Draw 6 dots in a 2x3 pattern
-        for row in 0..3 {
-            for col in 0..2 {
-                let x = center.x + (col as f32 - 0.5) * spacing;
-                let y = center.y + (row as f32 - 1.0) * spacing;
-                painter.circle_filled(egui::pos2(x, y), dot_radius, handle_color);
-            }
+    fn tab_title_for_tile(&mut self, tiles: &Tiles<Pane>, tile_id: TileId) -> egui::WidgetText {
+        if let Some(Tile::Pane(pane)) = tiles.get(tile_id) {
+            return self.tab_title_for_pane(pane);
         }
+        "Pane".into()
+    }
+}
 
-        // Set cursor based on state
-        if response.dragged() {
-            ui.ctx().set_cursor_icon(CursorIcon::Grabbing);
-        } else if response.hovered() {
-            ui.ctx().set_cursor_icon(CursorIcon::Grab);
-        }
+fn widget_to_key(widget_id: WidgetId) -> &'static str {
+    match widget_id {
+        WidgetId::TimeSeries => "time_series",
+        WidgetId::FftPlot => "fft_plot",
+        WidgetId::BandPower => "band_power",
+        WidgetId::SignalQuality => "signal_quality",
+        WidgetId::DecoderMonitor => "decoder_monitor",
+        WidgetId::ActionPreview => "action_preview",
+        WidgetId::Accelerometer => "accelerometer",
+        WidgetId::Spectrogram => "spectrogram",
+        WidgetId::Focus => "focus",
+        WidgetId::Headplot => "headplot",
+        WidgetId::StreamMetadata => "stream_metadata",
+    }
+}
 
-        response
+fn widget_from_key(value: &str) -> Option<WidgetId> {
+    match value {
+        "time_series" => Some(WidgetId::TimeSeries),
+        "fft_plot" => Some(WidgetId::FftPlot),
+        "band_power" => Some(WidgetId::BandPower),
+        "signal_quality" => Some(WidgetId::SignalQuality),
+        "decoder_monitor" => Some(WidgetId::DecoderMonitor),
+        "action_preview" => Some(WidgetId::ActionPreview),
+        "accelerometer" => Some(WidgetId::Accelerometer),
+        "spectrogram" => Some(WidgetId::Spectrogram),
+        "focus" => Some(WidgetId::Focus),
+        "headplot" => Some(WidgetId::Headplot),
+        "stream_metadata" => Some(WidgetId::StreamMetadata),
+        _ => None,
     }
 }

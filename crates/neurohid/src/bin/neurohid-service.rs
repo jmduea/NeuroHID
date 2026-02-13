@@ -6,13 +6,16 @@
 
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use std::time::Instant;
 
 use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     config::{ControlTransport, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse},
+    observability::{
+        self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent,
+    },
     profile::ProfileId,
 };
 
@@ -104,6 +107,9 @@ struct ServiceLaunchConfig {
 #[cfg(windows)]
 static SERVICE_LAUNCH_CONFIG: std::sync::OnceLock<ServiceLaunchConfig> = std::sync::OnceLock::new();
 
+#[path = "../tracing_init.rs"]
+mod tracing_init;
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
@@ -146,14 +152,7 @@ async fn main() -> anyhow::Result<()> {
 
 fn init_logging(verbose: bool) -> anyhow::Result<()> {
     let log_level = if verbose { "debug" } else { "info" };
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive(format!("neurohid={log_level}").parse()?),
-        )
-        .try_init()
-        .map_err(|e| anyhow::anyhow!("Failed to initialize logging: {}", e))
+    tracing_init::init_tracing(log_level)
 }
 
 async fn load_runtime_context(
@@ -306,6 +305,9 @@ async fn run_managed_runtime(
     control_port: Option<u16>,
 ) -> anyhow::Result<()> {
     let service_config = runtime.config.service.clone();
+    let control_observability_policy = service_config
+        .observability
+        .policy_for(ObservabilityComponent::Control);
     let mut builder = RuntimeBuilder::new(runtime.config).with_profile_store(runtime.profile_store);
     if let Some(profile_id) = runtime.profile_id {
         builder = builder.with_profile_id(profile_id);
@@ -316,7 +318,7 @@ async fn run_managed_runtime(
     if let Some(port) = control_port {
         tracing::info!("Starting control protocol server on 127.0.0.1:{port} (tcp)");
         tokio::select! {
-            result = run_tcp_control_server(port, &runtime_handle) => {
+            result = run_tcp_control_server(port, &runtime_handle, control_observability_policy.clone()) => {
                 if let Err(error) = result {
                     tracing::warn!("Control protocol server exited with error: {}", error);
                 }
@@ -334,7 +336,11 @@ async fn run_managed_runtime(
                 service_config.control_pipe_name
             );
             tokio::select! {
-                result = run_named_pipe_control_server(&service_config.control_pipe_name, &runtime_handle) => {
+                result = run_named_pipe_control_server(
+                    &service_config.control_pipe_name,
+                    &runtime_handle,
+                    control_observability_policy.clone(),
+                ) => {
                     if let Err(error) = result {
                         tracing::warn!("Control protocol named-pipe server exited with error: {}", error);
                     }
@@ -377,9 +383,14 @@ async fn wait_until_runtime_stopped(handle: &RuntimeHandle) {
     }
 }
 
-async fn run_tcp_control_server(port: u16, runtime: &RuntimeHandle) -> anyhow::Result<()> {
+async fn run_tcp_control_server(
+    port: u16,
+    runtime: &RuntimeHandle,
+    control_policy: EmitPolicyConfig,
+) -> anyhow::Result<()> {
     use tokio::net::TcpListener;
 
+    let mut control_gate = EmitGate::new(control_policy);
     let listener = TcpListener::bind(("127.0.0.1", port))
         .await
         .map_err(|e| anyhow::anyhow!("Failed to bind control port {}: {}", port, e))?;
@@ -390,7 +401,7 @@ async fn run_tcp_control_server(port: u16, runtime: &RuntimeHandle) -> anyhow::R
             .await
             .map_err(|e| anyhow::anyhow!("Control accept failed: {}", e))?;
 
-        if let Err(error) = handle_control_client(stream, runtime).await {
+        if let Err(error) = handle_control_client(stream, runtime, &mut control_gate).await {
             tracing::warn!("Control client {} disconnected with error: {}", peer, error);
         }
     }
@@ -400,10 +411,12 @@ async fn run_tcp_control_server(port: u16, runtime: &RuntimeHandle) -> anyhow::R
 async fn run_named_pipe_control_server(
     pipe_name: &str,
     runtime: &RuntimeHandle,
+    control_policy: EmitPolicyConfig,
 ) -> anyhow::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::windows::named_pipe::ServerOptions;
 
+    let mut control_gate = EmitGate::new(control_policy);
     loop {
         let server = ServerOptions::new().create(pipe_name).map_err(|e| {
             anyhow::anyhow!("Failed to create control named pipe {}: {}", pipe_name, e)
@@ -431,8 +444,34 @@ async fn run_named_pipe_control_server(
             let parsed: Result<ControlRequest, _> = serde_json::from_str(payload);
             let (response, should_shutdown) = match parsed {
                 Ok(request) => {
+                    let request_id = request.request_id.clone();
+                    let command = control_command_name(&request.command);
+                    let started = Instant::now();
+                    if tracing::enabled!(tracing::Level::DEBUG) && control_gate.allow_debug() {
+                        tracing::debug!(
+                            event = obs::event::CONTROL_REQUEST_RECEIVED,
+                            request_id = request_id.as_deref().unwrap_or("none"),
+                            decision_id = obs::field::UNKNOWN,
+                            stream_id = obs::field::UNKNOWN,
+                            command,
+                            transport = "named_pipe",
+                            "Control request received"
+                        );
+                    }
                     let should_shutdown = matches!(request.command, ControlCommand::Shutdown);
                     let response = runtime.dispatch_control_request(request);
+                    if tracing::enabled!(tracing::Level::DEBUG) && control_gate.allow_debug() {
+                        tracing::debug!(
+                            event = obs::event::CONTROL_RESPONSE_SENT,
+                            request_id = request_id.as_deref().unwrap_or("none"),
+                            decision_id = obs::field::UNKNOWN,
+                            stream_id = obs::field::UNKNOWN,
+                            command,
+                            duration_ms = started.elapsed().as_millis() as u64,
+                            transport = "named_pipe",
+                            "Control request handled"
+                        );
+                    }
                     (response, should_shutdown)
                 }
                 Err(error) => (
@@ -457,6 +496,7 @@ async fn run_named_pipe_control_server(
 async fn handle_control_client(
     stream: tokio::net::TcpStream,
     runtime: &RuntimeHandle,
+    control_gate: &mut EmitGate,
 ) -> anyhow::Result<()> {
     use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 
@@ -479,8 +519,43 @@ async fn handle_control_client(
         let parsed: Result<ControlRequest, _> = serde_json::from_str(payload);
         let (response, should_shutdown) = match parsed {
             Ok(request) => {
+                let request_id = request.request_id.clone();
+                let command = control_command_name(&request.command);
+                let started = Instant::now();
+                let _request_span = tracing::debug_span!(
+                    obs::span::CONTROL_REQUEST,
+                    stage = obs::stage::CONTROL,
+                    request_id = request_id.as_deref().unwrap_or("none"),
+                    command,
+                    decision_id = obs::field::UNKNOWN,
+                    stream_id = obs::field::UNKNOWN
+                )
+                .entered();
+                if tracing::enabled!(tracing::Level::DEBUG) && control_gate.allow_debug() {
+                    tracing::debug!(
+                        event = obs::event::CONTROL_REQUEST_RECEIVED,
+                        request_id = request_id.as_deref().unwrap_or("none"),
+                        decision_id = obs::field::UNKNOWN,
+                        stream_id = obs::field::UNKNOWN,
+                        command,
+                        transport = "tcp",
+                        "Control request received"
+                    );
+                }
                 let should_shutdown = matches!(request.command, ControlCommand::Shutdown);
                 let response = runtime.dispatch_control_request(request);
+                if tracing::enabled!(tracing::Level::DEBUG) && control_gate.allow_debug() {
+                    tracing::debug!(
+                        event = obs::event::CONTROL_RESPONSE_SENT,
+                        request_id = request_id.as_deref().unwrap_or("none"),
+                        decision_id = obs::field::UNKNOWN,
+                        stream_id = obs::field::UNKNOWN,
+                        command,
+                        duration_ms = started.elapsed().as_millis() as u64,
+                        transport = "tcp",
+                        "Control request handled"
+                    );
+                }
                 (response, should_shutdown)
             }
             Err(error) => (
@@ -501,6 +576,24 @@ async fn handle_control_client(
     }
 
     Ok(())
+}
+
+fn control_command_name(command: &ControlCommand) -> &'static str {
+    match command {
+        ControlCommand::Snapshot => "snapshot",
+        ControlCommand::Shutdown => "shutdown",
+        ControlCommand::SetCalibrationMode { .. } => "set_calibration_mode",
+        ControlCommand::SetOutputEnabled { .. } => "set_output_enabled",
+        ControlCommand::ReloadModel => "reload_model",
+        ControlCommand::PromoteCandidateModel => "promote_candidate_model",
+        ControlCommand::RescanStreams => "rescan_streams",
+        ControlCommand::ConnectStream { .. } => "connect_stream",
+        ControlCommand::DisconnectStream { .. } => "disconnect_stream",
+        ControlCommand::SetLearningEnabled { .. } => "set_learning_enabled",
+        ControlCommand::MlBridgeReconnect => "ml_bridge_reconnect",
+        ControlCommand::TrainerSnapshot => "trainer_snapshot",
+        ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
+    }
 }
 
 fn run_service_command(command: ServiceCommand, args: &Args) -> anyhow::Result<()> {

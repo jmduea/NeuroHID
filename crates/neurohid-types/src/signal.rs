@@ -153,9 +153,20 @@ pub struct FeatureVector {
     /// The feature values
     pub values: Vec<f32>,
 
-    /// TODO: Probably should include start/end timestamps of the window these features were extract from
     /// Timestamp of the center of the window these features were extracted from
     pub timestamp: Timestamp,
+
+    /// Optional stream identifier propagated from source samples.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_id: Option<String>,
+
+    /// Optional window start timestamp in microseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_start_us: Option<Timestamp>,
+
+    /// Optional window end timestamp in microseconds.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub window_end_us: Option<Timestamp>,
 
     /// Optional labels for each feature dimension (for debugging/analysis)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -168,6 +179,9 @@ impl FeatureVector {
         Self {
             values,
             timestamp: crate::now_micros(),
+            stream_id: None,
+            window_start_us: None,
+            window_end_us: None,
             labels: None,
         }
     }
@@ -182,6 +196,9 @@ impl FeatureVector {
         Self {
             values,
             timestamp: crate::now_micros(),
+            stream_id: None,
+            window_start_us: None,
+            window_end_us: None,
             labels: Some(labels),
         }
     }

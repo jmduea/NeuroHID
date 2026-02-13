@@ -26,10 +26,13 @@ use neurohid_types::{
     control::RuntimeModeState,
     error::Result,
     event::{MarkerPayload, MarkerType, StreamMarker},
+    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
 };
 
 use crate::service::ServiceState;
 use crate::tasks::latency::RollingLatency;
+
+const ACTION_SUMMARY_EVERY_EMITTED: u64 = 256;
 
 #[derive(Debug, Clone, Copy)]
 enum CapabilityKind {
@@ -118,6 +121,7 @@ pub struct ActionTask {
     cursor_gate: CapabilityGate,
     click_gate: CapabilityGate,
     keyboard_gate: CapabilityGate,
+    emit_gate: EmitGate,
 }
 
 impl ActionTask {
@@ -130,6 +134,7 @@ impl ActionTask {
         output_enabled: Option<Arc<AtomicBool>>,
         action_broadcast_tx: Option<broadcast::Sender<Action>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
+        observability: ObservabilityConfig,
     ) -> Self {
         Self {
             config,
@@ -146,12 +151,18 @@ impl ActionTask {
             cursor_gate: CapabilityGate::default(),
             click_gate: CapabilityGate::default(),
             keyboard_gate: CapabilityGate::default(),
+            emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Action)),
         }
     }
 
     /// Runs the action task until shutdown is signaled.
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
-        tracing::info!("Action task started");
+        tracing::info!(
+            event = obs::event::TASK_STARTED,
+            span = obs::span::ACTION_RUN,
+            stage = obs::stage::ACTION,
+            "Action task started"
+        );
 
         // Try to create the platform-specific HID emitter. If this fails we
         // continue running in "passthrough" mode: actions are still broadcast
@@ -204,7 +215,7 @@ impl ActionTask {
             tokio::select! {
                 // Check for shutdown
                 _ = shutdown.recv() => {
-                    tracing::info!("Action task received shutdown signal");
+                    tracing::info!(event = obs::event::TASK_STOPPED, "Action task received shutdown signal");
                     break;
                 }
 
@@ -212,6 +223,8 @@ impl ActionTask {
                 action = self.action_rx.recv() => {
                     match action {
                         Some(action) => {
+                            let decision_id = action.decision_id.as_deref().unwrap_or("none");
+
                             // Broadcast action to hub visualization widgets
                             // (always, regardless of confidence/calibration/platform)
                             if let Some(tx) = &self.action_broadcast_tx {
@@ -256,6 +269,7 @@ impl ActionTask {
                             // we'd rather do nothing than make a mistake.
                             if action.confidence < self.config.min_confidence_threshold {
                                 tracing::trace!(
+                                    decision_id = %decision_id,
                                     "Skipping action with low confidence: {:.2}",
                                     action.confidence
                                 );
@@ -278,7 +292,7 @@ impl ActionTask {
 
                             // Execute the action
                             if let Err(e) = self.execute_action(&mut **p, &gated_action, ms_since_last) {
-                                tracing::warn!("Failed to execute action: {}", e);
+                                tracing::warn!(decision_id = %decision_id, "Failed to execute action: {}", e);
                             } else {
                                 actions_emitted += 1;
                                 self.last_action_time = now;
@@ -295,6 +309,30 @@ impl ActionTask {
                                 state.actions_emitted = actions_emitted;
                                 state.action_latency_last_us = self.action_latency.last_us();
                                 state.action_latency_p95_us = self.action_latency.p95_us();
+
+                                if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
+                                    tracing::debug!(
+                                        event = obs::event::ACTION_EMITTED,
+                                        decision_id = %decision_id,
+                                        stream_id = obs::field::UNKNOWN,
+                                        confidence = gated_action.confidence,
+                                        action_latency_last_us = state.action_latency_last_us,
+                                        "Action emitted"
+                                    );
+                                }
+
+                                if actions_emitted % ACTION_SUMMARY_EVERY_EMITTED == 0
+                                    && self.emit_gate.allow_info()
+                                {
+                                    tracing::info!(
+                                        event = obs::event::TASK_SUMMARY,
+                                        decision_id = obs::field::UNKNOWN,
+                                        stream_id = obs::field::UNKNOWN,
+                                        actions_emitted,
+                                        action_latency_p95_us = state.action_latency_p95_us,
+                                        "Action task periodic summary"
+                                    );
+                                }
                             }
                         }
                         None => {
@@ -306,7 +344,13 @@ impl ActionTask {
             }
         }
 
-        tracing::info!("Action task emitted {} actions", actions_emitted);
+        tracing::info!(
+            event = obs::event::TASK_STOPPED,
+            decision_id = obs::field::UNKNOWN,
+            stream_id = obs::field::UNKNOWN,
+            actions_emitted,
+            "Action task emitted actions"
+        );
         Ok(())
     }
 

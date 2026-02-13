@@ -6,7 +6,7 @@
 
 use crate::{
     action::ActionSpace, device::ConnectionSettings, observation::ObservationConfig,
-    reward::ErrPConfig,
+    observability::ObservabilityConfig, reward::ErrPConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -532,6 +532,15 @@ pub struct UiConfig {
     /// URL opened by the IDE when Jupyter server is ready.
     #[serde(default = "default_jupyter_url")]
     pub jupyter_url: String,
+    /// Persisted visualization layout preset key.
+    #[serde(default = "default_visualization_layout_preset")]
+    pub visualization_layout_preset: String,
+    /// Persisted visualization widget assignments by pane slot.
+    #[serde(default = "default_visualization_pane_widgets")]
+    pub visualization_pane_widgets: Vec<String>,
+    /// Serialized `egui_tiles` tree state for visualization layout.
+    #[serde(default)]
+    pub visualization_layout_tree_json: Option<String>,
     /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
     ///
     /// Deprecated: retained for backward compatibility with older configs.
@@ -559,6 +568,19 @@ fn default_jupyter_url() -> String {
     "http://127.0.0.1:8888/lab".to_string()
 }
 
+fn default_visualization_layout_preset() -> String {
+    "grid2x2".to_string()
+}
+
+fn default_visualization_pane_widgets() -> Vec<String> {
+    vec![
+        "time_series".to_string(),
+        "fft_plot".to_string(),
+        "band_power".to_string(),
+        "signal_quality".to_string(),
+    ]
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -571,6 +593,9 @@ impl Default for UiConfig {
             jupyter_auto_bootstrap: default_true(),
             jupyter_command: default_jupyter_command(),
             jupyter_url: default_jupyter_url(),
+            visualization_layout_preset: default_visualization_layout_preset(),
+            visualization_pane_widgets: default_visualization_pane_widgets(),
+            visualization_layout_tree_json: None,
             lab_kernel_command: default_lab_kernel_command(),
         }
     }
@@ -779,6 +804,10 @@ pub struct ServiceConfig {
     /// Capability gating and model fallback policy.
     #[serde(default)]
     pub fallback_policy: FallbackPolicy,
+
+    /// Runtime observability sampling and rate-limit policy.
+    #[serde(default)]
+    pub observability: ObservabilityConfig,
 }
 
 fn default_ipc_simulation_enabled() -> bool {
@@ -830,6 +859,7 @@ impl Default for ServiceConfig {
             log_file_path: None,
             latency_alert: LatencyAlertConfig::default(),
             fallback_policy: FallbackPolicy::default(),
+            observability: ObservabilityConfig::default(),
         }
     }
 }
@@ -897,5 +927,51 @@ impl Default for ServiceState {
             recent_error_rate: 0.0,
             uptime_seconds: 0,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::Value;
+
+    use super::ServiceConfig;
+
+    #[test]
+    fn service_config_defaults_include_observability_policy() {
+        let config = ServiceConfig::default();
+        assert!(config.observability.global.sample_ratio > 0.0);
+        assert!(config.observability.signal.debug_max_per_second > 0);
+        assert!(config.observability.control.info_max_per_minute > 0);
+    }
+
+    #[test]
+    fn service_config_backcompat_deserialize_without_observability_field() {
+        let mut json =
+            serde_json::to_value(ServiceConfig::default()).expect("serialize default service");
+        let object = json
+            .as_object_mut()
+            .expect("service config should serialize as object");
+        object.remove("observability");
+
+        let decoded: ServiceConfig =
+            serde_json::from_value(json).expect("deserialize service config without observability");
+        assert!(decoded.observability.decoder.sample_ratio > 0.0);
+        assert!(decoded.observability.ipc.debug_max_per_second > 0);
+    }
+
+    #[test]
+    fn service_config_roundtrip_preserves_observability_field_shape() {
+        let config = ServiceConfig::default();
+        let json = serde_json::to_value(&config).expect("serialize service config");
+        let observability = json
+            .get("observability")
+            .and_then(Value::as_object)
+            .expect("observability object exists");
+        assert!(observability.contains_key("global"));
+        assert!(observability.contains_key("signal"));
+        assert!(observability.contains_key("decoder"));
+        assert!(observability.contains_key("action"));
+        assert!(observability.contains_key("ipc"));
+        assert!(observability.contains_key("control"));
     }
 }

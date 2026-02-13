@@ -22,6 +22,9 @@ use neurohid_types::{
     },
     profile::ProfileId,
 };
+use neurohid_types::observability::{
+    self as obs, EmitGate, ObservabilityComponent,
+};
 
 use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
@@ -47,6 +50,7 @@ pub struct ServiceManager {
     external_control_endpoint: String,
     external_control_pipe_name: String,
     last_external_poll: Option<Instant>,
+    control_emit_gate: std::sync::Mutex<EmitGate>,
 }
 
 impl ServiceManager {
@@ -65,6 +69,11 @@ impl ServiceManager {
             ),
             external_control_pipe_name: service_defaults.control_pipe_name,
             last_external_poll: None,
+            control_emit_gate: std::sync::Mutex::new(EmitGate::new(
+                service_defaults
+                    .observability
+                    .policy_for(ObservabilityComponent::Control),
+            )),
         }
     }
 
@@ -103,6 +112,14 @@ impl ServiceManager {
         }
 
         self.runtime_mode = next_mode;
+        if let Ok(mut gate) = self.control_emit_gate.lock() {
+            *gate = EmitGate::new(
+                config
+                    .service
+                    .observability
+                    .policy_for(ObservabilityComponent::Control),
+            );
+        }
     }
 
     /// Start the service/runtime.
@@ -752,10 +769,74 @@ impl ServiceManager {
     }
 
     fn send_control_request(&self, request: ControlRequest) -> Result<ControlResponse, String> {
-        match self.external_control_transport {
+        let endpoint = self.control_endpoint_label();
+        let request_id = request.request_id.clone();
+        let command = Self::control_command_name(&request.command);
+        let started = Instant::now();
+        let _request_span = tracing::debug_span!(
+            obs::span::CONTROL_REQUEST,
+            stage = obs::stage::CONTROL,
+            decision_id = obs::field::UNKNOWN,
+            stream_id = obs::field::UNKNOWN,
+            command,
+            request_id = request_id.as_deref().unwrap_or("none")
+        )
+        .entered();
+
+        if self.allow_control_debug() {
+            tracing::debug!(
+                event = obs::event::CONTROL_REQUEST_RECEIVED,
+                endpoint = %endpoint,
+                request_id = request_id.as_deref().unwrap_or("none"),
+                decision_id = obs::field::UNKNOWN,
+                stream_id = obs::field::UNKNOWN,
+                command,
+                transport = ?self.external_control_transport,
+                "Sending external control request"
+            );
+        }
+
+        let response = match self.external_control_transport {
             ControlTransport::NamedPipe => self.send_control_request_named_pipe(request),
             ControlTransport::TcpLoopback => self.send_control_request_tcp(request),
+        };
+
+        match &response {
+            Ok(ok) => {
+                if self.allow_control_debug() {
+                    tracing::debug!(
+                        event = obs::event::CONTROL_RESPONSE_SENT,
+                        endpoint = %endpoint,
+                        request_id = request_id.as_deref().unwrap_or("none"),
+                        decision_id = obs::field::UNKNOWN,
+                        stream_id = obs::field::UNKNOWN,
+                        command,
+                        payload = %Self::control_response_kind(&ok.payload),
+                        duration_ms = started.elapsed().as_millis() as u64,
+                        "Received external control response"
+                    );
+                }
+            }
+            Err(error) => tracing::warn!(
+                endpoint = %endpoint,
+                request_id = request_id.as_deref().unwrap_or("none"),
+                decision_id = obs::field::UNKNOWN,
+                stream_id = obs::field::UNKNOWN,
+                command,
+                duration_ms = started.elapsed().as_millis() as u64,
+                "External control request failed: {}",
+                error
+            ),
         }
+
+        response
+    }
+
+    fn allow_control_debug(&self) -> bool {
+        self.control_emit_gate
+            .lock()
+            .map(|mut gate| gate.allow_debug())
+            .unwrap_or(true)
     }
 
     fn send_control_request_tcp(&self, request: ControlRequest) -> Result<ControlResponse, String> {
@@ -890,6 +971,33 @@ impl ServiceManager {
         match self.external_control_transport {
             ControlTransport::NamedPipe => self.external_control_pipe_name.clone(),
             ControlTransport::TcpLoopback => self.external_control_endpoint.clone(),
+        }
+    }
+
+    fn control_response_kind(payload: &ControlResponsePayload) -> &'static str {
+        match payload {
+            ControlResponsePayload::Ack => "ack",
+            ControlResponsePayload::Snapshot { .. } => "snapshot",
+            ControlResponsePayload::TrainerSnapshot { .. } => "trainer_snapshot",
+            ControlResponsePayload::Error { .. } => "error",
+        }
+    }
+
+    fn control_command_name(command: &ControlCommand) -> &'static str {
+        match command {
+            ControlCommand::Snapshot => "snapshot",
+            ControlCommand::Shutdown => "shutdown",
+            ControlCommand::SetCalibrationMode { .. } => "set_calibration_mode",
+            ControlCommand::SetOutputEnabled { .. } => "set_output_enabled",
+            ControlCommand::ReloadModel => "reload_model",
+            ControlCommand::PromoteCandidateModel => "promote_candidate_model",
+            ControlCommand::RescanStreams => "rescan_streams",
+            ControlCommand::ConnectStream { .. } => "connect_stream",
+            ControlCommand::DisconnectStream { .. } => "disconnect_stream",
+            ControlCommand::SetLearningEnabled { .. } => "set_learning_enabled",
+            ControlCommand::MlBridgeReconnect => "ml_bridge_reconnect",
+            ControlCommand::TrainerSnapshot => "trainer_snapshot",
+            ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
         }
     }
 

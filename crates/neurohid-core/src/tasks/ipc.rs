@@ -19,6 +19,7 @@ use neurohid_types::{
     control::RuntimeModeState,
     error::{Error, IpcError, Result},
     event::{MarkerPayload, MarkerType, StreamMarker},
+    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
     profile::ProfileId,
     reward::{ErrPConfig, ErrPResult, SignalQuality},
     signal::Sample,
@@ -35,6 +36,7 @@ const ERRP_EMIT_GRACE_US: i64 = 120_000;
 const DEFAULT_ERRP_SAMPLE_RATE_HZ: f32 = 128.0;
 const MAX_CANDIDATE_FUTURE_SKEW_US: i64 = 5 * 60 * 1_000_000;
 const MAX_CANDIDATE_MODEL_BYTES: u64 = 128 * 1024 * 1024;
+const IPC_TELEMETRY_SUMMARY_EVERY: u64 = 120;
 
 #[derive(Debug, Clone)]
 struct PendingErrpWindow {
@@ -89,8 +91,10 @@ pub struct IpcTask {
     send_sequence: u64,
     session_id: String,
     dropped_messages: u64,
+    telemetry_frames_sent: u64,
     pending_errp_windows: VecDeque<PendingErrpWindow>,
     sample_buffers: HashMap<String, StreamSampleBuffer>,
+    emit_gate: EmitGate,
 }
 
 impl IpcTask {
@@ -104,6 +108,7 @@ impl IpcTask {
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
         profile_store: Option<ProfileStore>,
         decoder_command_tx: Option<mpsc::Sender<DecoderCommand>>,
+        observability: ObservabilityConfig,
     ) -> Self {
         Self {
             config,
@@ -118,13 +123,20 @@ impl IpcTask {
             send_sequence: 0,
             session_id: neurohid_types::now_micros().to_string(),
             dropped_messages: 0,
+            telemetry_frames_sent: 0,
             pending_errp_windows: VecDeque::new(),
             sample_buffers: HashMap::new(),
+            emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Ipc)),
         }
     }
 
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
-        tracing::info!("IPC task started");
+        tracing::info!(
+            event = obs::event::TASK_STARTED,
+            span = obs::span::IPC_RUN,
+            stage = obs::stage::IPC,
+            "IPC task started"
+        );
 
         let result = if self.config.ipc_simulation_enabled {
             self.run_simulated(&mut shutdown).await
@@ -133,7 +145,7 @@ impl IpcTask {
         };
 
         self.set_connection_state(false, false, false).await;
-        tracing::info!("IPC task completed");
+        tracing::info!(event = obs::event::TASK_STOPPED, "IPC task completed");
         result
     }
 
@@ -224,6 +236,19 @@ impl IpcTask {
                         tracing::info!("Decision event channel closed");
                         break;
                     };
+                    let decision_id = decision.decision_id.clone();
+                    let stream_id = decision
+                        .stream_id
+                        .clone()
+                        .unwrap_or_else(|| DEFAULT_ERRP_STREAM_KEY.to_string());
+                    if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
+                        tracing::debug!(
+                            event = obs::event::IPC_DECISION_SENT,
+                            decision_id = %decision_id,
+                            stream_id = %stream_id,
+                            "IPC received decision event"
+                        );
+                    }
                     self.send_decision_event_real(&connection, decision).await?;
                 }
                 sample = self.sample_rx.recv() => {
@@ -358,6 +383,15 @@ impl IpcTask {
         };
         let msg = self.build_envelope(RuntimeMlKindV2::DecisionEvent, &payload)?;
         connection.send(msg).await?;
+        if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
+            tracing::debug!(
+                event = obs::event::IPC_DECISION_SENT,
+                decision_id = %decision_id,
+                stream_id = stream_id.as_deref().unwrap_or(DEFAULT_ERRP_STREAM_KEY),
+                feature_dim = payload.feature_values.len(),
+                "Sent decision event to trainer bridge"
+            );
+        }
         self.queue_errp_window(decision_id, timestamp_us, stream_id, signal_quality);
         self.emit_due_errp_windows(connection, None).await
     }
@@ -377,7 +411,24 @@ impl IpcTask {
         };
         drop(state);
         let msg = self.build_envelope(RuntimeMlKindV2::RuntimeTelemetry, &telemetry)?;
-        connection.send(msg).await
+        connection.send(msg).await?;
+
+        self.telemetry_frames_sent = self.telemetry_frames_sent.saturating_add(1);
+        if self.telemetry_frames_sent % IPC_TELEMETRY_SUMMARY_EVERY == 0
+            && self.emit_gate.allow_info()
+        {
+            tracing::info!(
+                event = obs::event::IPC_TELEMETRY_PUBLISHED,
+                decision_id = obs::field::UNKNOWN,
+                stream_id = obs::field::UNKNOWN,
+                telemetry_frames_sent = self.telemetry_frames_sent,
+                dropped_ml_messages = self.dropped_messages,
+                pending_errp_windows = self.pending_errp_windows.len(),
+                "IPC telemetry periodic summary"
+            );
+        }
+
+        Ok(())
     }
 
     async fn handle_trainer_message(&mut self, message: RuntimeMlEnvelopeV2) -> Result<()> {
@@ -564,6 +615,11 @@ impl IpcTask {
         stream_id: Option<String>,
         signal_quality: f32,
     ) {
+        let decision_label = decision_id.clone();
+        let stream_label = stream_id
+            .as_deref()
+            .unwrap_or(DEFAULT_ERRP_STREAM_KEY)
+            .to_string();
         let window_start_us = action_timestamp_us.saturating_add(self.errp_config.window_start_us);
         let mut window_end_us = action_timestamp_us.saturating_add(self.errp_config.window_end_us);
         if window_end_us <= window_start_us {
@@ -578,6 +634,18 @@ impl IpcTask {
             stream_id,
             signal_quality,
         });
+
+        if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
+            tracing::debug!(
+                event = obs::event::IPC_DECISION_SENT,
+                decision_id = %decision_label,
+                stream_id = %stream_label,
+                pending_windows = self.pending_errp_windows.len(),
+                window_start_us,
+                window_end_us,
+                "Queued ErrP window"
+            );
+        }
     }
 
     fn record_runtime_sample(&mut self, sample: Sample) {

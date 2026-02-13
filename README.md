@@ -191,6 +191,30 @@ Then run the Python bridge with:
 uv run --directory python neurohid-ml bridge --transport tcp_loopback --port 47384
 ```
 
+### Tracing and Data-Flow Observability
+
+Runtime binaries (`neurohid`, `neurohid-service`) now emit structured `tracing` logs with
+low-overhead defaults for hot paths.
+
+- Default format: JSON (`NEUROHID_LOG_FORMAT=json`)
+- Optional human-readable format: `NEUROHID_LOG_FORMAT=text`
+- Filter levels use standard `RUST_LOG` (for example: `RUST_LOG=neurohid=debug`)
+
+Hot-path traces are correlation-friendly and include runtime identifiers such as
+`decision_id` and `stream_id` at stage boundaries (signal -> decoder -> action -> IPC),
+while high-frequency detail remains debug-gated or periodically summarized.
+
+Runtime observability sampling/rate limits are configurable via
+`service.observability` in `SystemConfig` (global + per-component: `signal`,
+`decoder`, `action`, `ipc`, `control`).
+
+- `sample_ratio` controls deterministic sampling for hot-path debug events
+- `info_max_per_minute` bounds gated info summaries
+- `debug_max_per_second` bounds gated debug emissions
+
+Shared taxonomy names are emitted as structured fields (`stage`, `span`, `event`) so
+runtime/control logs can be grouped by stable labels across components.
+
 ### Advanced mode Jupyter IDE (managed)
 
 The Hub now includes a Jupyter-first IDE workflow in Advanced mode.
@@ -201,12 +225,21 @@ The Hub now includes a Jupyter-first IDE workflow in Advanced mode.
 4. Click **Prepare Environment** once, then **Start Jupyter**.
 5. Click **Open in Browser** and use notebooks under `python/notebooks`.
 
+The Hub Visualization workspace supports draggable/resizable tiled panes and restores your
+last layout automatically across launches.
+
 Control endpoint requests are line-delimited JSON with
 `neurohid_types::control::ControlRequest` shape, for example:
 
 ```json
 {"request_id":"1","command":{"type":"snapshot"}}
 ```
+
+Persisted visualization UI state is stored in `UiConfig` via:
+
+- `visualization_layout_preset`
+- `visualization_pane_widgets`
+- `visualization_layout_tree_json`
 
 ### Python ML Workflows (uv-first)
 

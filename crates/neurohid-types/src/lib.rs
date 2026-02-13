@@ -32,6 +32,7 @@ pub mod ipc_v2;
 pub mod learning;
 pub mod model;
 pub mod observation;
+pub mod observability;
 pub mod profile;
 pub mod reward;
 pub mod signal;
@@ -55,6 +56,9 @@ pub use learning::{
 };
 pub use model::{ModelManifest, NormalizationStats};
 pub use observation::{CursorState, Observation};
+pub use observability::{
+    EmitGate, EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig,
+};
 pub use profile::{CalibrationState, ProfileId};
 pub use reward::{ErrPResult, RewardSignal, SignalQuality};
 pub use signal::{ChannelConfig, ChannelId, FeatureVector, Sample};

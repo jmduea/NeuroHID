@@ -69,6 +69,8 @@ impl HubApp {
             }
         };
 
+        let visualization = VisualizationScreen::from_ui_config(&state.config.ui);
+
         let mut hub = Self {
             runtime,
             current_screen: Screen::Dashboard,
@@ -81,7 +83,7 @@ impl HubApp {
             data_bus: DataBus::new(),
             stream_console: StreamConsole::new(),
             dashboard: DashboardScreen::new(),
-            visualization: VisualizationScreen::new(),
+            visualization,
             devices: DevicesScreen::new(),
             profiles: ProfilesScreen::new(),
             calibration: CalibrationScreen::new(),
@@ -598,8 +600,14 @@ impl eframe::App for HubApp {
                         .show(ui, &self.state, &mut self.service_manager, &self.runtime);
                 }
                 Screen::Visualization => {
-                    self.visualization
-                        .show(ui, &self.data_bus, &self.state.service_snapshot);
+                    let snapshot = self.state.service_snapshot.clone();
+                    self.visualization.show(
+                        ui,
+                        &self.data_bus,
+                        &snapshot,
+                        &mut self.state,
+                        &self.runtime,
+                    );
                 }
                 Screen::Devices => {
                     self.devices

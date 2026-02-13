@@ -2,6 +2,7 @@
 name: analyst
 description: Pre-planning consultant for requirements analysis (Opus)
 model: [GPT-5.3-Codex (copilot), GPT-5.2-Codex (copilot)]
+tools: []
 ---
 
 **Role**

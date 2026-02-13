@@ -138,504 +138,409 @@ impl DashboardScreen {
         self.poll_trainer_snapshot(service_manager, snap.running);
         self.sample_trainer_observability(snap);
 
-        // Top row: Service + Device cards
-        ui.columns(2, |cols| {
-            // Service status card
-            cols[0].group(|ui| {
-                ui.heading("Service");
-                ui.add_space(8.0);
+        let total_streams = snap.discovered_streams.len();
+        let connected_streams = snap
+            .discovered_streams
+            .iter()
+            .filter(|stream| stream.connected)
+            .count();
 
-                let (color, text) = if snap.running {
-                    (egui::Color32::GREEN, "Running")
-                } else {
-                    (egui::Color32::GRAY, "Stopped")
-                };
-                ui.horizontal(|ui| {
-                    ui.colored_label(color, "●");
-                    ui.label(text);
-                });
-                ui.label(
-                    egui::RichText::new(format!("Mode: {}", state.config.service.runtime_mode))
-                        .small()
-                        .color(egui::Color32::GRAY),
-                );
+        ui.group(|ui| {
+            ui.label(egui::RichText::new("System Snapshot").small().strong());
+            ui.add_space(6.0);
+
+            let (service_color, service_text) = if snap.running {
+                (egui::Color32::GREEN, "Service: running")
+            } else {
+                (egui::Color32::GRAY, "Service: stopped")
+            };
+            let (mode_color, mode_text) = match snap.runtime_mode_state {
+                RuntimeModeState::Full => (egui::Color32::GREEN, "Mode: full"),
+                RuntimeModeState::Fallback => (egui::Color32::YELLOW, "Mode: fallback"),
+                RuntimeModeState::Degraded => (egui::Color32::RED, "Mode: degraded"),
+            };
+
+            ui.horizontal_wrapped(|ui| {
+                ui.colored_label(service_color, "●");
+                ui.label(service_text);
+                ui.separator();
+                ui.colored_label(mode_color, "●");
+                ui.label(mode_text);
+                ui.separator();
+                ui.label(format!("Signal: {:.0}%", snap.signal_quality * 100.0));
+                ui.separator();
+                ui.label(format!("Devices: {}/{}", connected_streams, total_streams));
+                ui.separator();
+                ui.label(format!("Actions: {}", snap.actions_emitted));
+                ui.separator();
+                ui.label(format!("Errors: {}", snap.errors_detected));
 
                 if snap.running {
+                    ui.separator();
                     let mins = snap.uptime_secs / 60;
                     let secs = snap.uptime_secs % 60;
                     ui.label(format!("Uptime: {}:{:02}", mins, secs));
                 }
+            });
 
-                ui.horizontal(|ui| {
-                    let (output_color, output_text) = if snap.output_enabled {
-                        (egui::Color32::GREEN, "Output enabled")
-                    } else {
-                        (egui::Color32::YELLOW, "Output paused")
-                    };
-                    ui.colored_label(output_color, "●");
-                    ui.label(output_text);
-                });
+            if let Some((task, _)) = &snap.task_error {
+                ui.add_space(4.0);
+                ui.colored_label(egui::Color32::RED, format!("Service error in {} task", task));
+            }
+        });
 
-                ui.horizontal(|ui| {
-                    let (profile_color, profile_text) = if snap.profile_ready {
-                        (egui::Color32::GREEN, "Profile ready")
-                    } else {
-                        (egui::Color32::YELLOW, "Profile not calibrated")
-                    };
-                    ui.colored_label(profile_color, "●");
-                    ui.label(profile_text);
-                });
+        ui.add_space(12.0);
 
-                ui.horizontal(|ui| {
-                    let (decoder_color, decoder_text) = if snap.decoder_ready {
-                        (egui::Color32::GREEN, "Decoder ready")
-                    } else {
-                        (egui::Color32::YELLOW, "Decoder unavailable")
-                    };
-                    ui.colored_label(decoder_color, "●");
-                    ui.label(decoder_text);
-                });
+        ui.group(|ui| {
+            ui.heading("Service");
+            ui.add_space(8.0);
 
-                ui.horizontal(|ui| {
-                    let (bridge_color, bridge_text) = if snap.ml_bridge_connected {
-                        if snap.ml_bridge_stalled {
-                            (egui::Color32::YELLOW, "ML bridge stalled")
-                        } else {
-                            (egui::Color32::GREEN, "ML bridge connected")
-                        }
-                    } else {
-                        (egui::Color32::GRAY, "ML bridge disconnected")
-                    };
-                    ui.colored_label(bridge_color, "●");
-                    ui.label(bridge_text);
-                });
-
-                let (mode_color, mode_text) = match snap.runtime_mode_state {
-                    RuntimeModeState::Full => (egui::Color32::GREEN, "Runtime mode: full"),
-                    RuntimeModeState::Fallback => (egui::Color32::YELLOW, "Runtime mode: fallback"),
-                    RuntimeModeState::Degraded => (egui::Color32::RED, "Runtime mode: degraded"),
+            ui.horizontal_wrapped(|ui| {
+                let (output_color, output_text) = if snap.output_enabled {
+                    (egui::Color32::GREEN, "Output enabled")
+                } else {
+                    (egui::Color32::YELLOW, "Output paused")
                 };
-                ui.colored_label(mode_color, mode_text);
+                ui.colored_label(output_color, "●");
+                ui.label(output_text);
+                ui.separator();
+
+                let (profile_color, profile_text) = if snap.profile_ready {
+                    (egui::Color32::GREEN, "Profile calibrated")
+                } else {
+                    (egui::Color32::YELLOW, "Profile not calibrated")
+                };
+                ui.colored_label(profile_color, "●");
+                ui.label(profile_text);
+                ui.separator();
+
+                let (decoder_color, decoder_text) = if snap.decoder_ready {
+                    (egui::Color32::GREEN, "Decoder ready")
+                } else {
+                    (egui::Color32::YELLOW, "Decoder unavailable")
+                };
+                ui.colored_label(decoder_color, "●");
+                ui.label(decoder_text);
+                ui.separator();
+
+                let (bridge_color, bridge_text) = if snap.ml_bridge_connected {
+                    if snap.ml_bridge_stalled {
+                        (egui::Color32::YELLOW, "ML bridge stalled")
+                    } else {
+                        (egui::Color32::GREEN, "ML bridge connected")
+                    }
+                } else {
+                    (egui::Color32::GRAY, "ML bridge disconnected")
+                };
+                ui.colored_label(bridge_color, "●");
+                ui.label(bridge_text);
+            });
+
+            ui.add_space(8.0);
+
+            if snap.running {
+                let stop_label = if state.config.service.runtime_mode == ServiceRuntimeMode::External {
+                    "Request Shutdown"
+                } else {
+                    "Stop Service"
+                };
+                if ui.button(stop_label).clicked() {
+                    service_manager.stop();
+                }
 
                 ui.add_space(6.0);
-                ui.group(|ui| {
-                    ui.label(egui::RichText::new("ML Bridge Controls").small().strong());
-
-                    let mut learning_enabled = snap.learning_enabled;
-                    if ui.checkbox(&mut learning_enabled, "Learning enabled").changed() {
-                        service_manager.set_learning_enabled(learning_enabled);
+                ui.horizontal(|ui| {
+                    if ui.button("Reload Model").clicked() {
+                        service_manager.reload_model();
                     }
+                    let can_promote = snap.profile_ready;
+                    let promote = ui.add_enabled(can_promote, egui::Button::new("Promote Candidate"));
+                    if promote.clicked() {
+                        service_manager.promote_candidate_model();
+                    }
+                });
+                if !snap.profile_ready {
+                    ui.label(
+                        egui::RichText::new("Candidate promotion requires a calibrated active profile")
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
+                }
 
-                    ui.horizontal(|ui| {
-                        if ui.button("Reconnect Bridge").clicked() {
-                            service_manager.ml_bridge_reconnect();
-                        }
-                        if ui.button("Apply Fallback Policy").clicked() {
-                            service_manager
-                                .set_fallback_policy(state.config.service.fallback_policy.clone());
-                        }
-                        if ui.button("Refresh Trainer Snapshot").clicked() {
-                            self.trainer_snapshot = service_manager.trainer_snapshot();
-                            self.last_trainer_snapshot_poll = Some(Instant::now());
-                        }
+                if state.config.ui.mode == UiMode::Advanced {
+                    ui.add_space(6.0);
+                    let has_profile = state.active_profile_id.is_some();
+                    let train_button = ui.add_enabled(
+                        self.train_stage_rx.is_none() && has_profile,
+                        egui::Button::new("Train + Stage Candidate"),
+                    );
+                    if train_button.clicked() {
+                        self.start_train_stage_job(state);
+                    }
+                    if !has_profile {
+                        ui.label(
+                            egui::RichText::new("Training requires an active profile selection")
+                                .small()
+                                .color(egui::Color32::GRAY),
+                        );
+                    }
+                }
+            } else {
+                let start_label = if state.config.service.runtime_mode == ServiceRuntimeMode::External {
+                    "Probe External Service"
+                } else {
+                    "Start Service"
+                };
+                if ui.button(start_label).clicked() {
+                    service_manager.start(
+                        runtime,
+                        state.config.clone(),
+                        Some(state.profile_store.clone()),
+                        state.active_profile_id.clone(),
+                    );
+                }
+                if state.config.service.runtime_mode == ServiceRuntimeMode::External {
+                    ui.label(
+                        egui::RichText::new(
+                            "External mode requires `neurohid-service --control-port` to be running.",
+                        )
+                        .small()
+                        .color(egui::Color32::YELLOW),
+                    );
+                }
+                if state.active_profile_id.is_none() {
+                    ui.label(
+                        egui::RichText::new("No profile selected — running in discovery mode")
+                            .small()
+                            .color(egui::Color32::YELLOW),
+                    );
+                }
+            }
+
+            if let Some(status) = &self.train_stage_status {
+                let (color, text) = match status {
+                    TrainStageStatus::Running(msg) => (egui::Color32::YELLOW, msg.as_str()),
+                    TrainStageStatus::Success(msg) => (egui::Color32::GREEN, msg.as_str()),
+                    TrainStageStatus::Error(msg) => (egui::Color32::RED, msg.as_str()),
+                };
+                ui.add_space(6.0);
+                ui.colored_label(color, text);
+            }
+
+            if !self.train_stage_output.is_empty() {
+                ui.add_space(4.0);
+                ui.collapsing("Train + Stage Output", |ui| {
+                    egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.train_stage_output)
+                                .font(egui::TextStyle::Monospace)
+                                .desired_width(f32::INFINITY),
+                        );
                     });
+                });
+            }
 
-                    if let Some(trainer) = &self.trainer_snapshot {
+            if let Some(err) = service_manager.last_error() {
+                ui.add_space(6.0);
+                ui.colored_label(egui::Color32::RED, err);
+            }
+        });
+
+        ui.add_space(12.0);
+
+        ui.group(|ui| {
+            ui.heading("Signal Quality");
+            ui.add_space(8.0);
+
+            let quality = snap.signal_quality;
+            let quality_color = if quality > 0.7 {
+                egui::Color32::GREEN
+            } else if quality > 0.5 {
+                egui::Color32::YELLOW
+            } else {
+                egui::Color32::RED
+            };
+
+            ui.add(
+                egui::ProgressBar::new(quality)
+                    .text(format!("{:.0}%", quality * 100.0))
+                    .fill(quality_color),
+            );
+
+            let error_rate = state.error_rate();
+            let error_color = if error_rate < 10.0 {
+                egui::Color32::GREEN
+            } else if error_rate < 30.0 {
+                egui::Color32::YELLOW
+            } else {
+                egui::Color32::RED
+            };
+            ui.horizontal_wrapped(|ui| {
+                ui.label(egui::RichText::new("5-channel average").small().color(egui::Color32::GRAY));
+                ui.separator();
+                ui.colored_label(error_color, format!("Error rate: {:.1}%", error_rate));
+            });
+        });
+
+        ui.add_space(12.0);
+
+        ui.collapsing("Diagnostics", |ui| {
+            ui.label(
+                egui::RichText::new(format!("Runtime: {}", state.config.service.runtime_mode))
+                    .small()
+                    .color(egui::Color32::GRAY),
+            );
+            if let Some(version) = &snap.decoder_model_version {
+                ui.label(
+                    egui::RichText::new(format!("Model: {}", version))
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
+            }
+            if let Some(model_kind) = &snap.fallback_model_kind {
+                ui.label(
+                    egui::RichText::new(format!("Active model path: {}", model_kind))
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
+            }
+
+            let capability_text = if snap.enabled_capabilities.is_empty() {
+                "Enabled capabilities: none".to_string()
+            } else {
+                format!("Enabled capabilities: {}", snap.enabled_capabilities.join(", "))
+            };
+            ui.label(
+                egui::RichText::new(capability_text)
+                    .small()
+                    .color(egui::Color32::GRAY),
+            );
+            if let Some(message) = &snap.limited_capabilities_message {
+                let color = if snap.runtime_mode_state == RuntimeModeState::Degraded {
+                    egui::Color32::RED
+                } else {
+                    egui::Color32::YELLOW
+                };
+                ui.colored_label(color, message);
+            }
+
+            ui.label(
+                egui::RichText::new(format!(
+                    "Signal latency: last {} us | p95 {} us",
+                    snap.signal_latency_last_us, snap.signal_latency_p95_us
+                ))
+                .small()
+                .color(egui::Color32::GRAY),
+            );
+            ui.label(
+                egui::RichText::new(format!(
+                    "Decode latency: last {} us | p95 {} us",
+                    snap.decode_latency_last_us, snap.decode_latency_p95_us
+                ))
+                .small()
+                .color(egui::Color32::GRAY),
+            );
+            ui.label(
+                egui::RichText::new(format!(
+                    "Action latency: last {} us | p95 {} us",
+                    snap.action_latency_last_us, snap.action_latency_p95_us
+                ))
+                .small()
+                .color(egui::Color32::GRAY),
+            );
+
+            if snap.latency_degraded {
+                let message = snap
+                    .latency_alert_message
+                    .clone()
+                    .unwrap_or_else(|| "Latency thresholds exceeded".to_string());
+                ui.colored_label(egui::Color32::RED, message);
+            }
+
+            ui.add_space(8.0);
+            ui.collapsing("ML Bridge & Trainer", |ui| {
+                let mut learning_enabled = snap.learning_enabled;
+                if ui.checkbox(&mut learning_enabled, "Learning enabled").changed() {
+                    service_manager.set_learning_enabled(learning_enabled);
+                }
+
+                ui.horizontal_wrapped(|ui| {
+                    if ui.button("Reconnect Bridge").clicked() {
+                        service_manager.ml_bridge_reconnect();
+                    }
+                    if ui.button("Apply Fallback Policy").clicked() {
+                        service_manager
+                            .set_fallback_policy(state.config.service.fallback_policy.clone());
+                    }
+                    if ui.button("Refresh Trainer Snapshot").clicked() {
+                        self.trainer_snapshot = service_manager.trainer_snapshot();
+                        self.last_trainer_snapshot_poll = Some(Instant::now());
+                    }
+                });
+
+                if let Some(trainer) = &self.trainer_snapshot {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "Trainer: {} | replay {} | step {}",
+                            trainer.trainer_state, trainer.replay_size, trainer.training_step
+                        ))
+                        .small()
+                        .color(egui::Color32::GRAY),
+                    );
+                    if let Some(protocol) = trainer.protocol_version {
                         ui.label(
                             egui::RichText::new(format!(
-                                "Trainer: {} | replay {} | step {}",
-                                trainer.trainer_state, trainer.replay_size, trainer.training_step
+                                "Protocol v{} | connected {}",
+                                protocol, trainer.trainer_connected
                             ))
                             .small()
                             .color(egui::Color32::GRAY),
                         );
-                        if let Some(protocol) = trainer.protocol_version {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Protocol v{} | connected {}",
-                                    protocol, trainer.trainer_connected
-                                ))
-                                .small()
-                                .color(egui::Color32::GRAY),
-                            );
-                        }
-                        if let Some(last_error) = &trainer.last_error {
-                            ui.label(
-                                egui::RichText::new(last_error)
-                                    .small()
-                                    .color(egui::Color32::YELLOW),
-                            );
-                        }
-                    } else {
+                    }
+                    if let Some(last_error) = &trainer.last_error {
                         ui.label(
-                            egui::RichText::new(
-                                "Trainer snapshot unavailable (bridge disconnected or no response)",
-                            )
-                            .small()
-                            .color(egui::Color32::GRAY),
-                        );
-                    }
-                });
-
-                self.show_trainer_observability(ui, snap);
-
-                if let Some(version) = &snap.decoder_model_version {
-                    ui.label(
-                        egui::RichText::new(format!("Model: {}", version))
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
-                }
-                if let Some(model_kind) = &snap.fallback_model_kind {
-                    ui.label(
-                        egui::RichText::new(format!("Active model path: {}", model_kind))
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
-                }
-
-                let capability_text = if snap.enabled_capabilities.is_empty() {
-                    "Enabled capabilities: none".to_string()
-                } else {
-                    format!(
-                        "Enabled capabilities: {}",
-                        snap.enabled_capabilities.join(", ")
-                    )
-                };
-                ui.label(
-                    egui::RichText::new(capability_text)
-                        .small()
-                        .color(egui::Color32::GRAY),
-                );
-                if let Some(message) = &snap.limited_capabilities_message {
-                    let color = if snap.runtime_mode_state == RuntimeModeState::Degraded {
-                        egui::Color32::RED
-                    } else {
-                        egui::Color32::YELLOW
-                    };
-                    ui.colored_label(color, message);
-                }
-
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Signal latency: last {} us | p95 {} us",
-                        snap.signal_latency_last_us, snap.signal_latency_p95_us
-                    ))
-                    .small()
-                    .color(egui::Color32::GRAY),
-                );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Decode latency: last {} us | p95 {} us",
-                        snap.decode_latency_last_us, snap.decode_latency_p95_us
-                    ))
-                    .small()
-                    .color(egui::Color32::GRAY),
-                );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Action latency: last {} us | p95 {} us",
-                        snap.action_latency_last_us, snap.action_latency_p95_us
-                    ))
-                    .small()
-                    .color(egui::Color32::GRAY),
-                );
-
-                if snap.latency_degraded {
-                    let message = snap
-                        .latency_alert_message
-                        .clone()
-                        .unwrap_or_else(|| "Latency thresholds exceeded".to_string());
-                    ui.colored_label(egui::Color32::RED, message);
-                }
-
-                ui.add_space(8.0);
-
-                if snap.running {
-                    let stop_label = if state.config.service.runtime_mode
-                        == ServiceRuntimeMode::External
-                    {
-                        "Request Shutdown"
-                    } else {
-                        "Stop Service"
-                    };
-                    if ui.button(stop_label).clicked() {
-                        service_manager.stop();
-                    }
-
-                    ui.add_space(6.0);
-                    ui.horizontal(|ui| {
-                        if ui.button("Reload Model").clicked() {
-                            service_manager.reload_model();
-                        }
-                        let can_promote = snap.profile_ready;
-                        let promote =
-                            ui.add_enabled(can_promote, egui::Button::new("Promote Candidate"));
-                        if promote.clicked() {
-                            service_manager.promote_candidate_model();
-                        }
-                    });
-                    if !snap.profile_ready {
-                        ui.label(
-                            egui::RichText::new(
-                                "Candidate promotion requires a calibrated active profile",
-                            )
-                            .small()
-                            .color(egui::Color32::GRAY),
-                        );
-                    }
-
-                    if state.config.ui.mode == UiMode::Advanced {
-                        ui.add_space(6.0);
-                        let has_profile = state.active_profile_id.is_some();
-                        let train_button = ui.add_enabled(
-                            self.train_stage_rx.is_none() && has_profile,
-                            egui::Button::new("Train + Stage Candidate"),
-                        );
-                        if train_button.clicked() {
-                            self.start_train_stage_job(state);
-                        }
-                        if !has_profile {
-                            ui.label(
-                                egui::RichText::new(
-                                    "Training requires an active profile selection",
-                                )
-                                .small()
-                                .color(egui::Color32::GRAY),
-                            );
-                        }
-                    }
-                } else {
-                    let start_label = if state.config.service.runtime_mode
-                        == ServiceRuntimeMode::External
-                    {
-                        "Probe External Service"
-                    } else {
-                        "Start Service"
-                    };
-                    if ui.button(start_label).clicked() {
-                        service_manager.start(
-                            runtime,
-                            state.config.clone(),
-                            Some(state.profile_store.clone()),
-                            state.active_profile_id.clone(),
-                        );
-                    }
-                    if state.config.service.runtime_mode == ServiceRuntimeMode::External {
-                        ui.label(
-                            egui::RichText::new(
-                                "External mode requires `neurohid-service --control-port` to be running.",
-                            )
-                            .small()
-                            .color(egui::Color32::YELLOW),
-                        );
-                    }
-                    if state.active_profile_id.is_none() {
-                        ui.label(
-                            egui::RichText::new("No profile selected — running in discovery mode")
+                            egui::RichText::new(last_error)
                                 .small()
                                 .color(egui::Color32::YELLOW),
                         );
                     }
-                }
-
-                if let Some(status) = &self.train_stage_status {
-                    let (color, text) = match status {
-                        TrainStageStatus::Running(msg) => (egui::Color32::YELLOW, msg.as_str()),
-                        TrainStageStatus::Success(msg) => (egui::Color32::GREEN, msg.as_str()),
-                        TrainStageStatus::Error(msg) => (egui::Color32::RED, msg.as_str()),
-                    };
-                    ui.add_space(6.0);
-                    ui.colored_label(color, text);
-                }
-
-                if !self.train_stage_output.is_empty() {
-                    ui.add_space(4.0);
-                    ui.collapsing("Train + Stage Output", |ui| {
-                        egui::ScrollArea::vertical()
-                            .max_height(140.0)
-                            .show(ui, |ui| {
-                                ui.add(
-                                    egui::TextEdit::multiline(&mut self.train_stage_output)
-                                        .font(egui::TextStyle::Monospace)
-                                        .desired_width(f32::INFINITY),
-                                );
-                            });
-                    });
-                }
-
-                if let Some(err) = service_manager.last_error() {
-                    ui.colored_label(egui::Color32::RED, err);
-                }
-
-                // Show task failure details when the service stopped due to an error
-                if let Some((task, error)) = &snap.task_error {
-                    ui.add_space(8.0);
-                    egui::Frame::group(ui.style())
-                        .fill(egui::Color32::from_rgb(60, 20, 20))
-                        .show(ui, |ui| {
-                            ui.colored_label(
-                                egui::Color32::RED,
-                                format!("Service stopped: {} task failed", task),
-                            );
-                            ui.label(
-                                egui::RichText::new(error)
-                                    .small()
-                                    .color(egui::Color32::LIGHT_RED),
-                            );
-                            if let Some(hint) = task_error_hint(error) {
-                                ui.add_space(4.0);
-                                ui.label(
-                                    egui::RichText::new(hint)
-                                        .small()
-                                        .color(egui::Color32::YELLOW),
-                                );
-                            }
-                        });
-                }
-            });
-
-            // Device card
-            cols[1].group(|ui| {
-                ui.heading("Device");
-                ui.add_space(8.0);
-
-                let total_streams = snap.discovered_streams.len();
-                let connected_streams = snap
-                    .discovered_streams
-                    .iter()
-                    .filter(|s| s.connected)
-                    .count();
-
-                if connected_streams > 0 {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::GREEN, "●");
-                        ui.label(format!(
-                            "{} connected, {} available",
-                            connected_streams, total_streams
-                        ));
-
-                        // Show battery if any connected device reports it
-                        if let Some(battery) = snap.device_battery {
-                            let bat_color = if battery > 50 {
-                                egui::Color32::GREEN
-                            } else if battery > 20 {
-                                egui::Color32::YELLOW
-                            } else {
-                                egui::Color32::RED
-                            };
-                            ui.colored_label(bat_color, format!("{}%", battery));
-                        }
-                    });
-                    // List connected stream names with per-stream quality
-                    for s in snap.discovered_streams.iter().filter(|s| s.connected) {
-                        ui.horizontal(|ui| {
-                            let mut label = format!("  {} ({})", s.name, s.stream_type);
-                            if let Some(bat) = s.battery_percent {
-                                label.push_str(&format!(" | Bat: {}%", bat));
-                            }
-                            ui.label(egui::RichText::new(label).small());
-                        });
-                    }
-                } else if total_streams > 0 {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::YELLOW, "●");
-                        ui.label(format!("{} stream(s) available", total_streams));
-                    });
+                } else {
                     ui.label(
-                        egui::RichText::new("Go to Devices to connect")
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
-                } else {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::GRAY, "●");
-                        ui.label("No streams found");
-                    });
-                    if !snap.running {
-                        ui.label(
-                            egui::RichText::new("Start the service to discover streams")
-                                .small()
-                                .color(egui::Color32::GRAY),
-                        );
-                    }
-                }
-            });
-        });
-
-        ui.add_space(16.0);
-
-        // Middle row: Signal quality + Error rate
-        ui.columns(2, |cols| {
-            // Signal quality
-            cols[0].group(|ui| {
-                ui.heading("Signal Quality");
-                ui.add_space(8.0);
-
-                let quality = snap.signal_quality;
-                let quality_color = if quality > 0.7 {
-                    egui::Color32::GREEN
-                } else if quality > 0.5 {
-                    egui::Color32::YELLOW
-                } else {
-                    egui::Color32::RED
-                };
-
-                ui.add(
-                    egui::ProgressBar::new(quality)
-                        .text(format!("{:.0}%", quality * 100.0))
-                        .fill(quality_color),
-                );
-
-                // Per-channel bars would go here with real device data
-                ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new("5-channel average")
+                        egui::RichText::new(
+                            "Trainer snapshot unavailable (bridge disconnected or no response)",
+                        )
                         .small()
                         .color(egui::Color32::GRAY),
-                );
-            });
-
-            // Error rate
-            cols[1].group(|ui| {
-                ui.heading("Error Rate");
-                ui.add_space(8.0);
-
-                let error_rate = state.error_rate();
-                let error_color = if error_rate < 10.0 {
-                    egui::Color32::GREEN
-                } else if error_rate < 30.0 {
-                    egui::Color32::YELLOW
-                } else {
-                    egui::Color32::RED
-                };
-
-                ui.colored_label(error_color, format!("{:.1}%", error_rate));
-                ui.label(format!(
-                    "{} errors / {} actions",
-                    snap.errors_detected, snap.actions_emitted
-                ));
-            });
-        });
-
-        ui.add_space(16.0);
-
-        // Bottom row: Counters
-        ui.group(|ui| {
-            ui.heading("Activity");
-            ui.add_space(8.0);
-
-            ui.horizontal(|ui| {
-                ui.label(format!("Actions Emitted: {}", snap.actions_emitted));
-                ui.separator();
-                ui.label(format!("Errors Detected: {}", snap.errors_detected));
-                ui.separator();
-                if let Some(name) = &snap.active_profile_name {
-                    ui.label(format!("Profile: {}", name));
-                } else if let Some(id) = &state.active_profile_id {
-                    ui.label(format!("Profile: {}", id));
+                    );
                 }
+
+                self.show_trainer_observability(ui, snap);
             });
+
+            if let Some((task, error)) = &snap.task_error {
+                ui.add_space(8.0);
+                egui::Frame::group(ui.style())
+                    .fill(egui::Color32::from_rgb(60, 20, 20))
+                    .show(ui, |ui| {
+                        ui.colored_label(
+                            egui::Color32::RED,
+                            format!("Service stopped: {} task failed", task),
+                        );
+                        ui.label(
+                            egui::RichText::new(error)
+                                .small()
+                                .color(egui::Color32::LIGHT_RED),
+                        );
+                        if let Some(hint) = task_error_hint(error) {
+                            ui.add_space(4.0);
+                            ui.label(
+                                egui::RichText::new(hint)
+                                    .small()
+                                    .color(egui::Color32::YELLOW),
+                            );
+                        }
+                    });
+            }
         });
     }
 

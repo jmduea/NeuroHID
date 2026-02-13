@@ -8,6 +8,8 @@ NeuroHID Hub GUI library.
 - Interactive calibration game launcher
 - Profile management and configuration editing
 - Service start/stop control with live status monitoring
+- Visualization workspace with draggable/resizable tiled panes (`egui_tiles`)
+- Persisted visualization workspace state (layout preset, pane widgets, tile arrangement)
 
 ## Usage
 

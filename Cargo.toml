@@ -33,7 +33,7 @@ anyhow = "1.0.101"
 
 # Logging
 tracing = "0.1.44"
-tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+tracing-subscriber = { version = "0.3.22", features = ["env-filter", "json"] }
 
 # Numeric / Signal processing
 ndarray = "0.17.2"
@@ -72,3 +72,11 @@ repository = "https://github.com/jmduea/neurohid"
 
 [patch.crates-io]
 lsl-sys = { path = "third_party/lsl-sys-0.1.1"}
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+unused = "warn"
+
+[workspace.lints.clippy]
+all = "warn"
+pedantic = "warn"

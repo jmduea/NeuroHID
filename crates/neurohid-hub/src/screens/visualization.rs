@@ -5,10 +5,11 @@
 //! configurable multi-pane layout.
 
 use eframe::egui::{self, Color32, RichText};
+use neurohid_types::config::UiConfig;
 
 use crate::data_bus::DataBus;
 use crate::layout::{LayoutConfig, LayoutManager};
-use crate::state::ServiceSnapshot;
+use crate::state::{HubState, ServiceSnapshot};
 use crate::widgets::WidgetContext;
 
 /// Data freshness threshold in seconds.
@@ -44,8 +45,31 @@ impl VisualizationScreen {
         }
     }
 
+    pub fn from_ui_config(ui_config: &UiConfig) -> Self {
+        Self {
+            layout: LayoutManager::from_persisted(
+                &ui_config.visualization_layout_preset,
+                &ui_config.visualization_pane_widgets,
+                ui_config.visualization_layout_tree_json.as_deref(),
+            ),
+            last_total_samples: 0,
+            last_rate_check_time: 0.0,
+            data_rate_sps: 0.0,
+            stream_start_time: None,
+            last_sample_time: None,
+            pulse_phase: 0.0,
+        }
+    }
+
     /// Render the visualization screen.
-    pub fn show(&mut self, ui: &mut egui::Ui, bus: &DataBus, snapshot: &ServiceSnapshot) {
+    pub fn show(
+        &mut self,
+        ui: &mut egui::Ui,
+        bus: &DataBus,
+        snapshot: &ServiceSnapshot,
+        state: &mut HubState,
+        runtime: &tokio::runtime::Runtime,
+    ) {
         let current_time = ui.input(|i| i.time);
         self.update_metrics(bus, current_time);
 
@@ -68,6 +92,22 @@ impl VisualizationScreen {
 
             // Footer status strip
             self.show_footer(ui);
+        }
+
+        self.persist_layout_state(state, runtime);
+    }
+
+    fn persist_layout_state(&mut self, state: &mut HubState, runtime: &tokio::runtime::Runtime) {
+        let Some(persisted) = self.layout.take_persisted_state() else {
+            return;
+        };
+
+        state.config.ui.visualization_layout_preset = persisted.layout_preset;
+        state.config.ui.visualization_pane_widgets = persisted.pane_widgets;
+        state.config.ui.visualization_layout_tree_json = persisted.tree_json;
+
+        if let Err(error) = runtime.block_on(state.config_store.save(&state.config)) {
+            tracing::warn!("Failed to persist visualization layout state: {}", error);
         }
     }
 

@@ -23,6 +23,7 @@ use neurohid_types::{
     config::SignalConfig,
     error::Result,
     event::{MarkerPayload, MarkerType, StreamMarker},
+    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
     reward::ErrPResult,
     signal::{FeatureVector, Sample},
 };
@@ -32,6 +33,8 @@ use crate::tasks::latency::RollingLatency;
 
 /// Default key for samples without a source_id (e.g., mock device).
 const DEFAULT_STREAM_KEY: &str = "__default__";
+const SIGNAL_SUMMARY_EVERY_SAMPLES: u64 = 2_048;
+const SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES: u64 = 512;
 
 /// Per-stream processing state.
 struct StreamBuffer {
@@ -94,6 +97,7 @@ pub struct SignalTask {
     last_head_movement_marker_us: i64,
     head_movement_threshold: f32,
     signal_latency: RollingLatency,
+    emit_gate: EmitGate,
 }
 
 impl SignalTask {
@@ -136,6 +140,7 @@ impl SignalTask {
         sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
         feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
+        observability: ObservabilityConfig,
     ) -> Self {
         Self {
             config,
@@ -153,12 +158,21 @@ impl SignalTask {
             last_head_movement_marker_us: 0,
             head_movement_threshold: 0.4,
             signal_latency: RollingLatency::new(512),
+            emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Signal)),
         }
     }
 
     /// Runs the signal task until shutdown is signaled.
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
-        tracing::info!("Signal processing task started");
+        tracing::info!(
+            event = obs::event::TASK_STARTED,
+            span = obs::span::SIGNAL_RUN,
+            stage = obs::stage::SIGNAL,
+            feature_window_ms = self.config.feature_window_ms,
+            feature_step_ms = self.config.feature_step_ms,
+            buffer_size_samples = self.config.buffer_size_samples,
+            "Signal processing task started"
+        );
 
         loop {
             // Apply all pending runtime config updates without blocking the stream.
@@ -176,7 +190,7 @@ impl SignalTask {
             tokio::select! {
                 // Check for shutdown
                 _ = shutdown.recv() => {
-                    tracing::info!("Signal task received shutdown signal");
+                    tracing::info!(event = obs::event::TASK_STOPPED, "Signal task received shutdown signal");
                     break;
                 }
 
@@ -202,7 +216,7 @@ impl SignalTask {
                                 .unwrap_or_else(|| DEFAULT_STREAM_KEY.to_string());
 
                             let buf = self.stream_buffers
-                                .entry(stream_key)
+                                .entry(stream_key.clone())
                                 .or_insert_with(|| StreamBuffer::new(self.config.buffer_size_samples));
 
                             buf.update_sample_rate_estimate(&sample);
@@ -237,14 +251,25 @@ impl SignalTask {
                                     let samples = buf.samples.make_contiguous();
                                     let window_start = samples.len() - samples_per_window;
                                     let window = &samples[window_start..];
+                                    let window_start_timestamp = window
+                                        .first()
+                                        .map(|sample| {
+                                            sample.device_timestamp.unwrap_or(sample.system_timestamp)
+                                        })
+                                        .unwrap_or(0);
                                     let newest_sample_timestamp = window
                                         .last()
                                         .map(|sample| {
                                             sample.device_timestamp.unwrap_or(sample.system_timestamp)
                                         })
                                         .unwrap_or(0);
-                                    let features =
+                                    let mut features =
                                         Self::extract_features(window, buf.estimated_sample_rate_hz);
+                                    features.timestamp = newest_sample_timestamp;
+                                    features.stream_id =
+                                        (stream_key != DEFAULT_STREAM_KEY).then(|| stream_key.clone());
+                                    features.window_start_us = Some(window_start_timestamp);
+                                    features.window_end_us = Some(newest_sample_timestamp);
                                     (features, newest_sample_timestamp)
                                 };
 
@@ -256,10 +281,38 @@ impl SignalTask {
                                 }
 
                                 // Send features to IPC task
+                                if tracing::enabled!(tracing::Level::DEBUG)
+                                    && self.sample_count % SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES == 0
+                                    && self.emit_gate.allow_debug()
+                                {
+                                    tracing::debug!(
+                                        event = obs::event::FEATURE_WINDOW_EMITTED,
+                                        decision_id = obs::field::UNKNOWN,
+                                        stream_id = features.stream_id.as_deref().unwrap_or(DEFAULT_STREAM_KEY),
+                                        feature_dim = features.dim(),
+                                        window_start_us = features.window_start_us.unwrap_or_default(),
+                                        window_end_us = features.window_end_us.unwrap_or_default(),
+                                        "Signal feature window emitted"
+                                    );
+                                }
+
                                 if self.feature_tx.send(features).await.is_err() {
-                                    tracing::warn!("Feature receiver dropped");
+                                    tracing::warn!(stream_id = %stream_key, "Feature receiver dropped");
                                     break;
                                 }
+                            }
+
+                            if self.sample_count % SIGNAL_SUMMARY_EVERY_SAMPLES == 0
+                                && self.emit_gate.allow_info()
+                            {
+                                tracing::info!(
+                                    event = obs::event::TASK_SUMMARY,
+                                    decision_id = obs::field::UNKNOWN,
+                                    stream_id = obs::field::UNKNOWN,
+                                    sample_count = self.sample_count,
+                                    active_streams = self.stream_buffers.len(),
+                                    "Signal task periodic summary"
+                                );
                             }
 
                             // Update aggregate signal quality across all streams
@@ -288,7 +341,13 @@ impl SignalTask {
             }
         }
 
-        tracing::info!("Signal task processed {} samples", self.sample_count);
+        tracing::info!(
+            event = obs::event::TASK_STOPPED,
+            decision_id = obs::field::UNKNOWN,
+            stream_id = obs::field::UNKNOWN,
+            sample_count = self.sample_count,
+            "Signal task processed samples"
+        );
         Ok(())
     }
 

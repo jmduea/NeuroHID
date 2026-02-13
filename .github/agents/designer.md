@@ -2,6 +2,7 @@
 name: designer
 description: UI/UX Designer-Developer for stunning interfaces (Sonnet)
 model: [GPT-5.3-Codex (copilot), GPT-5.2-Codex (copilot)]
+tools: [vscode, execute, read, agent, edit, search/codebase, search/fileSearch, search/searchResults, search/textSearch, todo]
 ---
 
 **Role**

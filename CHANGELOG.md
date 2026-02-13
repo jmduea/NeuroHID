@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository-level governance templates: ADR, planning DoR/DoD, UX checklist, and PR checklist
 - Repo-local automation assets for docs freshness, architecture validation, feature planning, TDD enforcement, UX review, and Python ML review
 - CI policy workflows: docs freshness gate, architecture ADR gate, Python quality gate, and UV command policy gate
+- Structured JSON tracing support for `neurohid` and `neurohid-service` with configurable output via `NEUROHID_LOG_FORMAT`
+- Hot-path data-flow tracing across runtime stages with correlation fields (`decision_id`, `stream_id`) and bounded periodic summaries
+- Control-plane tracing for service/hub request boundaries (command, request id, response kind, duration)
+- Shared observability taxonomy (`stage`/`span`/`event`) and configurable sampling/rate-limit knobs via `service.observability` (global + per-component `signal`, `decoder`, `action`, `ipc`, `control`)
 
 ### Changed
 
@@ -32,6 +36,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core action task placeholder tracking field now uses underscore-prefixed naming to reduce explicit dead-code allowances while preserving future wiring intent
 - Workspace Rust baseline updated to edition 2024 and rust-version 1.85
 - Python test workflow standardized on `uv` + `pytest` in CI and contributor guidance
+- Hub visualization layout engine in `neurohid-hub` now uses `egui_tiles` for pane tiling/resizing/drag-rearrangement while preserving existing layout presets and per-pane widget selection
+- Hub now persists visualization pane arrangement, widget assignments, and layout preset across launches via UI config state
 
 ### Removed
 

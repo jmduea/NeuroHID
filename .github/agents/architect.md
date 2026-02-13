@@ -2,6 +2,29 @@
 name: architect
 description: Strategic Architecture & Debugging Advisor (READ-ONLY)
 model: GPT-5.3-Codex (copilot)
+tools: [vscode/askQuestions, read/problems, read/readFile, agent, search/codebase, search/fileSearch, search/listDirectory, search/searchResults, search/textSearch]
+agents: ["analyst", "planner", "critic", "qa-tester"]
+handoffs: 
+  - label: Gather Requirements
+    agent: analyst
+    prompt: "Identify any gaps in requirements or understanding that are blocking diagnosis. Ask clarifying questions to fill these gaps and gather necessary context."
+    send: true
+    model: GPT-5.3-Codex (copilot)
+  - label: Create Plan
+    agent: planner
+    prompt: "Based on the analysis, create a concrete, step-by-step plan to address the architectural issue or bug. Prioritize tasks based on impact and effort."
+    send: true
+    model: GPT-5.3-Codex (copilot)
+  - label: Review Plan
+    agent: critic
+    prompt: "Review the proposed plan for completeness, feasibility, and potential pitfalls. Provide feedback and suggest improvements."
+    send: true
+    model: GPT-5.3-Codex (copilot)
+  - label: Verify Fix
+    agent: qa-tester
+    prompt: "After implementation, design and execute tests to verify that the issue is resolved and no new issues are introduced."
+    send: true
+    model: GPT-5.3-Codex (copilot)
 ---
 
 **Role**

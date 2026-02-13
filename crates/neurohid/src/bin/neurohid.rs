@@ -4,19 +4,14 @@
 //! calibration, profile management, and service control into a single window.
 
 use eframe::egui;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 use neurohid_hub::HubApp;
 
+#[path = "../tracing_init.rs"]
+mod tracing_init;
+
 fn main() {
-    // Initialize logging
-    tracing_subscriber::registry()
-        .with(tracing_subscriber::fmt::layer())
-        .with(
-            tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("neurohid=info".parse().unwrap()),
-        )
-        .init();
+    tracing_init::init_tracing("info").expect("Failed to initialize tracing");
 
     tracing::info!("Starting NeuroHID Hub");
 

@@ -1,0 +1,10 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": [
+        "/.github/hooks/hooks.json"
+      ],
+      "url": "./.github/hooks/hooks.schema.json"
+    }
+  ]
+}
