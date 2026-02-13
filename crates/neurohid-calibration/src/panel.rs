@@ -9,8 +9,8 @@ use eframe::egui;
 
 use neurohid_types::profile::CalibrationStep;
 
-use crate::wizard::WizardState;
 use crate::games::{GridMazeGame, TargetTrackingGame};
+use crate::wizard::WizardState;
 
 /// The result of rendering the calibration panel for one frame.
 #[derive(Debug, Clone, PartialEq)]
@@ -68,6 +68,8 @@ pub struct CalibrationPanel {
     maze_quality: Option<(u32, u32)>,
     /// Stored quality from completed target tracking
     tracking_quality: Option<(f32, u32)>,
+    /// Start time for the decoder training phase.
+    decoder_training_started_at: Option<std::time::Instant>,
 }
 
 impl CalibrationPanel {
@@ -82,6 +84,7 @@ impl CalibrationPanel {
             signal_quality: 0.0,
             maze_quality: None,
             tracking_quality: None,
+            decoder_training_started_at: None,
         }
     }
 
@@ -228,7 +231,10 @@ impl CalibrationPanel {
         ui.label("Let's verify your signal quality before we begin.");
         ui.add_space(10.0);
 
-        ui.label(format!("Current signal quality: {:.0}%", self.signal_quality * 100.0));
+        ui.label(format!(
+            "Current signal quality: {:.0}%",
+            self.signal_quality * 100.0
+        ));
 
         let quality_good = self.signal_quality > 0.7;
 
@@ -276,16 +282,26 @@ impl CalibrationPanel {
     }
 
     fn show_decoder_training(&mut self, ui: &mut egui::Ui) {
+        let started = self
+            .decoder_training_started_at
+            .get_or_insert_with(std::time::Instant::now);
+        let progress = (started.elapsed().as_secs_f32() / 4.0).clamp(0.0, 1.0);
+
         ui.label("Training your personalized decoder...");
         ui.add_space(10.0);
+        ui.add(
+            egui::ProgressBar::new(progress).text(format!("Training... {:.0}%", progress * 100.0)),
+        );
+        ui.add_space(12.0);
 
-        ui.add(egui::ProgressBar::new(0.5).text("Training..."));
+        if progress < 1.0 {
+            ui.label("Collecting calibration summary and preparing initial model metadata.");
+            return;
+        }
 
-        ui.add_space(20.0);
-        ui.label("This may take a few minutes.");
-
-        // Auto-advance for now (placeholder)
+        ui.colored_label(egui::Color32::GREEN, "Training completed.");
         if ui.button("Continue").clicked() {
+            self.decoder_training_started_at = None;
             self.wizard.advance();
         }
     }

@@ -7,6 +7,7 @@ use eframe::egui;
 
 use neurohid_types::profile::CalibrationState;
 
+use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 
 pub struct ProfilesScreen {
@@ -29,6 +30,7 @@ impl ProfilesScreen {
         ui: &mut egui::Ui,
         state: &mut HubState,
         runtime: &tokio::runtime::Runtime,
+        service_manager: &ServiceManager,
     ) {
         ui.heading("Profiles");
         ui.add_space(8.0);
@@ -36,9 +38,7 @@ impl ProfilesScreen {
         ui.add_space(16.0);
 
         // Create profile button
-        if !self.show_create_dialog
-            && ui.button("Create New Profile").clicked()
-        {
+        if !self.show_create_dialog && ui.button("Create New Profile").clicked() {
             self.show_create_dialog = true;
             self.new_profile_name.clear();
         }
@@ -60,7 +60,12 @@ impl ProfilesScreen {
                                 Ok(metadata) => {
                                     tracing::info!("Created profile: {}", metadata.id);
                                     if state.active_profile_id.is_none() {
-                                        state.active_profile_id = Some(metadata.id);
+                                        state.active_profile_id = Some(metadata.id.clone());
+                                        service_manager.set_active_profile(
+                                            Some(metadata.id),
+                                            metadata.name,
+                                            false,
+                                        );
                                     }
                                     state.refresh_profiles(runtime);
                                 }
@@ -116,6 +121,7 @@ impl ProfilesScreen {
                     tracing::info!("Deleted profile: {}", id_str);
                     if state.active_profile_id.as_ref().map(|p| p.to_string()) == Some(id_str) {
                         state.active_profile_id = None;
+                        service_manager.set_active_profile(None, "none".to_string(), false);
                     }
                     state.refresh_profiles(runtime);
                 }
@@ -178,10 +184,13 @@ impl ProfilesScreen {
                             self.delete_confirm = Some(profile.id.to_string());
                         }
 
-                        if !is_active
-                            && ui.small_button("Set Active").clicked()
-                        {
+                        if !is_active && ui.small_button("Set Active").clicked() {
                             state.active_profile_id = Some(profile.id.clone());
+                            service_manager.set_active_profile(
+                                Some(profile.id.clone()),
+                                profile.name.clone(),
+                                profile.calibration_state.is_ready(),
+                            );
                         }
                     });
                 });

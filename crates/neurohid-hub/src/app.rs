@@ -27,6 +27,8 @@ pub struct HubApp {
     current_screen: Screen,
     state: HubState,
     service_manager: ServiceManager,
+    last_service_running: Option<bool>,
+    last_latency_degraded: Option<bool>,
     data_bus: DataBus,
     stream_console: StreamConsole,
     // Screen instances
@@ -69,6 +71,8 @@ impl HubApp {
             current_screen: Screen::Dashboard,
             state,
             service_manager: ServiceManager::new(),
+            last_service_running: None,
+            last_latency_degraded: None,
             data_bus: DataBus::new(),
             stream_console: StreamConsole::new(),
             dashboard: DashboardScreen::new(),
@@ -84,15 +88,16 @@ impl HubApp {
             hub.state.init_error = Some(err);
         }
 
-        // Auto-start the service so streams are discovered immediately.
-        let profile_store = Some(hub.state.profile_store.clone());
-        let profile_id = hub.state.active_profile_id.clone();
-        hub.service_manager.start(
-            &hub.runtime,
-            hub.state.config.clone(),
-            profile_store,
-            profile_id,
-        );
+        if hub.state.config.service.auto_start {
+            let profile_store = Some(hub.state.profile_store.clone());
+            let profile_id = hub.state.active_profile_id.clone();
+            hub.service_manager.start(
+                &hub.runtime,
+                hub.state.config.clone(),
+                profile_store,
+                profile_id,
+            );
+        }
 
         hub
     }
@@ -231,7 +236,7 @@ impl HubApp {
                 ui.add_space(8.0);
 
                 // Navigation items
-                for &screen in Screen::all() {
+                for &screen in Screen::all_for_mode(&self.state.config.ui.mode) {
                     let selected = self.current_screen == screen;
                     if ui.selectable_label(selected, screen.label()).clicked() {
                         self.current_screen = screen;
@@ -439,14 +444,62 @@ impl HubApp {
             neurohid_types::config::ThemeMode::System => {}
         }
     }
+
+    fn maybe_notify_latency_transition(&mut self) {
+        let snapshot = &self.state.service_snapshot;
+        let was_running = self.last_service_running.replace(snapshot.running);
+        let was_degraded = self
+            .last_latency_degraded
+            .replace(snapshot.latency_degraded);
+
+        if !self.state.config.service.notifications_enabled {
+            return;
+        }
+
+        let (Some(was_running), Some(was_degraded)) = (was_running, was_degraded) else {
+            return;
+        };
+
+        if !was_running || !snapshot.running || was_degraded == snapshot.latency_degraded {
+            return;
+        }
+
+        if snapshot.latency_degraded {
+            let message = snapshot
+                .latency_alert_message
+                .clone()
+                .unwrap_or_else(|| "Runtime latency exceeded configured thresholds.".to_string());
+            self.send_desktop_notification("NeuroHID latency warning", &message);
+        } else {
+            self.send_desktop_notification(
+                "NeuroHID latency recovered",
+                "Runtime latency returned within configured thresholds.",
+            );
+        }
+    }
+
+    fn send_desktop_notification(&self, title: &str, body: &str) {
+        if let Err(error) = desktop_notify(title, body) {
+            tracing::debug!(
+                title = title,
+                error = %error,
+                "Desktop notification dispatch failed"
+            );
+        }
+    }
 }
 
 impl eframe::App for HubApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.apply_ui_preferences(ctx);
 
+        if !Screen::all_for_mode(&self.state.config.ui.mode).contains(&self.current_screen) {
+            self.current_screen = Screen::Dashboard;
+        }
+
         // Poll service state (non-blocking)
         self.state.service_snapshot = self.service_manager.snapshot();
+        self.maybe_notify_latency_transition();
 
         // Connect/disconnect the data bus based on service state
         self.service_manager.sync_data_bus(&mut self.data_bus);
@@ -502,7 +555,8 @@ impl eframe::App for HubApp {
                         .show(ui, &self.state, &mut self.service_manager);
                 }
                 Screen::Profiles => {
-                    self.profiles.show(ui, &mut self.state, &self.runtime);
+                    self.profiles
+                        .show(ui, &mut self.state, &self.runtime, &self.service_manager);
                 }
                 Screen::Calibration => {
                     self.calibration
@@ -531,5 +585,72 @@ impl Drop for HubApp {
         // Runtime::drop from completing — causing the process to hang on
         // window close.
         self.service_manager.stop();
+    }
+}
+
+fn desktop_notify(title: &str, body: &str) -> std::io::Result<()> {
+    #[cfg(target_os = "windows")]
+    {
+        return desktop_notify_windows(title, body);
+    }
+    #[cfg(unix)]
+    {
+        return desktop_notify_unix(title, body);
+    }
+    #[cfg(not(any(target_os = "windows", unix)))]
+    {
+        let _ = (title, body);
+        Ok(())
+    }
+}
+
+#[cfg(unix)]
+fn desktop_notify_unix(title: &str, body: &str) -> std::io::Result<()> {
+    let status = std::process::Command::new("notify-send")
+        .arg(title)
+        .arg(body)
+        .status()?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "notify-send exited with status {}",
+            status
+        )))
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn desktop_notify_windows(title: &str, body: &str) -> std::io::Result<()> {
+    let script = "$ErrorActionPreference='Stop';\
+[Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;\
+[Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;\
+$title=[System.Security.SecurityElement]::Escape($env:NEUROHID_NOTIFY_TITLE);\
+$body=[System.Security.SecurityElement]::Escape($env:NEUROHID_NOTIFY_BODY);\
+$xml=\"<toast><visual><binding template='ToastGeneric'><text>$title</text><text>$body</text></binding></visual></toast>\";\
+$doc=New-Object Windows.Data.Xml.Dom.XmlDocument;\
+$doc.LoadXml($xml);\
+$toast=[Windows.UI.Notifications.ToastNotification]::new($doc);\
+[Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier('NeuroHID').Show($toast);";
+
+    let status = std::process::Command::new("powershell")
+        .arg("-NoProfile")
+        .arg("-NonInteractive")
+        .arg("-ExecutionPolicy")
+        .arg("Bypass")
+        .arg("-Command")
+        .arg(script)
+        .env("NEUROHID_NOTIFY_TITLE", title)
+        .env("NEUROHID_NOTIFY_BODY", body)
+        .status()?;
+
+    if status.success() {
+        Ok(())
+    } else {
+        Err(std::io::Error::other(format!(
+            "powershell exited with status {}",
+            status
+        )))
     }
 }

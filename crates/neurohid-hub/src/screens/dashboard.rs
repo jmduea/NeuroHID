@@ -5,8 +5,8 @@
 
 use eframe::egui;
 
-use crate::state::HubState;
 use crate::service_manager::ServiceManager;
+use crate::state::HubState;
 
 pub struct DashboardScreen;
 
@@ -48,6 +48,69 @@ impl DashboardScreen {
                     let mins = snap.uptime_secs / 60;
                     let secs = snap.uptime_secs % 60;
                     ui.label(format!("Uptime: {}:{:02}", mins, secs));
+                }
+
+                ui.horizontal(|ui| {
+                    let (output_color, output_text) = if snap.output_enabled {
+                        (egui::Color32::GREEN, "Output enabled")
+                    } else {
+                        (egui::Color32::YELLOW, "Output paused")
+                    };
+                    ui.colored_label(output_color, "●");
+                    ui.label(output_text);
+                });
+
+                ui.horizontal(|ui| {
+                    let (profile_color, profile_text) = if snap.profile_ready {
+                        (egui::Color32::GREEN, "Profile ready")
+                    } else {
+                        (egui::Color32::YELLOW, "Profile not calibrated")
+                    };
+                    ui.colored_label(profile_color, "●");
+                    ui.label(profile_text);
+                });
+
+                ui.horizontal(|ui| {
+                    let (decoder_color, decoder_text) = if snap.decoder_ready {
+                        (egui::Color32::GREEN, "Decoder ready")
+                    } else {
+                        (egui::Color32::YELLOW, "Decoder unavailable")
+                    };
+                    ui.colored_label(decoder_color, "●");
+                    ui.label(decoder_text);
+                });
+
+                if let Some(version) = &snap.decoder_model_version {
+                    ui.label(
+                        egui::RichText::new(format!("Model: {}", version))
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
+                }
+
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Decode latency: last {} us | p95 {} us",
+                        snap.decode_latency_last_us, snap.decode_latency_p95_us
+                    ))
+                    .small()
+                    .color(egui::Color32::GRAY),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Action latency: last {} us | p95 {} us",
+                        snap.action_latency_last_us, snap.action_latency_p95_us
+                    ))
+                    .small()
+                    .color(egui::Color32::GRAY),
+                );
+
+                if snap.latency_degraded {
+                    let message = snap
+                        .latency_alert_message
+                        .clone()
+                        .unwrap_or_else(|| "Latency thresholds exceeded".to_string());
+                    ui.colored_label(egui::Color32::RED, message);
                 }
 
                 ui.add_space(8.0);
@@ -111,7 +174,11 @@ impl DashboardScreen {
                 ui.add_space(8.0);
 
                 let total_streams = snap.discovered_streams.len();
-                let connected_streams = snap.discovered_streams.iter().filter(|s| s.connected).count();
+                let connected_streams = snap
+                    .discovered_streams
+                    .iter()
+                    .filter(|s| s.connected)
+                    .count();
 
                 if connected_streams > 0 {
                     ui.horizontal(|ui| {
@@ -260,7 +327,10 @@ fn task_error_hint(error: &str) -> Option<&'static str> {
         }
     }
 
-    if lower.contains("device not found") || lower.contains("no device") || lower.contains("not connected") {
+    if lower.contains("device not found")
+        || lower.contains("no device")
+        || lower.contains("not connected")
+    {
         return Some("Hint: Ensure your EEG device is powered on and paired via Bluetooth");
     }
 

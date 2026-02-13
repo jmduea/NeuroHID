@@ -3,7 +3,6 @@
 //! Manages the lifecycle of the embedded NeuroHID service within the hub.
 //! Provides start/stop, calibration mode toggle, and non-blocking state reads.
 
-use std::sync::atomic::Ordering;
 use tokio::sync::broadcast;
 
 use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
@@ -156,6 +155,16 @@ impl ServiceManager {
             ipc_connected: state_guard.ipc_connected,
             ipc_simulated: state_guard.ipc_simulated,
             calibration_mode: state_guard.calibration_mode,
+            output_enabled: state_guard.output_enabled,
+            profile_ready: state_guard.profile_ready,
+            decoder_ready: state_guard.decoder_ready,
+            decoder_model_version: state_guard.decoder_model_version.clone(),
+            decode_latency_last_us: state_guard.decode_latency_last_us,
+            decode_latency_p95_us: state_guard.decode_latency_p95_us,
+            action_latency_last_us: state_guard.action_latency_last_us,
+            action_latency_p95_us: state_guard.action_latency_p95_us,
+            latency_degraded: state_guard.latency_degraded,
+            latency_alert_message: state_guard.latency_alert_message.clone(),
             active_profile_name: state_guard.active_profile_name.clone(),
             task_error: state_guard.task_error.clone(),
             discovered_streams: state_guard.discovered_streams.clone(),
@@ -167,7 +176,7 @@ impl ServiceManager {
     /// Enter calibration mode (pauses HID emission, enables sample forwarding).
     pub fn enter_calibration_mode(&self) {
         if let Some(handle) = &self.handle {
-            handle.calibration_mode.store(true, Ordering::Relaxed);
+            handle.set_calibration_mode(true);
             tracing::info!("Entered calibration mode");
         }
     }
@@ -175,8 +184,27 @@ impl ServiceManager {
     /// Exit calibration mode (resumes normal HID emission).
     pub fn exit_calibration_mode(&self) {
         if let Some(handle) = &self.handle {
-            handle.calibration_mode.store(false, Ordering::Relaxed);
+            handle.set_calibration_mode(false);
             tracing::info!("Exited calibration mode");
+        }
+    }
+
+    /// Enable or pause HID output.
+    pub fn set_output_enabled(&self, enabled: bool) {
+        if let Some(handle) = &self.handle {
+            handle.set_output_enabled(enabled);
+        }
+    }
+
+    /// Update active profile status used by runtime action gating.
+    pub fn set_active_profile(
+        &self,
+        profile_id: Option<ProfileId>,
+        profile_name: String,
+        profile_ready: bool,
+    ) {
+        if let Some(handle) = &self.handle {
+            handle.set_profile_status(profile_id, Some(profile_name), profile_ready);
         }
     }
 

@@ -479,6 +479,78 @@ impl SettingsScreen {
                         }
                     });
 
+                    ui.separator();
+                    ui.label(egui::RichText::new("Latency alert policy").small().strong());
+
+                    ui.horizontal(|ui| {
+                        ui.label("Latency alerts:");
+                        if ui.checkbox(&mut cfg.latency_alert.enabled, "").changed() {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Decode p95 threshold (us):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(
+                                    &mut cfg.latency_alert.decode_p95_threshold_us,
+                                )
+                                .clamp_range(1_000..=5_000_000)
+                                .speed(100.0),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Action p95 threshold (us):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(
+                                    &mut cfg.latency_alert.action_p95_threshold_us,
+                                )
+                                .clamp_range(1_000..=5_000_000)
+                                .speed(100.0),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Sustained duration (s):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(
+                                    &mut cfg.latency_alert.sustained_duration_secs,
+                                )
+                                .clamp_range(1..=3_600),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Alert cooldown (s):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(
+                                    &mut cfg.latency_alert.notification_cooldown_secs,
+                                )
+                                .clamp_range(5..=86_400),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
                     changed
                 });
             if changed.body_returned == Some(true) {
@@ -597,6 +669,31 @@ impl SettingsScreen {
                     });
 
                     ui.horizontal(|ui| {
+                        ui.label("Mode:");
+                        let current = cfg.mode.clone();
+                        egui::ComboBox::from_id_source("ui_mode")
+                            .selected_text(match cfg.mode {
+                                neurohid_types::config::UiMode::Standard => "Standard",
+                                neurohid_types::config::UiMode::Advanced => "Advanced",
+                            })
+                            .show_ui(ui, |ui| {
+                                ui.selectable_value(
+                                    &mut cfg.mode,
+                                    neurohid_types::config::UiMode::Standard,
+                                    "Standard",
+                                );
+                                ui.selectable_value(
+                                    &mut cfg.mode,
+                                    neurohid_types::config::UiMode::Advanced,
+                                    "Advanced",
+                                );
+                            });
+                        if cfg.mode != current {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
                         ui.label("Theme:");
                         let current = cfg.theme_mode.clone();
                         egui::ComboBox::from_id_source("ui_theme_mode")
@@ -637,6 +734,74 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Tray mode:");
                         if ui.checkbox(&mut cfg.tray_mode_enabled, "").changed() {
+                            changed = true;
+                        }
+                    });
+
+                    changed
+                });
+            if changed.body_returned == Some(true) {
+                self.unsaved_changes = true;
+            }
+
+            // Recalibration settings
+            let changed = egui::CollapsingHeader::new("Recalibration")
+                .default_open(false)
+                .show(ui, |ui| {
+                    let mut changed = false;
+                    let cfg = &mut state.config.recalibration;
+
+                    ui.horizontal(|ui| {
+                        ui.label("Signal quality threshold:");
+                        if ui
+                            .add(
+                                egui::Slider::new(
+                                    &mut cfg.rolling_signal_quality_threshold,
+                                    0.0..=1.0,
+                                )
+                                .show_value(true),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Error rate threshold:");
+                        if ui
+                            .add(
+                                egui::Slider::new(&mut cfg.rolling_error_rate_threshold, 0.0..=1.0)
+                                    .show_value(true),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Sustained duration (s):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut cfg.sustained_duration_secs)
+                                    .clamp_range(5..=3600),
+                            )
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Prompt cooldown (s):");
+                        if ui
+                            .add(
+                                egui::DragValue::new(&mut cfg.notification_cooldown_secs)
+                                    .clamp_range(10..=86_400),
+                            )
+                            .changed()
+                        {
                             changed = true;
                         }
                     });

@@ -5,14 +5,29 @@
 //! on the service so that HID emission pauses during calibration.
 
 use eframe::egui;
+use serde::Serialize;
 
 use neurohid_calibration::panel::{CalibrationPanel, CalibrationPanelResult};
+use neurohid_types::model::{
+    ModelManifest, NormalizationStats, CURRENT_ACTION_SCHEMA_VERSION,
+    CURRENT_FEATURE_SCHEMA_VERSION,
+};
+use neurohid_types::profile::{CalibrationQuality, CalibrationState};
 
-use crate::state::HubState;
 use crate::service_manager::ServiceManager;
+use crate::state::HubState;
 
 pub struct CalibrationScreen {
     panel: Option<CalibrationPanel>,
+}
+
+#[derive(Debug, Serialize)]
+struct CalibrationArtifact {
+    completed_at: i64,
+    correct_trials: u32,
+    error_trials: u32,
+    avg_tracking_error: f32,
+    perturbation_count: u32,
 }
 
 impl CalibrationScreen {
@@ -47,10 +62,24 @@ impl CalibrationScreen {
 
         match result {
             CalibrationPanelResult::InProgress => {}
-            CalibrationPanelResult::Completed(_quality) => {
+            CalibrationPanelResult::Completed(quality) => {
+                let profile_ready = self.persist_calibration_outputs(state, runtime, &quality);
                 service_manager.exit_calibration_mode();
                 self.panel = None;
                 state.refresh_profiles(runtime);
+                if let Some(profile_id) = state.active_profile_id.clone() {
+                    let profile_name = state
+                        .profiles
+                        .iter()
+                        .find(|p| p.id == profile_id)
+                        .map(|p| p.name.clone())
+                        .unwrap_or_else(|| profile_id.to_string());
+                    service_manager.set_active_profile(
+                        Some(profile_id),
+                        profile_name,
+                        profile_ready,
+                    );
+                }
                 tracing::info!("Calibration completed");
             }
             CalibrationPanelResult::Cancelled => {
@@ -101,24 +130,12 @@ impl CalibrationScreen {
                 ui.group(|ui| {
                     ui.label(format!("Active profile: {}", profile.name));
                     let cal_status = match &profile.calibration_state {
-                        neurohid_types::profile::CalibrationState::NotCalibrated => {
-                            "Not calibrated"
-                        }
-                        neurohid_types::profile::CalibrationState::InProgress { .. } => {
-                            "In progress"
-                        }
-                        neurohid_types::profile::CalibrationState::CompletedGood { .. } => {
-                            "Good"
-                        }
-                        neurohid_types::profile::CalibrationState::CompletedAcceptable { .. } => {
-                            "Acceptable"
-                        }
-                        neurohid_types::profile::CalibrationState::CompletedPoor { .. } => {
-                            "Poor"
-                        }
-                        neurohid_types::profile::CalibrationState::NeedsRecalibration { .. } => {
-                            "Needs recalibration"
-                        }
+                        CalibrationState::NotCalibrated => "Not calibrated",
+                        CalibrationState::InProgress { .. } => "In progress",
+                        CalibrationState::CompletedGood { .. } => "Good",
+                        CalibrationState::CompletedAcceptable { .. } => "Acceptable",
+                        CalibrationState::CompletedPoor { .. } => "Poor",
+                        CalibrationState::NeedsRecalibration { .. } => "Needs recalibration",
                     };
                     ui.label(format!("Calibration: {}", cal_status));
                 });
@@ -136,5 +153,128 @@ impl CalibrationScreen {
 
             tracing::info!("Starting calibration session");
         }
+    }
+
+    fn persist_calibration_outputs(
+        &self,
+        state: &mut HubState,
+        runtime: &tokio::runtime::Runtime,
+        quality: &neurohid_calibration::panel::CalibrationQuality,
+    ) -> bool {
+        let Some(profile_id) = state.active_profile_id.clone() else {
+            tracing::warn!("Calibration completed without an active profile; skipping persistence");
+            return false;
+        };
+
+        let completed_at = neurohid_types::now_micros();
+        let calibration_quality = to_profile_quality(quality);
+        let calibration_state = calibration_quality.to_state(completed_at);
+
+        let mut metadata = match runtime.block_on(state.profile_store.get_metadata(&profile_id)) {
+            Ok(metadata) => metadata,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to load profile metadata after calibration for {}: {}",
+                    profile_id,
+                    e
+                );
+                return false;
+            }
+        };
+
+        metadata.calibration_state = calibration_state;
+        metadata.last_calibrated_at = Some(completed_at);
+        let profile_ready = metadata.calibration_state.is_ready();
+
+        if let Err(e) = runtime.block_on(state.profile_store.save_metadata(&metadata)) {
+            tracing::error!(
+                "Failed to persist profile metadata after calibration for {}: {}",
+                profile_id,
+                e
+            );
+        }
+
+        let artifact = CalibrationArtifact {
+            completed_at,
+            correct_trials: quality.correct_trials,
+            error_trials: quality.error_trials,
+            avg_tracking_error: quality.avg_tracking_error,
+            perturbation_count: quality.perturbation_count,
+        };
+
+        match serde_json::to_vec(&artifact) {
+            Ok(payload) => {
+                if let Err(e) =
+                    runtime.block_on(state.profile_store.save_calibration(&profile_id, &payload))
+                {
+                    tracing::error!(
+                        "Failed to persist calibration artifact for {}: {}",
+                        profile_id,
+                        e
+                    );
+                }
+            }
+            Err(e) => {
+                tracing::error!(
+                    "Failed to encode calibration artifact for {}: {}",
+                    profile_id,
+                    e
+                );
+            }
+        }
+
+        // Seed a bootstrap manifest so Rust inference loaders have schema metadata
+        // even before a full trainer-produced ONNX artifact is available.
+        let manifest = ModelManifest {
+            model_version: "bootstrap-0".to_string(),
+            input_dim: 180,
+            feature_schema_version: CURRENT_FEATURE_SCHEMA_VERSION,
+            action_schema_version: CURRENT_ACTION_SCHEMA_VERSION,
+            normalization_stats: NormalizationStats {
+                mean: vec![0.0; 180],
+                std: vec![1.0; 180],
+            },
+            trained_at: completed_at,
+        };
+        if let Err(e) = runtime.block_on(
+            state
+                .profile_store
+                .save_decoder_manifest(&profile_id, &manifest),
+        ) {
+            tracing::warn!("Failed to save decoder manifest for {}: {}", profile_id, e);
+        }
+        profile_ready
+    }
+}
+
+fn to_profile_quality(
+    quality: &neurohid_calibration::panel::CalibrationQuality,
+) -> CalibrationQuality {
+    let trial_count = quality.correct_trials + quality.error_trials;
+    let errp_accuracy = if trial_count > 0 {
+        quality.correct_trials as f32 / trial_count as f32
+    } else {
+        0.0
+    };
+
+    // Use observed error trials as a proxy for sensitivity during calibration.
+    let errp_sensitivity = if trial_count > 0 {
+        quality.error_trials as f32 / trial_count as f32
+    } else {
+        0.0
+    };
+
+    let errp_specificity = errp_accuracy;
+    let tracking_score = (1.0 / (1.0 + quality.avg_tracking_error.max(0.0))).clamp(0.0, 1.0);
+    let errp_auc = (0.5 * errp_accuracy + 0.5 * tracking_score).clamp(0.0, 1.0);
+
+    CalibrationQuality {
+        errp_accuracy,
+        errp_sensitivity,
+        errp_specificity,
+        errp_auc,
+        signal_quality_score: tracking_score,
+        trial_count,
+        error_trial_count: quality.error_trials,
     }
 }
