@@ -10,6 +10,6 @@
 //! use neurohid_calibration::panel::{CalibrationPanel, CalibrationPanelResult};
 //! ```
 
+pub mod games;
 pub mod panel;
 pub mod wizard;
-pub mod games;

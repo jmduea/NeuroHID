@@ -43,12 +43,12 @@
 //! generally not a problem for NeuroHID since we're posting, not reading.
 
 use neurohid_types::{
-    action::{MouseMovement, MouseButton, Key},
-    observation::{CursorState, ScreenInfo},
+    action::{Key, MouseButton, MouseMovement},
     error::{PlatformError, Result},
+    observation::{CursorState, ScreenInfo},
 };
 
-use crate::traits::{Platform, PermissionHint};
+use crate::traits::{PermissionHint, Platform};
 
 /// macOS platform implementation using Quartz Event Services.
 pub struct MacOSPlatform {
@@ -64,10 +64,10 @@ impl MacOSPlatform {
     pub fn new() -> Result<Self> {
         let enigo = enigo::Enigo::new(&enigo::Settings::default())
             .map_err(|e| PlatformError::HidNotAvailable)?;
-        
+
         Ok(Self { enigo })
     }
-    
+
     /// Checks if the application has Accessibility permission.
     ///
     /// This is a macOS-specific check that verifies we can actually simulate input.
@@ -75,19 +75,19 @@ impl MacOSPlatform {
     fn check_accessibility_permission() -> Result<()> {
         // We would use the core-foundation and accessibility APIs here
         // For now, we'll use a simplified check
-        
+
         // In a real implementation:
         // use core_foundation::boolean::CFBoolean;
         // use core_foundation::dictionary::CFDictionary;
         // use core_foundation::string::CFString;
-        // 
+        //
         // let options = CFDictionary::from_pairs(&[(
         //     CFString::from_static_string("AXTrustedCheckOptionPrompt"),
         //     CFBoolean::false_value(),
         // )]);
-        // 
+        //
         // let trusted = unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) };
-        
+
         // Placeholder implementation - assume permission check passes
         // Real implementation would use the ApplicationServices framework
         Ok(())
@@ -98,45 +98,44 @@ impl Platform for MacOSPlatform {
     fn platform_name(&self) -> &'static str {
         "macOS (Quartz Events)"
     }
-    
+
     fn check_input_permissions(&self) -> Result<()> {
         #[cfg(target_os = "macos")]
         {
             Self::check_accessibility_permission()?;
         }
-        
+
         Ok(())
     }
-    
+
     fn check_query_permissions(&self) -> Result<()> {
         // Screen queries generally don't require special permissions on macOS
         // (though screen recording does, we're not doing that)
         Ok(())
     }
-    
+
     fn emit_mouse_move(&mut self, movement: MouseMovement) -> Result<()> {
-        use enigo::{Enigo, Mouse, Coordinate};
-        
-        self.enigo.move_mouse(
-            movement.dx as i32,
-            movement.dy as i32,
-            Coordinate::Rel,
-        ).map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
-        
+        use enigo::{Coordinate, Enigo, Mouse};
+
+        self.enigo
+            .move_mouse(movement.dx as i32, movement.dy as i32, Coordinate::Rel)
+            .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
+
         Ok(())
     }
-    
+
     fn emit_mouse_move_absolute(&mut self, x: i32, y: i32) -> Result<()> {
-        use enigo::{Enigo, Mouse, Coordinate};
-        
-        self.enigo.move_mouse(x, y, Coordinate::Abs)
+        use enigo::{Coordinate, Enigo, Mouse};
+
+        self.enigo
+            .move_mouse(x, y, Coordinate::Abs)
             .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     fn emit_mouse_press(&mut self, button: MouseButton) -> Result<()> {
-        use enigo::{Mouse, Button, Direction};
+        use enigo::{Button, Direction, Mouse};
 
         let btn = match button {
             MouseButton::Left => Button::Left,
@@ -145,20 +144,23 @@ impl Platform for MacOSPlatform {
             MouseButton::Extra(0) => Button::Back,
             MouseButton::Extra(1) => Button::Forward,
             MouseButton::Extra(n) => {
-                return Err(PlatformError::NotSupported(
-                    format!("Extra mouse button {} not supported (only 0=Back, 1=Forward)", n),
-                ).into())
+                return Err(PlatformError::NotSupported(format!(
+                    "Extra mouse button {} not supported (only 0=Back, 1=Forward)",
+                    n
+                ))
+                .into())
             }
         };
-        
-        self.enigo.button(btn, Direction::Press)
+
+        self.enigo
+            .button(btn, Direction::Press)
             .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     fn emit_mouse_release(&mut self, button: MouseButton) -> Result<()> {
-        use enigo::{Mouse, Button, Direction};
+        use enigo::{Button, Direction, Mouse};
 
         let btn = match button {
             MouseButton::Left => Button::Left,
@@ -167,63 +169,70 @@ impl Platform for MacOSPlatform {
             MouseButton::Extra(0) => Button::Back,
             MouseButton::Extra(1) => Button::Forward,
             MouseButton::Extra(n) => {
-                return Err(PlatformError::NotSupported(
-                    format!("Extra mouse button {} not supported (only 0=Back, 1=Forward)", n),
-                ).into())
+                return Err(PlatformError::NotSupported(format!(
+                    "Extra mouse button {} not supported (only 0=Back, 1=Forward)",
+                    n
+                ))
+                .into())
             }
         };
-        
-        self.enigo.button(btn, Direction::Release)
+
+        self.enigo
+            .button(btn, Direction::Release)
             .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     fn emit_scroll(&mut self, dx: f32, dy: f32) -> Result<()> {
-        use enigo::{Enigo, Mouse, Axis};
-        
+        use enigo::{Axis, Enigo, Mouse};
+
         // macOS uses "natural scrolling" by default where positive = scroll up
         // We follow screen coordinates convention (positive = down)
         // so we invert here
         if dy.abs() > 0.1 {
-            self.enigo.scroll(-dy as i32, Axis::Vertical)
+            self.enigo
+                .scroll(-dy as i32, Axis::Vertical)
                 .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
         }
-        
+
         if dx.abs() > 0.1 {
-            self.enigo.scroll(-dx as i32, Axis::Horizontal)
+            self.enigo
+                .scroll(-dx as i32, Axis::Horizontal)
                 .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
         }
-        
+
         Ok(())
     }
-    
+
     fn emit_key_press(&mut self, key: Key) -> Result<()> {
-        use enigo::{Enigo, Keyboard, Direction};
-        
+        use enigo::{Direction, Enigo, Keyboard};
+
         let enigo_key = key_to_enigo(key)?;
-        
-        self.enigo.key(enigo_key, Direction::Press)
+
+        self.enigo
+            .key(enigo_key, Direction::Press)
             .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     fn emit_key_release(&mut self, key: Key) -> Result<()> {
-        use enigo::{Enigo, Keyboard, Direction};
-        
+        use enigo::{Direction, Enigo, Keyboard};
+
         let enigo_key = key_to_enigo(key)?;
-        
-        self.enigo.key(enigo_key, Direction::Release)
+
+        self.enigo
+            .key(enigo_key, Direction::Release)
             .map_err(|e| PlatformError::InputEmissionFailed(e.to_string()))?;
-        
+
         Ok(())
     }
-    
+
     fn get_cursor_position(&self) -> Result<(i32, i32)> {
         // On macOS, we can use NSEvent or CGEvent to get cursor position
         // This would use core-graphics crate in a real implementation
-        
+
         #[cfg(target_os = "macos")]
         {
             // use core_graphics::event::CGEvent;
@@ -236,17 +245,18 @@ impl Platform for MacOSPlatform {
             // let location = event.location();
             // return Ok((location.x as i32, location.y as i32));
         }
-        
+
         // Placeholder
         Err(PlatformError::NotSupported(
-            "Cursor position query not yet fully implemented for macOS".to_string()
-        ).into())
+            "Cursor position query not yet fully implemented for macOS".to_string(),
+        )
+        .into())
     }
-    
+
     fn get_screen_info(&self) -> Result<ScreenInfo> {
         // On macOS, we'd use NSScreen or CGDisplayBounds
         // This would use core-graphics crate in a real implementation
-        
+
         #[cfg(target_os = "macos")]
         {
             // use core_graphics::display::{CGDisplay, CGMainDisplayID};
@@ -261,7 +271,7 @@ impl Platform for MacOSPlatform {
             //     monitor_count: CGDisplay::active_display_count() as u32,
             // });
         }
-        
+
         // Placeholder with reasonable defaults
         Ok(ScreenInfo {
             width: 1920,
@@ -275,7 +285,7 @@ impl Platform for MacOSPlatform {
 /// Converts our Key enum to Enigo's Key enum.
 fn key_to_enigo(key: Key) -> Result<enigo::Key> {
     use enigo::Key as EKey;
-    
+
     let enigo_key = match key {
         Key::ArrowUp => EKey::UpArrow,
         Key::ArrowDown => EKey::DownArrow,
@@ -292,29 +302,31 @@ fn key_to_enigo(key: Key) -> Result<enigo::Key> {
         Key::Meta => EKey::Meta, // Command key on Mac
         Key::Letter(c) => EKey::Unicode(c),
         Key::Number(n) if n <= 9 => EKey::Unicode((b'0' + n) as char),
-        Key::Function(n) if n >= 1 && n <= 12 => {
-            match n {
-                1 => EKey::F1,
-                2 => EKey::F2,
-                3 => EKey::F3,
-                4 => EKey::F4,
-                5 => EKey::F5,
-                6 => EKey::F6,
-                7 => EKey::F7,
-                8 => EKey::F8,
-                9 => EKey::F9,
-                10 => EKey::F10,
-                11 => EKey::F11,
-                12 => EKey::F12,
-                _ => return Err(PlatformError::NotSupported(
-                    format!("Function key F{} not supported", n)
-                ).into()),
+        Key::Function(n) if n >= 1 && n <= 12 => match n {
+            1 => EKey::F1,
+            2 => EKey::F2,
+            3 => EKey::F3,
+            4 => EKey::F4,
+            5 => EKey::F5,
+            6 => EKey::F6,
+            7 => EKey::F7,
+            8 => EKey::F8,
+            9 => EKey::F9,
+            10 => EKey::F10,
+            11 => EKey::F11,
+            12 => EKey::F12,
+            _ => {
+                return Err(PlatformError::NotSupported(format!(
+                    "Function key F{} not supported",
+                    n
+                ))
+                .into())
             }
+        },
+        _ => {
+            return Err(PlatformError::NotSupported(format!("Key {:?} not supported", key)).into())
         }
-        _ => return Err(PlatformError::NotSupported(
-            format!("Key {:?} not supported", key)
-        ).into()),
     };
-    
+
     Ok(enigo_key)
 }

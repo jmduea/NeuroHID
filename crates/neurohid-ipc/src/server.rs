@@ -14,11 +14,11 @@
 //! This simple framing avoids delimiter issues and makes parsing straightforward.
 
 use std::sync::Arc;
-use tokio::sync::{mpsc, Mutex};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::{mpsc, Mutex};
 
+use crate::protocol::{IpcConfig, PythonToRust, RustToPython};
 use neurohid_types::error::{IpcError, Result};
-use crate::protocol::{RustToPython, PythonToRust, IpcConfig};
 
 /// The IPC server that accepts connections from the Python ML process.
 pub struct IpcServer {
@@ -33,9 +33,12 @@ impl IpcServer {
     pub async fn new(config: IpcConfig) -> Result<Self> {
         let listener = tokio::net::TcpListener::bind(&config.address)
             .await
-            .map_err(|e| IpcError::ConnectionFailed(format!(
-                "Failed to bind TCP socket at {}: {}", config.address, e
-            )))?;
+            .map_err(|e| {
+                IpcError::ConnectionFailed(format!(
+                    "Failed to bind TCP socket at {}: {}",
+                    config.address, e
+                ))
+            })?;
 
         tracing::info!(address = %config.address, "IPC server listening");
 
@@ -48,7 +51,10 @@ impl IpcServer {
     /// for reading and writing messages, and returns an `IpcConnection` handle
     /// that communicates through async channels.
     pub async fn accept(&self) -> Result<IpcConnection> {
-        let (stream, addr) = self.listener.accept().await
+        let (stream, addr) = self
+            .listener
+            .accept()
+            .await
             .map_err(|e| IpcError::ConnectionFailed(format!("Accept failed: {}", e)))?;
 
         tracing::info!(%addr, "Python ML process connected");
@@ -96,7 +102,8 @@ impl IpcServer {
                 // Guard against oversized messages
                 if msg_len > max_message_size {
                     tracing::warn!(
-                        msg_len, max_message_size,
+                        msg_len,
+                        max_message_size,
                         "Message exceeds max size, dropping connection"
                     );
                     break;
@@ -155,7 +162,9 @@ impl IpcConnection {
     /// This is non-blocking; the message is queued for sending.
     /// Returns an error if the connection is closed.
     pub async fn send(&self, msg: RustToPython) -> Result<()> {
-        self.tx.send(msg).await
+        self.tx
+            .send(msg)
+            .await
             .map_err(|_| IpcError::ConnectionLost)?;
         Ok(())
     }
@@ -165,7 +174,8 @@ impl IpcConnection {
     /// Blocks until a message is available or the connection is closed.
     pub async fn recv(&self) -> Result<PythonToRust> {
         let mut rx = self.rx.lock().await;
-        rx.recv().await
+        rx.recv()
+            .await
             .ok_or_else(|| IpcError::ConnectionLost.into())
     }
 
@@ -197,8 +207,7 @@ impl IpcConnection {
 ///
 /// Format: 4-byte little-endian length prefix + JSON body
 fn encode_message<T: serde::Serialize>(msg: &T) -> Result<Vec<u8>> {
-    let json = serde_json::to_vec(msg)
-        .map_err(|e| IpcError::InvalidMessage(e.to_string()))?;
+    let json = serde_json::to_vec(msg).map_err(|e| IpcError::InvalidMessage(e.to_string()))?;
 
     let len = json.len() as u32;
     let mut buf = Vec::with_capacity(4 + json.len());
@@ -210,6 +219,5 @@ fn encode_message<T: serde::Serialize>(msg: &T) -> Result<Vec<u8>> {
 
 /// Decodes a message from a buffer.
 fn decode_message<T: serde::de::DeserializeOwned>(buf: &[u8]) -> Result<T> {
-    serde_json::from_slice(buf)
-        .map_err(|e| IpcError::InvalidMessage(e.to_string()).into())
+    serde_json::from_slice(buf).map_err(|e| IpcError::InvalidMessage(e.to_string()).into())
 }

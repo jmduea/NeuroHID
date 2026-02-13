@@ -18,32 +18,32 @@ impl WizardState {
             started: false,
         }
     }
-    
+
     /// Starts the wizard.
     pub fn start(&mut self) {
         self.started = true;
         self.current_step = CalibrationStep::SignalCheck;
     }
-    
+
     /// Returns the current step.
     pub fn current_step(&self) -> CalibrationStep {
         self.current_step
     }
-    
+
     /// Advances to the next step.
     pub fn advance(&mut self) {
         if let Some(next) = self.current_step.next() {
             self.current_step = next;
         }
     }
-    
+
     /// Goes back to the previous step — for wizard navigation buttons.
     #[allow(dead_code)]
     pub fn go_back(&mut self) {
         // Find previous step by iterating from start
         let mut prev = CalibrationStep::SignalCheck;
         let mut current = CalibrationStep::SignalCheck;
-        
+
         while let Some(next) = current.next() {
             if next == self.current_step {
                 self.current_step = prev;
@@ -53,7 +53,7 @@ impl WizardState {
             current = next;
         }
     }
-    
+
     /// Checks if the wizard is complete — for wizard completion check.
     #[allow(dead_code)]
     pub fn is_complete(&self) -> bool {

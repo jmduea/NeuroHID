@@ -147,9 +147,10 @@ impl Platform for LinuxPlatform {
             MouseButton::Extra(0) => Button::Back,
             MouseButton::Extra(1) => Button::Forward,
             MouseButton::Extra(n) => {
-                return Err(PlatformError::NotSupported(
-                    format!("Extra mouse button {} not supported (only 0=Back, 1=Forward)", n),
-                )
+                return Err(PlatformError::NotSupported(format!(
+                    "Extra mouse button {} not supported (only 0=Back, 1=Forward)",
+                    n
+                ))
                 .into())
             }
         };
@@ -171,9 +172,10 @@ impl Platform for LinuxPlatform {
             MouseButton::Extra(0) => Button::Back,
             MouseButton::Extra(1) => Button::Forward,
             MouseButton::Extra(n) => {
-                return Err(PlatformError::NotSupported(
-                    format!("Extra mouse button {} not supported (only 0=Back, 1=Forward)", n),
-                )
+                return Err(PlatformError::NotSupported(format!(
+                    "Extra mouse button {} not supported (only 0=Back, 1=Forward)",
+                    n
+                ))
                 .into())
             }
         };

@@ -240,7 +240,10 @@ impl FilterChain {
                         )));
                     }
                 }
-                FilterType::Notch { center_hz, q_factor } => {
+                FilterType::Notch {
+                    center_hz,
+                    q_factor,
+                } => {
                     if *center_hz <= 0.0 || *center_hz >= nyquist || *q_factor <= 0.0 {
                         return Err(SignalError::InvalidFilterConfig(format!(
                             "notch at {center_hz} Hz (Q={q_factor}) invalid for Nyquist {nyquist} Hz"
@@ -289,7 +292,10 @@ impl FilterChain {
                     sections.push(Biquad::highpass(*low_hz as f64, fs));
                     sections.push(Biquad::lowpass(*high_hz as f64, fs));
                 }
-                FilterType::Notch { center_hz, q_factor } => {
+                FilterType::Notch {
+                    center_hz,
+                    q_factor,
+                } => {
                     sections.push(Biquad::notch(*center_hz as f64, *q_factor as f64, fs));
                 }
             }

@@ -15,15 +15,15 @@ use neurohid_types::error::{Result, StorageError};
 pub fn get_emotiv_credentials() -> Result<(String, String)> {
     let client_id = keyring::Entry::new(KEYCHAIN_SERVICE, "emotiv_client_id")
         .and_then(|entry| entry.get_password())
-        .map_err(|e| StorageError::KeyringError(format!(
-            "Failed to read emotiv_client_id: {}", e
-        )))?;
+        .map_err(|e| {
+            StorageError::KeyringError(format!("Failed to read emotiv_client_id: {}", e))
+        })?;
 
     let client_secret = keyring::Entry::new(KEYCHAIN_SERVICE, "emotiv_client_secret")
         .and_then(|entry| entry.get_password())
-        .map_err(|e| StorageError::KeyringError(format!(
-            "Failed to read emotiv_client_secret: {}", e
-        )))?;
+        .map_err(|e| {
+            StorageError::KeyringError(format!("Failed to read emotiv_client_secret: {}", e))
+        })?;
 
     Ok((client_id, client_secret))
 }
@@ -34,22 +34,22 @@ pub fn get_emotiv_credentials() -> Result<(String, String)> {
 /// stored credentials.
 pub fn set_emotiv_credentials(client_id: &str, client_secret: &str) -> Result<()> {
     if client_id.is_empty() || client_secret.is_empty() {
-        return Err(StorageError::KeyringError(
-            "Client ID and secret must not be empty".into(),
-        ).into());
+        return Err(
+            StorageError::KeyringError("Client ID and secret must not be empty".into()).into(),
+        );
     }
 
     keyring::Entry::new(KEYCHAIN_SERVICE, "emotiv_client_id")
         .and_then(|entry| entry.set_password(client_id))
-        .map_err(|e| StorageError::KeyringError(format!(
-            "Failed to store emotiv_client_id: {}", e
-        )))?;
+        .map_err(|e| {
+            StorageError::KeyringError(format!("Failed to store emotiv_client_id: {}", e))
+        })?;
 
     keyring::Entry::new(KEYCHAIN_SERVICE, "emotiv_client_secret")
         .and_then(|entry| entry.set_password(client_secret))
-        .map_err(|e| StorageError::KeyringError(format!(
-            "Failed to store emotiv_client_secret: {}", e
-        )))?;
+        .map_err(|e| {
+            StorageError::KeyringError(format!("Failed to store emotiv_client_secret: {}", e))
+        })?;
 
     tracing::info!("Emotiv credentials saved to keyring");
 

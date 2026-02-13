@@ -100,11 +100,11 @@ impl FeatureExtractor {
     pub fn feature_dim(&self) -> usize {
         let nc = self.config.channel_count;
         let nb = BANDS.len();
-        let band_power = nb * nc * 3;          // 75
-        let time_domain = nc * 8;               // 40
+        let band_power = nb * nc * 3; // 75
+        let time_domain = nc * 8; // 40
         let cross_channel = nc * (nc - 1) / 2   // 10 correlations
-            + nb * self.asymmetry_count();       // 25 asymmetries
-        let temporal = nb * nc * 2;             // 50
+            + nb * self.asymmetry_count(); // 25 asymmetries
+        let temporal = nb * nc * 2; // 50
         band_power + time_domain + cross_channel + temporal
     }
 
@@ -197,7 +197,9 @@ impl FeatureExtractor {
                     + psd[bin_lo..=bin_hi]
                         .iter()
                         .enumerate()
-                        .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                        .max_by(|(_, a), (_, b)| {
+                            a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal)
+                        })
                         .map(|(i, _)| i)
                         .unwrap_or(0);
                 let peak_freq = peak_bin as f32 * freq_resolution;
@@ -223,9 +225,14 @@ impl FeatureExtractor {
 
             if self.config.emit_labels {
                 for name in &[
-                    "mean", "std", "skewness", "kurtosis",
-                    "hjorth_mobility", "hjorth_complexity",
-                    "zero_crossing_rate", "peak_to_peak",
+                    "mean",
+                    "std",
+                    "skewness",
+                    "kurtosis",
+                    "hjorth_mobility",
+                    "hjorth_complexity",
+                    "zero_crossing_rate",
+                    "peak_to_peak",
                 ] {
                     labels.push(format!("ch{ch}_{name}"));
                 }
@@ -237,10 +244,8 @@ impl FeatureExtractor {
         // 3a. Pairwise correlations — C(n,2) = 10 for n=5
         for i in 0..nc {
             for j in (i + 1)..nc {
-                let corr = pearson_correlation(
-                    window.channel(i).unwrap(),
-                    window.channel(j).unwrap(),
-                );
+                let corr =
+                    pearson_correlation(window.channel(i).unwrap(), window.channel(j).unwrap());
                 values.push(corr);
                 if self.config.emit_labels {
                     labels.push(format!("corr_ch{i}_ch{j}"));
@@ -314,7 +319,10 @@ impl FeatureExtractor {
         // Check for NaN/Inf
         for (i, v) in values.iter_mut().enumerate() {
             if !v.is_finite() {
-                tracing::warn!(feature_index = i, "non-finite feature value, replacing with 0.0");
+                tracing::warn!(
+                    feature_index = i,
+                    "non-finite feature value, replacing with 0.0"
+                );
                 *v = 0.0;
             }
         }
@@ -557,12 +565,21 @@ fn time_domain_stats(data: &[f32]) -> [f32; 8] {
     let zcr = zero_crossings as f32 / (n - 1.0);
 
     // Peak-to-peak amplitude
-    let (min_val, max_val) = data.iter().fold((f32::MAX, f32::MIN), |(lo, hi), &x| {
-        (lo.min(x), hi.max(x))
-    });
+    let (min_val, max_val) = data
+        .iter()
+        .fold((f32::MAX, f32::MIN), |(lo, hi), &x| (lo.min(x), hi.max(x)));
     let peak_to_peak = max_val - min_val;
 
-    [mean, std, skewness, kurtosis, mobility, complexity, zcr, peak_to_peak]
+    [
+        mean,
+        std,
+        skewness,
+        kurtosis,
+        mobility,
+        complexity,
+        zcr,
+        peak_to_peak,
+    ]
 }
 
 /// Sample variance of a slice (Bessel-corrected).

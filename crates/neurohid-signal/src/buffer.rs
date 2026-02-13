@@ -203,8 +203,7 @@ mod tests {
 
         // Push 5 samples
         for i in 0..5 {
-            buf.push(&[i as f32, (i * 10) as f32], i as i64)
-                .unwrap();
+            buf.push(&[i as f32, (i * 10) as f32], i as i64).unwrap();
         }
 
         assert_eq!(buf.len(), 5);

@@ -10,8 +10,8 @@
 //! - Composable (multiple actions can be combined)
 //! - Platform-agnostic (platform layer translates to native calls)
 
-use serde::{Deserialize, Serialize};
 use crate::Timestamp;
+use serde::{Deserialize, Serialize};
 
 /// A complete action the decoder can output.
 /// This may contain multiple sub-actions (e.g., move mouse AND click).
@@ -19,13 +19,13 @@ use crate::Timestamp;
 pub struct Action {
     /// Timestamp when this action was decided
     pub timestamp: Timestamp,
-    
+
     /// Mouse-related actions
     pub mouse: Option<MouseAction>,
-    
+
     /// Keyboard-related actions
     pub keyboard: Option<KeyAction>,
-    
+
     /// Confidence score for this action (0.0 to 1.0)
     /// Higher values mean the decoder is more certain
     pub confidence: f32,
@@ -41,7 +41,7 @@ impl Action {
             confidence: 1.0,
         }
     }
-    
+
     /// Create a mouse-only action
     pub fn mouse(action: MouseAction) -> Self {
         Self {
@@ -51,7 +51,7 @@ impl Action {
             confidence: 1.0,
         }
     }
-    
+
     /// Create a keyboard-only action
     pub fn key(action: KeyAction) -> Self {
         Self {
@@ -61,13 +61,13 @@ impl Action {
             confidence: 1.0,
         }
     }
-    
+
     /// Set the confidence for this action
     pub fn with_confidence(mut self, confidence: f32) -> Self {
         self.confidence = confidence.clamp(0.0, 1.0);
         self
     }
-    
+
     /// Check if this is a no-op action
     pub fn is_none(&self) -> bool {
         self.mouse.is_none() && self.keyboard.is_none()
@@ -79,10 +79,10 @@ impl Action {
 pub struct MouseAction {
     /// Relative movement (in normalized units, will be scaled by sensitivity)
     pub movement: Option<MouseMovement>,
-    
+
     /// Button press/release events
     pub buttons: Vec<MouseButtonEvent>,
-    
+
     /// Scroll wheel movement
     pub scroll: Option<ScrollMovement>,
 }
@@ -96,37 +96,49 @@ impl MouseAction {
             scroll: None,
         }
     }
-    
+
     /// Create a click action
     pub fn click(button: MouseButton) -> Self {
         Self {
             movement: None,
             buttons: vec![
-                MouseButtonEvent { button, pressed: true },
-                MouseButtonEvent { button, pressed: false },
+                MouseButtonEvent {
+                    button,
+                    pressed: true,
+                },
+                MouseButtonEvent {
+                    button,
+                    pressed: false,
+                },
             ],
             scroll: None,
         }
     }
-    
+
     /// Create a button press (without release)
     pub fn press(button: MouseButton) -> Self {
         Self {
             movement: None,
-            buttons: vec![MouseButtonEvent { button, pressed: true }],
+            buttons: vec![MouseButtonEvent {
+                button,
+                pressed: true,
+            }],
             scroll: None,
         }
     }
-    
+
     /// Create a button release
     pub fn release(button: MouseButton) -> Self {
         Self {
             movement: None,
-            buttons: vec![MouseButtonEvent { button, pressed: false }],
+            buttons: vec![MouseButtonEvent {
+                button,
+                pressed: false,
+            }],
             scroll: None,
         }
     }
-    
+
     /// Create a scroll action
     pub fn scroll(dx: f32, dy: f32) -> Self {
         Self {
@@ -152,7 +164,7 @@ impl MouseMovement {
     pub fn magnitude(&self) -> f32 {
         (self.dx * self.dx + self.dy * self.dy).sqrt()
     }
-    
+
     /// Get the direction in radians (0 = right, PI/2 = down)
     pub fn direction(&self) -> f32 {
         self.dy.atan2(self.dx)
@@ -199,22 +211,28 @@ impl KeyAction {
         Self {
             events: vec![
                 KeyEvent { key, pressed: true },
-                KeyEvent { key, pressed: false },
+                KeyEvent {
+                    key,
+                    pressed: false,
+                },
             ],
         }
     }
-    
+
     /// Create a key press (without release)
     pub fn press(key: Key) -> Self {
         Self {
             events: vec![KeyEvent { key, pressed: true }],
         }
     }
-    
+
     /// Create a key release
     pub fn release(key: Key) -> Self {
         Self {
-            events: vec![KeyEvent { key, pressed: false }],
+            events: vec![KeyEvent {
+                key,
+                pressed: false,
+            }],
         }
     }
 }
@@ -236,26 +254,26 @@ pub enum Key {
     ArrowDown,
     ArrowLeft,
     ArrowRight,
-    
+
     // Common keys (future)
     Enter,
     Space,
     Escape,
     Backspace,
     Tab,
-    
+
     // Modifiers (future)
     Shift,
     Control,
     Alt,
     Meta, // Windows key / Command key
-    
+
     // Letters (future)
     Letter(char),
-    
+
     // Numbers (future)
     Number(u8),
-    
+
     // Function keys (future)
     Function(u8),
 }
@@ -263,9 +281,12 @@ pub enum Key {
 impl Key {
     /// Check if this is an arrow key
     pub fn is_arrow(&self) -> bool {
-        matches!(self, Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight)
+        matches!(
+            self,
+            Key::ArrowUp | Key::ArrowDown | Key::ArrowLeft | Key::ArrowRight
+        )
     }
-    
+
     /// Check if this is a modifier key
     pub fn is_modifier(&self) -> bool {
         matches!(self, Key::Shift | Key::Control | Key::Alt | Key::Meta)
@@ -278,19 +299,19 @@ impl Key {
 pub struct ActionSpace {
     /// Whether mouse movement is enabled
     pub mouse_movement: bool,
-    
+
     /// Which mouse buttons are available
     pub mouse_buttons: Vec<MouseButton>,
-    
+
     /// Whether scrolling is enabled
     pub mouse_scroll: bool,
-    
+
     /// Which keys are available
     pub keys: Vec<Key>,
-    
+
     /// Movement sensitivity scaling factor
     pub movement_sensitivity: f32,
-    
+
     /// Minimum confidence threshold for executing actions
     pub confidence_threshold: f32,
 }
@@ -302,7 +323,12 @@ impl Default for ActionSpace {
             mouse_movement: true,
             mouse_buttons: vec![MouseButton::Left, MouseButton::Right],
             mouse_scroll: false,
-            keys: vec![Key::ArrowUp, Key::ArrowDown, Key::ArrowLeft, Key::ArrowRight],
+            keys: vec![
+                Key::ArrowUp,
+                Key::ArrowDown,
+                Key::ArrowLeft,
+                Key::ArrowRight,
+            ],
             movement_sensitivity: 1.0,
             confidence_threshold: 0.5,
         }
@@ -321,47 +347,52 @@ impl ActionSpace {
             confidence_threshold: 0.5,
         }
     }
-    
+
     /// Create an action space with only arrow keys (for discrete control games)
     pub fn arrows_only() -> Self {
         Self {
             mouse_movement: false,
             mouse_buttons: Vec::new(),
             mouse_scroll: false,
-            keys: vec![Key::ArrowUp, Key::ArrowDown, Key::ArrowLeft, Key::ArrowRight],
+            keys: vec![
+                Key::ArrowUp,
+                Key::ArrowDown,
+                Key::ArrowLeft,
+                Key::ArrowRight,
+            ],
             movement_sensitivity: 1.0,
             confidence_threshold: 0.5,
         }
     }
-    
+
     /// Get the total number of discrete actions (for discrete action space RL)
     pub fn discrete_action_count(&self) -> usize {
         let mut count = 0;
-        
+
         // Mouse buttons: each can be clicked
         count += self.mouse_buttons.len();
-        
+
         // Keys: each can be pressed
         count += self.keys.len();
-        
+
         // Add 1 for "no action"
         count + 1
     }
-    
+
     /// Get the continuous action dimension (for continuous action space RL)
     pub fn continuous_action_dim(&self) -> usize {
         let mut dim = 0;
-        
+
         // Mouse movement: 2D (dx, dy)
         if self.mouse_movement {
             dim += 2;
         }
-        
+
         // Scroll: 2D (dx, dy)
         if self.mouse_scroll {
             dim += 2;
         }
-        
+
         dim
     }
 }

@@ -85,8 +85,8 @@ impl PipelineConfig {
                 ..Default::default()
             },
             artifact_threshold_uv: 100.0,
-            window_samples: 64,  // 500ms at 128 Hz
-            step_samples: 7,     // ~50ms at 128 Hz (128 * 0.05 ≈ 6.4 → 7)
+            window_samples: 64, // 500ms at 128 Hz
+            step_samples: 7,    // ~50ms at 128 Hz (128 * 0.05 ≈ 6.4 → 7)
             zscore_window_secs: 60.0,
         }
     }
@@ -142,8 +142,7 @@ impl ZScoreNormalizer {
                 let old_mean = self.running_mean[i];
                 let new_mean = self.alpha * v + (1.0 - self.alpha) * old_mean;
                 let diff_sq = (v - new_mean).powi(2);
-                let new_var =
-                    self.alpha * diff_sq + (1.0 - self.alpha) * self.running_var[i];
+                let new_var = self.alpha * diff_sq + (1.0 - self.alpha) * self.running_var[i];
 
                 self.running_mean[i] = new_mean;
                 self.running_var[i] = new_var.max(1e-8); // floor to prevent div-by-zero
@@ -224,26 +223,16 @@ pub struct SignalPipeline {
 impl SignalPipeline {
     /// Create a new pipeline from configuration.
     pub fn new(config: PipelineConfig) -> Result<Self, SignalError> {
-        let filter = FilterChain::new(
-            config.filter.clone(),
-            config.buffer.channel_count,
-        )?;
+        let filter = FilterChain::new(config.filter.clone(), config.buffer.channel_count)?;
         let buffer = SampleBuffer::new(config.buffer.clone());
         let extractor = FeatureExtractor::new(config.features.clone());
 
         let feature_dim = extractor.feature_dim();
-        let extraction_rate =
-            config.features.sample_rate_hz / config.step_samples as f32;
+        let extraction_rate = config.features.sample_rate_hz / config.step_samples as f32;
 
-        let normalizer = ZScoreNormalizer::new(
-            feature_dim,
-            config.zscore_window_secs,
-            extraction_rate,
-        );
-        let temporal = TemporalState::new(
-            config.features.channel_count,
-            extraction_rate,
-        );
+        let normalizer =
+            ZScoreNormalizer::new(feature_dim, config.zscore_window_secs, extraction_rate);
+        let temporal = TemporalState::new(config.features.channel_count, extraction_rate);
 
         Ok(Self {
             filter,
@@ -261,11 +250,7 @@ impl SignalPipeline {
     ///
     /// The sample passes through artifact rejection and filtering before
     /// being stored in the ring buffer.
-    pub fn push_sample(
-        &mut self,
-        values: &[f32],
-        timestamp: i64,
-    ) -> Result<(), SignalError> {
+    pub fn push_sample(&mut self, values: &[f32], timestamp: i64) -> Result<(), SignalError> {
         self.stats.samples_received += 1;
 
         // ── Artifact rejection ───────────────────────────────────────
@@ -305,7 +290,9 @@ impl SignalPipeline {
         self.samples_since_extract = 0;
 
         // ── Extract raw features ─────────────────────────────────────
-        let raw_fv = self.extractor.extract_with_temporal(&window, Some(&self.temporal))?;
+        let raw_fv = self
+            .extractor
+            .extract_with_temporal(&window, Some(&self.temporal))?;
 
         // ── Update temporal state with current band powers ───────────
         self.update_temporal(&window)?;
@@ -344,8 +331,8 @@ impl SignalPipeline {
             neurohid_types::signal::FrequencyBand::Gamma,
         ];
 
-        let freq_res = self.config.features.sample_rate_hz
-            / self.config.features.welch_segment_len as f32;
+        let freq_res =
+            self.config.features.sample_rate_hz / self.config.features.welch_segment_len as f32;
 
         // Quick band power estimation using simple DFT energy in band.
         // This is a lightweight approximation — the full Welch PSD was
@@ -363,7 +350,8 @@ impl SignalPipeline {
                 if let Some(data) = window.channel(ch) {
                     // Simple band power: sum of squared values in bandpass range.
                     // This is a rough approximation; acceptable for temporal tracking.
-                    let power = band_power_approx(data, f_lo, f_hi, self.config.features.sample_rate_hz);
+                    let power =
+                        band_power_approx(data, f_lo, f_hi, self.config.features.sample_rate_hz);
                     ch_powers.push(power);
                 } else {
                     ch_powers.push(0.0);
@@ -495,7 +483,10 @@ mod tests {
         // We pushed 128 samples with step=7 and window=64.
         // After 64 samples buffered, extractions happen every 7 samples.
         // (128 - 64) / 7 ≈ 9 possible extractions
-        assert!(produced >= 1, "should have produced at least 1 feature vector");
+        assert!(
+            produced >= 1,
+            "should have produced at least 1 feature vector"
+        );
     }
 
     #[test]
@@ -507,7 +498,9 @@ mod tests {
         assert_eq!(pipeline.stats().samples_rejected, 0);
 
         // Push a sample with artifact (>100 µV)
-        pipeline.push_sample(&[150.0, 1.0, 1.0, 1.0, 1.0], 1000).unwrap();
+        pipeline
+            .push_sample(&[150.0, 1.0, 1.0, 1.0, 1.0], 1000)
+            .unwrap();
         assert_eq!(pipeline.stats().samples_rejected, 1);
         assert_eq!(pipeline.buffer_len(), 1); // artifact wasn't buffered
     }
@@ -559,7 +552,9 @@ mod tests {
         for i in 0..10 {
             pipeline.push_sample(&[1.0; 5], i).unwrap();
         }
-        pipeline.push_sample(&[200.0, 1.0, 1.0, 1.0, 1.0], 10).unwrap();
+        pipeline
+            .push_sample(&[200.0, 1.0, 1.0, 1.0, 1.0], 10)
+            .unwrap();
 
         assert_eq!(pipeline.stats().samples_received, 11);
         assert_eq!(pipeline.stats().samples_rejected, 1);

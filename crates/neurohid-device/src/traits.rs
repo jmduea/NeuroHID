@@ -272,4 +272,3 @@ pub trait DeviceExt: Device {
         timeout_ms: u64,
     ) -> impl std::future::Future<Output = bool> + Send;
 }
-

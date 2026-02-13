@@ -21,39 +21,39 @@ pub enum Error {
     /// Errors related to device connection and communication
     #[error("Device error: {0}")]
     Device(#[from] DeviceError),
-    
+
     /// Errors related to signal processing
     #[error("Signal processing error: {0}")]
     Signal(#[from] SignalError),
-    
+
     /// Errors related to ErrP detection
     #[error("ErrP detection error: {0}")]
     ErrP(#[from] ErrPError),
-    
+
     /// Errors related to the decoder
     #[error("Decoder error: {0}")]
     Decoder(#[from] DecoderError),
-    
+
     /// Errors related to platform/HID operations
     #[error("Platform error: {0}")]
     Platform(#[from] PlatformError),
-    
+
     /// Errors related to storage and profiles
     #[error("Storage error: {0}")]
     Storage(#[from] StorageError),
-    
+
     /// Errors related to IPC communication
     #[error("IPC error: {0}")]
     Ipc(#[from] IpcError),
-    
+
     /// Errors related to calibration
     #[error("Calibration error: {0}")]
     Calibration(#[from] CalibrationError),
-    
+
     /// Errors related to configuration
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
-    
+
     /// Generic internal error (should be rare)
     #[error("Internal error: {0}")]
     Internal(String),
@@ -65,43 +65,43 @@ pub enum DeviceError {
     /// No device found
     #[error("No compatible device found")]
     NoDeviceFound,
-    
+
     /// Device not connected
     #[error("Device not connected")]
     NotConnected,
-    
+
     /// Connection failed
     #[error("Failed to connect to device: {reason}")]
     ConnectionFailed { reason: String },
-    
+
     /// Connection lost
     #[error("Connection to device lost: {reason}")]
     ConnectionLost { reason: String },
-    
+
     /// Device not supported
     #[error("Device type not supported: {device_type}")]
     UnsupportedDevice { device_type: String },
-    
+
     /// Communication error
     #[error("Device communication error: {0}")]
     CommunicationError(String),
-    
+
     /// Device returned invalid data
     #[error("Invalid data from device: {0}")]
     InvalidData(String),
-    
+
     /// Timeout waiting for device
     #[error("Device operation timed out")]
     Timeout,
-    
+
     /// Device busy (e.g., in use by another application)
     #[error("Device is busy or in use by another application")]
     DeviceBusy,
-    
+
     /// Permission denied
     #[error("Permission denied to access device: {0}")]
     PermissionDenied(String),
-    
+
     /// Cortex API specific error
     #[error("Cortex API error: {code} - {message}")]
     CortexApiError { code: i32, message: String },
@@ -113,27 +113,27 @@ pub enum SignalError {
     /// Buffer overflow (data coming faster than we can process)
     #[error("Signal buffer overflow")]
     BufferOverflow,
-    
+
     /// Buffer underflow (not enough data to process)
     #[error("Not enough data in buffer: have {available}, need {required}")]
     BufferUnderflow { available: usize, required: usize },
-    
+
     /// Invalid channel configuration
     #[error("Invalid channel configuration: {0}")]
     InvalidChannelConfig(String),
-    
+
     /// Feature extraction failed
     #[error("Feature extraction failed: {0}")]
     FeatureExtractionFailed(String),
-    
+
     /// Filter configuration error
     #[error("Invalid filter configuration: {0}")]
     InvalidFilterConfig(String),
-    
+
     /// Signal quality too poor
     #[error("Signal quality too poor for processing")]
     PoorSignalQuality,
-    
+
     /// Numeric computation error (NaN, Inf, etc.)
     #[error("Numeric error during signal processing: {0}")]
     NumericError(String),
@@ -145,19 +145,19 @@ pub enum ErrPError {
     /// Not calibrated
     #[error("ErrP detector not calibrated")]
     NotCalibrated,
-    
+
     /// Classifier not loaded
     #[error("ErrP classifier not loaded")]
     ClassifierNotLoaded,
-    
+
     /// Detection failed
     #[error("ErrP detection failed: {0}")]
     DetectionFailed(String),
-    
+
     /// Invalid window
     #[error("Invalid ErrP window: {0}")]
     InvalidWindow(String),
-    
+
     /// Model file error
     #[error("Error loading ErrP model: {0}")]
     ModelLoadError(String),
@@ -169,23 +169,23 @@ pub enum DecoderError {
     /// Model not loaded
     #[error("Decoder model not loaded")]
     ModelNotLoaded,
-    
+
     /// Invalid input dimensions
     #[error("Invalid input dimensions: expected {expected}, got {got}")]
     InvalidInputDimensions { expected: usize, got: usize },
-    
+
     /// Inference failed
     #[error("Decoder inference failed: {0}")]
     InferenceFailed(String),
-    
+
     /// Training failed
     #[error("Decoder training failed: {0}")]
     TrainingFailed(String),
-    
+
     /// Model file error
     #[error("Error with decoder model file: {0}")]
     ModelFileError(String),
-    
+
     /// IPC communication error with Python
     #[error("Failed to communicate with Python ML process: {0}")]
     PythonBridgeError(String),
@@ -197,27 +197,27 @@ pub enum PlatformError {
     /// HID emulation not available
     #[error("HID emulation not available on this platform")]
     HidNotAvailable,
-    
+
     /// Failed to emit input event
     #[error("Failed to emit input event: {0}")]
     InputEmissionFailed(String),
-    
+
     /// Failed to get cursor position
     #[error("Failed to get cursor position: {0}")]
     CursorQueryFailed(String),
-    
+
     /// Failed to get screen info
     #[error("Failed to get screen information: {0}")]
     ScreenQueryFailed(String),
-    
+
     /// Permission denied for input simulation
     #[error("Permission denied for input simulation. {hint}")]
     PermissionDenied { hint: String },
-    
+
     /// Platform-specific feature not supported
     #[error("Feature not supported on this platform: {0}")]
     NotSupported(String),
-    
+
     /// Accessibility API error
     #[error("Accessibility API error: {0}")]
     AccessibilityError(String),
@@ -229,35 +229,35 @@ pub enum StorageError {
     /// Profile not found
     #[error("Profile not found: {profile_id}")]
     ProfileNotFound { profile_id: String },
-    
+
     /// Profile already exists
     #[error("Profile already exists: {profile_id}")]
     ProfileAlreadyExists { profile_id: String },
-    
+
     /// Failed to read file
     #[error("Failed to read file '{path}': {reason}")]
     ReadError { path: String, reason: String },
-    
+
     /// Failed to write file
     #[error("Failed to write file '{path}': {reason}")]
     WriteError { path: String, reason: String },
-    
+
     /// Encryption/decryption error
     #[error("Encryption error: {0}")]
     EncryptionError(String),
-    
+
     /// Keyring error
     #[error("Keyring error: {0}")]
     KeyringError(String),
-    
+
     /// Serialization error
     #[error("Serialization error: {0}")]
     SerializationError(String),
-    
+
     /// Data corruption
     #[error("Data corruption detected in {location}: {details}")]
     DataCorruption { location: String, details: String },
-    
+
     /// Storage full
     #[error("Storage quota exceeded")]
     StorageFull,
@@ -269,27 +269,27 @@ pub enum IpcError {
     /// Connection failed
     #[error("IPC connection failed: {0}")]
     ConnectionFailed(String),
-    
+
     /// Connection lost
     #[error("IPC connection lost")]
     ConnectionLost,
-    
+
     /// Message send failed
     #[error("Failed to send IPC message: {0}")]
     SendFailed(String),
-    
+
     /// Message receive failed
     #[error("Failed to receive IPC message: {0}")]
     ReceiveFailed(String),
-    
+
     /// Invalid message format
     #[error("Invalid IPC message format: {0}")]
     InvalidMessage(String),
-    
+
     /// Timeout
     #[error("IPC operation timed out")]
     Timeout,
-    
+
     /// Python process not running
     #[error("Python ML process not running")]
     PythonProcessNotRunning,
@@ -301,27 +301,27 @@ pub enum CalibrationError {
     /// Calibration already in progress
     #[error("Calibration already in progress")]
     AlreadyInProgress,
-    
+
     /// Calibration not in progress
     #[error("No calibration in progress")]
     NotInProgress,
-    
+
     /// Insufficient data
     #[error("Insufficient calibration data: {reason}")]
     InsufficientData { reason: String },
-    
+
     /// Calibration failed
     #[error("Calibration failed: {0}")]
     Failed(String),
-    
+
     /// Signal quality too poor for calibration
     #[error("Signal quality too poor for calibration")]
     PoorSignalQuality,
-    
+
     /// User cancelled
     #[error("Calibration cancelled by user")]
     Cancelled,
-    
+
     /// Session data error
     #[error("Calibration session data error: {0}")]
     SessionDataError(String),
@@ -333,19 +333,19 @@ pub enum ConfigError {
     /// Config file not found
     #[error("Configuration file not found: {path}")]
     FileNotFound { path: String },
-    
+
     /// Config parsing error
     #[error("Failed to parse configuration: {0}")]
     ParseError(String),
-    
+
     /// Invalid configuration value
     #[error("Invalid configuration value for '{key}': {reason}")]
     InvalidValue { key: String, reason: String },
-    
+
     /// Missing required configuration
     #[error("Missing required configuration: {key}")]
     MissingRequired { key: String },
-    
+
     /// Config write error
     #[error("Failed to write configuration: {0}")]
     WriteError(String),
@@ -394,7 +394,7 @@ impl StorageError {
             reason: reason.into(),
         }
     }
-    
+
     /// Create a write error with path and reason
     pub fn write_error(path: impl Into<String>, reason: impl Into<String>) -> Self {
         StorageError::WriteError {

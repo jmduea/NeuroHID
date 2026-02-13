@@ -46,13 +46,14 @@ pub struct LslDevice {
 
 impl LslDevice {
     pub(crate) fn new(inlet: SendInlet, info: DeviceInfo) -> Self {
-        let channel_config = info.channel_config.clone().unwrap_or_else(|| {
-            DeviceChannelConfig {
+        let channel_config = info
+            .channel_config
+            .clone()
+            .unwrap_or_else(|| DeviceChannelConfig {
                 channels: Vec::new(),
                 sampling_rate_hz: 0.0,
                 resolution_bits: 32,
-            }
-        });
+            });
 
         let initial_status = DeviceStatus {
             device_id: info.id.clone(),
@@ -151,8 +152,7 @@ impl Device for LslDevice {
 
             while streaming.load(Ordering::Relaxed) {
                 // Pull with a short timeout so we can check the streaming flag.
-                let result: std::result::Result<(Vec<f32>, f64), _> =
-                    inlet.0.pull_sample(0.2);
+                let result: std::result::Result<(Vec<f32>, f64), _> = inlet.0.pull_sample(0.2);
 
                 match result {
                     Ok((data, timestamp)) => {
@@ -209,12 +209,15 @@ impl Device for LslDevice {
                         if consecutive_errors == 1 {
                             tracing::warn!(
                                 "LSL pull_sample error on '{}': {:?}",
-                                device_id_for_thread, e
+                                device_id_for_thread,
+                                e
                             );
                         } else if consecutive_errors % 50 == 0 {
                             tracing::warn!(
                                 "LSL pull_sample: {} consecutive errors on '{}' (latest: {:?})",
-                                consecutive_errors, device_id_for_thread, e
+                                consecutive_errors,
+                                device_id_for_thread,
+                                e
                             );
                         }
                         continue;
@@ -224,7 +227,8 @@ impl Device for LslDevice {
 
             tracing::info!(
                 "LSL pull thread exiting for '{}' (pulled {} samples)",
-                device_id_for_thread, sequence
+                device_id_for_thread,
+                sequence
             );
         });
 

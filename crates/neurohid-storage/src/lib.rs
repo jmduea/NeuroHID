@@ -41,24 +41,24 @@
 //!     └── session_*.enc         # Encrypted session logs (auto-rotate)
 //! ```
 
-pub mod paths;
-pub mod secure;
-pub mod profile;
 pub mod config;
 pub mod credentials;
+pub mod paths;
+pub mod profile;
+pub mod secure;
 
 use std::path::PathBuf;
 
-pub use paths::DataPaths;
-pub use secure::SecureStorage;
-pub use profile::{ProfileStore, ProfileData};
 pub use config::ConfigStore;
 pub use credentials::{get_emotiv_credentials, set_emotiv_credentials};
+pub use paths::DataPaths;
+pub use profile::{ProfileData, ProfileStore};
+pub use secure::SecureStorage;
 
 // Re-export types from neurohid-types
-pub use neurohid_types::profile::{ProfileId, ProfileMetadata, CalibrationState};
 pub use neurohid_types::config::SystemConfig;
-pub use neurohid_types::error::{StorageError, Result};
+pub use neurohid_types::error::{Result, StorageError};
+pub use neurohid_types::profile::{CalibrationState, ProfileId, ProfileMetadata};
 
 /// The application identifier used for keychain access.
 pub const APP_IDENTIFIER: &str = "com.neurohid.service";
@@ -92,12 +92,12 @@ pub fn default_data_dir() -> Option<PathBuf> {
 pub async fn initialize() -> Result<(ProfileStore, ConfigStore)> {
     let paths = DataPaths::new(default_data_dir())?;
     paths.ensure_directories().await?;
-    
+
     let secure = SecureStorage::new()?;
     secure.ensure_master_key().await?;
-    
+
     let profile_store = ProfileStore::new(paths.clone(), secure.clone());
     let config_store = ConfigStore::new(paths);
-    
+
     Ok((profile_store, config_store))
 }

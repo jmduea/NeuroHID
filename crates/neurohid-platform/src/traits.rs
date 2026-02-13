@@ -38,9 +38,9 @@
 //!    Async wrappers can be added at higher levels if needed.
 
 use neurohid_types::{
-    action::{MouseMovement, MouseButton, Key},
-    observation::{CursorState, ScreenInfo},
+    action::{Key, MouseButton, MouseMovement},
     error::Result,
+    observation::{CursorState, ScreenInfo},
 };
 
 /// The core trait for platform-specific operations.
@@ -65,10 +65,10 @@ pub trait Platform: Send {
     // =========================================================================
     // Capability Checks
     // =========================================================================
-    
+
     /// Returns the name of this platform implementation (for logging/debugging).
     fn platform_name(&self) -> &'static str;
-    
+
     /// Checks if input simulation is available and permitted.
     ///
     /// This should verify:
@@ -81,17 +81,17 @@ pub trait Platform: Send {
     /// `Ok(())` if input simulation will work, or a descriptive error explaining
     /// what's missing and how to fix it.
     fn check_input_permissions(&self) -> Result<()>;
-    
+
     /// Checks if screen/cursor queries are available.
     ///
     /// This is usually less restricted than input simulation, but may still
     /// require certain permissions on some platforms.
     fn check_query_permissions(&self) -> Result<()>;
-    
+
     // =========================================================================
     // Input Emission
     // =========================================================================
-    
+
     /// Moves the mouse cursor by a relative amount.
     ///
     /// # Arguments
@@ -106,7 +106,7 @@ pub trait Platform: Send {
     /// (which we don't try to compensate for - that would be fighting the user's
     /// preferences).
     fn emit_mouse_move(&mut self, movement: MouseMovement) -> Result<()>;
-    
+
     /// Moves the mouse cursor to an absolute screen position.
     ///
     /// # Arguments
@@ -120,7 +120,7 @@ pub trait Platform: Send {
     /// display's dimensions. Negative coordinates are valid if there are
     /// monitors to the left of or above the primary display.
     fn emit_mouse_move_absolute(&mut self, x: i32, y: i32) -> Result<()>;
-    
+
     /// Presses a mouse button (without releasing).
     ///
     /// # Arguments
@@ -132,14 +132,14 @@ pub trait Platform: Send {
     /// The button remains pressed until `emit_mouse_release` is called.
     /// For a simple click, call `emit_mouse_click` instead.
     fn emit_mouse_press(&mut self, button: MouseButton) -> Result<()>;
-    
+
     /// Releases a mouse button.
     ///
     /// # Arguments
     ///
     /// * `button` - Which button to release
     fn emit_mouse_release(&mut self, button: MouseButton) -> Result<()>;
-    
+
     /// Performs a complete mouse click (press then release).
     ///
     /// # Arguments
@@ -158,7 +158,7 @@ pub trait Platform: Send {
         self.emit_mouse_release(button)?;
         Ok(())
     }
-    
+
     /// Performs a scroll wheel action.
     ///
     /// # Arguments
@@ -167,21 +167,21 @@ pub trait Platform: Send {
     /// * `dy` - Vertical scroll amount (positive = down, but UI convention
     ///   often inverts this so positive scrolls content up)
     fn emit_scroll(&mut self, dx: f32, dy: f32) -> Result<()>;
-    
+
     /// Presses a key (without releasing).
     ///
     /// # Arguments
     ///
     /// * `key` - Which key to press
     fn emit_key_press(&mut self, key: Key) -> Result<()>;
-    
+
     /// Releases a key.
     ///
     /// # Arguments
     ///
     /// * `key` - Which key to release
     fn emit_key_release(&mut self, key: Key) -> Result<()>;
-    
+
     /// Performs a complete key tap (press then release).
     ///
     /// # Arguments
@@ -193,11 +193,11 @@ pub trait Platform: Send {
         self.emit_key_release(key)?;
         Ok(())
     }
-    
+
     // =========================================================================
     // State Queries
     // =========================================================================
-    
+
     /// Gets the current cursor position in screen coordinates.
     ///
     /// # Returns
@@ -206,14 +206,14 @@ pub trait Platform: Send {
     /// in the virtual screen coordinate space (which may include negative values
     /// if monitors are positioned left of or above the primary display).
     fn get_cursor_position(&self) -> Result<(i32, i32)>;
-    
+
     /// Gets information about the screen/display configuration.
     ///
     /// # Returns
     ///
     /// A `ScreenInfo` struct containing screen dimensions and monitor information.
     fn get_screen_info(&self) -> Result<ScreenInfo>;
-    
+
     /// Gets the complete cursor state (position + velocity + button state).
     ///
     /// # Arguments
@@ -224,15 +224,19 @@ pub trait Platform: Send {
     /// # Returns
     ///
     /// A complete `CursorState` with normalized position and computed velocity.
-    fn get_cursor_state(&self, prev_state: Option<&CursorState>, dt_seconds: f32) -> Result<CursorState> {
+    fn get_cursor_state(
+        &self,
+        prev_state: Option<&CursorState>,
+        dt_seconds: f32,
+    ) -> Result<CursorState> {
         // Default implementation that works for all platforms
         let (x, y) = self.get_cursor_position()?;
         let screen = self.get_screen_info()?;
-        
+
         // Normalize coordinates to [0, 1]
         let norm_x = x as f32 / screen.width as f32;
         let norm_y = y as f32 / screen.height as f32;
-        
+
         // Compute velocity if we have a previous state
         let (velocity_x, velocity_y) = if let Some(prev) = prev_state {
             if dt_seconds > 0.0 {
@@ -246,7 +250,7 @@ pub trait Platform: Send {
         } else {
             (0.0, 0.0)
         };
-        
+
         Ok(CursorState {
             x: norm_x,
             y: norm_y,
@@ -286,17 +290,17 @@ pub fn create_platform() -> Result<Box<dyn Platform>> {
     {
         Ok(Box::new(super::linux::LinuxPlatform::new()?))
     }
-    
+
     #[cfg(target_os = "windows")]
     {
         Ok(Box::new(super::windows::WindowsPlatform::new()?))
     }
-    
+
     #[cfg(target_os = "macos")]
     {
         Ok(Box::new(super::macos::MacOSPlatform::new()?))
     }
-    
+
     #[cfg(not(any(target_os = "linux", target_os = "windows", target_os = "macos")))]
     {
         Err(PlatformError::NotSupported("Current OS is not supported".to_string()).into())
@@ -320,7 +324,7 @@ pub trait PlatformExt: Platform {
         self.emit_mouse_click(button)?;
         Ok(())
     }
-    
+
     /// Moves the cursor to a position and clicks.
     ///
     /// # Arguments
@@ -334,12 +338,12 @@ pub trait PlatformExt: Platform {
         self.emit_mouse_click(button)?;
         Ok(())
     }
-    
+
     /// Checks if the cursor is within the screen bounds.
     fn is_cursor_in_bounds(&self) -> Result<bool> {
         let (x, y) = self.get_cursor_position()?;
         let screen = self.get_screen_info()?;
-        
+
         Ok(x >= 0 && x < screen.width as i32 && y >= 0 && y < screen.height as i32)
     }
 }
@@ -355,11 +359,11 @@ pub struct PlatformConfig {
     /// Whether to attempt to request necessary permissions if missing.
     /// On macOS, this can trigger the accessibility permission dialog.
     pub request_permissions: bool,
-    
+
     /// Whether to use high-precision mouse movement where available.
     /// This may have higher CPU cost but smoother movement.
     pub high_precision_mouse: bool,
-    
+
     /// Whether to print platform-specific setup hints on permission errors.
     pub verbose_errors: bool,
 }
@@ -369,10 +373,10 @@ pub struct PlatformConfig {
 pub struct PermissionHint {
     /// A brief description of the issue
     pub message: String,
-    
+
     /// Detailed instructions for resolving the issue
     pub instructions: Vec<String>,
-    
+
     /// A command the user could run, if applicable
     pub suggested_command: Option<String>,
 }
@@ -398,7 +402,7 @@ impl PermissionHint {
             ),
         }
     }
-    
+
     /// Creates a macOS-specific permission hint for accessibility access.
     pub fn macos_accessibility() -> Self {
         Self {
@@ -414,7 +418,7 @@ impl PermissionHint {
             suggested_command: None,
         }
     }
-    
+
     /// Creates a Windows-specific hint (usually fewer permission issues).
     pub fn windows_admin() -> Self {
         Self {

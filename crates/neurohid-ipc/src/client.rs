@@ -8,11 +8,11 @@
 //! Connects to the Rust core via a TCP socket on localhost. Messages
 //! use the same length-prefixed JSON framing as the server side.
 
-use tokio::sync::mpsc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::sync::mpsc;
 
+use crate::protocol::{IpcConfig, PythonToRust, RustToPython};
 use neurohid_types::error::{IpcError, Result};
-use crate::protocol::{RustToPython, PythonToRust, IpcConfig};
 
 /// An IPC client that connects to the Rust core service.
 ///
@@ -42,9 +42,12 @@ impl IpcClient {
     pub async fn connect(&mut self) -> Result<()> {
         let stream = tokio::net::TcpStream::connect(&self.config.address)
             .await
-            .map_err(|e| IpcError::ConnectionFailed(format!(
-                "Failed to connect to {}: {}", self.config.address, e
-            )))?;
+            .map_err(|e| {
+                IpcError::ConnectionFailed(format!(
+                    "Failed to connect to {}: {}",
+                    self.config.address, e
+                ))
+            })?;
 
         // Disable Nagle's algorithm for lower latency on small messages
         let _ = stream.set_nodelay(true);
@@ -94,7 +97,8 @@ impl IpcClient {
 
                 if msg_len > max_message_size {
                     tracing::warn!(
-                        msg_len, max_message_size,
+                        msg_len,
+                        max_message_size,
                         "Server message exceeds max size, dropping connection"
                     );
                     break;
@@ -129,10 +133,13 @@ impl IpcClient {
 
     /// Sends a message to the Rust core.
     pub async fn send(&self, msg: PythonToRust) -> Result<()> {
-        let tx = self.tx.as_ref()
+        let tx = self
+            .tx
+            .as_ref()
             .ok_or(IpcError::ConnectionFailed("Not connected".to_string()))?;
 
-        tx.send(msg).await
+        tx.send(msg)
+            .await
             .map_err(|_| IpcError::SendFailed("Channel closed".to_string()))?;
 
         Ok(())
@@ -140,10 +147,13 @@ impl IpcClient {
 
     /// Receives a message from the Rust core.
     pub async fn recv(&mut self) -> Result<RustToPython> {
-        let rx = self.rx.as_mut()
+        let rx = self
+            .rx
+            .as_mut()
             .ok_or(IpcError::ConnectionFailed("Not connected".to_string()))?;
 
-        rx.recv().await
+        rx.recv()
+            .await
             .ok_or_else(|| IpcError::ConnectionLost.into())
     }
 

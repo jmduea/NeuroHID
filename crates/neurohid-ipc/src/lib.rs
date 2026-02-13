@@ -60,14 +60,13 @@
 //! }
 //! ```
 
+pub mod client;
 pub mod protocol;
 pub mod server;
-pub mod client;
 
 pub use protocol::{
-    RustToPython, PythonToRust,
-    ObservationContext, ModelType, TrainingMetrics, ModelMetadata,
-    IpcConfig, default_address, DEFAULT_IPC_PORT,
+    default_address, IpcConfig, ModelMetadata, ModelType, ObservationContext, PythonToRust,
+    RustToPython, TrainingMetrics, DEFAULT_IPC_PORT,
 };
 
 // Server is used by Rust core

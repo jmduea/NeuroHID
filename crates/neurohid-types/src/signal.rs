@@ -3,8 +3,8 @@
 //! Types related to biosignal data: raw samples, channel configurations,
 //! and extracted features.
 
-use serde::{Deserialize, Serialize};
 use crate::Timestamp;
+use serde::{Deserialize, Serialize};
 
 /// Unique identifier for an EEG channel.
 /// We use a string-based ID to support different naming conventions
@@ -29,13 +29,13 @@ impl std::fmt::Display for ChannelId {
 pub struct ChannelConfig {
     /// The channel identifier
     pub id: ChannelId,
-    
+
     /// Standard 10-20 position name, if applicable (e.g., "AF3", "Pz")
     pub position_10_20: Option<String>,
-    
+
     /// Whether this channel is currently enabled for data collection
     pub enabled: bool,
-    
+
     /// Reference electrode for this channel, if known
     pub reference: Option<ChannelId>,
 }
@@ -45,10 +45,10 @@ pub struct ChannelConfig {
 pub struct DeviceChannelConfig {
     /// All available channels
     pub channels: Vec<ChannelConfig>,
-    
+
     /// Sampling rate in Hz
     pub sampling_rate_hz: f32,
-    
+
     /// Resolution in bits (e.g., 14 for Emotiv Insight)
     pub resolution_bits: u8,
 }
@@ -58,7 +58,7 @@ impl DeviceChannelConfig {
     pub fn enabled_channel_count(&self) -> usize {
         self.channels.iter().filter(|c| c.enabled).count()
     }
-    
+
     /// Get the sample period in microseconds
     pub fn sample_period_micros(&self) -> i64 {
         (1_000_000.0 / self.sampling_rate_hz) as i64
@@ -102,12 +102,12 @@ impl Sample {
             quality: None,
         }
     }
-    
+
     /// Get the number of channels in this sample
     pub fn channel_count(&self) -> usize {
         self.values.len()
     }
-    
+
     /// Get the value for a specific channel index
     pub fn get(&self, channel_index: usize) -> Option<f32> {
         self.values.get(channel_index).copied()
@@ -119,7 +119,7 @@ impl Sample {
 pub struct SampleBatch {
     /// The samples in this batch, ordered by time (oldest first)
     pub samples: Vec<Sample>,
-    
+
     /// The channel configuration these samples correspond to
     pub channel_config: DeviceChannelConfig,
 }
@@ -134,12 +134,12 @@ impl SampleBatch {
         let last = self.samples.last().unwrap().system_timestamp;
         last - first
     }
-    
+
     /// Get the approximate sample count
     pub fn len(&self) -> usize {
         self.samples.len()
     }
-    
+
     /// Check if the batch is empty
     pub fn is_empty(&self) -> bool {
         self.samples.is_empty()
@@ -152,10 +152,10 @@ impl SampleBatch {
 pub struct FeatureVector {
     /// The feature values
     pub values: Vec<f32>,
-    
+
     /// Timestamp of the center of the window these features were extracted from
     pub timestamp: Timestamp,
-    
+
     /// Optional labels for each feature dimension (for debugging/analysis)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub labels: Option<Vec<String>>,
@@ -170,17 +170,21 @@ impl FeatureVector {
             labels: None,
         }
     }
-    
+
     /// Create a feature vector with labels
     pub fn with_labels(values: Vec<f32>, labels: Vec<String>) -> Self {
-        assert_eq!(values.len(), labels.len(), "Feature values and labels must have same length");
+        assert_eq!(
+            values.len(),
+            labels.len(),
+            "Feature values and labels must have same length"
+        );
         Self {
             values,
             timestamp: crate::now_micros(),
             labels: Some(labels),
         }
     }
-    
+
     /// Get the dimensionality of the feature vector
     pub fn dim(&self) -> usize {
         self.values.len()

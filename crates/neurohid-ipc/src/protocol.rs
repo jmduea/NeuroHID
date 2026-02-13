@@ -58,14 +58,14 @@
 //! We use JSON for debuggability. If profiling shows this is a bottleneck,
 //! we can switch to MessagePack or a binary format.
 
-use serde::{Deserialize, Serialize};
 use neurohid_types::{
-    Timestamp,
-    signal::FeatureVector,
     action::Action,
-    reward::{ErrPResult, SignalQuality},
     config::ServiceState,
+    reward::{ErrPResult, SignalQuality},
+    signal::FeatureVector,
+    Timestamp,
 };
+use serde::{Deserialize, Serialize};
 
 /// Messages sent from Rust to Python.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -120,17 +120,13 @@ pub enum RustToPython {
     },
 
     /// Service status update.
-    StatusUpdate {
-        state: ServiceState,
-    },
+    StatusUpdate { state: ServiceState },
 
     /// Request to shutdown cleanly.
     Shutdown,
 
     /// Ping for health checking.
-    Ping {
-        timestamp: Timestamp,
-    },
+    Ping { timestamp: Timestamp },
 }
 
 /// Messages sent from Python to Rust.
