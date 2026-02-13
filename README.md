@@ -166,6 +166,16 @@ cargo run --release -p neurohid --bin neurohid-service -- --service-command star
 cargo run --release -p neurohid --bin neurohid-service -- --service-command status
 cargo run --release -p neurohid --bin neurohid-service -- --service-command stop
 cargo run --release -p neurohid --bin neurohid-service -- --service-command uninstall
+
+# Optional: expose a localhost JSON control endpoint
+cargo run --release -p neurohid --bin neurohid-service -- --control-port 47801
+```
+
+Control endpoint requests are line-delimited JSON with
+`neurohid_types::control::ControlRequest` shape, for example:
+
+```json
+{"request_id":"1","command":{"type":"snapshot"}}
 ```
 
 ### Python ML Workflows (uv-first)
