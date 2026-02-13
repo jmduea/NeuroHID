@@ -17,6 +17,12 @@ pub struct SpectrogramWidget {
     selected_source: Option<String>,
 }
 
+impl Default for SpectrogramWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpectrogramWidget {
     pub fn new() -> Self {
         Self {
@@ -158,7 +164,7 @@ impl Widget for SpectrogramWidget {
                 .range(start..)
                 .map(|s| s.get(self.channel).unwrap_or(0.0))
                 .collect();
-            let bins = (self.window_samples / 2).min(MAX_BINS).max(8);
+            let bins = (self.window_samples / 2).clamp(8, MAX_BINS);
             let row = Self::dft_bins(&window, bins);
             self.history.push(row);
             while self.history.len() > MAX_ROWS {

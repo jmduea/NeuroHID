@@ -92,6 +92,12 @@ pub struct ActionPreviewWidget {
     show_relative_time: bool,
 }
 
+impl Default for ActionPreviewWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ActionPreviewWidget {
     pub fn new() -> Self {
         Self {
@@ -214,13 +220,12 @@ impl ActionPreviewWidget {
         action_type: ActionType,
     ) {
         // Check if we can group with the last entry
-        if let Some(last) = self.log.back_mut() {
-            if last.action_type == action_type && last.timestamp.elapsed().as_millis() < 500 {
+        if let Some(last) = self.log.back_mut()
+            && last.action_type == action_type && last.timestamp.elapsed().as_millis() < 500 {
                 last.count += 1;
                 last.confidence = (last.confidence + confidence) / 2.0; // Average confidence
                 return;
             }
-        }
         self.add_log(description, confidence, color, action_type);
     }
 

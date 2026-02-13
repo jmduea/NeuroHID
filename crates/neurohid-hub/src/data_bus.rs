@@ -49,6 +49,12 @@ pub struct DataBus {
     pub total_samples_received: u64,
 }
 
+impl Default for DataBus {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DataBus {
     /// Create a new, disconnected data bus.
     pub fn new() -> Self {
@@ -209,13 +215,10 @@ impl DataBus {
             if stream_types
                 .iter()
                 .any(|st| ds_type_prefix.eq_ignore_ascii_case(st))
-            {
-                if let Some(buf) = self.samples_by_source.get(&ds.id) {
-                    if !buf.is_empty() {
+                && let Some(buf) = self.samples_by_source.get(&ds.id)
+                    && !buf.is_empty() {
                         return buf;
                     }
-                }
-            }
         }
         // Fallback: return the flat buffer (backward compat / single-stream).
         &self.samples

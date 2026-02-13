@@ -107,6 +107,12 @@ pub struct LayoutManager {
     dirty: bool,
 }
 
+impl Default for LayoutManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl LayoutManager {
     /// Create a new layout manager with default widget assignments.
     pub fn new() -> Self {
@@ -130,14 +136,12 @@ impl LayoutManager {
         }
 
         let mut tree = Self::build_tree(config, &pane_widget_ids);
-        if let Some(raw) = tree_json {
-            if let Ok(parsed_tree) = serde_json::from_str::<Tree<Pane>>(raw) {
-                if let Some(from_tree) = Self::assignments_from_tree(&parsed_tree, pane_count) {
+        if let Some(raw) = tree_json
+            && let Ok(parsed_tree) = serde_json::from_str::<Tree<Pane>>(raw)
+                && let Some(from_tree) = Self::assignments_from_tree(&parsed_tree, pane_count) {
                     pane_widget_ids = from_tree;
                     tree = parsed_tree;
                 }
-            }
-        }
 
         let widget_instances = pane_widget_ids
             .iter()
@@ -244,8 +248,8 @@ impl LayoutManager {
     /// Change the widget in a specific pane.
     #[allow(dead_code)]
     pub fn set_pane_widget(&mut self, pane_index: usize, widget_id: WidgetId) {
-        if let Some(current) = self.pane_widget_ids.get_mut(pane_index) {
-            if *current != widget_id {
+        if let Some(current) = self.pane_widget_ids.get_mut(pane_index)
+            && *current != widget_id {
                 *current = widget_id;
                 if let Some(widget) = self.widget_instances.get_mut(pane_index) {
                     *widget = create_widget(widget_id);
@@ -253,7 +257,6 @@ impl LayoutManager {
                 self.tree = Self::build_tree(self.config, &self.pane_widget_ids);
                 self.dirty = true;
             }
-        }
     }
 
     pub fn take_persisted_state(&mut self) -> Option<PersistedLayoutState> {

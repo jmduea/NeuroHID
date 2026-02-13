@@ -30,6 +30,12 @@ struct CalibrationArtifact {
     perturbation_count: u32,
 }
 
+impl Default for CalibrationScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CalibrationScreen {
     pub fn new() -> Self {
         Self { panel: None }

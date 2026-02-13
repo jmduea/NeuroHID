@@ -10,6 +10,12 @@ pub struct AccelerometerWidget {
     selected_source: Option<String>,
 }
 
+impl Default for AccelerometerWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AccelerometerWidget {
     pub fn new() -> Self {
         Self {

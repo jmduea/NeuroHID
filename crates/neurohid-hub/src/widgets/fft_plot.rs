@@ -25,8 +25,10 @@ const FFT_SIZE: usize = 256;
 /// Left margin for Y-axis labels
 const LEFT_MARGIN: f32 = 50.0;
 
+type BandDef = (&'static str, &'static str, f32, f32, u8, u8, u8, u8);
+
 /// EEG frequency bands with their characteristics (name, tooltip, f_lo, f_hi, r, g, b, a)
-const BANDS: &[(&str, &str, f32, f32, u8, u8, u8, u8)] = &[
+const BANDS: &[BandDef] = &[
     (
         "delta",
         "Delta (0.5-4 Hz): Deep sleep, unconscious",
@@ -94,6 +96,12 @@ pub struct FftPlotWidget {
     frozen: bool,
     /// Optional bound source stream id.
     selected_source: Option<String>,
+}
+
+impl Default for FftPlotWidget {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl FftPlotWidget {
@@ -331,8 +339,8 @@ impl FftPlotWidget {
             );
 
             // Show tooltip if hovering over this band
-            if let Some(pos) = hover_pos {
-                if band_rect.contains(pos) {
+            if let Some(pos) = hover_pos
+                && band_rect.contains(pos) {
                     let _ = egui::Tooltip::always_open(
                         ui.ctx().clone(),
                         ui.layer_id(),
@@ -344,11 +352,14 @@ impl FftPlotWidget {
                         ui.label(tooltip);
                     });
                 }
-            }
         }
     }
 
     /// Draw crosshair with frequency and power readout.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Rendering helper needs full plot geometry and FFT domain context"
+    )]
     fn draw_crosshair(
         &self,
         _ui: &mut egui::Ui,
@@ -391,8 +402,8 @@ impl FftPlotWidget {
                 continue;
             }
 
-            if let Some(fft) = self.cached_fft.get(ch) {
-                if let Some(&power) = fft.get(bin_idx) {
+            if let Some(fft) = self.cached_fft.get(ch)
+                && let Some(&power) = fft.get(bin_idx) {
                     let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
                     let name = CHANNEL_NAMES.get(ch).unwrap_or(&"?");
                     let power_str = if power < 0.001 {
@@ -420,7 +431,6 @@ impl FftPlotWidget {
                         egui::Stroke::new(1.0, egui::Color32::WHITE),
                     );
                 }
-            }
         }
 
         // Draw tooltip near cursor
@@ -471,6 +481,10 @@ impl FftPlotWidget {
     }
 
     /// Draw peak markers and labels for each channel.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Rendering helper needs full plot geometry and FFT domain context"
+    )]
     fn draw_peaks(
         &self,
         painter: &egui::Painter,
@@ -487,8 +501,8 @@ impl FftPlotWidget {
                 continue;
             }
 
-            if let Some(fft) = self.cached_fft.get(ch) {
-                if let Some((_, freq, mag)) = Self::find_peak(fft, bins_to_show, nyquist, half_bins)
+            if let Some(fft) = self.cached_fft.get(ch)
+                && let Some((_, freq, mag)) = Self::find_peak(fft, bins_to_show, nyquist, half_bins)
                 {
                     let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
 
@@ -541,7 +555,6 @@ impl FftPlotWidget {
                         color,
                     );
                 }
-            }
         }
     }
 }
@@ -661,8 +674,8 @@ impl Widget for FftPlotWidget {
                 let freq_range = self.max_freq.min(nyquist);
                 let bins_to_show = ((freq_range / nyquist) * half_bins as f32) as usize;
 
-                if let Some(fft) = self.cached_fft.get(ch) {
-                    if let Some((_, freq, _)) =
+                if let Some(fft) = self.cached_fft.get(ch)
+                    && let Some((_, freq, _)) =
                         Self::find_peak(fft, bins_to_show, nyquist, half_bins)
                     {
                         let band = Self::get_band_name(freq);
@@ -683,7 +696,6 @@ impl Widget for FftPlotWidget {
                             .small(),
                         );
                     }
-                }
             }
         });
 

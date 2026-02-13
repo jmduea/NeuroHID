@@ -14,6 +14,12 @@ use neurohid_types::device::DiscoveredStream;
 
 pub struct DevicesScreen;
 
+impl Default for DevicesScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DevicesScreen {
     pub fn new() -> Self {
         Self
@@ -203,8 +209,8 @@ impl DevicesScreen {
                             .collect();
                         service_manager.connect_streams(&ids);
                     }
-                    if any_connected {
-                        if ui.button("Disconnect All").clicked() {
+                    if any_connected
+                        && ui.button("Disconnect All").clicked() {
                             let ids: Vec<&str> = streams
                                 .iter()
                                 .filter(|s| s.connected)
@@ -212,7 +218,6 @@ impl DevicesScreen {
                                 .collect();
                             service_manager.disconnect_streams(&ids);
                         }
-                    }
                 }
             });
 
@@ -286,8 +291,8 @@ impl DevicesScreen {
         });
 
         // Per-channel quality bars for connected streams
-        if stream.connected {
-            if let Some(qualities) = &stream.channel_quality {
+        if stream.connected
+            && let Some(qualities) = &stream.channel_quality {
                 ui.horizontal(|ui| {
                     ui.add_space(32.0); // indent quality bars
                     ui.vertical(|ui| {
@@ -314,7 +319,6 @@ impl DevicesScreen {
                     });
                 });
             }
-        }
     }
 
     /// Render a standalone stream as an independent card (no device grouping).
@@ -372,8 +376,8 @@ impl DevicesScreen {
             }
 
             // Per-channel quality bars for connected streams
-            if stream.connected {
-                if let Some(qualities) = &stream.channel_quality {
+            if stream.connected
+                && let Some(qualities) = &stream.channel_quality {
                     ui.add_space(4.0);
                     ui.label(
                         egui::RichText::new("Channel Quality")
@@ -396,7 +400,6 @@ impl DevicesScreen {
                         );
                     }
                 }
-            }
         });
     }
 }

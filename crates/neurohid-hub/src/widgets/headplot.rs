@@ -19,6 +19,12 @@ pub struct HeadplotWidget {
     selected_source: Option<String>,
 }
 
+impl Default for HeadplotWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HeadplotWidget {
     pub fn new() -> Self {
         Self {
@@ -87,9 +93,9 @@ impl Widget for HeadplotWidget {
 
         let start = samples.len().saturating_sub(self.window);
         let mut powers = [0.0f32; 5];
-        for ch in 0..5 {
+        for (ch, power) in powers.iter_mut().enumerate() {
             let vals: Vec<f32> = samples.range(start..).filter_map(|s| s.get(ch)).collect();
-            powers[ch] = Self::band_power(&vals);
+            *power = Self::band_power(&vals);
         }
 
         let max_p = powers.iter().copied().fold(1e-6f32, f32::max);

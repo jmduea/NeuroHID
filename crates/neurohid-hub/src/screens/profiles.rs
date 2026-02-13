@@ -16,6 +16,12 @@ pub struct ProfilesScreen {
     delete_confirm: Option<String>,
 }
 
+impl Default for ProfilesScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProfilesScreen {
     pub fn new() -> Self {
         Self {

@@ -29,6 +29,12 @@ pub struct JupyterIdeScreen {
     jupyter_session_url: Option<String>,
 }
 
+impl Default for JupyterIdeScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl JupyterIdeScreen {
     pub fn new() -> Self {
         Self {

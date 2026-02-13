@@ -7,6 +7,12 @@ use eframe::egui;
 
 pub struct StreamMetadataWidget;
 
+impl Default for StreamMetadataWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamMetadataWidget {
     pub fn new() -> Self {
         Self

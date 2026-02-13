@@ -12,6 +12,12 @@ pub struct SettingsScreen {
     unsaved_changes: bool,
 }
 
+impl Default for SettingsScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SettingsScreen {
     pub fn new() -> Self {
         Self {

@@ -14,6 +14,12 @@ pub struct FocusWidget {
     selected_source: Option<String>,
 }
 
+impl Default for FocusWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FocusWidget {
     pub fn new() -> Self {
         Self {

@@ -39,6 +39,12 @@ pub struct DecoderMonitorWidget {
     processing_latency_ms: f32,
 }
 
+impl Default for DecoderMonitorWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DecoderMonitorWidget {
     pub fn new() -> Self {
         Self {
@@ -108,7 +114,7 @@ impl DecoderMonitorWidget {
         while self
             .action_timestamps
             .front()
-            .map_or(false, |&t| t < cutoff)
+            .is_some_and(|&t| t < cutoff)
         {
             self.action_timestamps.pop_front();
         }
@@ -440,11 +446,10 @@ impl DecoderMonitorWidget {
                     }
 
                     // Check hover
-                    if let Some(hover_pos) = bar_response.hover_pos() {
-                        if seg.contains(hover_pos) {
+                    if let Some(hover_pos) = bar_response.hover_pos()
+                        && seg.contains(hover_pos) {
                             hovered_segment = Some((i, frac));
                         }
-                    }
                 }
                 x += w;
             }
@@ -518,12 +523,12 @@ impl DecoderMonitorWidget {
                 let v_range = (v_max - v_min).max(1e-6);
 
                 // Draw header row
-                for b in 0..BANDS {
+                for (b, band_name) in BAND_NAMES.iter().enumerate().take(BANDS) {
                     let x = rect.left() + cell_size + b as f32 * cell_size;
                     painter.text(
                         egui::pos2(x + cell_size / 2.0, rect.top()),
                         egui::Align2::CENTER_TOP,
-                        BAND_NAMES[b],
+                        *band_name,
                         egui::FontId::proportional(10.0),
                         egui::Color32::from_gray(150),
                     );
@@ -542,14 +547,14 @@ impl DecoderMonitorWidget {
                 };
 
                 // Draw cells
-                for ch in 0..CHANNELS {
+                for (ch, channel_name) in CHANNEL_NAMES.iter().enumerate().take(CHANNELS) {
                     let y = rect.top() + 16.0 + ch as f32 * cell_size;
 
                     // Channel label
                     painter.text(
                         egui::pos2(rect.left() + cell_size / 2.0, y + cell_size / 2.0),
                         egui::Align2::CENTER_CENTER,
-                        CHANNEL_NAMES[ch],
+                        *channel_name,
                         egui::FontId::proportional(9.0),
                         egui::Color32::from_gray(150),
                     );
@@ -579,8 +584,8 @@ impl DecoderMonitorWidget {
                             );
 
                             // Check hover
-                            if let Some(hover_pos) = response.hover_pos() {
-                                if cell_rect.contains(hover_pos) {
+                            if let Some(hover_pos) = response.hover_pos()
+                                && cell_rect.contains(hover_pos) {
                                     hovered_cell = Some((ch, b, val));
                                     // Highlight hovered cell
                                     painter.rect_stroke(
@@ -590,7 +595,6 @@ impl DecoderMonitorWidget {
                                         egui::StrokeKind::Outside,
                                     );
                                 }
-                            }
                         }
                     }
                 }

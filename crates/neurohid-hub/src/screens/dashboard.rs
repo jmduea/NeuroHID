@@ -97,6 +97,12 @@ impl MetricHistory {
     }
 }
 
+impl Default for DashboardScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DashboardScreen {
     const TRAINER_SNAPSHOT_POLL_INTERVAL: Duration = Duration::from_millis(1000);
     const OBSERVABILITY_SAMPLE_INTERVAL: Duration = Duration::from_millis(1000);

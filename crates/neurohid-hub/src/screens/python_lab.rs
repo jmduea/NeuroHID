@@ -125,6 +125,12 @@ pub struct PythonLabScreen {
     monitor_preview_values: usize,
 }
 
+impl Default for PythonLabScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PythonLabScreen {
     pub fn new() -> Self {
         Self {
@@ -736,12 +742,11 @@ impl PythonLabScreen {
                     message
                 ));
 
-                if let Some(pending) = self.pending_execution.take() {
-                    if let Some(cell) = self.cells.get_mut(pending.cell_index) {
+                if let Some(pending) = self.pending_execution.take()
+                    && let Some(cell) = self.cells.get_mut(pending.cell_index) {
                         cell.status = CellStatus::Error;
                         cell.output = format!("Kernel error: {}", message);
                     }
-                }
             }
         }
     }

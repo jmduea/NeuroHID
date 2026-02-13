@@ -40,6 +40,12 @@ pub struct StreamConsole {
     stream_type_filter: Option<String>,
 }
 
+impl Default for StreamConsole {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl StreamConsole {
     /// Create a new stream console (initially hidden).
     pub fn new() -> Self {
@@ -292,7 +298,7 @@ impl StreamConsole {
                     let selected = self
                         .stream_type_filter
                         .as_deref()
-                        .map_or(false, |f| f.eq_ignore_ascii_case(st));
+                        .is_some_and(|f| f.eq_ignore_ascii_case(st));
                     if ui
                         .selectable_label(selected, RichText::new(*st).monospace().size(10.0))
                         .clicked()

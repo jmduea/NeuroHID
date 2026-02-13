@@ -53,6 +53,12 @@ pub struct ServiceManager {
     control_emit_gate: std::sync::Mutex<EmitGate>,
 }
 
+impl Default for ServiceManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ServiceManager {
     pub fn new() -> Self {
         let service_defaults = ServiceConfig::default();
@@ -689,11 +695,10 @@ impl ServiceManager {
 
     fn snapshot_external(&mut self) -> ServiceSnapshot {
         let now = Instant::now();
-        if let Some(last_poll) = self.last_external_poll {
-            if now.duration_since(last_poll) < EXTERNAL_SNAPSHOT_POLL_INTERVAL {
+        if let Some(last_poll) = self.last_external_poll
+            && now.duration_since(last_poll) < EXTERNAL_SNAPSHOT_POLL_INTERVAL {
                 return self.cached_snapshot.clone();
             }
-        }
         self.last_external_poll = Some(now);
 
         let endpoint = self.control_endpoint_label();
@@ -953,12 +958,12 @@ impl ServiceManager {
                     .map_err(|e| format!("failed to decode control response: {}", e));
             }
 
-            return Err(format!(
+            Err(format!(
                 "failed to open control named pipe '{}' after {} attempts: {}",
                 self.external_control_pipe_name,
                 EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS,
                 last_error.unwrap_or_else(|| "unknown error".to_string())
-            ));
+            ))
         }
         #[cfg(not(windows))]
         {
@@ -1046,7 +1051,6 @@ impl ServiceManager {
             action_latency_p95_us: snapshot.action_latency_p95_us,
             task_error: snapshot.task_error,
             discovered_streams: snapshot.discovered_streams,
-            ..ServiceSnapshot::default()
         }
     }
 

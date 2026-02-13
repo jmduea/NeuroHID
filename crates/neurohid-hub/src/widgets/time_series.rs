@@ -60,6 +60,12 @@ pub struct TimeSeriesWidget {
     selected_source: Option<String>,
 }
 
+impl Default for TimeSeriesWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TimeSeriesWidget {
     pub fn new() -> Self {
         Self {
@@ -296,6 +302,10 @@ impl TimeSeriesWidget {
     }
 
     /// Draw crosshair and value tooltips.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Crosshair rendering requires plot geometry, samples, channel layout, and scale context"
+    )]
     fn draw_crosshair(
         &self,
         ui: &mut egui::Ui,
@@ -678,13 +688,13 @@ impl Widget for TimeSeriesWidget {
         // Compute effective vertical scale (auto or manual)
         let effective_scale = if self.auto_scale {
             let mut max_dev: f32 = 0.0;
-            for ch in 0..num_channels {
+            for (ch, mean) in channel_means.iter().enumerate().take(num_channels) {
                 if !self.channel_enabled[ch] {
                     continue;
                 }
                 for sample in &visible_samples {
                     if let Some(v) = sample.get(ch) {
-                        let dev = (v - channel_means[ch]).abs();
+                        let dev = (v - *mean).abs();
                         if dev > max_dev {
                             max_dev = dev;
                         }
@@ -878,8 +888,8 @@ impl Widget for TimeSeriesWidget {
         }
 
         // Draw crosshair if hovering
-        if let Some(hover_pos) = response.hover_pos() {
-            if plot_rect.contains(hover_pos) {
+        if let Some(hover_pos) = response.hover_pos()
+            && plot_rect.contains(hover_pos) {
                 self.draw_crosshair(
                     ui,
                     &painter,
@@ -892,6 +902,5 @@ impl Widget for TimeSeriesWidget {
                     self.window_secs,
                 );
             }
-        }
     }
 }

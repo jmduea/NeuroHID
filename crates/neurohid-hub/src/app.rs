@@ -650,7 +650,7 @@ impl Drop for HubApp {
 fn desktop_notify(title: &str, body: &str) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
-        return desktop_notify_windows(title, body);
+        desktop_notify_windows(title, body)
     }
     #[cfg(unix)]
     {

@@ -32,6 +32,12 @@ pub struct VisualizationScreen {
     pulse_phase: f64,
 }
 
+impl Default for VisualizationScreen {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl VisualizationScreen {
     pub fn new() -> Self {
         Self {

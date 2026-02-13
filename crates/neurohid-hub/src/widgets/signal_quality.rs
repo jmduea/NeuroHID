@@ -92,6 +92,12 @@ pub struct SignalQualityWidget {
     has_device_quality: bool,
 }
 
+impl Default for SignalQualityWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SignalQualityWidget {
     pub fn new() -> Self {
         Self {
@@ -135,9 +141,13 @@ impl SignalQualityWidget {
 
         let mut avg_quality = vec![0.0f32; num_eeg_channels];
         for sample in quality_samples.range(start..) {
-            for ch in 0..num_eeg_channels {
+            for (ch, quality_sum) in avg_quality
+                .iter_mut()
+                .enumerate()
+                .take(num_eeg_channels)
+            {
                 if let Some(&v) = sample.values.get(ch) {
-                    avg_quality[ch] += v;
+                    *quality_sum += v;
                 }
             }
         }

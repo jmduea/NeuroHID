@@ -53,6 +53,12 @@ pub struct BandPowerWidget {
     has_fft_source: bool,
 }
 
+impl Default for BandPowerWidget {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl BandPowerWidget {
     pub fn new() -> Self {
         Self {
@@ -92,11 +98,11 @@ impl BandPowerWidget {
         let mut powers = vec![[0.0f32; 5]; num_eeg];
 
         for sample in fft_samples.range(start..) {
-            for ch in 0..num_eeg {
+            for (ch, channel_powers) in powers.iter_mut().enumerate().take(num_eeg) {
                 let base = ch * 5;
                 // Direct 1:1 mapping — Emotiv provides [theta, alpha, betaL, betaH, gamma]
-                for b in 0..5 {
-                    powers[ch][b] += sample.get(base + b).unwrap_or(0.0);
+                for (b, value) in channel_powers.iter_mut().enumerate() {
+                    *value += sample.get(base + b).unwrap_or(0.0);
                 }
             }
         }
@@ -149,7 +155,7 @@ impl BandPowerWidget {
         let max_bin = ((45.0 / freq_per_bin) as usize).min(half);
         let mut power_spectrum = vec![0.0f32; max_bin];
 
-        for k in 0..max_bin {
+        for (k, power) in power_spectrum.iter_mut().enumerate().take(max_bin) {
             let mut re = 0.0f32;
             let mut im = 0.0f32;
             for (j, &x) in real.iter().enumerate() {
@@ -157,7 +163,7 @@ impl BandPowerWidget {
                 re += x * angle.cos();
                 im -= x * angle.sin();
             }
-            power_spectrum[k] = (re * re + im * im) / (n as f32 * n as f32);
+            *power = (re * re + im * im) / (n as f32 * n as f32);
         }
 
         // Sum power in each band
@@ -182,9 +188,9 @@ impl BandPowerWidget {
 
         for &ch in channels {
             if ch < self.cached_powers.len() {
-                for b in 0..5 {
+                for (b, total) in band_totals.iter_mut().enumerate() {
                     if self.band_visible[b] {
-                        band_totals[b] += self.cached_powers[ch][b];
+                        *total += self.cached_powers[ch][b];
                         grand_total += self.cached_powers[ch][b];
                     }
                 }
@@ -348,8 +354,7 @@ impl Widget for BandPowerWidget {
             if self.cached_powers.len() != num_channels {
                 self.cached_powers = fft_data[..num_channels].to_vec();
             } else {
-                for ch in 0..num_channels {
-                    let new = &fft_data[ch];
+                for (ch, new) in fft_data.iter().enumerate().take(num_channels) {
                     let cached = &mut self.cached_powers[ch];
                     for b in 0..5 {
                         cached[b] = self.smoothing * cached[b] + (1.0 - self.smoothing) * new[b];
@@ -375,7 +380,7 @@ impl Widget for BandPowerWidget {
         }
 
         // Update power history (throttled to ~2Hz)
-        if self.frame_count % 30 == 0 {
+        if self.frame_count.is_multiple_of(30) {
             for b in 0..5 {
                 let avg_power: f32 = channels
                     .iter()
