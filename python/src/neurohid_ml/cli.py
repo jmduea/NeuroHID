@@ -9,6 +9,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import time
 from typing import Sequence
 
 from neurohid_ml.bridge import main_async as bridge_main_async
@@ -93,6 +94,51 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="keep temporary work directory after completion",
     )
     _add_training_hyperparameter_args(profile_trainer)
+
+    worker = subparsers.add_parser(
+        "trainer-worker",
+        help="poll profile sessions and continuously train/stage candidate models",
+    )
+    worker.add_argument("--profile-id", type=str, required=True)
+    worker.add_argument(
+        "--service-bin",
+        type=str,
+        default="neurohid-service",
+        help="service binary used for session export and candidate staging",
+    )
+    worker.add_argument(
+        "--work-dir",
+        type=Path,
+        help="working directory for plaintext exports and trainer outputs",
+    )
+    worker.add_argument(
+        "--output-dir",
+        type=Path,
+        help="candidate artifact output directory (defaults to <work-dir>/candidate)",
+    )
+    worker.add_argument(
+        "--keep-work-dir",
+        action="store_true",
+        help="keep temporary work directory after each loop iteration",
+    )
+    worker.add_argument(
+        "--poll-interval-secs",
+        type=int,
+        default=120,
+        help="sleep interval between polling iterations",
+    )
+    worker.add_argument(
+        "--min-session-count",
+        type=int,
+        default=1,
+        help="minimum exported sessions required before training",
+    )
+    worker.add_argument(
+        "--once",
+        action="store_true",
+        help="run one polling iteration and exit",
+    )
+    _add_training_hyperparameter_args(worker)
 
     return parser.parse_args(argv_list)
 
@@ -216,6 +262,82 @@ def _run_train_profile_candidate(args: argparse.Namespace) -> None:
         print(f"Work directory: {work_root}")
 
 
+def _run_trainer_worker(args: argparse.Namespace) -> None:
+    if args.poll_interval_secs < 1:
+        raise SystemExit("--poll-interval-secs must be >= 1")
+    if args.min_session_count < 1:
+        raise SystemExit("--min-session-count must be >= 1")
+
+    seen_signature: tuple[str, ...] | None = None
+
+    while True:
+        transient_root = False
+        if args.work_dir:
+            work_root = args.work_dir
+        else:
+            work_root = Path(tempfile.mkdtemp(prefix="neurohid_ml_worker_"))
+            transient_root = True
+        work_root.mkdir(parents=True, exist_ok=True)
+
+        session_dir = work_root / "sessions"
+        output_dir = args.output_dir or (work_root / "candidate")
+        session_dir.mkdir(parents=True, exist_ok=True)
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        export_cmd = [
+            args.service_bin,
+            "--profile",
+            args.profile_id,
+            "--export-session-logs-dir",
+            str(session_dir),
+        ]
+        print(f"[trainer-worker] Exporting sessions for profile '{args.profile_id}'")
+        export_completed = _run_command(export_cmd)
+        if export_completed.returncode != 0:
+            print(
+                "[trainer-worker] Session export failed "
+                f"(exit {export_completed.returncode})."
+            )
+        else:
+            session_logs = sorted(session_dir.glob("session_*.json"))
+            signature = tuple(path.name for path in session_logs)
+
+            if len(session_logs) < args.min_session_count:
+                print(
+                    "[trainer-worker] Skipping training: "
+                    f"{len(session_logs)} session(s) < minimum {args.min_session_count}"
+                )
+            elif signature == seen_signature:
+                print("[trainer-worker] No new sessions since last successful training")
+            else:
+                trainer_args = argparse.Namespace(**vars(args))
+                trainer_args.session_log = []
+                trainer_args.session_dir = session_dir
+                trainer_args.output_dir = output_dir
+
+                try:
+                    print(
+                        "[trainer-worker] Training and staging candidate from "
+                        f"{len(session_logs)} session(s)"
+                    )
+                    _print_training_outputs(output_dir, trainer_args)
+                    _stage_candidate(args.service_bin, args.profile_id, output_dir)
+                    seen_signature = signature
+                    print("[trainer-worker] Candidate staged successfully")
+                except SystemExit as error:
+                    print(f"[trainer-worker] Training/staging failed: {error}")
+
+        if transient_root and not args.keep_work_dir:
+            shutil.rmtree(work_root, ignore_errors=True)
+        elif transient_root and args.keep_work_dir:
+            print(f"[trainer-worker] Kept work directory: {work_root}")
+
+        if args.once:
+            break
+
+        time.sleep(args.poll_interval_secs)
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
 
@@ -229,6 +351,10 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.command == "train-profile-candidate":
         _run_train_profile_candidate(args)
+        return
+
+    if args.command == "trainer-worker":
+        _run_trainer_worker(args)
         return
 
     raise SystemExit(f"Unknown command: {args.command}")
