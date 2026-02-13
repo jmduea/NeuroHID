@@ -196,6 +196,20 @@ impl ServiceManager {
         }
     }
 
+    /// Request decoder model reload for the active profile.
+    pub fn reload_model(&self) {
+        if let Some(handle) = &self.handle {
+            handle.reload_model();
+        }
+    }
+
+    /// Request guarded candidate model promotion for the active profile.
+    pub fn promote_candidate_model(&self) {
+        if let Some(handle) = &self.handle {
+            handle.promote_candidate_model();
+        }
+    }
+
     /// Update active profile status used by runtime action gating.
     pub fn set_active_profile(
         &self,

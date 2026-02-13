@@ -119,6 +119,28 @@ impl DashboardScreen {
                     if ui.button("Stop Service").clicked() {
                         service_manager.stop();
                     }
+
+                    ui.add_space(6.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Reload Model").clicked() {
+                            service_manager.reload_model();
+                        }
+                        let can_promote = snap.profile_ready;
+                        let promote =
+                            ui.add_enabled(can_promote, egui::Button::new("Promote Candidate"));
+                        if promote.clicked() {
+                            service_manager.promote_candidate_model();
+                        }
+                    });
+                    if !snap.profile_ready {
+                        ui.label(
+                            egui::RichText::new(
+                                "Candidate promotion requires a calibrated active profile",
+                            )
+                            .small()
+                            .color(egui::Color32::GRAY),
+                        );
+                    }
                 } else {
                     if ui.button("Start Service").clicked() {
                         service_manager.start(
