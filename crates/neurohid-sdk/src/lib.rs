@@ -32,6 +32,10 @@
 //! use neurohid_sdk::device;
 //! use neurohid_sdk::signal;
 //! ```
+//!
+//! For managed runtime embedding, see:
+//! - `examples/embedded_runtime.rs`
+//! - `README.md` runtime embedding section
 
 #[cfg(feature = "types")]
 pub use neurohid_types as types;

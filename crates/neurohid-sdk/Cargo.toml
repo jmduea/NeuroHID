@@ -48,3 +48,6 @@ neurohid-ipc = { path = "../neurohid-ipc", optional = true }
 neurohid-calibration = { path = "../neurohid-calibration", optional = true }
 neurohid-core = { path = "../neurohid-core", optional = true }
 neurohid-hub = { path = "../neurohid-hub", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }

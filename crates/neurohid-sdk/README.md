@@ -39,6 +39,21 @@ use neurohid_sdk::device::{DeviceProvider, Device};
 use neurohid_sdk::signal;
 ```
 
+## Runtime Embedding Example
+
+Embed the managed runtime API in your own host process:
+
+```bash
+cargo run -p neurohid-sdk --example embedded_runtime --features "runtime,types"
+```
+
+The example demonstrates:
+
+- Creating `RuntimeBuilder` with `SystemConfig`
+- Starting/stopping runtime tasks from a host application
+- Reading `RuntimeSnapshot` telemetry
+- Sending runtime control commands (`RescanStreams`, `Stop`)
+
 ## License
 
 MIT OR Apache-2.0
