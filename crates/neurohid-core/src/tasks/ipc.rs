@@ -899,7 +899,7 @@ impl IpcTask {
         let mut state = self.state.write().await;
         state.ipc_connected = connected;
         state.ipc_simulated = simulated;
-        state.ml_bridge_connected = connected;
+        state.ml_bridge_connected = connected && !simulated;
         state.ml_bridge_stalled = stalled;
         if !connected {
             state.runtime_mode_state = RuntimeModeState::Fallback;
