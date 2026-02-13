@@ -2,6 +2,8 @@
 //!
 //! Manages user profiles including metadata, calibration data, and models.
 
+use std::path::Path;
+
 use tokio::fs;
 
 use crate::{DataPaths, SecureStorage};
@@ -284,6 +286,68 @@ impl ProfileStore {
         let metrics: CandidateModelMetrics = serde_json::from_str(&payload)
             .map_err(|e| StorageError::SerializationError(e.to_string()))?;
         Ok(metrics)
+    }
+
+    /// Import plaintext candidate artifacts from a trainer output directory.
+    ///
+    /// Expected files:
+    /// - `decoder_candidate.onnx`
+    /// - `decoder_candidate_manifest.json`
+    /// - `decoder_candidate_metrics.json`
+    pub async fn import_decoder_candidate_from_dir(
+        &self,
+        id: &ProfileId,
+        source_dir: &Path,
+    ) -> Result<()> {
+        let model_path = source_dir.join("decoder_candidate.onnx");
+        let manifest_path = source_dir.join("decoder_candidate_manifest.json");
+        let metrics_path = source_dir.join("decoder_candidate_metrics.json");
+
+        let model_bytes = fs::read(&model_path)
+            .await
+            .map_err(|e| StorageError::ReadError {
+                path: model_path.display().to_string(),
+                reason: e.to_string(),
+            })?;
+        let manifest_payload =
+            fs::read_to_string(&manifest_path)
+                .await
+                .map_err(|e| StorageError::ReadError {
+                    path: manifest_path.display().to_string(),
+                    reason: e.to_string(),
+                })?;
+        let metrics_payload =
+            fs::read_to_string(&metrics_path)
+                .await
+                .map_err(|e| StorageError::ReadError {
+                    path: metrics_path.display().to_string(),
+                    reason: e.to_string(),
+                })?;
+
+        let manifest: ModelManifest = serde_json::from_str(&manifest_payload)
+            .map_err(|e| StorageError::SerializationError(e.to_string()))?;
+        manifest
+            .validate_runtime_compatibility()
+            .map_err(|details| StorageError::DataCorruption {
+                location: manifest_path.display().to_string(),
+                details,
+            })?;
+
+        let metrics: CandidateModelMetrics = serde_json::from_str(&metrics_payload)
+            .map_err(|e| StorageError::SerializationError(e.to_string()))?;
+        metrics
+            .validate()
+            .map_err(|details| StorageError::DataCorruption {
+                location: metrics_path.display().to_string(),
+                details,
+            })?;
+
+        self.save_decoder_candidate_model_onnx(id, &model_bytes)
+            .await?;
+        self.save_decoder_candidate_manifest(id, &manifest).await?;
+        self.save_decoder_candidate_metrics(id, &metrics).await?;
+
+        Ok(())
     }
 
     /// Promote candidate decoder artifacts into active runtime artifacts.

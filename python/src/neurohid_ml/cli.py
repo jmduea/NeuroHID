@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 from pathlib import Path
+import subprocess
 import sys
 from typing import Sequence
 
@@ -47,6 +48,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     trainer.add_argument("--seed", type=int, default=7)
     trainer.add_argument("--decode-latency-p95-us", type=int, default=40_000)
     trainer.add_argument("--min-samples", type=int, default=64)
+    trainer.add_argument(
+        "--stage-profile-id",
+        type=str,
+        help="if set, stage produced candidate artifacts into encrypted profile storage",
+    )
+    trainer.add_argument(
+        "--service-bin",
+        type=str,
+        default="neurohid-service",
+        help="service binary used for staging candidate artifacts",
+    )
 
     return parser.parse_args(argv_list)
 
@@ -90,6 +102,22 @@ def main(argv: Sequence[str] | None = None) -> None:
             f"acc={outputs.holdout_accuracy:.4f} "
             f"loss={outputs.holdout_loss:.4f}"
         )
+
+        if args.stage_profile_id:
+            cmd = [
+                args.service_bin,
+                "--profile",
+                args.stage_profile_id,
+                "--import-candidate-dir",
+                str(args.output_dir),
+            ]
+            completed = subprocess.run(cmd, check=False)
+            if completed.returncode != 0:
+                raise SystemExit(
+                    "Candidate staging failed. "
+                    f"Command exited with {completed.returncode}: {' '.join(cmd)}"
+                )
+            print(f"Staged candidate artifacts for profile: {args.stage_profile_id}")
         return
 
     raise SystemExit(f"Unknown command: {args.command}")

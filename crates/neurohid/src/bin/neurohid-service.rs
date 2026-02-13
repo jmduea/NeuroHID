@@ -7,6 +7,7 @@
 //! For the unified GUI experience, use `neurohid` (the hub binary) instead.
 
 use clap::Parser;
+use std::path::PathBuf;
 use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -32,6 +33,10 @@ struct Args {
     /// Verbose logging
     #[arg(short, long)]
     verbose: bool,
+
+    /// Import candidate artifacts from a trainer output directory and exit.
+    #[arg(long)]
+    import_candidate_dir: Option<String>,
 }
 
 #[tokio::main]
@@ -101,6 +106,26 @@ async fn main() -> anyhow::Result<()> {
         }
     } else {
         tracing::info!("Running without a profile");
+    }
+
+    if let Some(source_dir) = &args.import_candidate_dir {
+        let Some(pid) = profile_id.as_ref() else {
+            return Err(anyhow::anyhow!(
+                "--import-candidate-dir requires an active profile (--profile ...)"
+            ));
+        };
+        let source_dir = PathBuf::from(source_dir);
+        tracing::info!(
+            "Importing candidate artifacts from '{}' into profile '{}'",
+            source_dir.display(),
+            pid
+        );
+        profile_store
+            .import_decoder_candidate_from_dir(pid, &source_dir)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to import candidate artifacts: {}", e))?;
+        tracing::info!("Candidate artifacts imported successfully");
+        return Ok(());
     }
 
     let (shutdown_tx, _) = broadcast::channel::<()>(1);
