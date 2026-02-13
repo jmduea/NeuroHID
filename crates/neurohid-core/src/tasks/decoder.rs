@@ -16,6 +16,7 @@ use neurohid_types::{
     action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement},
     config::DecoderConfig,
     error::{DecoderError, Error, Result},
+    learning::{CandidateGuardrails, TrainingEpisode},
     model::ModelManifest,
     profile::ProfileId,
     signal::FeatureVector,
@@ -23,6 +24,7 @@ use neurohid_types::{
 
 use crate::service::{DecoderCommand, ServiceState};
 use crate::tasks::latency::RollingLatency;
+use crate::tasks::session_logger::EpisodeLogRecord;
 
 const LATENCY_WINDOW_SIZE: usize = 512;
 
@@ -113,6 +115,7 @@ pub struct DecoderTask {
     active_profile_id: Option<ProfileId>,
     decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
     feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+    episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
     active_model: Option<LoadedModel>,
     loader: Arc<dyn ArtifactLoader>,
     decode_latency: RollingLatency,
@@ -129,6 +132,7 @@ impl DecoderTask {
         profile_id: Option<ProfileId>,
         decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
         feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+        episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
     ) -> Self {
         Self::new_inner(
             config,
@@ -139,6 +143,7 @@ impl DecoderTask {
             profile_id,
             decoder_command_rx,
             feature_forward_tx,
+            episode_log_tx,
             Arc::new(OnnxArtifactLoader),
         )
     }
@@ -154,6 +159,7 @@ impl DecoderTask {
         profile_id: Option<ProfileId>,
         decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
         feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+        episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
         loader: Arc<dyn ArtifactLoader>,
     ) -> Self {
         Self::new_inner(
@@ -165,6 +171,7 @@ impl DecoderTask {
             profile_id,
             decoder_command_rx,
             feature_forward_tx,
+            episode_log_tx,
             loader,
         )
     }
@@ -179,6 +186,7 @@ impl DecoderTask {
         profile_id: Option<ProfileId>,
         decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
         feature_forward_tx: Option<mpsc::Sender<FeatureVector>>,
+        episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
         loader: Arc<dyn ArtifactLoader>,
     ) -> Self {
         Self {
@@ -190,6 +198,7 @@ impl DecoderTask {
             active_profile_id: profile_id,
             decoder_command_rx,
             feature_forward_tx,
+            episode_log_tx,
             active_model: None,
             loader,
             decode_latency: RollingLatency::new(LATENCY_WINDOW_SIZE),
@@ -215,6 +224,7 @@ impl DecoderTask {
 
                 match cmd {
                     DecoderCommand::ReloadModel => self.reload_model().await,
+                    DecoderCommand::PromoteCandidateModel => self.promote_candidate_model().await,
                     DecoderCommand::SetActiveProfile { profile_id } => {
                         self.switch_profile(profile_id).await;
                     }
@@ -236,16 +246,17 @@ impl DecoderTask {
                         let _ = tx.send(feature.clone()).await;
                     }
 
-                    let Some(model) = &self.active_model else {
+                    let Some(model) = self.active_model.clone() else {
                         continue;
                     };
 
-                    match run_inference(model, &feature) {
+                    match run_inference(&model, &feature) {
                         Ok(action) => {
                             self.record_decode_latency(feature.timestamp).await;
                             if action.is_none() {
                                 continue;
                             }
+                            self.log_episode(&feature, &action, &model.manifest).await;
                             if self.action_tx.send(action).await.is_err() {
                                 tracing::warn!("Action receiver dropped");
                                 break;
@@ -288,6 +299,52 @@ impl DecoderTask {
         }
     }
 
+    async fn promote_candidate_model(&mut self) {
+        let Some(profile_id) = self.active_profile_id.clone() else {
+            tracing::warn!("Ignoring candidate promotion without active profile");
+            return;
+        };
+        let Some(store) = self.profile_store.clone() else {
+            tracing::warn!(
+                "Ignoring candidate promotion for profile {} without profile store",
+                profile_id
+            );
+            return;
+        };
+
+        match self.validate_candidate_model(&store, &profile_id).await {
+            Ok(()) => {}
+            Err(reason) => {
+                tracing::warn!(
+                    "Rejected candidate model for profile {} due to guardrail failure: {}",
+                    profile_id,
+                    reason
+                );
+                return;
+            }
+        }
+
+        if let Err(error) = store.promote_decoder_candidate(&profile_id).await {
+            tracing::warn!(
+                "Failed to promote candidate model for profile {}: {}",
+                profile_id,
+                error
+            );
+            return;
+        }
+
+        tracing::info!("Promoted candidate model for profile {}", profile_id);
+        self.reload_model().await;
+
+        if let Err(error) = store.clear_decoder_candidate(&profile_id).await {
+            tracing::warn!(
+                "Failed to clear candidate artifacts after promotion for profile {}: {}",
+                profile_id,
+                error
+            );
+        }
+    }
+
     async fn switch_profile(&mut self, profile_id: Option<ProfileId>) {
         self.active_profile_id = profile_id.clone();
         let Some(profile_id) = profile_id else {
@@ -320,6 +377,42 @@ impl DecoderTask {
             .await
     }
 
+    async fn validate_candidate_model(
+        &self,
+        store: &ProfileStore,
+        profile_id: &ProfileId,
+    ) -> std::result::Result<(), String> {
+        let manifest = store
+            .load_decoder_candidate_manifest(profile_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        manifest.validate_runtime_compatibility()?;
+
+        let model_bytes = store
+            .load_decoder_candidate_model_onnx(profile_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let _validated_model = load_onnx_model(&model_bytes).map_err(|e| e.to_string())?;
+
+        let metrics = store
+            .load_decoder_candidate_metrics(profile_id)
+            .await
+            .map_err(|e| e.to_string())?;
+        let guardrails = CandidateGuardrails::default();
+        metrics.evaluate(&guardrails)?;
+
+        let current_decode_p95 = self.state.read().await.decode_latency_p95_us;
+        if current_decode_p95 > 0
+            && metrics.decode_latency_p95_us > current_decode_p95.saturating_mul(2)
+        {
+            return Err(format!(
+                "candidate decode latency p95 {} us exceeds runtime baseline {} us by >2x",
+                metrics.decode_latency_p95_us, current_decode_p95
+            ));
+        }
+        Ok(())
+    }
+
     async fn set_decoder_status(&self, loaded: Option<&LoadedModel>) {
         let mut state = self.state.write().await;
         state.decoder_ready = loaded.is_some();
@@ -336,6 +429,41 @@ impl DecoderTask {
         let mut state = self.state.write().await;
         state.decode_latency_last_us = self.decode_latency.last_us();
         state.decode_latency_p95_us = self.decode_latency.p95_us();
+    }
+
+    async fn log_episode(
+        &self,
+        feature: &FeatureVector,
+        action: &Action,
+        manifest: &ModelManifest,
+    ) {
+        let Some(tx) = &self.episode_log_tx else {
+            return;
+        };
+        let Some(profile_id) = self.active_profile_id.clone() else {
+            return;
+        };
+
+        let signal_quality = self.state.read().await.signal_quality;
+        let episode = TrainingEpisode {
+            timestamp: feature.timestamp,
+            feature_values: feature.values.clone(),
+            action: action.clone(),
+            decoder_confidence: action.confidence,
+            signal_quality,
+            decoder_model_version: Some(manifest.model_version.clone()),
+            errp_error_probability: None,
+            errp_confidence: None,
+        };
+        if let Err(error) = tx.try_send(EpisodeLogRecord {
+            profile_id,
+            episode,
+        }) {
+            tracing::trace!(
+                "Dropped training episode due to logger backpressure: {}",
+                error
+            );
+        }
     }
 }
 
@@ -573,6 +701,7 @@ mod tests {
             feature_rx,
             action_tx,
             Arc::clone(&state),
+            None,
             None,
             None,
             None,

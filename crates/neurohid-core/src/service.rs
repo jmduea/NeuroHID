@@ -43,12 +43,15 @@ pub enum SignalCommand {
 pub enum DecoderCommand {
     /// Reload model artifacts for the currently active profile.
     ReloadModel,
+    /// Promote validated candidate artifacts and hot-swap decoder model.
+    PromoteCandidateModel,
     /// Switch active profile context and load its decoder model.
     SetActiveProfile { profile_id: Option<ProfileId> },
 }
 
 use crate::tasks::{
-    ActionTask, DecoderTask, DeviceTask, IpcTask, LatencyAlertMonitorTask, OutletTask, SignalTask,
+    ActionTask, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask, LatencyAlertMonitorTask,
+    OutletTask, SessionLoggerTask, SignalTask,
 };
 
 /// The main service that coordinates all NeuroHID operations.
@@ -399,6 +402,16 @@ impl NeuroHidService {
         // Actions flow from decoder task to action task.
         let (action_tx, action_rx) = mpsc::channel(64);
 
+        // Runtime episodes flow from decoder to session logger.
+        let session_logging_enabled =
+            self.config.storage.session_logging_enabled && self.profile_store.is_some();
+        let (episode_log_tx, episode_log_rx) = if session_logging_enabled {
+            let (tx, rx) = mpsc::channel::<EpisodeLogRecord>(256);
+            (Some(tx), Some(rx))
+        } else {
+            (None, None)
+        };
+
         // ErrP results flow from IPC back to signal task (for online learning coordination)
         let (errp_tx, errp_rx) = mpsc::channel(64);
 
@@ -458,6 +471,24 @@ impl NeuroHidService {
             None
         };
 
+        // Optional session logger for continuous-learning episode capture.
+        let storage_config = self.config.storage.clone();
+        let profile_store_for_session_logger = self.profile_store.clone();
+        let shutdown_session_logger = self.shutdown_rx.resubscribe();
+        let mut session_logger_handle = if let Some(episode_log_rx) = episode_log_rx {
+            Some(tokio::spawn(async move {
+                tracing::info!("Session logger task starting");
+                let task = SessionLoggerTask::new(
+                    storage_config,
+                    profile_store_for_session_logger,
+                    episode_log_rx,
+                );
+                task.run(shutdown_session_logger).await
+            }))
+        } else {
+            None
+        };
+
         // Spawn the device task. This connects to the EEG device and streams
         // samples into the sample channel.
         let device_config = self.config.device.clone();
@@ -511,6 +542,7 @@ impl NeuroHidService {
                 profile_id_for_decoder,
                 decoder_command_rx,
                 Some(feature_ipc_tx),
+                episode_log_tx,
             );
             task.run(shutdown_decoder).await
         });
@@ -591,6 +623,7 @@ impl NeuroHidService {
         let mut ipc_done = false;
         let mut action_done = false;
         let mut latency_monitor_done = latency_monitor_handle.is_none();
+        let mut session_logger_done = session_logger_handle.is_none();
 
         loop {
             tokio::select! {
@@ -730,6 +763,34 @@ impl NeuroHidService {
                     }
                     // Continue the loop — monitor failure should not stop runtime.
                 }
+
+                result = session_logger_handle.as_mut().expect("checked by guard"), if !session_logger_done => {
+                    session_logger_done = true;
+                    match result {
+                        Ok(Ok(())) => tracing::info!("Session logger task completed"),
+                        Ok(Err(e)) => {
+                            tracing::warn!("Session logger task failed (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some((
+                                    "session_logger".into(),
+                                    format!("{} — session logging disabled", e),
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Session logger task panicked (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some((
+                                    "session_logger".into(),
+                                    format!("panicked: {}", e),
+                                ));
+                            }
+                        }
+                    }
+                    // Continue the loop — logger failure should not stop runtime.
+                }
             }
         }
 
@@ -743,6 +804,11 @@ impl NeuroHidService {
         }
         if !latency_monitor_done {
             if let Some(handle) = &mut latency_monitor_handle {
+                handle.abort();
+            }
+        }
+        if !session_logger_done {
+            if let Some(handle) = &mut session_logger_handle {
                 handle.abort();
             }
         }
@@ -813,6 +879,13 @@ impl ServiceHandle {
         let _ = self
             .decoder_command_tx
             .try_send(DecoderCommand::ReloadModel);
+    }
+
+    /// Request candidate-model promotion with guardrail validation.
+    pub fn promote_candidate_model(&self) {
+        let _ = self
+            .decoder_command_tx
+            .try_send(DecoderCommand::PromoteCandidateModel);
     }
 
     /// Update active profile state used for action gating and model selection.

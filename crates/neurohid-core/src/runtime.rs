@@ -78,6 +78,8 @@ pub enum RuntimeCommand {
     ToggleOutput { enabled: bool },
     /// Reload active inference model.
     ReloadModel,
+    /// Promote a validated candidate model and hot-swap runtime inference.
+    PromoteCandidateModel,
 }
 
 /// Snapshot of runtime state for host applications.
@@ -175,6 +177,10 @@ impl RuntimeHandle {
             }
             RuntimeCommand::ReloadModel => {
                 self.handle.reload_model();
+                Ok(())
+            }
+            RuntimeCommand::PromoteCandidateModel => {
+                self.handle.promote_candidate_model();
                 Ok(())
             }
         }

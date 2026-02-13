@@ -16,6 +16,7 @@ mod ipc;
 mod latency;
 mod latency_alert;
 mod outlet;
+mod session_logger;
 mod signal;
 
 pub use action::ActionTask;
@@ -24,4 +25,5 @@ pub use device::DeviceTask;
 pub use ipc::IpcTask;
 pub use latency_alert::LatencyAlertMonitorTask;
 pub use outlet::OutletTask;
+pub use session_logger::{EpisodeLogRecord, SessionLoggerTask};
 pub use signal::SignalTask;

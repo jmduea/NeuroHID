@@ -27,6 +27,7 @@ pub mod config;
 pub mod device;
 pub mod error;
 pub mod event;
+pub mod learning;
 pub mod model;
 pub mod observation;
 pub mod profile;
@@ -38,6 +39,9 @@ pub use action::{Action, Key, KeyAction, MouseAction, MouseButton};
 pub use device::{ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DiscoveredStream};
 pub use error::{Error, Result};
 pub use event::{MarkerPayload, MarkerType, StreamMarker};
+pub use learning::{
+    CandidateGuardrails, CandidateModelMetrics, TrainingEpisode, TrainingSessionLog,
+};
 pub use model::{ModelManifest, NormalizationStats};
 pub use observation::{CursorState, Observation};
 pub use profile::{CalibrationState, ProfileId};

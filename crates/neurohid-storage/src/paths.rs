@@ -81,6 +81,35 @@ impl DataPaths {
             .join("decoder_model_manifest.json")
     }
 
+    /// Returns the candidate ONNX model file for guarded activation.
+    pub fn profile_decoder_candidate_model_onnx(&self, profile_id: &ProfileId) -> PathBuf {
+        self.profile_dir(profile_id)
+            .join("decoder_candidate_model.onnx.enc")
+    }
+
+    /// Returns the candidate manifest file for guarded activation.
+    pub fn profile_decoder_candidate_manifest(&self, profile_id: &ProfileId) -> PathBuf {
+        self.profile_dir(profile_id)
+            .join("decoder_candidate_manifest.json")
+    }
+
+    /// Returns the candidate metrics file for guarded activation.
+    pub fn profile_decoder_candidate_metrics(&self, profile_id: &ProfileId) -> PathBuf {
+        self.profile_dir(profile_id)
+            .join("decoder_candidate_metrics.json")
+    }
+
+    /// Returns the per-profile sessions directory.
+    pub fn profile_sessions_dir(&self, profile_id: &ProfileId) -> PathBuf {
+        self.profile_dir(profile_id).join("sessions")
+    }
+
+    /// Returns the encrypted training-session log file for a profile/session id.
+    pub fn profile_session_log(&self, profile_id: &ProfileId, session_id: &str) -> PathBuf {
+        self.profile_sessions_dir(profile_id)
+            .join(format!("session_{session_id}.json.enc"))
+    }
+
     /// Returns the logs directory.
     pub fn logs_dir(&self) -> PathBuf {
         self.root.join("logs")
