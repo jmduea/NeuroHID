@@ -21,6 +21,12 @@ pedantic = "warn"
 
 ## Core Capabilities
 
+### 0. Automation Ownership Model
+
+- Shared, reusable Rust intelligence lives in `.rust-skills/*`.
+- NeuroHID-specific process automation lives in `.github/agents/*` and `.github/skills/*`.
+- Prompt/runtime hook wiring for NeuroHID-specific behavior lives in `.github/hooks/*`.
+
 ### 1. Question Routing
 
 Route Rust questions to appropriate skills:
@@ -30,6 +36,25 @@ Route Rust questions to appropriate skills:
 - Error handling → m06-error-handling
 - Concurrency → m07-concurrency
 - Unsafe code → unsafe-checker
+
+Route NeuroHID workflow questions to repo-local assets:
+
+- Documentation freshness → `.github/agents/docs-freshness.md`
+- Architecture decisions/ADRs → `.github/agents/architecture-validator.md`
+- Feature planning → `.github/agents/feature-planner.md`
+- TDD/test strategy → `.github/agents/tdd-enforcer.md`
+- UX/UI review (app + docs + notebooks) → `.github/agents/ux-reviewer.md`
+- Python/ML & deep learning workflows → `.github/agents/python-ml-specialist.md`
+- End-of-task hygiene (docs + commits) → `.github/agents/completion-finisher.md`
+
+### Completion Protocol (Required)
+
+For coding tasks, agents must complete this protocol before handoff:
+
+1. Run docs freshness review and resolve blockers.
+2. Confirm README/spec/changelog updates required by the change.
+3. Prepare grouped commits by concern (e.g., code, tests, docs, CI).
+4. Prepare clear commit messages for each commit group.
 
 ### 2. Code Style
 
@@ -59,6 +84,12 @@ fn read_config() -> Config {
 }
 ```
 
+### Python Command Policy
+
+- Use `uv` for all Python execution and tooling commands.
+- Do not use bare `python` commands in docs, scripts, or automation.
+- Prefer forms such as `uv run --project python ...` (or `uv python --command ...` when needed).
+
 ### 4. Unsafe Code
 
 Every `unsafe` block MUST have a `// SAFETY:` comment:
@@ -71,7 +102,7 @@ unsafe { slice.get_unchecked(index) }
 ### 5. Common Error Fixes
 
 | Error | Cause | Fix |
-|-------|-------|-----|
+| ----- | ----- | --- |
 | E0382 | Use of moved value | Clone, borrow, or use reference |
 | E0597 | Lifetime too short | Extend lifetime or restructure |
 | E0502 | Borrow conflict | Split borrows or use RefCell |
@@ -122,3 +153,7 @@ For detailed guidance, see:
 - `skills/m01-ownership/SKILL.md` - Ownership concepts
 - `skills/m06-error-handling/SKILL.md` - Error patterns
 - `skills/m07-concurrency/SKILL.md` - Concurrency patterns
+
+For NeuroHID custom agent/skill invocation prompts and workflows, see:
+
+- `docs/automation/agent-skill-invocation-playbook.md`

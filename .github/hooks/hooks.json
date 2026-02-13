@@ -1,0 +1,57 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "(?i)(docs|documentation|readme|spec|changelog|stale docs|doc drift|protocol doc)",
+        "agents": [".github/agents/docs-freshness.md"]
+      },
+      {
+        "matcher": "(?i)(architecture|adr|boundary|layering|cross-crate|protocol compatibility|storage format|migration)",
+        "agents": [
+          ".github/agents/architecture-validator.md",
+          ".github/agents/docs-freshness.md",
+          ".github/agents/completion-finisher.md"
+        ]
+      },
+      {
+        "matcher": "(?i)(feature planning|feature brief|roadmap|milestone|epic|scope|definition of ready|definition of done)",
+        "agents": [
+          ".github/agents/feature-planner.md",
+          ".github/agents/docs-freshness.md",
+          ".github/agents/completion-finisher.md"
+        ]
+      },
+      {
+        "matcher": "(?i)(tdd|tests first|test-driven|add tests|failing test|regression test)",
+        "agents": [
+          ".github/agents/tdd-enforcer.md",
+          ".github/agents/docs-freshness.md",
+          ".github/agents/completion-finisher.md"
+        ]
+      },
+      {
+        "matcher": "(?i)(ux|ui|usability|interaction|onboarding|accessibility|notebook workflow|docs ux)",
+        "agents": [
+          ".github/agents/ux-reviewer.md",
+          ".github/agents/docs-freshness.md",
+          ".github/agents/completion-finisher.md"
+        ]
+      },
+      {
+        "matcher": "(?i)(python|ml|deep learning|eegnet|decoder|errp|inference|training|notebook)",
+        "agents": [
+          ".github/agents/python-ml-specialist.md",
+          ".github/agents/docs-freshness.md",
+          ".github/agents/completion-finisher.md"
+        ]
+      },
+      {
+        "matcher": "(?i)(implement|implementation|fix|refactor|coding|code change|finish coding|done coding|ship it|ready to commit|create commit)",
+        "agents": [
+          ".github/agents/docs-freshness.md",
+          ".github/agents/completion-finisher.md"
+        ]
+      }
+    ]
+  }
+}
