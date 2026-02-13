@@ -59,3 +59,31 @@ impl Screen {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use neurohid_types::config::UiMode;
+
+    use super::Screen;
+
+    #[test]
+    fn standard_mode_hides_advanced_only_screens() {
+        let standard = Screen::all_for_mode(&UiMode::Standard);
+        assert!(!standard.contains(&Screen::Visualization));
+        assert!(!standard.contains(&Screen::PythonLab));
+        assert!(standard.contains(&Screen::Dashboard));
+        assert!(standard.contains(&Screen::Settings));
+    }
+
+    #[test]
+    fn advanced_mode_contains_all_standard_screens_plus_extras() {
+        let standard = Screen::all_for_mode(&UiMode::Standard);
+        let advanced = Screen::all_for_mode(&UiMode::Advanced);
+
+        for screen in standard {
+            assert!(advanced.contains(screen));
+        }
+        assert!(advanced.contains(&Screen::Visualization));
+        assert!(advanced.contains(&Screen::PythonLab));
+    }
+}
