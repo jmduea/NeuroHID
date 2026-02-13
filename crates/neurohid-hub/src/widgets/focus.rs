@@ -73,7 +73,7 @@ impl Widget for FocusWidget {
         ui.horizontal(|ui| {
             if !source_options.is_empty() {
                 ui.label("Source:");
-                egui::ComboBox::from_id_source(format!("focus_src_{pane_index}"))
+                egui::ComboBox::from_id_salt(format!("focus_src_{pane_index}"))
                     .selected_text(
                         self.selected_source
                             .as_deref()
@@ -102,7 +102,7 @@ impl Widget for FocusWidget {
             if self.channel >= num_channels {
                 self.channel = 0;
             }
-            egui::ComboBox::from_id_source(format!("focus_ch_{pane_index}"))
+            egui::ComboBox::from_id_salt(format!("focus_ch_{pane_index}"))
                 .selected_text(format!("{}", self.channel + 1))
                 .show_ui(ui, |ui| {
                     for ch in 0..num_channels {

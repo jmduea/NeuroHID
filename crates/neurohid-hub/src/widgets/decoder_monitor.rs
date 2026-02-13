@@ -212,13 +212,16 @@ impl DecoderMonitorWidget {
 
         // Tooltip on hover
         if response.hovered() {
-            egui::show_tooltip_at_pointer(
-                ui.ctx(),
+            let _ = egui::Tooltip::always_open(
+                ui.ctx().clone(),
+                ui.layer_id(),
                 egui::Id::new(format!("conf_gauge_tooltip_{}", pane_index)),
-                |ui| {
-                    ui.label(format!("Confidence: {:.1}%", conf * 100.0));
-                },
-            );
+                egui::PopupAnchor::Pointer,
+            )
+            .gap(12.0)
+            .show(|ui| {
+                ui.label(format!("Confidence: {:.1}%", conf * 100.0));
+            });
         }
     }
 
@@ -448,18 +451,21 @@ impl DecoderMonitorWidget {
 
             // Tooltip for hovered segment
             if let Some((idx, frac)) = hovered_segment {
-                egui::show_tooltip_at_pointer(
-                    ui.ctx(),
+                let _ = egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
                     egui::Id::new(format!("action_dist_tooltip_{}", pane_index)),
-                    |ui| {
-                        ui.label(format!(
-                            "{}: {} ({:.1}%)",
-                            labels[idx],
-                            self.action_type_counts[idx],
-                            frac * 100.0
-                        ));
-                    },
-                );
+                    egui::PopupAnchor::Pointer,
+                )
+                .gap(12.0)
+                .show(|ui| {
+                    ui.label(format!(
+                        "{}: {} ({:.1}%)",
+                        labels[idx],
+                        self.action_type_counts[idx],
+                        frac * 100.0
+                    ));
+                });
             }
         }
 
@@ -569,6 +575,7 @@ impl DecoderMonitorWidget {
                                 cell_rect,
                                 3.0,
                                 egui::Stroke::new(1.0, egui::Color32::from_gray(50)),
+                                egui::StrokeKind::Outside,
                             );
 
                             // Check hover
@@ -580,6 +587,7 @@ impl DecoderMonitorWidget {
                                         cell_rect,
                                         3.0,
                                         egui::Stroke::new(2.0, egui::Color32::WHITE),
+                                        egui::StrokeKind::Outside,
                                     );
                                 }
                             }
@@ -620,16 +628,16 @@ impl DecoderMonitorWidget {
 
                 // Tooltip for hovered cell
                 if let Some((ch, band, val)) = hovered_cell {
-                    egui::show_tooltip_at_pointer(
-                        ui.ctx(),
+                    let _ = egui::Tooltip::always_open(
+                        ui.ctx().clone(),
+                        ui.layer_id(),
                         egui::Id::new(format!("heatmap_tooltip_{}", pane_index)),
-                        |ui| {
-                            ui.label(format!(
-                                "{} {} : {:.4}",
-                                CHANNEL_NAMES[ch], BAND_NAMES[band], val
-                            ));
-                        },
-                    );
+                        egui::PopupAnchor::Pointer,
+                    )
+                    .gap(12.0)
+                    .show(|ui| {
+                        ui.label(format!("{} {} : {:.4}", CHANNEL_NAMES[ch], BAND_NAMES[band], val));
+                    });
                 }
             }
         } else {

@@ -333,13 +333,16 @@ impl FftPlotWidget {
             // Show tooltip if hovering over this band
             if let Some(pos) = hover_pos {
                 if band_rect.contains(pos) {
-                    egui::show_tooltip_at_pointer(
-                        ui.ctx(),
+                    let _ = egui::Tooltip::always_open(
+                        ui.ctx().clone(),
+                        ui.layer_id(),
                         egui::Id::new(format!("fft_band_{}_{}", pane_index, name)),
-                        |ui| {
-                            ui.label(tooltip);
-                        },
-                    );
+                        egui::PopupAnchor::Pointer,
+                    )
+                    .gap(12.0)
+                    .show(|ui| {
+                        ui.label(tooltip);
+                    });
                 }
             }
         }
@@ -450,6 +453,7 @@ impl FftPlotWidget {
             tooltip_rect,
             4.0,
             egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+            egui::StrokeKind::Outside,
         );
 
         for (i, (text, color)) in tooltip_lines.iter().enumerate() {
@@ -588,7 +592,7 @@ impl Widget for FftPlotWidget {
             ui.separator();
 
             ui.label("Y-Axis:");
-            egui::ComboBox::from_id_source(format!("fft_scale_{}", pane_index))
+            egui::ComboBox::from_id_salt(format!("fft_scale_{}", pane_index))
                 .selected_text(if self.log_scale { "Log" } else { "Linear" })
                 .width(60.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -600,7 +604,7 @@ impl Widget for FftPlotWidget {
             ui.add(egui::Slider::new(&mut self.smoothing, 0.0..=0.95).max_decimals(2));
 
             ui.label("Max Hz:");
-            egui::ComboBox::from_id_source(format!("fft_maxfreq_{}", pane_index))
+            egui::ComboBox::from_id_salt(format!("fft_maxfreq_{}", pane_index))
                 .selected_text(format!("{:.0}", self.max_freq))
                 .width(50.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -612,7 +616,7 @@ impl Widget for FftPlotWidget {
             if !source_options.is_empty() {
                 ui.label("Source:");
                 let prev = self.selected_source.clone();
-                egui::ComboBox::from_id_source(format!("fft_src_{}", pane_index))
+                egui::ComboBox::from_id_salt(format!("fft_src_{}", pane_index))
                     .selected_text(
                         self.selected_source
                             .as_deref()

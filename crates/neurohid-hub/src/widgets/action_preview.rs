@@ -307,6 +307,7 @@ impl ActionPreviewWidget {
             main_rect,
             6.0,
             egui::Stroke::new(1.5, egui::Color32::from_gray(70)),
+            egui::StrokeKind::Outside,
         );
 
         // Grid (subtle)
@@ -532,7 +533,7 @@ impl ActionPreviewWidget {
                 }
 
                 // Filter dropdown
-                egui::ComboBox::from_id_source(format!("action_filter_{}", pane_index))
+                egui::ComboBox::from_id_salt(format!("action_filter_{}", pane_index))
                     .selected_text(self.filter.label())
                     .width(70.0)
                     .show_ui(ui, |ui: &mut egui::Ui| {

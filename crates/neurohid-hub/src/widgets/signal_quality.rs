@@ -394,11 +394,11 @@ impl SignalQualityWidget {
             );
             painter.rect_filled(
                 bottom_half,
-                egui::Rounding {
-                    nw: 0.0,
-                    ne: 0.0,
-                    sw: 4.0,
-                    se: 0.0,
+                egui::CornerRadius {
+                    nw: 0,
+                    ne: 0,
+                    sw: 4,
+                    se: 0,
                 },
                 dark_color,
             );
@@ -410,11 +410,11 @@ impl SignalQualityWidget {
             );
             painter.rect_filled(
                 top_half,
-                egui::Rounding {
-                    nw: 4.0,
-                    ne: 0.0,
-                    sw: 0.0,
-                    se: 0.0,
+                egui::CornerRadius {
+                    nw: 4,
+                    ne: 0,
+                    sw: 0,
+                    se: 0,
                 },
                 base_color,
             );
@@ -436,6 +436,7 @@ impl SignalQualityWidget {
             bar_rect,
             4.0,
             egui::Stroke::new(1.0, egui::Color32::from_gray(60)),
+            egui::StrokeKind::Outside,
         );
     }
 

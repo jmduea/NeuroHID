@@ -278,7 +278,7 @@ impl Widget for BandPowerWidget {
         // Settings bar
         ui.horizontal(|ui| {
             ui.label("Display:");
-            egui::ComboBox::from_id_source(format!("bp_mode_{}", pane_index))
+            egui::ComboBox::from_id_salt(format!("bp_mode_{}", pane_index))
                 .selected_text(if self.relative {
                     "Relative %"
                 } else {
@@ -295,7 +295,7 @@ impl Widget for BandPowerWidget {
                 .selected_channel
                 .map(|ch| CHANNEL_NAMES.get(ch).unwrap_or(&"?").to_string())
                 .unwrap_or_else(|| "All".to_string());
-            egui::ComboBox::from_id_source(format!("bp_channel_{}", pane_index))
+            egui::ComboBox::from_id_salt(format!("bp_channel_{}", pane_index))
                 .selected_text(&ch_text)
                 .width(60.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -484,18 +484,21 @@ impl Widget for BandPowerWidget {
 
             // Tooltip on hover
             if item_response.hovered() {
-                egui::show_tooltip_at_pointer(
-                    ui.ctx(),
+                let _ = egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
                     egui::Id::new(format!("legend_tip_{}_{}", pane_index, b)),
-                    |ui| {
-                        ui.label(format!("{}: {:.1}-{:.1} Hz", name, f_lo, f_hi));
-                        ui.label(if self.band_visible[b] {
-                            "Click to hide"
-                        } else {
-                            "Click to show"
-                        });
-                    },
-                );
+                    egui::PopupAnchor::Pointer,
+                )
+                .gap(12.0)
+                .show(|ui| {
+                    ui.label(format!("{}: {:.1}-{:.1} Hz", name, f_lo, f_hi));
+                    ui.label(if self.band_visible[b] {
+                        "Click to hide"
+                    } else {
+                        "Click to show"
+                    });
+                });
             }
 
             legend_x += item_width + 8.0;
@@ -597,11 +600,11 @@ impl Widget for BandPowerWidget {
                 };
 
                 // Draw bar with rounded top corners and gradient
-                let rounding = egui::Rounding {
-                    nw: 3.0,
-                    ne: 3.0,
-                    sw: 0.0,
-                    se: 0.0,
+                let rounding = egui::CornerRadius {
+                    nw: 3,
+                    ne: 3,
+                    sw: 0,
+                    se: 0,
                 };
 
                 // Draw gradient: darker at bottom, lighter at top
@@ -615,11 +618,11 @@ impl Widget for BandPowerWidget {
                 if bottom_half.height() > 0.0 {
                     chart_painter.rect_filled(
                         bottom_half,
-                        egui::Rounding {
-                            nw: 0.0,
-                            ne: 0.0,
-                            sw: 0.0,
-                            se: 0.0,
+                        egui::CornerRadius {
+                            nw: 0,
+                            ne: 0,
+                            sw: 0,
+                            se: 0,
                         },
                         dark_color,
                     );
@@ -663,28 +666,25 @@ impl Widget for BandPowerWidget {
 
                 // Show tooltip on hover
                 if is_hovered {
-                    egui::show_tooltip_at_pointer(
-                        ui.ctx(),
+                    let _ = egui::Tooltip::always_open(
+                        ui.ctx().clone(),
+                        ui.layer_id(),
                         egui::Id::new(format!("bar_tip_{}_{}_{}", pane_index, ch, b)),
-                        |ui| {
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "{} ({:.1}-{:.1} Hz)",
-                                    name, f_lo, f_hi
-                                ))
+                        egui::PopupAnchor::Pointer,
+                    )
+                    .gap(12.0)
+                    .show(|ui| {
+                        ui.label(
+                            egui::RichText::new(format!("{} ({:.1}-{:.1} Hz)", name, f_lo, f_hi))
                                 .strong(),
-                            );
-                            ui.label(format!(
-                                "Channel: {}",
-                                CHANNEL_NAMES.get(ch).unwrap_or(&"?")
-                            ));
-                            if self.relative {
-                                ui.label(format!("Relative Power: {:.1}%", val));
-                            } else {
-                                ui.label(format!("Absolute Power: {:.2} uV^2", val));
-                            }
-                        },
-                    );
+                        );
+                        ui.label(format!("Channel: {}", CHANNEL_NAMES.get(ch).unwrap_or(&"?")));
+                        if self.relative {
+                            ui.label(format!("Relative Power: {:.1}%", val));
+                        } else {
+                            ui.label(format!("Absolute Power: {:.2} uV^2", val));
+                        }
+                    });
                 }
             }
         }

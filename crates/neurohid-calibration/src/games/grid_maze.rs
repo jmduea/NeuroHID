@@ -355,6 +355,7 @@ impl GridMazeGame {
                     cell_rect.shrink(2.0),
                     4.0,
                     egui::Stroke::new(1.0, egui::Color32::GRAY),
+                    egui::StrokeKind::Outside,
                 );
             }
         }

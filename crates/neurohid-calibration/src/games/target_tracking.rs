@@ -262,7 +262,12 @@ impl TargetTrackingGame {
 
         // Background
         painter.rect_filled(rect, 8.0, egui::Color32::from_rgb(30, 30, 40));
-        painter.rect_stroke(rect, 8.0, egui::Stroke::new(2.0, egui::Color32::GRAY));
+        painter.rect_stroke(
+            rect,
+            8.0,
+            egui::Stroke::new(2.0, egui::Color32::GRAY),
+            egui::StrokeKind::Outside,
+        );
 
         // Convert normalized positions to screen positions
         let target_screen = egui::pos2(

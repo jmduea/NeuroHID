@@ -177,12 +177,12 @@ impl JupyterIdeScreen {
         ui.separator();
         ui.label(egui::RichText::new("IDE Log").strong());
         egui::ScrollArea::vertical()
-            .id_source("jupyter_ide_log_scroll")
+            .id_salt("jupyter_ide_log_scroll")
             .max_height(260.0)
             .show(ui, |ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.log_output)
-                        .id_source("jupyter_ide_log_output")
+                        .id_salt("jupyter_ide_log_output")
                         .font(egui::TextStyle::Monospace)
                         .desired_rows(12)
                         .desired_width(f32::INFINITY),

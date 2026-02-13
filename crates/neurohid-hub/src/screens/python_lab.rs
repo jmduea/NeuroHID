@@ -247,7 +247,7 @@ impl PythonLabScreen {
         let mut delete_clicked: Option<usize> = None;
 
         egui::ScrollArea::vertical()
-            .id_source("python_lab_cells_scroll")
+            .id_salt("python_lab_cells_scroll")
             .show(ui, |ui| {
                 for index in 0..self.cells.len() {
                     let cell = &mut self.cells[index];
@@ -298,7 +298,7 @@ impl PythonLabScreen {
                             });
 
                             let code_editor = egui::TextEdit::multiline(&mut cell.code)
-                                .id_source(("python_cell_code", index))
+                                .id_salt(("python_cell_code", index))
                                 .font(egui::TextStyle::Monospace)
                                 .desired_rows(8)
                                 .desired_width(f32::INFINITY);
@@ -306,7 +306,7 @@ impl PythonLabScreen {
 
                             ui.label(egui::RichText::new("Output").small().strong());
                             let output_editor = egui::TextEdit::multiline(&mut cell.output)
-                                .id_source(("python_cell_output", index))
+                                .id_salt(("python_cell_output", index))
                                 .font(egui::TextStyle::Monospace)
                                 .desired_rows(4)
                                 .desired_width(f32::INFINITY)
@@ -328,12 +328,12 @@ impl PythonLabScreen {
         ui.separator();
         ui.label(egui::RichText::new("Kernel / Tool Log").strong());
         egui::ScrollArea::vertical()
-            .id_source("python_lab_log_scroll")
+            .id_salt("python_lab_log_scroll")
             .max_height(180.0)
             .show(ui, |ui| {
                 ui.add(
                     egui::TextEdit::multiline(&mut self.log_output)
-                        .id_source("python_lab_log_output")
+                        .id_salt("python_lab_log_output")
                         .font(egui::TextStyle::Monospace)
                         .desired_rows(8)
                         .desired_width(f32::INFINITY)
@@ -401,7 +401,7 @@ impl PythonLabScreen {
             }
 
             egui::ScrollArea::vertical()
-                .id_source("python_lab_bridge_monitor_scroll")
+                .id_salt("python_lab_bridge_monitor_scroll")
                 .max_height(180.0)
                 .show(ui, |ui| {
                     for feature in data_bus.features.iter().rev().take(self.monitor_rows) {

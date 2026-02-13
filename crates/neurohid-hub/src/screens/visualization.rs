@@ -114,9 +114,9 @@ impl VisualizationScreen {
         current_time: f64,
     ) {
         // Toolbar frame with subtle background and bottom border
-        let toolbar_frame = egui::Frame::none()
+        let toolbar_frame = egui::Frame::NONE
             .fill(ui.style().visuals.window_fill.gamma_multiply(0.95))
-            .inner_margin(egui::Margin::symmetric(8.0, 6.0));
+            .inner_margin(egui::Margin::symmetric(8, 6));
 
         toolbar_frame.show(ui, |ui| {
             ui.horizontal(|ui| {
@@ -195,7 +195,7 @@ impl VisualizationScreen {
             self.layout.config.label()
         );
 
-        egui::ComboBox::from_id_source("layout_selector")
+        egui::ComboBox::from_id_salt("layout_selector")
             .selected_text(current_label)
             .show_ui(ui, |ui| {
                 for &layout in LayoutConfig::ALL {
@@ -346,40 +346,37 @@ impl VisualizationScreen {
     fn show_welcome_panel(&self, ui: &mut egui::Ui) {
         let available = ui.available_size();
 
-        ui.allocate_ui_at_rect(
-            egui::Rect::from_min_size(ui.cursor().min, available),
-            |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.add_space(available.y * 0.3);
+        ui.allocate_ui(available, |ui| {
+            ui.vertical_centered(|ui| {
+                ui.add_space(available.y * 0.3);
 
-                    ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
-                    ui.add_space(16.0);
+                ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
+                ui.add_space(16.0);
 
-                    ui.label(
-                        RichText::new("Start the service to begin streaming data.")
-                            .size(14.0)
-                            .color(Color32::from_gray(150)),
-                    );
+                ui.label(
+                    RichText::new("Start the service to begin streaming data.")
+                        .size(14.0)
+                        .color(Color32::from_gray(150)),
+                );
 
-                    ui.add_space(24.0);
+                ui.add_space(24.0);
 
-                    ui.label(
-                        RichText::new("Go to the Dashboard screen to start the service.")
-                            .size(12.0)
-                            .color(Color32::from_gray(120)),
-                    );
-                });
-            },
-        );
+                ui.label(
+                    RichText::new("Go to the Dashboard screen to start the service.")
+                        .size(12.0)
+                        .color(Color32::from_gray(120)),
+                );
+            });
+        });
     }
 
     /// Footer status strip with contextual help.
     fn show_footer(&self, ui: &mut egui::Ui) {
         ui.add_space(4.0);
 
-        let footer_frame = egui::Frame::none()
+        let footer_frame = egui::Frame::NONE
             .fill(ui.style().visuals.window_fill.gamma_multiply(0.92))
-            .inner_margin(egui::Margin::symmetric(8.0, 4.0));
+            .inner_margin(egui::Margin::symmetric(8, 4));
 
         footer_frame.show(ui, |ui| {
             ui.horizontal(|ui| {

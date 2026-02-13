@@ -83,7 +83,7 @@ impl Widget for SpectrogramWidget {
             if !source_options.is_empty() {
                 ui.label("Src:");
                 let before = self.selected_source.clone();
-                egui::ComboBox::from_id_source(format!("spec_src_{pane_index}"))
+                egui::ComboBox::from_id_salt(format!("spec_src_{pane_index}"))
                     .selected_text(
                         self.selected_source
                             .as_deref()
@@ -115,7 +115,7 @@ impl Widget for SpectrogramWidget {
             if self.channel >= num_channels {
                 self.channel = 0;
             }
-            egui::ComboBox::from_id_source(format!("spec_ch_{pane_index}"))
+            egui::ComboBox::from_id_salt(format!("spec_ch_{pane_index}"))
                 .selected_text(format!("{}", self.channel + 1))
                 .show_ui(ui, |ui| {
                     for ch in 0..num_channels {
@@ -126,14 +126,14 @@ impl Widget for SpectrogramWidget {
             ui.label("Window:");
             ui.add(
                 egui::DragValue::new(&mut self.window_samples)
-                    .clamp_range(32..=512)
+                    .range(32..=512)
                     .speed(1),
             );
 
             ui.label("Hop:");
             ui.add(
                 egui::DragValue::new(&mut self.hop_samples)
-                    .clamp_range(4..=128)
+                    .range(4..=128)
                     .speed(1),
             );
         });

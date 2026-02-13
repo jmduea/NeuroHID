@@ -66,7 +66,7 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Backend:");
                         let current_backend = cfg.backend.clone();
-                        egui::ComboBox::from_id_source("device_backend")
+                        egui::ComboBox::from_id_salt("device_backend")
                             .selected_text(format!("{}", cfg.backend))
                             .show_ui(ui, |ui| {
                                 for variant in neurohid_types::config::DeviceBackend::ALL {
@@ -126,7 +126,7 @@ impl SettingsScreen {
                             if ui
                                 .add(
                                     egui::DragValue::new(&mut serial_cfg.baud_rate)
-                                        .clamp_range(1_200..=3_000_000),
+                                        .range(1_200..=3_000_000),
                                 )
                                 .changed()
                             {
@@ -138,7 +138,7 @@ impl SettingsScreen {
                             ui.label("Framing:");
                             let serial_cfg = cfg.serial.get_or_insert_with(Default::default);
                             let current = serial_cfg.framing.clone();
-                            egui::ComboBox::from_id_source("serial_framing")
+                            egui::ComboBox::from_id_salt("serial_framing")
                                 .selected_text(match serial_cfg.framing {
                                     neurohid_types::config::SerialFraming::CsvLine => "CSV line",
                                     neurohid_types::config::SerialFraming::BinaryI16Le => {
@@ -213,7 +213,7 @@ impl SettingsScreen {
                         ui.label("Timeout (ms):");
                         let mut val = cfg.connection.connection_timeout_ms as f32;
                         if ui
-                            .add(egui::DragValue::new(&mut val).clamp_range(1000.0..=30000.0))
+                            .add(egui::DragValue::new(&mut val).range(1000.0..=30000.0))
                             .changed()
                         {
                             cfg.connection.connection_timeout_ms = val as u64;
@@ -243,7 +243,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.notch_filter_hz)
-                                    .clamp_range(45.0..=65.0),
+                                    .range(45.0..=65.0),
                             )
                             .changed()
                         {
@@ -263,7 +263,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.bandpass_low_hz)
-                                    .clamp_range(0.1..=10.0)
+                                    .range(0.1..=10.0)
                                     .speed(0.1),
                             )
                             .changed()
@@ -274,7 +274,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.bandpass_high_hz)
-                                    .clamp_range(10.0..=100.0),
+                                    .range(10.0..=100.0),
                             )
                             .changed()
                         {
@@ -287,7 +287,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.feature_window_ms)
-                                    .clamp_range(100..=2000),
+                                    .range(100..=2000),
                             )
                             .changed()
                         {
@@ -297,7 +297,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.feature_step_ms)
-                                    .clamp_range(10..=500),
+                                    .range(10..=500),
                             )
                             .changed()
                         {
@@ -364,7 +364,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.action_debounce_ms)
-                                    .clamp_range(0..=1000),
+                                    .range(0..=1000),
                             )
                             .changed()
                         {
@@ -397,7 +397,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.learning_rate)
-                                    .clamp_range(1e-5..=1e-2)
+                                    .range(1e-5..=1e-2)
                                     .speed(1e-5),
                             )
                             .changed()
@@ -411,7 +411,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.gamma)
-                                    .clamp_range(0.9..=0.999)
+                                    .range(0.9..=0.999)
                                     .speed(0.001),
                             )
                             .changed()
@@ -425,7 +425,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.entropy_coef)
-                                    .clamp_range(0.0..=0.1)
+                                    .range(0.0..=0.1)
                                     .speed(0.001),
                             )
                             .changed()
@@ -457,7 +457,7 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Runtime mode:");
                         let current_mode = cfg.runtime_mode.clone();
-                        egui::ComboBox::from_id_source("service_runtime_mode")
+                        egui::ComboBox::from_id_salt("service_runtime_mode")
                             .selected_text(format!("{}", cfg.runtime_mode))
                             .show_ui(ui, |ui| {
                                 for variant in neurohid_types::config::ServiceRuntimeMode::ALL {
@@ -486,7 +486,7 @@ impl SettingsScreen {
                             if ui
                                 .add(
                                     egui::DragValue::new(&mut cfg.control_port)
-                                        .clamp_range(1..=65_535),
+                                        .range(1..=65_535),
                                 )
                                 .changed()
                             {
@@ -552,7 +552,7 @@ impl SettingsScreen {
                                 egui::DragValue::new(
                                     &mut cfg.latency_alert.decode_p95_threshold_us,
                                 )
-                                .clamp_range(1_000..=5_000_000)
+                                .range(1_000..=5_000_000)
                                 .speed(100.0),
                             )
                             .changed()
@@ -568,7 +568,7 @@ impl SettingsScreen {
                                 egui::DragValue::new(
                                     &mut cfg.latency_alert.action_p95_threshold_us,
                                 )
-                                .clamp_range(1_000..=5_000_000)
+                                .range(1_000..=5_000_000)
                                 .speed(100.0),
                             )
                             .changed()
@@ -584,7 +584,7 @@ impl SettingsScreen {
                                 egui::DragValue::new(
                                     &mut cfg.latency_alert.sustained_duration_secs,
                                 )
-                                .clamp_range(1..=3_600),
+                                .range(1..=3_600),
                             )
                             .changed()
                         {
@@ -599,7 +599,7 @@ impl SettingsScreen {
                                 egui::DragValue::new(
                                     &mut cfg.latency_alert.notification_cooldown_secs,
                                 )
-                                .clamp_range(5..=86_400),
+                                .range(5..=86_400),
                             )
                             .changed()
                         {
@@ -678,7 +678,7 @@ impl SettingsScreen {
                         ui.horizontal(|ui| {
                             ui.label("Transport:");
                             let old = primary.transport.clone();
-                            egui::ComboBox::from_id_source("outlet_transport_primary")
+                            egui::ComboBox::from_id_salt("outlet_transport_primary")
                                 .selected_text(match primary.transport {
                                     neurohid_types::config::OutletTransport::TcpJson => "TCP JSON",
                                     neurohid_types::config::OutletTransport::Lsl => "LSL",
@@ -727,7 +727,7 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Mode:");
                         let current = cfg.mode.clone();
-                        egui::ComboBox::from_id_source("ui_mode")
+                        egui::ComboBox::from_id_salt("ui_mode")
                             .selected_text(match cfg.mode {
                                 neurohid_types::config::UiMode::Standard => "Standard",
                                 neurohid_types::config::UiMode::Advanced => "Advanced",
@@ -752,7 +752,7 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Theme:");
                         let current = cfg.theme_mode.clone();
-                        egui::ComboBox::from_id_source("ui_theme_mode")
+                        egui::ComboBox::from_id_salt("ui_theme_mode")
                             .selected_text(match cfg.theme_mode {
                                 neurohid_types::config::ThemeMode::System => "System",
                                 neurohid_types::config::ThemeMode::Light => "Light",
@@ -880,7 +880,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.sustained_duration_secs)
-                                    .clamp_range(5..=3600),
+                                    .range(5..=3600),
                             )
                             .changed()
                         {
@@ -893,7 +893,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.notification_cooldown_secs)
-                                    .clamp_range(10..=86_400),
+                                    .range(10..=86_400),
                             )
                             .changed()
                         {
@@ -933,7 +933,7 @@ impl SettingsScreen {
                         if ui
                             .add(
                                 egui::DragValue::new(&mut cfg.session_log_retention_days)
-                                    .clamp_range(1..=365),
+                                    .range(1..=365),
                             )
                             .changed()
                         {

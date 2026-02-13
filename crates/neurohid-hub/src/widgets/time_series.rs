@@ -514,7 +514,7 @@ impl Widget for TimeSeriesWidget {
             if !self.auto_scale {
                 let drag = egui::DragValue::new(&mut self.vertical_scale)
                     .speed(5.0)
-                    .clamp_range(1.0..=50000.0)
+                    .range(1.0..=50000.0)
                     .suffix(" µV")
                     .min_decimals(0)
                     .max_decimals(0);
@@ -522,7 +522,7 @@ impl Widget for TimeSeriesWidget {
             }
 
             ui.label("Window:");
-            egui::ComboBox::from_id_source(format!("ts_window_{}", pane_index))
+            egui::ComboBox::from_id_salt(format!("ts_window_{}", pane_index))
                 .selected_text(format!("{:.0}s", self.window_secs))
                 .width(60.0)
                 .show_ui(ui, |ui: &mut egui::Ui| {
@@ -534,7 +534,7 @@ impl Widget for TimeSeriesWidget {
             if !source_options.is_empty() {
                 ui.separator();
                 ui.label("Source:");
-                egui::ComboBox::from_id_source(format!("ts_src_{}", pane_index))
+                egui::ComboBox::from_id_salt(format!("ts_src_{}", pane_index))
                     .selected_text(
                         self.selected_source
                             .as_deref()

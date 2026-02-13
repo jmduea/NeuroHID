@@ -6,7 +6,7 @@
 //! swap widgets between panes.
 
 use crate::widgets::{create_widget, Widget, WidgetContext, WidgetId};
-use eframe::egui::{self, Color32, CursorIcon, Margin, Rounding, Stroke};
+use eframe::egui::{self, Color32, CornerRadius, CursorIcon, Margin, Stroke};
 
 /// Available layout configurations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -168,7 +168,7 @@ impl LayoutManager {
         ui.horizontal(|ui| {
             ui.label("Layout:");
             let current_label = self.config.label();
-            egui::ComboBox::from_id_source("layout_selector")
+            egui::ComboBox::from_id_salt("layout_selector")
                 .selected_text(current_label)
                 .show_ui(ui, |ui: &mut egui::Ui| {
                     for &layout in LayoutConfig::ALL {
@@ -318,25 +318,25 @@ impl LayoutManager {
         };
 
         // Custom frame for the pane
-        let pane_frame = egui::Frame::none()
+        let pane_frame = egui::Frame::NONE
             .fill(colors::PANE_BG)
             .stroke(border_stroke)
-            .rounding(Rounding::same(6.0))
-            .inner_margin(Margin::same(4.0));
+            .corner_radius(CornerRadius::same(6))
+            .inner_margin(Margin::same(4));
 
         let frame_response = pane_frame.show(ui, |ui| {
             ui.set_min_size(ui.available_size());
 
             // Header bar with drag handle and widget selector
-            let header_frame = egui::Frame::none()
+            let header_frame = egui::Frame::NONE
                 .fill(colors::HEADER_BG)
-                .rounding(Rounding {
-                    nw: 4.0,
-                    ne: 4.0,
-                    sw: 0.0,
-                    se: 0.0,
+                .corner_radius(CornerRadius {
+                    nw: 4,
+                    ne: 4,
+                    sw: 0,
+                    se: 0,
                 })
-                .inner_margin(Margin::symmetric(6.0, 4.0));
+                .inner_margin(Margin::symmetric(6, 4));
 
             header_frame.show(ui, |ui| {
                 ui.horizontal(|ui| {
@@ -355,7 +355,7 @@ impl LayoutManager {
                         let current_label = pane.widget_id.label();
                         let combo_id = format!("pane_widget_{}", index);
                         let mut new_id = pane.widget_id;
-                        egui::ComboBox::from_id_source(combo_id)
+                        egui::ComboBox::from_id_salt(combo_id)
                             .selected_text(current_label)
                             .width(140.0)
                             .show_ui(ui, |ui: &mut egui::Ui| {
@@ -390,8 +390,9 @@ impl LayoutManager {
                 // Draw a more prominent drop indicator
                 ui.painter().rect_stroke(
                     pane_rect.shrink(2.0),
-                    Rounding::same(4.0),
+                    CornerRadius::same(4),
                     Stroke::new(2.0, colors::DROP_TARGET),
+                    egui::StrokeKind::Outside,
                 );
 
                 // "Drop here" text overlay
@@ -434,7 +435,7 @@ impl LayoutManager {
             } else if let Some(pane) = self.panes.get_mut(index) {
                 let remaining_height = ui.available_height();
                 egui::ScrollArea::vertical()
-                    .id_source(format!("pane_scroll_{}", index))
+                    .id_salt(format!("pane_scroll_{}", index))
                     .max_height(remaining_height)
                     .auto_shrink([false, false])
                     .show(ui, |ui| {

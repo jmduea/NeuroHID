@@ -56,7 +56,7 @@ impl Widget for AccelerometerWidget {
             }
             ui.horizontal(|ui| {
                 ui.label("Source:");
-                egui::ComboBox::from_id_source(format!("acc_src_{}", pane_index))
+                egui::ComboBox::from_id_salt(format!("acc_src_{}", pane_index))
                     .selected_text(
                         self.selected_source
                             .clone()
