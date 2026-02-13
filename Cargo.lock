@@ -2179,6 +2179,7 @@ dependencies = [
  "neurohid-hub",
  "neurohid-storage",
  "neurohid-types",
+ "serde_json",
  "signal-hook",
  "tokio",
  "toml",

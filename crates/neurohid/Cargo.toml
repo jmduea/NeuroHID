@@ -37,6 +37,7 @@ ctrlc = "3.4"
 # Error handling
 anyhow = { workspace = true }
 toml = { workspace = true }
+serde_json = { workspace = true }
 
 # GUI framework
 egui = { workspace = true }

@@ -6,12 +6,20 @@
 
 use clap::{Parser, ValueEnum};
 use std::path::PathBuf;
-use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-use neurohid_core::service::NeuroHidService;
+use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle};
 use neurohid_storage::ProfileStore;
-use neurohid_types::{config::SystemConfig, profile::ProfileId};
+use neurohid_types::{
+    config::SystemConfig,
+    control::{ControlCommand, ControlRequest, ControlResponse},
+    profile::ProfileId,
+};
+
+#[cfg(windows)]
+use neurohid_core::service::NeuroHidService;
+#[cfg(windows)]
+use tokio::sync::broadcast;
 
 const DEFAULT_WINDOWS_SERVICE_NAME: &str = "NeuroHIDService";
 #[cfg(windows)]
@@ -58,6 +66,13 @@ struct Args {
     /// Export decrypted training session logs to a plaintext directory and exit.
     #[arg(long)]
     export_session_logs_dir: Option<String>,
+
+    /// Bind a localhost TCP control protocol server on this port.
+    ///
+    /// Clients exchange line-delimited JSON `ControlRequest` / `ControlResponse`
+    /// messages defined in `neurohid-types::control`.
+    #[arg(long)]
+    control_port: Option<u16>,
 
     /// Windows service lifecycle command.
     #[arg(long, value_enum)]
@@ -123,21 +138,7 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
 
-    let (shutdown_tx, _) = broadcast::channel::<()>(1);
-    let shutdown_tx_clone = shutdown_tx.clone();
-
-    ctrlc::set_handler(move || {
-        tracing::info!("Shutdown signal received");
-        let _ = shutdown_tx_clone.send(());
-    })?;
-
-    run_core_service(
-        runtime.config,
-        runtime.profile_store,
-        runtime.profile_id,
-        shutdown_tx.subscribe(),
-    )
-    .await?;
+    run_managed_runtime(runtime, args.control_port).await?;
 
     tracing::info!("NeuroHID service stopped");
     Ok(())
@@ -286,6 +287,7 @@ async fn handle_artifact_commands(
     Ok(false)
 }
 
+#[cfg(windows)]
 async fn run_core_service(
     config: SystemConfig,
     profile_store: ProfileStore,
@@ -296,6 +298,120 @@ async fn run_core_service(
         NeuroHidService::new(config, Some(profile_store), profile_id, shutdown_rx).await?;
     tracing::info!("Service initialized, starting main loop");
     service.run().await?;
+    Ok(())
+}
+
+async fn run_managed_runtime(
+    runtime: RuntimeContext,
+    control_port: Option<u16>,
+) -> anyhow::Result<()> {
+    let mut builder = RuntimeBuilder::new(runtime.config).with_profile_store(runtime.profile_store);
+    if let Some(profile_id) = runtime.profile_id {
+        builder = builder.with_profile_id(profile_id);
+    }
+    let runtime_handle = builder.start().await?;
+    tracing::info!("Managed runtime started");
+
+    if let Some(port) = control_port {
+        tracing::info!("Starting control protocol server on 127.0.0.1:{port}");
+        tokio::select! {
+            result = run_tcp_control_server(port, &runtime_handle) => {
+                if let Err(error) = result {
+                    tracing::warn!("Control protocol server exited with error: {}", error);
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("Shutdown signal received");
+            }
+            _ = wait_until_runtime_stopped(&runtime_handle) => {}
+        }
+    } else {
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("Shutdown signal received");
+            }
+            _ = wait_until_runtime_stopped(&runtime_handle) => {}
+        }
+    }
+
+    if runtime_handle.snapshot().running {
+        runtime_handle.command(RuntimeCommand::Stop)?;
+    }
+    runtime_handle.wait().await?;
+    Ok(())
+}
+
+async fn wait_until_runtime_stopped(handle: &RuntimeHandle) {
+    while handle.snapshot().running {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+}
+
+async fn run_tcp_control_server(port: u16, runtime: &RuntimeHandle) -> anyhow::Result<()> {
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind(("127.0.0.1", port))
+        .await
+        .map_err(|e| anyhow::anyhow!("Failed to bind control port {}: {}", port, e))?;
+
+    loop {
+        let (stream, peer) = listener
+            .accept()
+            .await
+            .map_err(|e| anyhow::anyhow!("Control accept failed: {}", e))?;
+
+        if let Err(error) = handle_control_client(stream, runtime).await {
+            tracing::warn!("Control client {} disconnected with error: {}", peer, error);
+        }
+    }
+}
+
+async fn handle_control_client(
+    stream: tokio::net::TcpStream,
+    runtime: &RuntimeHandle,
+) -> anyhow::Result<()> {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
+    let (read_half, mut write_half) = stream.into_split();
+    let mut reader = BufReader::new(read_half);
+    let mut line = String::new();
+
+    loop {
+        line.clear();
+        let read = reader.read_line(&mut line).await?;
+        if read == 0 {
+            break;
+        }
+
+        let payload = line.trim();
+        if payload.is_empty() {
+            continue;
+        }
+
+        let parsed: Result<ControlRequest, _> = serde_json::from_str(payload);
+        let (response, should_shutdown) = match parsed {
+            Ok(request) => {
+                let should_shutdown = matches!(request.command, ControlCommand::Shutdown);
+                let response = runtime.dispatch_control_request(request);
+                (response, should_shutdown)
+            }
+            Err(error) => (
+                ControlResponse::error(None, format!("invalid control request: {}", error)),
+                false,
+            ),
+        };
+
+        let response_json = serde_json::to_string(&response)
+            .map_err(|e| anyhow::anyhow!("Failed to serialize control response: {}", e))?;
+        write_half.write_all(response_json.as_bytes()).await?;
+        write_half.write_all(b"\n").await?;
+        write_half.flush().await?;
+
+        if should_shutdown {
+            break;
+        }
+    }
+
     Ok(())
 }
 
