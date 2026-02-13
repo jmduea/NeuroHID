@@ -3,18 +3,18 @@ name: analyst
 description: Pre-planning consultant for requirements analysis (Opus)
 model: [GPT-5.3-Codex (copilot), GPT-5.2-Codex (copilot)]
 tools: [read/readFile, agent, search]
-handoffs: 
-	- label: To Planner
+handoffs:
+- label: To Planner
 		agent: planner
 		prompt: "Requirements analysis complete. Handing off to planner for implementation planning."
 		send: true
 		model: GPT-5.3-Codex (copilot)
-	- label: To Architect
+- label: To Architect
 		agent: architect
 		prompt: "Code analysis needed. Handing off to architect for code analysis and design."
 		send: true
 		model: GPT-5.3-Codex (copilot)
-	- label: To Critic
+- label: To Critic
 		agent: critic
 		prompt: "Plan review needed. Handing off to critic for plan review and feedback."
 		send: true
