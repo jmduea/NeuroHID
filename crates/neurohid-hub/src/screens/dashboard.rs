@@ -3,16 +3,43 @@
 //! The main overview screen. Shows service status, device info, signal quality,
 //! and quick controls for starting/stopping the service.
 
+use std::io::ErrorKind;
+use std::path::Path;
+use std::process::Command;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+
 use eframe::egui;
+use neurohid_storage::ProfileStore;
+use neurohid_types::{config::UiMode, profile::ProfileId};
 
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 
-pub struct DashboardScreen;
+pub struct DashboardScreen {
+    train_stage_status: Option<TrainStageStatus>,
+    train_stage_output: String,
+    train_stage_rx: Option<Receiver<TrainStageResult>>,
+}
+
+enum TrainStageStatus {
+    Running(String),
+    Success(String),
+    Error(String),
+}
+
+struct TrainStageResult {
+    success: bool,
+    message: String,
+    output: String,
+}
 
 impl DashboardScreen {
     pub fn new() -> Self {
-        Self
+        Self {
+            train_stage_status: None,
+            train_stage_output: String::new(),
+            train_stage_rx: None,
+        }
     }
 
     pub fn show(
@@ -22,6 +49,8 @@ impl DashboardScreen {
         service_manager: &mut ServiceManager,
         runtime: &tokio::runtime::Runtime,
     ) {
+        self.poll_train_stage_result();
+
         ui.heading("Dashboard");
         ui.add_space(16.0);
 
@@ -141,6 +170,27 @@ impl DashboardScreen {
                             .color(egui::Color32::GRAY),
                         );
                     }
+
+                    if state.config.ui.mode == UiMode::Advanced {
+                        ui.add_space(6.0);
+                        let has_profile = state.active_profile_id.is_some();
+                        let train_button = ui.add_enabled(
+                            self.train_stage_rx.is_none() && has_profile,
+                            egui::Button::new("Train + Stage Candidate"),
+                        );
+                        if train_button.clicked() {
+                            self.start_train_stage_job(state);
+                        }
+                        if !has_profile {
+                            ui.label(
+                                egui::RichText::new(
+                                    "Training requires an active profile selection",
+                                )
+                                .small()
+                                .color(egui::Color32::GRAY),
+                            );
+                        }
+                    }
                 } else {
                     if ui.button("Start Service").clicked() {
                         service_manager.start(
@@ -157,6 +207,31 @@ impl DashboardScreen {
                                 .color(egui::Color32::YELLOW),
                         );
                     }
+                }
+
+                if let Some(status) = &self.train_stage_status {
+                    let (color, text) = match status {
+                        TrainStageStatus::Running(msg) => (egui::Color32::YELLOW, msg.as_str()),
+                        TrainStageStatus::Success(msg) => (egui::Color32::GREEN, msg.as_str()),
+                        TrainStageStatus::Error(msg) => (egui::Color32::RED, msg.as_str()),
+                    };
+                    ui.add_space(6.0);
+                    ui.colored_label(color, text);
+                }
+
+                if !self.train_stage_output.is_empty() {
+                    ui.add_space(4.0);
+                    ui.collapsing("Train + Stage Output", |ui| {
+                        egui::ScrollArea::vertical()
+                            .max_height(140.0)
+                            .show(ui, |ui| {
+                                ui.add(
+                                    egui::TextEdit::multiline(&mut self.train_stage_output)
+                                        .font(egui::TextStyle::Monospace)
+                                        .desired_width(f32::INFINITY),
+                                );
+                            });
+                    });
                 }
 
                 if let Some(err) = service_manager.last_error() {
@@ -333,6 +408,205 @@ impl DashboardScreen {
             });
         });
     }
+
+    fn start_train_stage_job(&mut self, state: &HubState) {
+        let Some(profile_id) = state.active_profile_id.clone() else {
+            self.train_stage_status = Some(TrainStageStatus::Error(
+                "No active profile selected".to_string(),
+            ));
+            return;
+        };
+
+        self.train_stage_status = Some(TrainStageStatus::Running(format!(
+            "Training candidate from session logs for profile '{}'",
+            profile_id
+        )));
+        self.train_stage_output.clear();
+
+        let profile_store = state.profile_store.clone();
+        let (tx, rx) = mpsc::channel();
+        self.train_stage_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            let result = run_train_stage_candidate_job(profile_store, profile_id);
+            let _ = tx.send(result);
+        });
+    }
+
+    fn poll_train_stage_result(&mut self) {
+        let Some(rx) = &self.train_stage_rx else {
+            return;
+        };
+
+        match rx.try_recv() {
+            Ok(result) => {
+                self.train_stage_status = Some(if result.success {
+                    TrainStageStatus::Success(result.message)
+                } else {
+                    TrainStageStatus::Error(result.message)
+                });
+                self.train_stage_output = result.output;
+                self.train_stage_rx = None;
+            }
+            Err(TryRecvError::Empty) => {}
+            Err(TryRecvError::Disconnected) => {
+                self.train_stage_status = Some(TrainStageStatus::Error(
+                    "Training job disconnected unexpectedly".to_string(),
+                ));
+                self.train_stage_rx = None;
+            }
+        }
+    }
+}
+
+fn run_train_stage_candidate_job(
+    profile_store: ProfileStore,
+    profile_id: ProfileId,
+) -> TrainStageResult {
+    let mut output = String::new();
+    let work_dir = std::env::temp_dir().join(format!(
+        "neurohid_candidate_{}_{}",
+        profile_id,
+        neurohid_types::now_micros()
+    ));
+    let session_dir = work_dir.join("sessions");
+    let candidate_dir = work_dir.join("candidate");
+
+    let runtime = match tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+    {
+        Ok(runtime) => runtime,
+        Err(error) => {
+            return TrainStageResult {
+                success: false,
+                message: format!("Failed to initialize training runtime: {}", error),
+                output,
+            };
+        }
+    };
+
+    let exported = match runtime
+        .block_on(profile_store.export_training_session_logs_to_dir(&profile_id, &session_dir))
+    {
+        Ok(exported) => exported,
+        Err(error) => {
+            return TrainStageResult {
+                success: false,
+                message: format!("Failed to export session logs: {}", error),
+                output,
+            };
+        }
+    };
+
+    output.push_str(&format!(
+        "Exported {} session log(s) to {}\n",
+        exported,
+        session_dir.display()
+    ));
+
+    if exported == 0 {
+        return TrainStageResult {
+            success: false,
+            message: format!(
+                "No recorded training sessions found for profile '{}'",
+                profile_id
+            ),
+            output,
+        };
+    }
+
+    let model_version = format!("candidate-{}", neurohid_types::now_micros());
+    let trainer_output =
+        match run_python_candidate_trainer(&session_dir, &candidate_dir, &model_version) {
+            Ok(text) => text,
+            Err(error) => {
+                output.push_str(&error);
+                return TrainStageResult {
+                    success: false,
+                    message: "Candidate training failed".to_string(),
+                    output,
+                };
+            }
+        };
+    output.push_str(&trainer_output);
+
+    if let Err(error) = runtime
+        .block_on(profile_store.import_decoder_candidate_from_dir(&profile_id, &candidate_dir))
+    {
+        output.push_str(&format!(
+            "\nFailed importing candidate artifacts: {}\n",
+            error
+        ));
+        return TrainStageResult {
+            success: false,
+            message: "Candidate import failed".to_string(),
+            output,
+        };
+    }
+    output.push_str("Imported candidate artifacts into encrypted profile storage\n");
+
+    if let Err(error) = std::fs::remove_dir_all(&work_dir) {
+        output.push_str(&format!(
+            "Cleanup warning for {}: {}\n",
+            work_dir.display(),
+            error
+        ));
+    }
+
+    TrainStageResult {
+        success: true,
+        message: format!(
+            "Candidate staged for profile '{}' from {} session(s). Click Promote Candidate.",
+            profile_id, exported
+        ),
+        output,
+    }
+}
+
+fn run_python_candidate_trainer(
+    session_dir: &Path,
+    output_dir: &Path,
+    model_version: &str,
+) -> std::result::Result<String, String> {
+    let args = vec![
+        "-m".to_string(),
+        "neurohid_ml.cli".to_string(),
+        "train-candidate".to_string(),
+        "--session-dir".to_string(),
+        session_dir.display().to_string(),
+        "--output-dir".to_string(),
+        output_dir.display().to_string(),
+        "--model-version".to_string(),
+        model_version.to_string(),
+    ];
+
+    for executable in ["python3", "python"] {
+        let mut cmd = Command::new(executable);
+        cmd.args(&args).env("PYTHONPATH", "python/src");
+
+        let output = match cmd.output() {
+            Ok(output) => output,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(error) => {
+                return Err(format!("Failed to execute '{}': {}\n", executable, error));
+            }
+        };
+
+        let mut text = format!("$ {} {}\n", executable, args.join(" "));
+        text.push_str(&String::from_utf8_lossy(&output.stdout));
+        text.push_str(&String::from_utf8_lossy(&output.stderr));
+        if output.status.success() {
+            return Ok(text);
+        }
+
+        return Err(format!(
+            "{text}\nTrainer exited with status {}\n",
+            output.status
+        ));
+    }
+
+    Err("Python interpreter not found (tried 'python3' then 'python')\n".to_string())
 }
 
 /// Returns a platform-specific remediation hint for known error patterns.

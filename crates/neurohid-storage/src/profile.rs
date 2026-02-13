@@ -503,6 +503,39 @@ impl ProfileStore {
         Ok(removed)
     }
 
+    /// Exports decrypted training session logs to plaintext JSON files.
+    ///
+    /// Output file pattern: `session_<session_id>.json`.
+    pub async fn export_training_session_logs_to_dir(
+        &self,
+        id: &ProfileId,
+        output_dir: &Path,
+    ) -> Result<usize> {
+        fs::create_dir_all(output_dir)
+            .await
+            .map_err(|e| StorageError::WriteError {
+                path: output_dir.display().to_string(),
+                reason: e.to_string(),
+            })?;
+
+        let mut exported = 0_usize;
+        for session_id in self.list_training_session_log_ids(id).await? {
+            let session_log = self.load_training_session_log(id, &session_id).await?;
+            let file_path = output_dir.join(format!("session_{session_id}.json"));
+            let payload = serde_json::to_vec_pretty(&session_log)
+                .map_err(|e| StorageError::SerializationError(e.to_string()))?;
+            fs::write(&file_path, payload)
+                .await
+                .map_err(|e| StorageError::WriteError {
+                    path: file_path.display().to_string(),
+                    reason: e.to_string(),
+                })?;
+            exported += 1;
+        }
+
+        Ok(exported)
+    }
+
     /// Updates the calibration state for a profile.
     pub async fn update_calibration_state(
         &self,
@@ -603,5 +636,66 @@ impl ProfileStore {
         }
 
         Ok(new_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::PathBuf;
+
+    use super::{parse_session_log_id, ProfileStore};
+    use crate::{DataPaths, SecureStorage};
+
+    fn unique_test_root(test_name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "neurohid_storage_{}_{}",
+            test_name,
+            neurohid_types::now_micros()
+        ))
+    }
+
+    #[test]
+    fn parse_session_log_id_accepts_expected_format() {
+        assert_eq!(
+            parse_session_log_id("session_1730000000000.json.enc"),
+            Some("1730000000000".to_string())
+        );
+        assert_eq!(parse_session_log_id("session_.json.enc"), None);
+        assert_eq!(parse_session_log_id("1730000000000.json.enc"), None);
+        assert_eq!(parse_session_log_id("session_1730000000000.json"), None);
+    }
+
+    #[test]
+    fn export_training_session_logs_to_dir_handles_empty_profile() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+
+        runtime.block_on(async {
+            let root = unique_test_root("export_empty");
+            let paths = DataPaths::new(Some(root.clone())).expect("paths should build");
+            paths
+                .ensure_directories()
+                .await
+                .expect("directories should initialize");
+
+            let store = ProfileStore::new(paths, SecureStorage::default());
+            let profile = store
+                .create_profile("export-empty".to_string())
+                .await
+                .expect("profile should be created");
+
+            let output_dir = root.join("exports");
+            let exported = store
+                .export_training_session_logs_to_dir(&profile.id, &output_dir)
+                .await
+                .expect("export should succeed");
+
+            assert_eq!(exported, 0);
+            assert!(output_dir.exists());
+
+            let _ = std::fs::remove_dir_all(root);
+        });
     }
 }

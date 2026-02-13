@@ -37,6 +37,10 @@ struct Args {
     /// Import candidate artifacts from a trainer output directory and exit.
     #[arg(long)]
     import_candidate_dir: Option<String>,
+
+    /// Export decrypted training session logs to a plaintext directory and exit.
+    #[arg(long)]
+    export_session_logs_dir: Option<String>,
 }
 
 #[tokio::main]
@@ -109,6 +113,11 @@ async fn main() -> anyhow::Result<()> {
     }
 
     if let Some(source_dir) = &args.import_candidate_dir {
+        if args.export_session_logs_dir.is_some() {
+            return Err(anyhow::anyhow!(
+                "--import-candidate-dir and --export-session-logs-dir are mutually exclusive"
+            ));
+        }
         let Some(pid) = profile_id.as_ref() else {
             return Err(anyhow::anyhow!(
                 "--import-candidate-dir requires an active profile (--profile ...)"
@@ -125,6 +134,26 @@ async fn main() -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to import candidate artifacts: {}", e))?;
         tracing::info!("Candidate artifacts imported successfully");
+        return Ok(());
+    }
+
+    if let Some(output_dir) = &args.export_session_logs_dir {
+        let Some(pid) = profile_id.as_ref() else {
+            return Err(anyhow::anyhow!(
+                "--export-session-logs-dir requires an active profile (--profile ...)"
+            ));
+        };
+        let output_dir = PathBuf::from(output_dir);
+        tracing::info!(
+            "Exporting training session logs for profile '{}' to '{}'",
+            pid,
+            output_dir.display()
+        );
+        let exported = profile_store
+            .export_training_session_logs_to_dir(pid, &output_dir)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to export session logs: {}", e))?;
+        tracing::info!("Exported {} training session log(s)", exported);
         return Ok(());
     }
 
