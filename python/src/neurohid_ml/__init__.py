@@ -18,11 +18,14 @@ __version__ = "0.1.0"
 from neurohid_ml.decoder import Decoder, DecoderConfig
 from neurohid_ml.errp import ErrPDetector, ErrPConfig
 from neurohid_ml.bridge import IpcClient
+from neurohid_ml.trainer import TrainerConfig, train_candidate_model
 
 __all__ = [
     "Decoder",
-    "DecoderConfig", 
+    "DecoderConfig",
     "ErrPDetector",
     "ErrPConfig",
     "IpcClient",
+    "TrainerConfig",
+    "train_candidate_model",
 ]
