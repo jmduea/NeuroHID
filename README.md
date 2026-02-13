@@ -135,7 +135,7 @@ Applications don't know NeuroHID exists. They receive standard HID events—mous
 
 **Software:**
 
-- Rust 1.75+
+- Rust 1.85+
 - Python 3.12+
 - PyTorch 2.10+
 

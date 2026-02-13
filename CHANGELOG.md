@@ -16,6 +16,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `service.ipc_simulation_enabled` configuration flag to gate simulated IPC behavior
 - Unit tests for signal timing conversion and IPC simulation gating in `neurohid-core`
 - Real IPC integration tests for connect/disconnect/reconnect transitions in `neurohid-core` and `neurohid-hub`
+- Repository-level governance templates: ADR, planning DoR/DoD, UX checklist, and PR checklist
+- Repo-local automation assets for docs freshness, architecture validation, feature planning, TDD enforcement, UX review, and Python ML review
+- CI policy workflows: docs freshness gate, architecture ADR gate, Python quality gate, and UV command policy gate
 
 ### Changed
 
@@ -27,6 +30,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hub sidebar now surfaces explicit IPC mode/status (`Connected`, `Simulated`, `Disconnected`)
 - Core IPC task now runs a real TCP bridge to Python when simulation mode is disabled, with automatic reconnect after disconnect
 - Core action task placeholder tracking field now uses underscore-prefixed naming to reduce explicit dead-code allowances while preserving future wiring intent
+- Workspace Rust baseline updated to edition 2024 and rust-version 1.85
+- Python test workflow standardized on `uv` + `pytest` in CI and contributor guidance
 
 ### Removed
 

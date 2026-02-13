@@ -5,6 +5,8 @@ These notebooks are designed for the managed Jupyter IDE flow in Hub Advanced mo
 - `00_scratchpad.ipynb`: quick sandbox and connectivity check.
 - `10_live_runtime_monitor.ipynb`: inspect runtime/bridge status and issue control commands.
 - `20_offline_training_flow.ipynb`: train/stage candidate artifacts from profile data.
+- `30_eegnet_from_runtime_features.ipynb`: set up PyTorch (GPU if available), collect runtime
+    feature vectors, and train an EEGNet-style classifier.
 
 ## Preconditions
 

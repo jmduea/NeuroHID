@@ -6,14 +6,17 @@ Thank you for your interest in contributing to NeuroHID! This guide will help yo
 
 ### Rust Toolchain
 
-- Rust 1.75 or later (install via [rustup](https://rustup.rs/))
-- The project uses the 2021 edition
+- Rust 1.85 or later (install via [rustup](https://rustup.rs/))
+- The project uses the 2024 edition
 
 ### Python Environment
 
 For the ML module in `python/`:
 
 - uv
+- Always use `uv` to run Python commands. Do not use bare `python` commands.
+
+The repository enforces this with the `UV Command Policy` CI workflow.
 
 ```bash
 cd python
@@ -80,6 +83,21 @@ cargo test -p neurohid-signal
 cargo test --workspace -- --nocapture
 ```
 
+For Python ML tests and quality checks:
+
+```bash
+# Install Python dev tools (pytest, black, ruff, mypy)
+uv sync --directory python --extra dev
+
+# Canonical Python test command
+uv run --project python pytest python/tests -q
+
+# Canonical Python quality commands
+uv run --project python ruff check python/src python/tests
+uv run --project python black --check python/src python/tests
+uv run --project python mypy python/src
+```
+
 ## Code Quality
 
 ```bash
@@ -111,7 +129,8 @@ See the root [README.md](./README.md) for the full architecture overview.
 3. Ensure `cargo test --workspace` passes
 4. Ensure `cargo clippy --workspace -- -D warnings` is clean
 5. Run `cargo fmt`
-6. Open a PR with a clear description
+6. For Python changes, run `uv run --project python pytest python/tests -q`
+7. Open a PR with a clear description
 
 ## Areas Where Help Is Appreciated
 
