@@ -8,6 +8,7 @@ use neurohid_types::config::UiMode;
 pub mod calibration;
 pub mod dashboard;
 pub mod devices;
+pub mod jupyter_ide;
 pub mod profiles;
 pub mod python_lab;
 pub mod settings;
@@ -21,7 +22,7 @@ pub enum Screen {
     Devices,
     Profiles,
     Calibration,
-    PythonLab,
+    JupyterIde,
     Settings,
 }
 
@@ -33,7 +34,7 @@ impl Screen {
             Screen::Devices => "Devices",
             Screen::Profiles => "Profiles",
             Screen::Calibration => "Calibration",
-            Screen::PythonLab => "Python Lab",
+            Screen::JupyterIde => "Jupyter IDE",
             Screen::Settings => "Settings",
         }
     }
@@ -53,7 +54,7 @@ impl Screen {
                 Screen::Devices,
                 Screen::Profiles,
                 Screen::Calibration,
-                Screen::PythonLab,
+                Screen::JupyterIde,
                 Screen::Settings,
             ],
         }
@@ -70,7 +71,7 @@ mod tests {
     fn standard_mode_hides_advanced_only_screens() {
         let standard = Screen::all_for_mode(&UiMode::Standard);
         assert!(!standard.contains(&Screen::Visualization));
-        assert!(!standard.contains(&Screen::PythonLab));
+        assert!(!standard.contains(&Screen::JupyterIde));
         assert!(standard.contains(&Screen::Dashboard));
         assert!(standard.contains(&Screen::Settings));
     }
@@ -84,6 +85,6 @@ mod tests {
             assert!(advanced.contains(screen));
         }
         assert!(advanced.contains(&Screen::Visualization));
-        assert!(advanced.contains(&Screen::PythonLab));
+        assert!(advanced.contains(&Screen::JupyterIde));
     }
 }

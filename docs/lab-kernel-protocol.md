@@ -1,5 +1,10 @@
 # NeuroHID Lab Kernel Protocol (v1)
 
+> Status: Legacy path (not primary UX)
+>
+> Advanced mode now targets a managed Jupyter IDE workflow. This protocol is
+> retained for backward compatibility and internal migration support.
+
 The Hub Python Lab is now decoupled from a specific Python implementation.
 It launches a configurable kernel command and communicates over newline-delimited
 JSON on `stdin`/`stdout`.

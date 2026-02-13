@@ -13,8 +13,8 @@ use crate::data_bus::DataBus;
 use crate::screens::calibration::CalibrationScreen;
 use crate::screens::dashboard::DashboardScreen;
 use crate::screens::devices::{derive_device_label, DevicesScreen};
+use crate::screens::jupyter_ide::JupyterIdeScreen;
 use crate::screens::profiles::ProfilesScreen;
-use crate::screens::python_lab::PythonLabScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::visualization::VisualizationScreen;
 use crate::screens::Screen;
@@ -40,7 +40,7 @@ pub struct HubApp {
     devices: DevicesScreen,
     profiles: ProfilesScreen,
     calibration: CalibrationScreen,
-    python_lab: PythonLabScreen,
+    jupyter_ide: JupyterIdeScreen,
     settings: SettingsScreen,
 }
 
@@ -85,7 +85,7 @@ impl HubApp {
             devices: DevicesScreen::new(),
             profiles: ProfilesScreen::new(),
             calibration: CalibrationScreen::new(),
-            python_lab: PythonLabScreen::new(),
+            jupyter_ide: JupyterIdeScreen::new(),
             settings: SettingsScreen::new(),
         };
 
@@ -613,13 +613,8 @@ impl eframe::App for HubApp {
                     self.calibration
                         .show_entry(ui, &mut self.state, &mut self.service_manager);
                 }
-                Screen::PythonLab => {
-                    self.python_lab.show(
-                        ui,
-                        &self.state.config.ui.lab_kernel_command,
-                        &self.data_bus,
-                        &self.state.service_snapshot,
-                    );
+                Screen::JupyterIde => {
+                    self.jupyter_ide.show(ui, &self.state.config.ui);
                 }
                 Screen::Settings => {
                     self.settings

@@ -795,11 +795,43 @@ impl SettingsScreen {
                     });
 
                     ui.horizontal(|ui| {
-                        ui.label("Lab kernel cmd:");
-                        if ui.text_edit_singleline(&mut cfg.lab_kernel_command).changed() {
+                        ui.label("Auto bootstrap IDE:");
+                        if ui.checkbox(&mut cfg.jupyter_auto_bootstrap, "").changed() {
                             changed = true;
                         }
                     });
+
+                    ui.horizontal(|ui| {
+                        ui.label("IDE bootstrap cmd:");
+                        if ui
+                            .text_edit_singleline(&mut cfg.jupyter_bootstrap_command)
+                            .changed()
+                        {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Jupyter cmd:");
+                        if ui.text_edit_singleline(&mut cfg.jupyter_command).changed() {
+                            changed = true;
+                        }
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Jupyter URL:");
+                        if ui.text_edit_singleline(&mut cfg.jupyter_url).changed() {
+                            changed = true;
+                        }
+                    });
+
+                    ui.label(
+                        egui::RichText::new(
+                            "Advanced mode uses managed Jupyter IDE settings above. Legacy lab-kernel config remains only for backward compatibility.",
+                        )
+                        .small()
+                        .weak(),
+                    );
 
                     changed
                 });

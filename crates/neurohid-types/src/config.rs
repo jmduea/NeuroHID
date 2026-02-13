@@ -520,7 +520,21 @@ pub struct UiConfig {
     /// Whether tray mode behavior is enabled.
     #[serde(default)]
     pub tray_mode_enabled: bool,
+    /// Command used to bootstrap the managed Python environment for the IDE.
+    #[serde(default = "default_jupyter_bootstrap_command")]
+    pub jupyter_bootstrap_command: String,
+    /// Whether the IDE should bootstrap dependencies automatically.
+    #[serde(default = "default_true")]
+    pub jupyter_auto_bootstrap: bool,
+    /// Command used by Advanced mode to launch JupyterLab.
+    #[serde(default = "default_jupyter_command")]
+    pub jupyter_command: String,
+    /// URL opened by the IDE when Jupyter server is ready.
+    #[serde(default = "default_jupyter_url")]
+    pub jupyter_url: String,
     /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
+    ///
+    /// Deprecated: retained for backward compatibility with older configs.
     #[serde(default = "default_lab_kernel_command")]
     pub lab_kernel_command: String,
 }
@@ -533,6 +547,18 @@ fn default_lab_kernel_command() -> String {
     "uv run --directory python neurohid-ml lab-kernel --stdio".to_string()
 }
 
+fn default_jupyter_bootstrap_command() -> String {
+    "uv sync --directory python".to_string()
+}
+
+fn default_jupyter_command() -> String {
+    "uv run --directory python jupyter lab --no-browser --ip=127.0.0.1 --port=8888".to_string()
+}
+
+fn default_jupyter_url() -> String {
+    "http://127.0.0.1:8888/lab".to_string()
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -541,6 +567,10 @@ impl Default for UiConfig {
             theme_mode: ThemeMode::default(),
             pane_resize_enabled: true,
             tray_mode_enabled: false,
+            jupyter_bootstrap_command: default_jupyter_bootstrap_command(),
+            jupyter_auto_bootstrap: default_true(),
+            jupyter_command: default_jupyter_command(),
+            jupyter_url: default_jupyter_url(),
             lab_kernel_command: default_lab_kernel_command(),
         }
     }
