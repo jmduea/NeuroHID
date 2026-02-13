@@ -746,7 +746,7 @@ pub struct ServiceConfig {
     #[serde(default = "default_control_pipe_name")]
     pub control_pipe_name: String,
 
-    /// Whether the service should start automatically on login
+    /// Whether the service should start automatically when the app launches.
     pub auto_start: bool,
 
     /// Port for TCP localhost IPC (Python bridge communication)
@@ -834,7 +834,7 @@ impl Default for ServiceConfig {
             control_port: default_control_port(),
             control_transport: ControlTransport::default(),
             control_pipe_name: default_control_pipe_name(),
-            auto_start: false,
+            auto_start: true,
             ipc_port: 47384,
             ml_transport: MlTransport::default(),
             ml_pipe_name: default_ml_pipe_name(),

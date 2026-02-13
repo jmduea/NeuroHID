@@ -116,10 +116,20 @@ impl HubApp {
             .await
             .map_err(|e| anyhow::anyhow!("Storage init failed: {}", e))?;
 
-        let config = config_store
+        let mut config = config_store
             .load()
             .await
             .map_err(|e| anyhow::anyhow!("Config load failed: {}", e))?;
+
+        if !config.service.auto_start {
+            config.service.auto_start = true;
+            if let Err(error) = config_store.save(&config).await {
+                tracing::warn!(
+                    error = %error,
+                    "Failed to persist migrated service auto-start default"
+                );
+            }
+        }
 
         let profiles = profile_store.list_profiles().await.unwrap_or_default();
 

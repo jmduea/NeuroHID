@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Reorganized project into Rust workspace with separate published and internal crates
+- Hub default service behavior now auto-starts the core service on app launch via `service.auto_start = true`
+- Hub now migrates legacy persisted configs with `service.auto_start = false` to `true` on load so existing installs auto-start the core service on app launch
 - Extracted binary crate from library for cleaner architecture
 - Published crates: `neurohid` (binary), `neurohid-sdk` (library facade)
 - Internal crates: `neurohid-types`, `neurohid-signal`, `neurohid-device`, `neurohid-platform`, `neurohid-storage`, `neurohid-ipc`, `neurohid-calibration`, `neurohid-core`, `neurohid-hub`
