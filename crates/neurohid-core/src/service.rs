@@ -144,6 +144,12 @@ pub struct ServiceState {
     /// Rolling decoder latency p95, in microseconds.
     pub decode_latency_p95_us: u64,
 
+    /// Most recent signal-stage latency (sample timestamp to extracted features), in microseconds.
+    pub signal_latency_last_us: u64,
+
+    /// Rolling signal-stage latency p95, in microseconds.
+    pub signal_latency_p95_us: u64,
+
     /// Most recent end-to-end action latency (feature timestamp to HID emission), in microseconds.
     pub action_latency_last_us: u64,
 
@@ -187,6 +193,8 @@ impl Default for ServiceState {
             output_enabled: true,
             decode_latency_last_us: 0,
             decode_latency_p95_us: 0,
+            signal_latency_last_us: 0,
+            signal_latency_p95_us: 0,
             action_latency_last_us: 0,
             action_latency_p95_us: 0,
             latency_degraded: false,
@@ -599,6 +607,8 @@ impl NeuroHidService {
             state.decoder_model_version = None;
             state.decode_latency_last_us = 0;
             state.decode_latency_p95_us = 0;
+            state.signal_latency_last_us = 0;
+            state.signal_latency_p95_us = 0;
             state.action_latency_last_us = 0;
             state.action_latency_p95_us = 0;
             state.latency_degraded = false;
@@ -835,6 +845,8 @@ impl NeuroHidService {
             state.calibration_mode = false;
             state.decode_latency_last_us = 0;
             state.decode_latency_p95_us = 0;
+            state.signal_latency_last_us = 0;
+            state.signal_latency_p95_us = 0;
             state.action_latency_last_us = 0;
             state.action_latency_p95_us = 0;
             state.latency_degraded = false;

@@ -119,6 +119,14 @@ impl DashboardScreen {
 
                 ui.label(
                     egui::RichText::new(format!(
+                        "Signal latency: last {} us | p95 {} us",
+                        snap.signal_latency_last_us, snap.signal_latency_p95_us
+                    ))
+                    .small()
+                    .color(egui::Color32::GRAY),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
                         "Decode latency: last {} us | p95 {} us",
                         snap.decode_latency_last_us, snap.decode_latency_p95_us
                     ))

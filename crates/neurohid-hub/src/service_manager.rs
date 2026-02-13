@@ -159,6 +159,8 @@ impl ServiceManager {
             profile_ready: state_guard.profile_ready,
             decoder_ready: state_guard.decoder_ready,
             decoder_model_version: state_guard.decoder_model_version.clone(),
+            signal_latency_last_us: state_guard.signal_latency_last_us,
+            signal_latency_p95_us: state_guard.signal_latency_p95_us,
             decode_latency_last_us: state_guard.decode_latency_last_us,
             decode_latency_p95_us: state_guard.decode_latency_p95_us,
             action_latency_last_us: state_guard.action_latency_last_us,

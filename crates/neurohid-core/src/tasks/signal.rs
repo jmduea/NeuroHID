@@ -28,6 +28,7 @@ use neurohid_types::{
 };
 
 use crate::service::{ServiceState, SignalCommand};
+use crate::tasks::latency::RollingLatency;
 
 /// Default key for samples without a source_id (e.g., mock device).
 const DEFAULT_STREAM_KEY: &str = "__default__";
@@ -91,6 +92,7 @@ pub struct SignalTask {
     sample_count: u64,
     last_head_movement_marker_us: i64,
     head_movement_threshold: f32,
+    signal_latency: RollingLatency,
 }
 
 impl SignalTask {
@@ -131,6 +133,7 @@ impl SignalTask {
             sample_count: 0,
             last_head_movement_marker_us: 0,
             head_movement_threshold: 0.4,
+            signal_latency: RollingLatency::new(512),
         }
     }
 
@@ -204,15 +207,25 @@ impl SignalTask {
                             {
                                 buf.samples_since_extraction = 0;
 
-                                // Extract features from the most recent window
-                                let samples = buf.samples.make_contiguous();
-                                let window_start = samples.len() - samples_per_window;
-                                let window = &samples[window_start..];
+                                // Extract features from the most recent window.
+                                // Capture the newest sample timestamp so we can track
+                                // signal-stage latency (sample -> feature output).
+                                let (features, newest_sample_timestamp) = {
+                                    let samples = buf.samples.make_contiguous();
+                                    let window_start = samples.len() - samples_per_window;
+                                    let window = &samples[window_start..];
+                                    let newest_sample_timestamp = window
+                                        .last()
+                                        .map(|sample| {
+                                            sample.device_timestamp.unwrap_or(sample.system_timestamp)
+                                        })
+                                        .unwrap_or(0);
+                                    let features =
+                                        Self::extract_features(window, buf.estimated_sample_rate_hz);
+                                    (features, newest_sample_timestamp)
+                                };
 
-                                let features = Self::extract_features(
-                                    window,
-                                    buf.estimated_sample_rate_hz,
-                                );
+                                self.record_signal_latency(newest_sample_timestamp).await;
 
                                 // Broadcast features to hub visualization widgets
                                 if let Some(tx) = &self.feature_broadcast_tx {
@@ -370,6 +383,20 @@ impl SignalTask {
         }
 
         FeatureVector::new(features)
+    }
+
+    async fn record_signal_latency(&mut self, sample_timestamp: i64) {
+        if sample_timestamp <= 0 {
+            return;
+        }
+
+        let now_micros = neurohid_types::now_micros();
+        let latency_us = now_micros.saturating_sub(sample_timestamp) as u64;
+        self.signal_latency.record(latency_us);
+
+        let mut state = self.state.write().await;
+        state.signal_latency_last_us = self.signal_latency.last_us();
+        state.signal_latency_p95_us = self.signal_latency.p95_us();
     }
 
     fn maybe_emit_head_movement_marker(&mut self, sample: &Sample) {
