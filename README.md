@@ -70,7 +70,10 @@ NeuroHID uses a hybrid Rust/Python architecture:
 - Hot reload Python code without restarting the service
 - Clear boundary makes testing and debugging easier
 
-Current status: the IPC task defaults to a simulated bridge for MVP development. Set `service.ipc_simulation_enabled = false` in your config to require a real Python bridge (the service will report IPC unavailable until that bridge is implemented).
+Current status: the IPC task supports both simulation and the real Python bridge.
+`service.ipc_simulation_enabled = true` keeps MVP simulation enabled (default).
+Set `service.ipc_simulation_enabled = false` to require a connected
+`neurohid-ml bridge` process.
 
 ## Project Structure
 
@@ -134,7 +137,7 @@ Applications don't know NeuroHID exists. They receive standard HID events—mous
 
 - Rust 1.75+
 - Python 3.12+
-- PyTorch 2.0+
+- PyTorch 2.10+
 
 ### Building
 
@@ -170,6 +173,33 @@ cargo run --release -p neurohid --bin neurohid-service -- --service-command unin
 # Optional: expose a localhost JSON control endpoint
 cargo run --release -p neurohid --bin neurohid-service -- --control-port 47801
 ```
+
+On Linux/macOS, named-pipe transports are unavailable. Use TCP loopback for both control and
+ML bridge endpoints:
+
+```toml
+[service]
+control_transport = "tcp_loopback"
+control_port = 47385
+ml_transport = "tcp_loopback"
+ipc_port = 47384
+```
+
+Then run the Python bridge with:
+
+```bash
+uv run --directory python neurohid-ml bridge --transport tcp_loopback --port 47384
+```
+
+### Advanced mode Jupyter IDE (managed)
+
+The Hub now includes a Jupyter-first IDE workflow in Advanced mode.
+
+1. Launch `neurohid`.
+2. Switch to **Advanced** mode in Settings (if needed).
+3. Open **Jupyter IDE** from the sidebar.
+4. Click **Prepare Environment** once, then **Start Jupyter**.
+5. Click **Open in Browser** and use notebooks under `python/notebooks`.
 
 Control endpoint requests are line-delimited JSON with
 `neurohid_types::control::ControlRequest` shape, for example:

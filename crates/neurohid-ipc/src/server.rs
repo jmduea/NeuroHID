@@ -226,3 +226,92 @@ fn encode_message<T: serde::Serialize>(msg: &T) -> Result<Vec<u8>> {
 fn decode_message<T: serde::de::DeserializeOwned>(buf: &[u8]) -> Result<T> {
     serde_json::from_slice(buf).map_err(|e| IpcError::InvalidMessage(e.to_string()).into())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::net::TcpListener;
+
+    use crate::client::IpcClient;
+    use crate::protocol::{PingV2, RuntimeMlKindV2};
+
+    use super::{IpcConfig, IpcServer, IpcTransport, RuntimeMlEnvelopeV2};
+
+    fn allocate_test_port() -> u16 {
+        TcpListener::bind("127.0.0.1:0")
+            .expect("ephemeral bind should succeed")
+            .local_addr()
+            .expect("socket address should resolve")
+            .port()
+    }
+
+    #[tokio::test]
+    async fn explicit_tcp_transport_roundtrips_messages() {
+        let address = format!("127.0.0.1:{}", allocate_test_port());
+        let config = IpcConfig {
+            transport: IpcTransport::TcpLoopback,
+            address: address.clone(),
+            ..IpcConfig::default()
+        };
+        let server = IpcServer::new(config.clone())
+            .await
+            .expect("TCP IPC server should start");
+
+        let server_task = tokio::spawn(async move {
+            let connection = server.accept().await.expect("server accept should succeed");
+            let message = connection.recv().await.expect("server recv should succeed");
+            connection
+                .send(message)
+                .await
+                .expect("server send should succeed");
+        });
+
+        let mut client = IpcClient::new(config);
+        client.connect().await.expect("client connect should succeed");
+
+        let ping = PingV2 {
+            ping_id: "test-ping".to_string(),
+            timestamp_us: 123,
+        };
+        let envelope = RuntimeMlEnvelopeV2::new(
+            RuntimeMlKindV2::Ping,
+            1,
+            "test-session",
+            &ping,
+        )
+        .expect("envelope should encode");
+
+        client
+            .send(envelope.clone())
+            .await
+            .expect("client send should succeed");
+        let echoed = client.recv().await.expect("client recv should succeed");
+
+        assert_eq!(echoed.kind, RuntimeMlKindV2::Ping);
+        assert_eq!(echoed.seq, envelope.seq);
+        assert_eq!(echoed.session_id, envelope.session_id);
+
+        server_task
+            .await
+            .expect("server task should complete successfully");
+    }
+
+    #[cfg(not(windows))]
+    #[tokio::test]
+    async fn named_pipe_transport_is_rejected_on_non_windows() {
+        let result = IpcServer::new(IpcConfig {
+            transport: IpcTransport::NamedPipe,
+            ..IpcConfig::default()
+        })
+        .await;
+
+        match result {
+            Ok(_) => panic!("named pipes should be unsupported on non-Windows"),
+            Err(error) => assert!(
+                error
+                    .to_string()
+                    .contains("named pipes are only available on Windows"),
+                "unexpected error: {error}"
+            ),
+        }
+    }
+}

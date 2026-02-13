@@ -1076,6 +1076,28 @@ mod tests {
             .expect("mock control server thread should join");
     }
 
+    #[test]
+    fn snapshot_reports_simulated_bridge_with_explicit_tcp_override() {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+
+        let mut manager = ServiceManager::new();
+        let mut config = SystemConfig::default();
+        config.device.backend = DeviceBackend::Mock;
+        config.service.ipc_simulation_enabled = true;
+        config.service.ml_transport = MlTransport::TcpLoopback;
+        config.service.ipc_port = allocate_test_port();
+
+        manager.start(&runtime, config, None, None);
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
+            snap.running && snap.ipc_connected && snap.ipc_simulated
+        });
+        manager.stop();
+        wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| !snap.running);
+    }
+
     #[cfg(windows)]
     #[test]
     fn snapshot_tracks_named_pipe_reconnect_and_stall_recovery() {

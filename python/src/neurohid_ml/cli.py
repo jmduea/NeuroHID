@@ -2,15 +2,16 @@
 
 from __future__ import annotations
 
-import asyncio
 import argparse
+import asyncio
+import json
 import os
 import shutil
-from pathlib import Path
 import subprocess
 import sys
 import tempfile
 import time
+from pathlib import Path
 from typing import Sequence
 
 
@@ -22,6 +23,15 @@ def _add_training_hyperparameter_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--decode-latency-p95-us", type=int, default=40_000)
     parser.add_argument("--min-samples", type=int, default=64)
+
+
+def _parse_bool_literal(value: str) -> bool:
+    lowered = value.strip().lower()
+    if lowered in {"1", "true", "yes", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "off"}:
+        return False
+    raise argparse.ArgumentTypeError("expected one of: true/false, yes/no, on/off, 1/0")
 
 
 def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
@@ -44,6 +54,75 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     bridge.add_argument("--host", default="127.0.0.1")
     bridge.add_argument("--port", type=int, default=47384)
     bridge.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v2")
+
+    control = subparsers.add_parser(
+        "control",
+        help="send one control command to neurohid-service",
+    )
+    control.add_argument(
+        "action",
+        choices=[
+            "snapshot",
+            "trainer_snapshot",
+            "set_output_enabled",
+            "set_learning_enabled",
+            "set_fallback_policy",
+            "ml_bridge_reconnect",
+            "reload_model",
+            "promote_candidate_model",
+            "rescan_streams",
+            "connect_stream",
+            "disconnect_stream",
+            "ensure_connected_stream",
+        ],
+    )
+    control.add_argument("--enabled", type=_parse_bool_literal)
+    control.add_argument(
+        "--policy-json",
+        type=str,
+        help="JSON object for set_fallback_policy command",
+    )
+    control.add_argument("--stream-id", type=str)
+    control.add_argument(
+        "--transport",
+        choices=["tcp", "pipe"],
+        default="tcp",
+        help="control transport mode",
+    )
+    control.add_argument("--host", default="127.0.0.1")
+    control.add_argument("--port", type=int, default=47385)
+    control.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.control.v2")
+    control.add_argument(
+        "--service-bin",
+        default="neurohid-service",
+        help="service binary used by auto-start behavior",
+    )
+    control.add_argument(
+        "--auto-start-service",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="attempt auto-start when control endpoint is unavailable",
+    )
+
+    telemetry_read = subparsers.add_parser(
+        "telemetry-read",
+        help="read framed runtime-ml telemetry envelopes",
+    )
+    telemetry_read.add_argument(
+        "--transport",
+        choices=["named_pipe", "tcp_loopback"],
+        default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
+        help="telemetry transport mode",
+    )
+    telemetry_read.add_argument("--host", default="127.0.0.1")
+    telemetry_read.add_argument("--port", type=int, default=47384)
+    telemetry_read.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v2")
+    telemetry_read.add_argument(
+        "--max-messages",
+        type=int,
+        default=1,
+        help="number of envelopes to print before exiting",
+    )
 
     trainer = subparsers.add_parser(
         "train-candidate",
@@ -180,7 +259,9 @@ def _print_training_outputs(output_dir: Path, args: argparse.Namespace) -> None:
     if args.session_dir:
         session_logs.extend(sorted(args.session_dir.glob("session_*.json")))
     if not session_logs:
-        raise SystemExit("No session logs supplied. Use --session-log and/or --session-dir.")
+        raise SystemExit(
+            "No session logs supplied. Use --session-log and/or --session-dir."
+        )
 
     outputs = train_candidate_model(
         session_logs=session_logs,
@@ -359,6 +440,105 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
         time.sleep(args.poll_interval_secs)
 
 
+def _run_control(args: argparse.Namespace) -> None:
+    from neurohid_ml.control import NeuroHidControlClient
+
+    client = NeuroHidControlClient(
+        control_host=args.host,
+        control_port=args.port,
+        control_transport=args.transport,
+        control_pipe_name=args.pipe_name,
+        service_bin=args.service_bin,
+        auto_start_service=args.auto_start_service,
+    )
+
+    if args.action == "snapshot":
+        print(json.dumps(client.snapshot(), indent=2, sort_keys=True))
+        return
+    if args.action == "trainer_snapshot":
+        print(json.dumps(client.trainer_snapshot(), indent=2, sort_keys=True))
+        return
+    if args.action == "set_output_enabled":
+        if args.enabled is None:
+            raise SystemExit("--enabled is required for set_output_enabled")
+        print(
+            json.dumps(
+                client.set_output_enabled(args.enabled), indent=2, sort_keys=True
+            )
+        )
+        return
+    if args.action == "set_learning_enabled":
+        if args.enabled is None:
+            raise SystemExit("--enabled is required for set_learning_enabled")
+        print(
+            json.dumps(
+                client.set_learning_enabled(args.enabled), indent=2, sort_keys=True
+            )
+        )
+        return
+    if args.action == "set_fallback_policy":
+        if not args.policy_json:
+            raise SystemExit("--policy-json is required for set_fallback_policy")
+        try:
+            policy = json.loads(args.policy_json)
+        except json.JSONDecodeError as error:
+            raise SystemExit(f"invalid --policy-json: {error}") from error
+        if not isinstance(policy, dict):
+            raise SystemExit("--policy-json must decode to a JSON object")
+        print(
+            json.dumps(
+                client.set_fallback_policy(policy), indent=2, sort_keys=True
+            )
+        )
+        return
+    if args.action == "ml_bridge_reconnect":
+        print(json.dumps(client.reconnect_bridge(), indent=2, sort_keys=True))
+        return
+    if args.action == "reload_model":
+        print(json.dumps(client.reload_model(), indent=2, sort_keys=True))
+        return
+    if args.action == "promote_candidate_model":
+        print(json.dumps(client.promote_candidate_model(), indent=2, sort_keys=True))
+        return
+    if args.action == "rescan_streams":
+        print(json.dumps(client.rescan_streams(), indent=2, sort_keys=True))
+        return
+    if args.action == "connect_stream":
+        if not args.stream_id:
+            raise SystemExit("--stream-id is required for connect_stream")
+        print(
+            json.dumps(client.connect_stream(args.stream_id), indent=2, sort_keys=True)
+        )
+        return
+    if args.action == "disconnect_stream":
+        if not args.stream_id:
+            raise SystemExit("--stream-id is required for disconnect_stream")
+        print(
+            json.dumps(
+                client.disconnect_stream(args.stream_id), indent=2, sort_keys=True
+            )
+        )
+        return
+    if args.action == "ensure_connected_stream":
+        print(json.dumps({"stream_id": client.ensure_connected_stream()}, indent=2))
+        return
+
+    raise SystemExit(f"Unknown control action: {args.action}")
+
+
+def _run_telemetry_read(args: argparse.Namespace) -> None:
+    from neurohid_ml.telemetry import NeuroHidTelemetryClient
+
+    client = NeuroHidTelemetryClient(
+        transport=args.transport,
+        host=args.host,
+        port=args.port,
+        pipe_name=args.pipe_name,
+    )
+    for message in client.iter_messages(max_messages=max(args.max_messages, 0)):
+        print(json.dumps(message, indent=2, sort_keys=True))
+
+
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
 
@@ -393,6 +573,14 @@ def main(argv: Sequence[str] | None = None) -> None:
         if not args.stdio:
             print("lab-kernel defaults to stdio protocol; running stdio adapter.")
         run_stdio()
+        return
+
+    if args.command == "control":
+        _run_control(args)
+        return
+
+    if args.command == "telemetry-read":
+        _run_telemetry_read(args)
         return
 
     raise SystemExit(f"Unknown command: {args.command}")

@@ -58,12 +58,14 @@ RUST_LOG=neurohid=debug cargo run -p neurohid --bin neurohid
 
 ### IPC Mode
 
-The core currently defaults to a simulated IPC bridge for MVP development.
+The core supports both simulated IPC and the real Python bridge.
 
 - Default behavior: `service.ipc_simulation_enabled = true`
 - To require a real Python bridge: set `service.ipc_simulation_enabled = false`
+- Start the Python bridge with: `uv run --directory python neurohid-ml bridge`
 
-When disabled before the real bridge is wired, the service reports IPC as unavailable.
+On Linux/macOS, set control and ML transports to `tcp_loopback` because named pipes are
+Windows-only.
 
 ## Testing
 

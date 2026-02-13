@@ -59,6 +59,22 @@ Service config defaults:
 - `ml_stall_timeout_ms = 1500`
 - `ml_heartbeat_interval_ms = 500`
 
+Platform note:
+- Named pipes are Windows-only.
+- On Linux/macOS, override both transports to `tcp_loopback` before startup.
+- If control transport remains `named_pipe` on non-Windows and `--control-port` is not
+  provided, the runtime runs without an external control endpoint.
+
+Recommended non-Windows service config:
+
+```toml
+[service]
+control_transport = "tcp_loopback"
+control_port = 47385
+ml_transport = "tcp_loopback"
+ipc_port = 47384
+```
+
 ## Runtime Fallback Behavior
 Runtime mode state machine:
 - `full`: ONNX path available and trainer bridge healthy
