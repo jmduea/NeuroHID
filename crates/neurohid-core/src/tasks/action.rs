@@ -26,6 +26,7 @@ use neurohid_types::{
 };
 
 use crate::service::ServiceState;
+use crate::tasks::latency::RollingLatency;
 
 /// The action task emits HID events based on decoded intentions.
 pub struct ActionTask {
@@ -35,6 +36,8 @@ pub struct ActionTask {
 
     /// Optional calibration mode flag — when set, HID emission is paused.
     calibration_mode: Option<Arc<AtomicBool>>,
+    /// Optional runtime output toggle.
+    output_enabled: Option<Arc<AtomicBool>>,
 
     /// Broadcast channel for forwarding actions to hub visualization widgets.
     action_broadcast_tx: Option<broadcast::Sender<Action>>,
@@ -46,6 +49,7 @@ pub struct ActionTask {
     _last_mouse_pos: (f32, f32),
     last_action_time: std::time::Instant,
     smoothed_velocity: (f32, f32),
+    action_latency: RollingLatency,
 }
 
 impl ActionTask {
@@ -55,6 +59,7 @@ impl ActionTask {
         action_rx: mpsc::Receiver<Action>,
         state: Arc<RwLock<ServiceState>>,
         calibration_mode: Option<Arc<AtomicBool>>,
+        output_enabled: Option<Arc<AtomicBool>>,
         action_broadcast_tx: Option<broadcast::Sender<Action>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
     ) -> Self {
@@ -63,11 +68,13 @@ impl ActionTask {
             action_rx,
             state,
             calibration_mode,
+            output_enabled,
             action_broadcast_tx,
             marker_broadcast_tx,
             _last_mouse_pos: (0.0, 0.0),
             last_action_time: std::time::Instant::now(),
             smoothed_velocity: (0.0, 0.0),
+            action_latency: RollingLatency::new(512),
         }
     }
 
@@ -150,6 +157,23 @@ impl ActionTask {
                                 continue;
                             }
 
+                            // Runtime output toggle (pause/resume)
+                            if let Some(flag) = &self.output_enabled {
+                                if !flag.load(Ordering::Relaxed) {
+                                    continue;
+                                }
+                            }
+
+                            // Do not emit HID events until profile calibration and runtime
+                            // decoder readiness are both satisfied.
+                            let can_emit = {
+                                let state_guard = self.state.read().await;
+                                state_guard.profile_ready && state_guard.decoder_ready
+                            };
+                            if !can_emit {
+                                continue;
+                            }
+
                             // Check if calibration mode is active — skip HID emission
                             if let Some(flag) = &self.calibration_mode {
                                 if flag.load(Ordering::Relaxed) {
@@ -178,9 +202,17 @@ impl ActionTask {
                                 actions_emitted += 1;
                                 self.last_action_time = now;
 
+                                if action.timestamp > 0 {
+                                    let now_micros = neurohid_types::now_micros();
+                                    let latency_us = now_micros.saturating_sub(action.timestamp) as u64;
+                                    self.action_latency.record(latency_us);
+                                }
+
                                 // Update shared state
                                 let mut state = self.state.write().await;
                                 state.actions_emitted = actions_emitted;
+                                state.action_latency_last_us = self.action_latency.last_us();
+                                state.action_latency_p95_us = self.action_latency.p95_us();
                             }
                         }
                         None => {

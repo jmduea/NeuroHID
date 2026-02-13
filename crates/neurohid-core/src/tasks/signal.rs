@@ -12,6 +12,9 @@
 //! buffer and independent feature extraction. Features from all streams are
 //! merged into a single output channel.
 
+use neurohid_signal::{
+    FeatureConfig as DspFeatureConfig, FeatureExtractor as DspFeatureExtractor, SignalWindow,
+};
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
 use tokio::sync::{broadcast, mpsc, RwLock};
@@ -206,7 +209,10 @@ impl SignalTask {
                                 let window_start = samples.len() - samples_per_window;
                                 let window = &samples[window_start..];
 
-                                let features = Self::extract_features(window);
+                                let features = Self::extract_features(
+                                    window,
+                                    buf.estimated_sample_rate_hz,
+                                );
 
                                 // Broadcast features to hub visualization widgets
                                 if let Some(tx) = &self.feature_broadcast_tx {
@@ -278,35 +284,77 @@ impl SignalTask {
     /// - Band power (how much energy in different frequency ranges)
     /// - Statistical measures (mean, variance)
     /// - Temporal features (changes over time)
-    fn extract_features(window: &[Sample]) -> FeatureVector {
-        // For the MVP, we'll use simple features. A production implementation
-        // would use the neurohid-signal crate for proper DSP.
+    fn extract_features(window: &[Sample], sample_rate_hz: f32) -> FeatureVector {
+        let Some(first) = window.first() else {
+            return FeatureVector::new(Vec::new());
+        };
 
+        let channel_count = first.channel_count();
+        if channel_count == 0 {
+            return FeatureVector::new(Vec::new());
+        }
+
+        let mut channel_data = vec![Vec::with_capacity(window.len()); channel_count];
+        let mut timestamps = Vec::with_capacity(window.len());
+
+        for sample in window {
+            timestamps.push(sample.device_timestamp.unwrap_or(sample.system_timestamp));
+            for (idx, value) in sample.values.iter().enumerate().take(channel_count) {
+                channel_data[idx].push(*value);
+            }
+            if sample.values.len() < channel_count {
+                for channel in channel_data
+                    .iter_mut()
+                    .take(channel_count)
+                    .skip(sample.values.len())
+                {
+                    channel.push(0.0);
+                }
+            }
+        }
+
+        let signal_window = SignalWindow {
+            channel_data,
+            timestamps,
+            channel_count,
+            sample_count: window.len(),
+        };
+
+        let mut extractor = DspFeatureExtractor::new(DspFeatureConfig {
+            sample_rate_hz: if sample_rate_hz.is_finite() {
+                sample_rate_hz.clamp(8.0, 2048.0)
+            } else {
+                128.0
+            },
+            channel_count,
+            ..DspFeatureConfig::default()
+        });
+
+        match extractor.extract(&signal_window) {
+            Ok(features) => features,
+            Err(err) => {
+                tracing::warn!("DSP feature extraction failed, using fallback: {}", err);
+                Self::extract_features_fallback(window)
+            }
+        }
+    }
+
+    fn extract_features_fallback(window: &[Sample]) -> FeatureVector {
         let num_channels = window.first().map(|s| s.channel_count()).unwrap_or(5);
         let mut features = Vec::with_capacity(num_channels * 4);
 
         for ch in 0..num_channels {
-            // Get values for this channel
             let values: Vec<f32> = window.iter().filter_map(|s| s.get(ch)).collect();
-
             if values.is_empty() {
-                // No data for this channel, use zeros
                 features.extend_from_slice(&[0.0, 0.0, 0.0, 0.0]);
                 continue;
             }
 
-            // Compute simple statistics
             let mean = values.iter().sum::<f32>() / values.len() as f32;
-
             let variance =
                 values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-
             let std_dev = variance.sqrt();
-
-            // Compute a simple "power" estimate (sum of squared values)
             let power = values.iter().map(|v| v.powi(2)).sum::<f32>() / values.len() as f32;
-
-            // Compute the range
             let min = values.iter().cloned().fold(f32::INFINITY, f32::min);
             let max = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
             let range = max - min;
@@ -317,12 +365,8 @@ impl SignalTask {
             features.push(range);
         }
 
-        // Normalize features to reasonable ranges
-        for f in &mut features {
-            // Clip extreme values
-            *f = f.clamp(-500.0, 500.0);
-            // Scale to roughly [-1, 1] range
-            *f /= 100.0;
+        for value in &mut features {
+            *value = value.clamp(-500.0, 500.0) / 100.0;
         }
 
         FeatureVector::new(features)

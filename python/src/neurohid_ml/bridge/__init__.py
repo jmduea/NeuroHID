@@ -10,11 +10,17 @@ inference loop. Messages are queued for sending and received messages
 are dispatched to the appropriate handlers.
 """
 
+import argparse
 import asyncio
 import json
 import struct
 from dataclasses import dataclass
 from typing import Optional, Callable, Any
+
+import numpy as np
+
+from neurohid_ml.decoder import Decoder, DecoderConfig
+from neurohid_ml.errp import ErrPConfig, ErrPDetector
 
 # Default IPC port — must match neurohid-ipc DEFAULT_IPC_PORT
 DEFAULT_IPC_PORT = 47384
@@ -272,33 +278,145 @@ class IpcClient:
                 })
 
 
-async def main():
-    """Simple test of the IPC client."""
-    config = IpcConfig()
-    client = IpcClient(config)
+async def run_bridge_session(client: IpcClient):
+    """Run one connected bridge session until disconnect/shutdown."""
+    decoder: Optional[Decoder] = None
+    errp = ErrPDetector(ErrPConfig())
 
-    print(f"Connecting to {config.host}:{config.port}...")
+    while client.connected:
+        message = await client.receive_message()
+        if message is None:
+            await asyncio.sleep(0.001)
+            continue
 
-    if await client.connect():
-        print("Connected!")
+        msg_type = message.get("type")
 
-        # Simple echo test
-        for i in range(5):
-            await client.send_action(
-                mouse_dx=1.0,
-                mouse_dy=0.5,
-                discrete_action=0,
-                confidence=0.8,
-                inference_latency_us=5000
+        if msg_type == "FeatureBatch":
+            features = message.get("features", [])
+            if not features:
+                continue
+
+            sequence = int(message.get("sequence", 0))
+
+            for feature in features:
+                values = feature.get("values", [])
+                if not values:
+                    continue
+
+                vector = np.asarray(values, dtype=np.float32)
+                if decoder is None or decoder.config.input_dim != vector.shape[0]:
+                    decoder = Decoder(DecoderConfig(input_dim=vector.shape[0]))
+
+                action = decoder.get_action(vector)
+                continuous = action.get("continuous", [0.0, 0.0])
+                discrete = int(action.get("discrete", 0))
+                confidence = float(action.get("confidence", 0.0))
+
+                await client.send_action(
+                    mouse_dx=float(continuous[0]),
+                    mouse_dy=float(continuous[1]),
+                    discrete_action=discrete,
+                    confidence=confidence,
+                    inference_latency_us=5000,
+                )
+
+            if errp.is_calibrated:
+                # Emit neutral ErrP by default until Rust sends explicit windows.
+                await client.send_errp_result(
+                    error_probability=0.0,
+                    confidence=0.0,
+                    sequence=sequence,
+                )
+
+        elif msg_type == "ErrPWindow":
+            windows = message.get("window_features", [])
+            sequence = int(message.get("sequence", 0))
+
+            if not windows:
+                await client.send_errp_result(
+                    error_probability=0.0,
+                    confidence=0.0,
+                    sequence=sequence,
+                )
+                continue
+
+            matrix = np.asarray(
+                [w.get("values", []) for w in windows],
+                dtype=np.float32,
             )
-            print(f"Sent action {i+1}")
-            await asyncio.sleep(0.1)
+            if matrix.ndim != 2 or matrix.shape[0] == 0 or matrix.shape[1] == 0:
+                await client.send_errp_result(
+                    error_probability=0.0,
+                    confidence=0.0,
+                    sequence=sequence,
+                )
+                continue
 
-        await client.disconnect()
-        print("Disconnected")
-    else:
-        print("Failed to connect")
+            if errp.is_calibrated:
+                detected = errp.detect(matrix)
+                await client.send_errp_result(
+                    error_probability=float(detected.error_probability),
+                    confidence=float(detected.confidence),
+                    sequence=sequence,
+                )
+            else:
+                await client.send_errp_result(
+                    error_probability=0.0,
+                    confidence=0.0,
+                    sequence=sequence,
+                )
+
+        elif msg_type == "Shutdown":
+            break
+
+        elif msg_type == "Ping":
+            await client._send_message(
+                {
+                    "type": "Pong",
+                    "timestamp": message.get("timestamp", 0),
+                    "python_timestamp": int(
+                        asyncio.get_event_loop().time() * 1_000_000
+                    ),
+                }
+            )
+
+
+async def main_async(host: str, port: int):
+    config = IpcConfig(host=host, port=port)
+    attempts = 0
+
+    while True:
+        client = IpcClient(config)
+        print(f"Connecting to {config.host}:{config.port}...")
+        connected = await client.connect()
+        if connected:
+            attempts = 0
+            print("Connected to Rust core")
+            await run_bridge_session(client)
+            await client.disconnect()
+            print("Disconnected from Rust core")
+        else:
+            attempts += 1
+
+        if not config.auto_reconnect:
+            return
+        if (
+            config.max_reconnect_attempts > 0
+            and attempts >= config.max_reconnect_attempts
+        ):
+            print("Max reconnect attempts reached, exiting")
+            return
+
+        await asyncio.sleep(config.reconnect_delay_sec)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="NeuroHID Python bridge")
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=DEFAULT_IPC_PORT)
+    args = parser.parse_args()
+    asyncio.run(main_async(args.host, args.port))
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()

@@ -39,7 +39,7 @@ const REAL_MESSAGE_POLL_MS: u64 = 25;
 pub struct IpcTask {
     config: ServiceConfig,
     feature_rx: mpsc::Receiver<FeatureVector>,
-    action_tx: mpsc::Sender<Action>,
+    action_tx: Option<mpsc::Sender<Action>>,
     errp_tx: mpsc::Sender<ErrPResult>,
     state: Arc<RwLock<ServiceState>>,
     marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
@@ -53,7 +53,7 @@ impl IpcTask {
     pub fn new(
         config: ServiceConfig,
         feature_rx: mpsc::Receiver<FeatureVector>,
-        action_tx: mpsc::Sender<Action>,
+        action_tx: Option<mpsc::Sender<Action>>,
         errp_tx: mpsc::Sender<ErrPResult>,
         state: Arc<RwLock<ServiceState>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
@@ -189,8 +189,10 @@ impl IpcTask {
                     "Received decoded action from Python"
                 );
 
-                if self.action_tx.send(action).await.is_err() {
-                    tracing::warn!("Action receiver dropped");
+                if let Some(tx) = &self.action_tx {
+                    if tx.send(action).await.is_err() {
+                        tracing::warn!("Action receiver dropped");
+                    }
                 }
             }
             PythonToRust::ErrPResult { result, sequence } => {
@@ -255,11 +257,12 @@ impl IpcTask {
 
                             if feature_batch.len() >= FEATURE_BATCH_SIZE {
                                 self.send_features_simulated(&feature_batch).await?;
-                                let mock_action = self.generate_mock_action();
-
-                                if self.action_tx.send(mock_action).await.is_err() {
-                                    tracing::warn!("Action receiver dropped");
-                                    break;
+                                if let Some(tx) = &self.action_tx {
+                                    let mock_action = self.generate_mock_action();
+                                    if tx.send(mock_action).await.is_err() {
+                                        tracing::warn!("Action receiver dropped");
+                                        break;
+                                    }
                                 }
 
                                 feature_batch.clear();
@@ -373,7 +376,7 @@ mod tests {
         let task = IpcTask::new(
             config,
             feature_rx,
-            action_tx,
+            Some(action_tx),
             errp_tx,
             Arc::clone(&state),
             None,
@@ -428,7 +431,7 @@ mod tests {
         let task = IpcTask::new(
             config.clone(),
             feature_rx,
-            action_tx,
+            Some(action_tx),
             errp_tx,
             Arc::clone(&state),
             None,
@@ -523,7 +526,7 @@ mod tests {
         let task = IpcTask::new(
             config.clone(),
             feature_rx,
-            action_tx,
+            Some(action_tx),
             errp_tx,
             Arc::clone(&state),
             None,

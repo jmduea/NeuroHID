@@ -10,13 +10,18 @@
 //! it easy to test them independently.
 
 mod action;
+mod decoder;
 mod device;
 mod ipc;
+mod latency;
+mod latency_alert;
 mod outlet;
 mod signal;
 
 pub use action::ActionTask;
+pub use decoder::DecoderTask;
 pub use device::DeviceTask;
 pub use ipc::IpcTask;
+pub use latency_alert::LatencyAlertMonitorTask;
 pub use outlet::OutletTask;
 pub use signal::SignalTask;

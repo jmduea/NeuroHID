@@ -12,7 +12,7 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     action::Action,
-    config::{SignalConfig, SystemConfig},
+    config::{DecoderConfig, LatencyAlertConfig, SignalConfig, SystemConfig},
     device::DiscoveredStream,
     error::Result,
     event::StreamMarker,
@@ -38,7 +38,18 @@ pub enum SignalCommand {
     UpdateConfig(SignalConfig),
 }
 
-use crate::tasks::{ActionTask, DeviceTask, IpcTask, OutletTask, SignalTask};
+/// Commands sent from the hub/runtime to the DecoderTask.
+#[derive(Debug, Clone)]
+pub enum DecoderCommand {
+    /// Reload model artifacts for the currently active profile.
+    ReloadModel,
+    /// Switch active profile context and load its decoder model.
+    SetActiveProfile { profile_id: Option<ProfileId> },
+}
+
+use crate::tasks::{
+    ActionTask, DecoderTask, DeviceTask, IpcTask, LatencyAlertMonitorTask, OutletTask, SignalTask,
+};
 
 /// The main service that coordinates all NeuroHID operations.
 ///
@@ -103,6 +114,15 @@ pub struct ServiceState {
     /// Name of the active profile
     pub active_profile_name: Option<String>,
 
+    /// Whether the active profile is calibrated and ready for HID emission.
+    pub profile_ready: bool,
+
+    /// Whether a compatible Rust runtime decoder model is loaded.
+    pub decoder_ready: bool,
+
+    /// Loaded decoder model version (if available).
+    pub decoder_model_version: Option<String>,
+
     /// Whether the IPC bridge to Python is connected
     pub ipc_connected: bool,
 
@@ -111,6 +131,27 @@ pub struct ServiceState {
 
     /// Whether the service is in calibration mode (pauses HID emission)
     pub calibration_mode: bool,
+
+    /// Whether HID output is currently enabled.
+    pub output_enabled: bool,
+
+    /// Most recent decoder latency (feature extraction to decode output), in microseconds.
+    pub decode_latency_last_us: u64,
+
+    /// Rolling decoder latency p95, in microseconds.
+    pub decode_latency_p95_us: u64,
+
+    /// Most recent end-to-end action latency (feature timestamp to HID emission), in microseconds.
+    pub action_latency_last_us: u64,
+
+    /// Rolling end-to-end action latency p95, in microseconds.
+    pub action_latency_p95_us: u64,
+
+    /// Whether runtime latency is currently in degraded state.
+    pub latency_degraded: bool,
+
+    /// Human-readable latency degradation summary.
+    pub latency_alert_message: Option<String>,
 
     /// If a task failed at runtime, (task_name, error_message).
     /// Populated by `run_inner()` so the GUI can display what went wrong.
@@ -134,11 +175,45 @@ impl Default for ServiceState {
             device_battery: None,
             started_at: None,
             active_profile_name: None,
+            profile_ready: false,
+            decoder_ready: false,
+            decoder_model_version: None,
             ipc_connected: false,
             ipc_simulated: false,
             calibration_mode: false,
+            output_enabled: true,
+            decode_latency_last_us: 0,
+            decode_latency_p95_us: 0,
+            action_latency_last_us: 0,
+            action_latency_p95_us: 0,
+            latency_degraded: false,
+            latency_alert_message: None,
             task_error: None,
             discovered_streams: Vec::new(),
+        }
+    }
+}
+
+async fn resolve_profile_status(
+    profile_store: Option<&ProfileStore>,
+    profile_id: Option<&ProfileId>,
+) -> (Option<String>, bool) {
+    let Some(profile_id) = profile_id else {
+        return (None, false);
+    };
+    let Some(store) = profile_store else {
+        return (Some(profile_id.to_string()), false);
+    };
+
+    match store.get_metadata(profile_id).await {
+        Ok(metadata) => (Some(metadata.name), metadata.calibration_state.is_ready()),
+        Err(err) => {
+            tracing::warn!(
+                "Failed to resolve profile metadata for {}: {}",
+                profile_id,
+                err
+            );
+            (Some(profile_id.to_string()), false)
         }
     }
 }
@@ -164,6 +239,9 @@ pub struct ServiceHandle {
     /// Atomic flag to toggle calibration mode from the GUI thread.
     pub calibration_mode: Arc<AtomicBool>,
 
+    /// Atomic flag to pause/resume HID output without restarting the service.
+    pub output_enabled: Arc<AtomicBool>,
+
     /// Send commands to the DeviceTask (connect/disconnect/rescan).
     pub device_command_tx: mpsc::Sender<DeviceCommand>,
 
@@ -182,6 +260,9 @@ pub struct ServiceHandle {
 
     /// Send commands to the SignalTask (e.g. runtime filter updates).
     pub signal_command_tx: mpsc::Sender<SignalCommand>,
+
+    /// Send commands to the DecoderTask (reload model, switch profile).
+    pub decoder_command_tx: mpsc::Sender<DecoderCommand>,
 }
 
 impl NeuroHidService {
@@ -197,6 +278,15 @@ impl NeuroHidService {
         shutdown_rx: broadcast::Receiver<()>,
     ) -> Result<Self> {
         let shared_state = Arc::new(RwLock::new(ServiceState::default()));
+
+        let (active_profile_name, profile_ready) =
+            resolve_profile_status(profile_store.as_ref(), profile_id.as_ref()).await;
+        {
+            let mut state = shared_state.write().await;
+            state.active_profile_name = active_profile_name;
+            state.profile_ready = profile_ready;
+            state.output_enabled = config.action.enabled;
+        }
 
         Ok(Self {
             config,
@@ -216,6 +306,8 @@ impl NeuroHidService {
         let state = Arc::clone(&self.shared_state);
         let calibration_flag = Arc::new(AtomicBool::new(false));
         let calibration_flag_clone = Arc::clone(&calibration_flag);
+        let output_flag = Arc::new(AtomicBool::new(self.config.action.enabled));
+        let output_flag_clone = Arc::clone(&output_flag);
 
         // Channel for forwarding live samples to the calibration panel.
         // Bounded to 256 to avoid unbounded growth if the panel falls behind.
@@ -225,6 +317,8 @@ impl NeuroHidService {
         let (device_cmd_tx, device_cmd_rx) = mpsc::channel::<DeviceCommand>(16);
         // Channel for runtime signal reconfiguration from the GUI.
         let (signal_cmd_tx, signal_cmd_rx) = mpsc::channel::<SignalCommand>(16);
+        // Channel for runtime decoder control commands from GUI/runtime API.
+        let (decoder_cmd_tx, decoder_cmd_rx) = mpsc::channel::<DecoderCommand>(16);
 
         // Broadcast channels for live data visualization in the hub.
         // These fan-out to multiple widget subscribers.
@@ -236,9 +330,11 @@ impl NeuroHidService {
         let join_handle = tokio::spawn(async move {
             self.run_inner(
                 Some(calibration_flag_clone),
+                Some(output_flag_clone),
                 Some(cal_sample_tx),
                 Some(device_cmd_rx),
                 Some(signal_cmd_rx),
+                Some(decoder_cmd_rx),
                 Some(sample_broadcast_tx),
                 Some(feature_broadcast_tx),
                 Some(action_broadcast_tx),
@@ -253,12 +349,14 @@ impl NeuroHidService {
             join_handle,
             calibration_sample_rx: cal_sample_rx,
             calibration_mode: calibration_flag,
+            output_enabled: output_flag,
             device_command_tx: device_cmd_tx,
             sample_broadcast_rx,
             feature_broadcast_rx,
             action_broadcast_rx,
             marker_broadcast_rx,
             signal_command_tx: signal_cmd_tx,
+            decoder_command_tx: decoder_cmd_tx,
         }
     }
 
@@ -266,7 +364,7 @@ impl NeuroHidService {
     ///
     /// This is the entry point for the standalone headless binary.
     pub async fn run(self) -> Result<()> {
-        self.run_inner(None, None, None, None, None, None, None, None)
+        self.run_inner(None, None, None, None, None, None, None, None, None, None)
             .await
     }
 
@@ -274,9 +372,11 @@ impl NeuroHidService {
     async fn run_inner(
         mut self,
         calibration_flag: Option<Arc<AtomicBool>>,
+        output_enabled_flag: Option<Arc<AtomicBool>>,
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
         device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
         signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
+        decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
         sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
         feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
         action_broadcast_tx: Option<broadcast::Sender<Action>>,
@@ -290,10 +390,13 @@ impl NeuroHidService {
         // Samples flow from device task to signal task
         let (sample_tx, sample_rx) = mpsc::channel(256);
 
-        // Features flow from signal task to IPC (and on to Python)
+        // Features flow from signal task to decoder task.
         let (feature_tx, feature_rx) = mpsc::channel(64);
+        // Features are then forwarded to IPC from the decoder task, so Rust
+        // inference stays on the control loop while Python remains auxiliary.
+        let (feature_ipc_tx, feature_ipc_rx) = mpsc::channel(64);
 
-        // Actions flow from IPC (from Python) to action task
+        // Actions flow from decoder task to action task.
         let (action_tx, action_rx) = mpsc::channel(64);
 
         // ErrP results flow from IPC back to signal task (for online learning coordination)
@@ -302,15 +405,19 @@ impl NeuroHidService {
         // Clone shared state for each task
         let state_device = Arc::clone(&self.shared_state);
         let state_signal = Arc::clone(&self.shared_state);
+        let state_decoder = Arc::clone(&self.shared_state);
         let state_ipc = Arc::clone(&self.shared_state);
         let state_action = Arc::clone(&self.shared_state);
+        let state_latency = Arc::clone(&self.shared_state);
 
         // Clone shutdown receiver for each task (broadcast channels support multiple receivers)
         let shutdown_device = self.shutdown_rx.resubscribe();
         let shutdown_signal = self.shutdown_rx.resubscribe();
+        let shutdown_decoder = self.shutdown_rx.resubscribe();
         let shutdown_ipc = self.shutdown_rx.resubscribe();
         let shutdown_action = self.shutdown_rx.resubscribe();
         let shutdown_outlet = self.shutdown_rx.resubscribe();
+        let shutdown_latency_monitor = self.shutdown_rx.resubscribe();
 
         let marker_tx_for_signal = marker_broadcast_tx.clone();
         let marker_tx_for_ipc = marker_broadcast_tx.clone();
@@ -334,6 +441,18 @@ impl NeuroHidService {
                     outlet_marker_rx,
                 );
                 task.run(shutdown_outlet).await
+            }))
+        } else {
+            None
+        };
+
+        // Optional latency monitor task for sustained p95 threshold alerts.
+        let latency_alert_config: LatencyAlertConfig = self.config.service.latency_alert.clone();
+        let mut latency_monitor_handle = if latency_alert_config.enabled {
+            Some(tokio::spawn(async move {
+                tracing::info!("Latency monitor task starting");
+                let task = LatencyAlertMonitorTask::new(latency_alert_config, state_latency);
+                task.run(shutdown_latency_monitor).await
             }))
         } else {
             None
@@ -376,15 +495,35 @@ impl NeuroHidService {
             task.run(shutdown_signal).await
         });
 
-        // Spawn the IPC task. This manages communication with the Python ML
-        // process, sending features and receiving actions/ErrP results.
+        // Spawn the Rust decoder task. This performs ONNX inference in-process
+        // so the signal->action path does not depend on Python bridge latency.
+        let decoder_config: DecoderConfig = self.config.decoder.clone();
+        let profile_store_for_decoder = self.profile_store.clone();
+        let profile_id_for_decoder = self.profile_id.clone();
+        let mut decoder_handle = tokio::spawn(async move {
+            tracing::info!("Decoder task starting");
+            let task = DecoderTask::new(
+                decoder_config,
+                feature_rx,
+                action_tx,
+                state_decoder,
+                profile_store_for_decoder,
+                profile_id_for_decoder,
+                decoder_command_rx,
+                Some(feature_ipc_tx),
+            );
+            task.run(shutdown_decoder).await
+        });
+
+        // Spawn the IPC task. This remains available for Python-side ErrP and
+        // training workflows, but action emission is handled by DecoderTask.
         let ipc_config = self.config.service.clone();
         let mut ipc_handle = tokio::spawn(async move {
             tracing::info!("IPC task starting");
             let task = IpcTask::new(
                 ipc_config,
-                feature_rx,
-                action_tx,
+                feature_ipc_rx,
+                None,
                 errp_tx,
                 state_ipc,
                 marker_tx_for_ipc,
@@ -396,6 +535,7 @@ impl NeuroHidService {
         // as HID events (mouse movements, clicks, keystrokes).
         let action_config = self.config.action.clone();
         let cal_flag_for_action = calibration_flag.as_ref().map(Arc::clone);
+        let output_flag_for_action = output_enabled_flag.as_ref().map(Arc::clone);
         let mut action_handle = tokio::spawn(async move {
             tracing::info!("Action task starting");
             let task = ActionTask::new(
@@ -403,6 +543,7 @@ impl NeuroHidService {
                 action_rx,
                 state_action,
                 cal_flag_for_action,
+                output_flag_for_action,
                 action_broadcast_tx,
                 marker_tx_for_action,
             );
@@ -414,6 +555,22 @@ impl NeuroHidService {
             let mut state = self.shared_state.write().await;
             state.active = true;
             state.started_at = Some(std::time::Instant::now());
+            state.calibration_mode = calibration_flag
+                .as_ref()
+                .is_some_and(|flag| flag.load(std::sync::atomic::Ordering::Relaxed));
+            state.output_enabled = output_enabled_flag
+                .as_ref()
+                .map_or(self.config.action.enabled, |flag| {
+                    flag.load(std::sync::atomic::Ordering::Relaxed)
+                });
+            state.decoder_ready = false;
+            state.decoder_model_version = None;
+            state.decode_latency_last_us = 0;
+            state.decode_latency_p95_us = 0;
+            state.action_latency_last_us = 0;
+            state.action_latency_p95_us = 0;
+            state.latency_degraded = false;
+            state.latency_alert_message = None;
             state.task_error = None;
         }
 
@@ -422,8 +579,8 @@ impl NeuroHidService {
         // Wait for shutdown signal or CRITICAL task failure.
         //
         // Tasks are classified into two tiers:
-        //   - Critical (device, signal): these form the data pipeline. If either
-        //     fails the service cannot function and must shut down.
+        //   - Critical (device, signal, decoder): these form the real-time
+        //     acquisition->decode pipeline. If any fails, we must shut down.
         //   - Non-critical (ipc, action): failures here degrade functionality
         //     (e.g. no HID output) but the data pipeline keeps flowing so the
         //     console and visualizations continue to work.
@@ -433,6 +590,7 @@ impl NeuroHidService {
         let mut task_failure: Option<(String, String)> = None;
         let mut ipc_done = false;
         let mut action_done = false;
+        let mut latency_monitor_done = latency_monitor_handle.is_none();
 
         loop {
             tokio::select! {
@@ -471,6 +629,22 @@ impl NeuroHidService {
                         Err(e) => {
                             tracing::error!("Signal task panicked: {}", e);
                             task_failure = Some(("signal".into(), e.to_string()));
+                        }
+                    }
+                    break;
+                }
+
+                // Decoder task finished
+                result = &mut decoder_handle => {
+                    match result {
+                        Ok(Ok(())) => tracing::info!("Decoder task completed"),
+                        Ok(Err(e)) => {
+                            tracing::error!("Decoder task failed: {}", e);
+                            task_failure = Some(("decoder".into(), e.to_string()));
+                        }
+                        Err(e) => {
+                            tracing::error!("Decoder task panicked: {}", e);
+                            task_failure = Some(("decoder".into(), e.to_string()));
                         }
                     }
                     break;
@@ -528,15 +702,49 @@ impl NeuroHidService {
                     }
                     // Continue the loop — data pipeline is unaffected.
                 }
+
+                result = latency_monitor_handle.as_mut().expect("checked by guard"), if !latency_monitor_done => {
+                    latency_monitor_done = true;
+                    match result {
+                        Ok(Ok(())) => tracing::info!("Latency monitor task completed"),
+                        Ok(Err(e)) => {
+                            tracing::warn!("Latency monitor task failed (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some((
+                                    "latency_monitor".into(),
+                                    format!("{} — latency alerts disabled", e),
+                                ));
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Latency monitor task panicked (non-critical): {}", e);
+                            let mut state = self.shared_state.write().await;
+                            if state.task_error.is_none() {
+                                state.task_error = Some((
+                                    "latency_monitor".into(),
+                                    format!("panicked: {}", e),
+                                ));
+                            }
+                        }
+                    }
+                    // Continue the loop — monitor failure should not stop runtime.
+                }
             }
         }
 
-        // Abort any non-critical tasks that are still running.
+        // Abort tasks that are still running.
+        decoder_handle.abort();
         if !ipc_done {
             ipc_handle.abort();
         }
         if !action_done {
             action_handle.abort();
+        }
+        if !latency_monitor_done {
+            if let Some(handle) = &mut latency_monitor_handle {
+                handle.abort();
+            }
         }
         if let Some(handle) = &mut outlet_handle {
             handle.abort();
@@ -554,8 +762,17 @@ impl NeuroHidService {
             }
             state.device_connected = false;
             state.device_name = None;
+            state.decoder_ready = false;
+            state.decoder_model_version = None;
             state.ipc_connected = false;
             state.ipc_simulated = false;
+            state.calibration_mode = false;
+            state.decode_latency_last_us = 0;
+            state.decode_latency_p95_us = 0;
+            state.action_latency_last_us = 0;
+            state.action_latency_p95_us = 0;
+            state.latency_degraded = false;
+            state.latency_alert_message = None;
             for stream in &mut state.discovered_streams {
                 stream.connected = false;
             }
@@ -563,5 +780,60 @@ impl NeuroHidService {
 
         tracing::info!("Service shutdown complete");
         Ok(())
+    }
+}
+
+impl ServiceHandle {
+    /// Toggle calibration mode and synchronize shared snapshot state.
+    pub fn set_calibration_mode(&self, enabled: bool) {
+        self.calibration_mode
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut state) = self.state.try_write() {
+            state.calibration_mode = enabled;
+        } else if tokio::runtime::Handle::try_current().is_err() {
+            let mut state = self.state.blocking_write();
+            state.calibration_mode = enabled;
+        }
+    }
+
+    /// Toggle HID output without restarting the service.
+    pub fn set_output_enabled(&self, enabled: bool) {
+        self.output_enabled
+            .store(enabled, std::sync::atomic::Ordering::Relaxed);
+        if let Ok(mut state) = self.state.try_write() {
+            state.output_enabled = enabled;
+        } else if tokio::runtime::Handle::try_current().is_err() {
+            let mut state = self.state.blocking_write();
+            state.output_enabled = enabled;
+        }
+    }
+
+    /// Request decoder model reload for the current active profile.
+    pub fn reload_model(&self) {
+        let _ = self
+            .decoder_command_tx
+            .try_send(DecoderCommand::ReloadModel);
+    }
+
+    /// Update active profile state used for action gating and model selection.
+    pub fn set_profile_status(
+        &self,
+        profile_id: Option<ProfileId>,
+        name: Option<String>,
+        ready: bool,
+    ) {
+        let _ = self
+            .decoder_command_tx
+            .try_send(DecoderCommand::SetActiveProfile {
+                profile_id: profile_id.clone(),
+            });
+        if let Ok(mut state) = self.state.try_write() {
+            state.active_profile_name = name.clone();
+            state.profile_ready = ready;
+        } else if tokio::runtime::Handle::try_current().is_err() {
+            let mut state = self.state.blocking_write();
+            state.active_profile_name = name;
+            state.profile_ready = ready;
+        }
     }
 }

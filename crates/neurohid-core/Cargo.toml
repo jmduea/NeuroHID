@@ -44,6 +44,7 @@ async-trait = "0.1"
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 lsl = { version = "0.1", optional = true }
+tract-onnx = "0.22"
 
 [dev-dependencies]
 tokio-test = "0.4"

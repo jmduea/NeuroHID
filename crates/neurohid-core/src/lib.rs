@@ -10,5 +10,6 @@
 //! use neurohid_core::service::{NeuroHidService, ServiceHandle};
 //! ```
 
+pub mod runtime;
 pub mod service;
 pub mod tasks;

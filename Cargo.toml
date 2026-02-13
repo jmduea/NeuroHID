@@ -69,3 +69,6 @@ edition = "2021"
 rust-version = "1.75"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/jmduea/neurohid"
+
+[patch.crates-io]
+lsl-sys = { path = "third_party/lsl-sys-0.1.1"}

@@ -6,9 +6,9 @@
 //!
 //! For the unified GUI experience, use `neurohid` (the hub binary) instead.
 
+use clap::Parser;
 use tokio::sync::broadcast;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
-use clap::Parser;
 
 use neurohid_core::service::NeuroHidService;
 
@@ -41,16 +41,25 @@ async fn main() -> anyhow::Result<()> {
     let log_level = if args.verbose { "debug" } else { "info" };
     tracing_subscriber::registry()
         .with(tracing_subscriber::fmt::layer())
-        .with(tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive(format!("neurohid={}", log_level).parse().unwrap()))
+        .with(
+            tracing_subscriber::EnvFilter::from_default_env()
+                .add_directive(format!("neurohid={}", log_level).parse().unwrap()),
+        )
         .init();
+
+    if !args.foreground {
+        tracing::warn!("Background daemon mode is not implemented yet; running in foreground");
+    }
 
     tracing::info!("Starting NeuroHID service");
 
-    let (profile_store, config_store) = neurohid_storage::initialize().await
+    let (profile_store, config_store) = neurohid_storage::initialize()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize storage: {}", e))?;
 
-    let config = config_store.load().await
+    let config = config_store
+        .load()
+        .await
         .map_err(|e| anyhow::anyhow!("Failed to load configuration: {}", e))?;
 
     tracing::info!("Configuration loaded");
@@ -58,11 +67,15 @@ async fn main() -> anyhow::Result<()> {
     let profile_id = if let Some(profile_name) = &args.profile {
         Some(neurohid_types::profile::ProfileId::new(profile_name))
     } else {
-        let profiles = profile_store.list_profiles().await
+        let profiles = profile_store
+            .list_profiles()
+            .await
             .map_err(|e| anyhow::anyhow!("Failed to list profiles: {}", e))?;
 
         if profiles.is_empty() {
-            tracing::warn!("No profiles found. Service will run without a profile (stream discovery only).");
+            tracing::warn!(
+                "No profiles found. Service will run without a profile (stream discovery only)."
+            );
             None
         } else {
             Some(profiles[0].id.clone())
@@ -103,7 +116,8 @@ async fn main() -> anyhow::Result<()> {
         Some(profile_store),
         profile_id,
         shutdown_tx.subscribe(),
-    ).await?;
+    )
+    .await?;
 
     tracing::info!("Service initialized, starting main loop");
 
