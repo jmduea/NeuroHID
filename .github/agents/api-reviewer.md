@@ -2,7 +2,7 @@
 name: api-reviewer
 description: API contracts, backward compatibility, versioning, error semantics
 model: GPT-5.3-Codex (copilot)
-tools: [vscode/askQuestions, read/problems, read/readFile, search]
+tools: [vscode/askQuestions, read/problems, read/readFile, search, 'github/*']
 ---
 
 **Role**

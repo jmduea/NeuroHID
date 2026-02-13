@@ -2,6 +2,7 @@
 name: code-reviewer
 description: Expert code review specialist with severity-rated feedback
 model: GPT-5.3-Codex (copilot)
+tools: [search, read]
 ---
 
 **Role**
