@@ -8,6 +8,7 @@ use tokio::sync::broadcast;
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     config::SystemConfig,
+    control::{ControlCommand, ControlRequest, ControlResponse, ControlSnapshot},
     error::{Error, Result},
     profile::ProfileId,
 };
@@ -220,6 +221,58 @@ impl RuntimeHandle {
         }
     }
 
+    /// Handle one serialized control request and emit a serialized response.
+    pub fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
+        let request_id = request.request_id.clone();
+        match request.command {
+            ControlCommand::Snapshot => {
+                ControlResponse::snapshot(request_id, ControlSnapshot::from(self.snapshot()))
+            }
+            ControlCommand::Shutdown => match self.command(RuntimeCommand::Stop) {
+                Ok(()) => ControlResponse::ack(request_id),
+                Err(error) => ControlResponse::error(request_id, error.to_string()),
+            },
+            ControlCommand::SetCalibrationMode { enabled } => {
+                match self.command(RuntimeCommand::ToggleCalibration { enabled }) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
+                }
+            }
+            ControlCommand::SetOutputEnabled { enabled } => {
+                match self.command(RuntimeCommand::ToggleOutput { enabled }) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
+                }
+            }
+            ControlCommand::ReloadModel => match self.command(RuntimeCommand::ReloadModel) {
+                Ok(()) => ControlResponse::ack(request_id),
+                Err(error) => ControlResponse::error(request_id, error.to_string()),
+            },
+            ControlCommand::PromoteCandidateModel => {
+                match self.command(RuntimeCommand::PromoteCandidateModel) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
+                }
+            }
+            ControlCommand::RescanStreams => match self.command(RuntimeCommand::RescanStreams) {
+                Ok(()) => ControlResponse::ack(request_id),
+                Err(error) => ControlResponse::error(request_id, error.to_string()),
+            },
+            ControlCommand::ConnectStream { stream_id } => {
+                match self.command(RuntimeCommand::ConnectStream { stream_id }) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
+                }
+            }
+            ControlCommand::DisconnectStream { stream_id } => {
+                match self.command(RuntimeCommand::DisconnectStream { stream_id }) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
+                }
+            }
+        }
+    }
+
     /// Wait for runtime termination.
     pub async fn wait(self) -> Result<()> {
         self.handle
@@ -229,11 +282,38 @@ impl RuntimeHandle {
     }
 }
 
+impl From<RuntimeSnapshot> for ControlSnapshot {
+    fn from(value: RuntimeSnapshot) -> Self {
+        Self {
+            running: value.running,
+            calibration_mode: value.calibration_mode,
+            output_enabled: value.output_enabled,
+            profile_ready: value.profile_ready,
+            decoder_ready: value.decoder_ready,
+            decoder_model_version: value.decoder_model_version,
+            signal_quality: value.signal_quality,
+            signal_latency_last_us: value.signal_latency_last_us,
+            signal_latency_p95_us: value.signal_latency_p95_us,
+            decode_latency_last_us: value.decode_latency_last_us,
+            decode_latency_p95_us: value.decode_latency_p95_us,
+            action_latency_last_us: value.action_latency_last_us,
+            action_latency_p95_us: value.action_latency_p95_us,
+            actions_emitted: value.actions_emitted,
+            errors_detected: value.errors_detected,
+            ipc_connected: value.ipc_connected,
+            device_connected: value.device_connected,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Duration;
 
-    use neurohid_types::config::{DeviceBackend, SystemConfig};
+    use neurohid_types::{
+        config::{DeviceBackend, SystemConfig},
+        control::{ControlCommand, ControlRequest, ControlResponsePayload},
+    };
 
     use super::{RuntimeBuilder, RuntimeCommand};
 
@@ -294,6 +374,48 @@ mod tests {
         runtime
             .command(RuntimeCommand::Stop)
             .expect("stop should succeed");
+        runtime.wait().await.expect("runtime should stop cleanly");
+    }
+
+    #[tokio::test]
+    async fn managed_runtime_dispatches_serialized_control_requests() {
+        let mut config = SystemConfig::default();
+        config.device.backend = DeviceBackend::Mock;
+        config.service.ipc_simulation_enabled = true;
+        config.action.enabled = false;
+
+        let runtime = RuntimeBuilder::new(config)
+            .start()
+            .await
+            .expect("runtime should start");
+        wait_for(Duration::from_secs(3), || runtime.snapshot().running).await;
+
+        let snapshot_response = runtime.dispatch_control_request(ControlRequest {
+            request_id: Some("snap-1".to_string()),
+            command: ControlCommand::Snapshot,
+        });
+        assert_eq!(snapshot_response.request_id.as_deref(), Some("snap-1"));
+        assert!(matches!(
+            snapshot_response.payload,
+            ControlResponsePayload::Snapshot { .. }
+        ));
+
+        let toggle_response = runtime.dispatch_control_request(ControlRequest {
+            request_id: Some("set-output".to_string()),
+            command: ControlCommand::SetOutputEnabled { enabled: false },
+        });
+        assert_eq!(toggle_response.request_id.as_deref(), Some("set-output"));
+        assert_eq!(toggle_response.payload, ControlResponsePayload::Ack);
+        wait_for(Duration::from_secs(1), || {
+            !runtime.snapshot().output_enabled
+        })
+        .await;
+
+        let stop_response = runtime.dispatch_control_request(ControlRequest {
+            request_id: Some("shutdown".to_string()),
+            command: ControlCommand::Shutdown,
+        });
+        assert_eq!(stop_response.payload, ControlResponsePayload::Ack);
         runtime.wait().await.expect("runtime should stop cleanly");
     }
 }
