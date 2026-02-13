@@ -17,6 +17,10 @@ path = "src/bin/neurohid.rs"
 name = "neurohid-service"
 path = "src/bin/neurohid-service.rs"
 
+[[bin]]
+name = "neurohid-validate"
+path = "src/bin/neurohid-validate.rs"
+
 [dependencies]
 neurohid-hub = { path = "../neurohid-hub" }
 neurohid-core = { path = "../neurohid-core" }
