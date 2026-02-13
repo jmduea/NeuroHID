@@ -179,11 +179,10 @@ impl DataPaths {
                 reason: e.to_string(),
             })?
         {
-            if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false) {
-                if let Some(name) = entry.file_name().to_str() {
+            if entry.file_type().await.map(|t| t.is_dir()).unwrap_or(false)
+                && let Some(name) = entry.file_name().to_str() {
                     profiles.push(ProfileId::new(name));
                 }
-            }
         }
 
         Ok(profiles)

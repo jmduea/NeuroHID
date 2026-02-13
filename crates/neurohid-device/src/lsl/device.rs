@@ -212,7 +212,7 @@ impl Device for LslDevice {
                                 device_id_for_thread,
                                 e
                             );
-                        } else if consecutive_errors % 50 == 0 {
+                        } else if consecutive_errors.is_multiple_of(50) {
                             tracing::warn!(
                                 "LSL pull_sample: {} consecutive errors on '{}' (latest: {:?})",
                                 consecutive_errors,

@@ -385,7 +385,7 @@ impl Device for SerialDevice {
                                 }
                                 Err(e) => {
                                     malformed_frames += 1;
-                                    if malformed_frames == 1 || malformed_frames % 100 == 0 {
+                                    if malformed_frames == 1 || malformed_frames.is_multiple_of(100) {
                                         tracing::warn!(
                                             "Serial decoder dropped malformed frame (count={}): {}",
                                             malformed_frames,

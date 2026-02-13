@@ -196,6 +196,7 @@ impl Default for BrainFlowConfig {
 
 /// Configuration for device connection.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct DeviceConfig {
     /// Which backend to use for device communication.
     #[serde(default)]
@@ -223,19 +224,6 @@ pub struct DeviceConfig {
     pub brainflow: Option<BrainFlowConfig>,
 }
 
-impl Default for DeviceConfig {
-    fn default() -> Self {
-        Self {
-            backend: DeviceBackend::default(),
-            preferred_device_type: None,
-            preferred_device_id: None,
-            connection: ConnectionSettings::default(),
-            lsl: None,
-            serial: None,
-            brainflow: None,
-        }
-    }
-}
 
 /// Configuration for signal processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]

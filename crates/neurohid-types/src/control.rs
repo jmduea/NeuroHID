@@ -168,6 +168,7 @@ impl ControlResponse {
 /// Control response variants.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(clippy::large_enum_variant)]
 pub enum ControlResponsePayload {
     /// Command accepted (no additional payload).
     Ack,

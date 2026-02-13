@@ -599,7 +599,7 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
 fn run_service_command(command: ServiceCommand, args: &Args) -> anyhow::Result<()> {
     #[cfg(windows)]
     {
-        return windows_service_manager::run(command, args);
+        windows_service_manager::run(command, args)
     }
 
     #[cfg(not(windows))]

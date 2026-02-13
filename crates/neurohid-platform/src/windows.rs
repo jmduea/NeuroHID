@@ -204,7 +204,7 @@ impl Platform for WindowsPlatform {
                 GetCursorPos(&mut point)
                     .map_err(|e| PlatformError::CursorQueryFailed(e.to_string()))?;
             }
-            return Ok((point.x, point.y));
+            Ok((point.x, point.y))
         }
 
         #[cfg(not(target_os = "windows"))]
@@ -223,12 +223,12 @@ impl Platform for WindowsPlatform {
                 let height = GetSystemMetrics(SM_CYSCREEN) as u32;
                 let monitor_count = GetSystemMetrics(SM_CMONITORS) as u32;
 
-                return Ok(ScreenInfo {
+                Ok(ScreenInfo {
                     width,
                     height,
                     active_monitor: 0,
                     monitor_count,
-                });
+                })
             }
         }
 
@@ -262,7 +262,7 @@ fn key_to_enigo(key: Key) -> Result<enigo::Key> {
         Key::Meta => EKey::Meta,
         Key::Letter(c) => EKey::Unicode(c),
         Key::Number(n) if n <= 9 => EKey::Unicode((b'0' + n) as char),
-        Key::Function(n) if n >= 1 && n <= 12 => match n {
+        Key::Function(n) if (1..=12).contains(&n) => match n {
             1 => EKey::F1,
             2 => EKey::F2,
             3 => EKey::F3,

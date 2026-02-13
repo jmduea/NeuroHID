@@ -251,11 +251,10 @@ impl ServiceProcess {
     fn wait_ready(&mut self, timeout: Duration) -> Result<()> {
         let start = Instant::now();
         while start.elapsed() < timeout {
-            if let Ok(snapshot) = request_snapshot(self.control_port) {
-                if snapshot.running {
+            if let Ok(snapshot) = request_snapshot(self.control_port)
+                && snapshot.running {
                     return Ok(());
                 }
-            }
             if let Some(status) = self.child.try_wait()? {
                 bail!("service exited early with status {}", status);
             }
