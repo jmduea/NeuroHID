@@ -214,8 +214,8 @@ impl LslTargetState {
             NumericKind::Feature => &mut self.feature_outlet,
         };
 
-        if let Some(existing) = slot.as_ref() {
-            if existing.channel_count != channel_count {
+        if let Some(existing) = slot.as_ref()
+            && existing.channel_count != channel_count {
                 tracing::warn!(
                     target = %target.name,
                     kind = %kind.stream_suffix(),
@@ -225,7 +225,6 @@ impl LslTargetState {
                 );
                 return None;
             }
-        }
 
         if slot.is_none() {
             match Self::create_numeric_outlet(&target, kind, channel_count) {
@@ -503,37 +502,33 @@ impl OutletTask {
                     break;
                 }
                 _ = tick.tick() => {
-                    if self.config.publish_samples {
-                        if let Some(rx) = &mut self.sample_rx {
+                    if self.config.publish_samples
+                        && let Some(rx) = &mut self.sample_rx {
                             while let Ok(sample) = rx.try_recv() {
                                 Self::publish_sample(&mut targets, &mut lsl_targets, sample).await;
                             }
                         }
-                    }
 
-                    if self.config.publish_features {
-                        if let Some(rx) = &mut self.feature_rx {
+                    if self.config.publish_features
+                        && let Some(rx) = &mut self.feature_rx {
                             while let Ok(feature) = rx.try_recv() {
                                 Self::publish_feature(&mut targets, &mut lsl_targets, feature).await;
                             }
                         }
-                    }
 
-                    if self.config.publish_actions {
-                        if let Some(rx) = &mut self.action_rx {
+                    if self.config.publish_actions
+                        && let Some(rx) = &mut self.action_rx {
                             while let Ok(action) = rx.try_recv() {
                                 Self::publish_action(&mut targets, &mut lsl_targets, action).await;
                             }
                         }
-                    }
 
-                    if self.config.publish_markers {
-                        if let Some(rx) = &mut self.marker_rx {
+                    if self.config.publish_markers
+                        && let Some(rx) = &mut self.marker_rx {
                             while let Ok(marker) = rx.try_recv() {
                                 Self::publish_marker(&mut targets, &mut lsl_targets, marker).await;
                             }
                         }
-                    }
                 }
             }
         }

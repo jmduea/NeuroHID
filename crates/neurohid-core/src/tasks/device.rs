@@ -291,11 +291,10 @@ impl DeviceTask {
                             }
 
                             // If calibration mode is active, fan-out the sample
-                            if let (Some(flag), Some(tx)) = (&self.calibration_mode, &self.calibration_sample_tx) {
-                                if flag.load(Ordering::Relaxed) {
+                            if let (Some(flag), Some(tx)) = (&self.calibration_mode, &self.calibration_sample_tx)
+                                && flag.load(Ordering::Relaxed) {
                                     let _ = tx.try_send(sample.clone());
                                 }
-                            }
 
                             // Send sample to signal task
                             if self.sample_tx.send(sample).await.is_err() {
@@ -381,11 +380,9 @@ fn spawn_stream_task(
                             // Fan-out to calibration channel if active
                             if let (Some(flag), Some(tx)) =
                                 (&calibration_mode, &calibration_sample_tx)
-                            {
-                                if flag.load(Ordering::Relaxed) {
+                                && flag.load(Ordering::Relaxed) {
                                     let _ = tx.try_send(sample.clone());
                                 }
-                            }
 
                             // Send to signal processing pipeline
                             if sample_tx.send(sample).await.is_err() {
@@ -452,6 +449,7 @@ async fn update_stream_status(
 }
 
 /// Scan for available streams and update `ServiceState::discovered_streams`.
+#[allow(clippy::borrowed_box)]
 async fn scan(
     provider: &Box<dyn DeviceProvider>,
     state: &Arc<RwLock<ServiceState>>,

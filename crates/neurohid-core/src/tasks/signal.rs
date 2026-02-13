@@ -129,6 +129,10 @@ impl SignalTask {
     }
 
     /// Creates a new signal task.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Task constructor wires signal, ErrP, broadcast fan-out, and observability channels"
+    )]
     pub fn new(
         config: SignalConfig,
         sample_rx: mpsc::Receiver<Sample>,
@@ -282,7 +286,7 @@ impl SignalTask {
 
                                 // Send features to IPC task
                                 if tracing::enabled!(tracing::Level::DEBUG)
-                                    && self.sample_count % SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES == 0
+                                    && self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
                                     && self.emit_gate.allow_debug()
                                 {
                                     tracing::debug!(
@@ -302,7 +306,7 @@ impl SignalTask {
                                 }
                             }
 
-                            if self.sample_count % SIGNAL_SUMMARY_EVERY_SAMPLES == 0
+                            if self.sample_count.is_multiple_of(SIGNAL_SUMMARY_EVERY_SAMPLES)
                                 && self.emit_gate.allow_info()
                             {
                                 tracing::info!(
@@ -358,15 +362,13 @@ impl SignalTask {
         let mut stream_count = 0u32;
 
         for buf in self.stream_buffers.values() {
-            if let Some(last) = buf.samples.back() {
-                if let Some(quality) = &last.quality {
-                    if !quality.is_empty() {
+            if let Some(last) = buf.samples.back()
+                && let Some(quality) = &last.quality
+                    && !quality.is_empty() {
                         let avg = quality.iter().sum::<f32>() / quality.len() as f32;
                         total_quality += avg;
                         stream_count += 1;
                     }
-                }
-            }
         }
 
         if stream_count > 0 {

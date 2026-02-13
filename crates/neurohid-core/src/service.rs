@@ -477,6 +477,10 @@ impl NeuroHidService {
     }
 
     /// Internal run loop shared by both `run()` and `spawn()`.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Service bootstrap needs explicit channel/flag wiring for embedded and headless modes"
+    )]
     async fn run_inner(
         mut self,
         calibration_flag: Option<Arc<AtomicBool>>,
@@ -583,8 +587,7 @@ impl NeuroHidService {
         let storage_config = self.config.storage.clone();
         let profile_store_for_session_logger = self.profile_store.clone();
         let shutdown_session_logger = self.shutdown_rx.resubscribe();
-        let mut session_logger_handle = if let Some(episode_log_rx) = episode_log_rx {
-            Some(tokio::spawn(async move {
+        let mut session_logger_handle = episode_log_rx.map(|episode_log_rx| tokio::spawn(async move {
                 tracing::info!("Session logger task starting");
                 let task = SessionLoggerTask::new(
                     storage_config,
@@ -592,10 +595,7 @@ impl NeuroHidService {
                     episode_log_rx,
                 );
                 task.run(shutdown_session_logger).await
-            }))
-        } else {
-            None
-        };
+            }));
 
         // Spawn the device task. This connects to the EEG device and streams
         // samples into the sample channel.
@@ -967,16 +967,14 @@ impl NeuroHidService {
         if !action_done {
             action_handle.abort();
         }
-        if !latency_monitor_done {
-            if let Some(handle) = &mut latency_monitor_handle {
+        if !latency_monitor_done
+            && let Some(handle) = &mut latency_monitor_handle {
                 handle.abort();
             }
-        }
-        if !session_logger_done {
-            if let Some(handle) = &mut session_logger_handle {
+        if !session_logger_done
+            && let Some(handle) = &mut session_logger_handle {
                 handle.abort();
             }
-        }
         if let Some(handle) = &mut outlet_handle {
             handle.abort();
         }

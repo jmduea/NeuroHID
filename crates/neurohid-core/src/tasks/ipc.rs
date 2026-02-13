@@ -98,6 +98,10 @@ pub struct IpcTask {
 }
 
 impl IpcTask {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Task wiring constructor groups runtime channels and shared state"
+    )]
     pub fn new(
         config: neurohid_types::config::ServiceConfig,
         decision_rx: mpsc::Receiver<DecisionEventRecord>,
@@ -310,11 +314,8 @@ impl IpcTask {
         &mut self,
         connection: &neurohid_ipc::server::IpcConnection,
     ) -> Result<()> {
-        loop {
-            match connection.try_recv()? {
-                Some(msg) => self.handle_trainer_message(msg).await?,
-                None => break,
-            }
+        while let Some(msg) = connection.try_recv()? {
+            self.handle_trainer_message(msg).await?;
         }
         Ok(())
     }
@@ -414,7 +415,7 @@ impl IpcTask {
         connection.send(msg).await?;
 
         self.telemetry_frames_sent = self.telemetry_frames_sent.saturating_add(1);
-        if self.telemetry_frames_sent % IPC_TELEMETRY_SUMMARY_EVERY == 0
+        if self.telemetry_frames_sent.is_multiple_of(IPC_TELEMETRY_SUMMARY_EVERY)
             && self.emit_gate.allow_info()
         {
             tracing::info!(
@@ -873,16 +874,14 @@ impl IpcTask {
         if let Ok(temp) = fs::canonicalize(std::env::temp_dir()).await {
             roots.push(temp);
         }
-        if let Ok(cwd) = std::env::current_dir() {
-            if let Ok(canonical_cwd) = fs::canonicalize(cwd).await {
+        if let Ok(cwd) = std::env::current_dir()
+            && let Ok(canonical_cwd) = fs::canonicalize(cwd).await {
                 roots.push(canonical_cwd);
             }
-        }
-        if let Some(store) = &self.profile_store {
-            if let Ok(store_root) = fs::canonicalize(store.data_root()).await {
+        if let Some(store) = &self.profile_store
+            && let Ok(store_root) = fs::canonicalize(store.data_root()).await {
                 roots.push(store_root);
             }
-        }
 
         roots.sort();
         roots.dedup();

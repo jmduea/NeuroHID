@@ -49,6 +49,10 @@ struct CapabilityGate {
 }
 
 impl CapabilityGate {
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Gate updates require explicit threshold and timing parameters for each capability"
+    )]
     fn update(
         &mut self,
         now: Instant,
@@ -126,6 +130,10 @@ pub struct ActionTask {
 
 impl ActionTask {
     /// Creates a new action task.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Task constructor wires runtime channels, state handles, and observability policy"
+    )]
     pub fn new(
         config: ActionConfig,
         action_rx: mpsc::Receiver<Action>,
@@ -184,8 +192,8 @@ impl ActionTask {
 
         // Check that we have the necessary permissions for input simulation.
         // On macOS, this might prompt the user to grant accessibility access.
-        if let Some(ref p) = platform {
-            if let Err(e) = p.check_input_permissions() {
+        if let Some(ref p) = platform
+            && let Err(e) = p.check_input_permissions() {
                 tracing::warn!("Input permission check failed (HID output disabled): {}", e);
                 tracing::warn!("Please grant the necessary permissions and restart.");
                 let mut state = self.state.write().await;
@@ -195,7 +203,6 @@ impl ActionTask {
                 ));
                 platform = None;
             }
-        }
 
         if let Some(ref p) = platform {
             tracing::info!("Platform initialized: {}", p.platform_name());
@@ -242,11 +249,10 @@ impl ActionTask {
                             }
 
                             // Runtime output toggle (pause/resume)
-                            if let Some(flag) = &self.output_enabled {
-                                if !flag.load(Ordering::Relaxed) {
+                            if let Some(flag) = &self.output_enabled
+                                && !flag.load(Ordering::Relaxed) {
                                     continue;
                                 }
-                            }
 
                             // Do not emit HID events until profile calibration and runtime
                             // decoder readiness are both satisfied.
@@ -259,11 +265,10 @@ impl ActionTask {
                             }
 
                             // Check if calibration mode is active — skip HID emission
-                            if let Some(flag) = &self.calibration_mode {
-                                if flag.load(Ordering::Relaxed) {
+                            if let Some(flag) = &self.calibration_mode
+                                && flag.load(Ordering::Relaxed) {
                                     continue;
                                 }
-                            }
 
                             // Check confidence threshold. If the decoder isn't sure,
                             // we'd rather do nothing than make a mistake.
@@ -321,7 +326,7 @@ impl ActionTask {
                                     );
                                 }
 
-                                if actions_emitted % ACTION_SUMMARY_EVERY_EMITTED == 0
+                                if actions_emitted.is_multiple_of(ACTION_SUMMARY_EVERY_EMITTED)
                                     && self.emit_gate.allow_info()
                                 {
                                     tracing::info!(
@@ -481,6 +486,10 @@ impl ActionTask {
         !action.is_none()
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "Fallback capability gate update passes policy thresholds explicitly"
+    )]
     fn update_gate(
         &mut self,
         kind: CapabilityKind,

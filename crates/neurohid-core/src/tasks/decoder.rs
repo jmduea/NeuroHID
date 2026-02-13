@@ -327,7 +327,7 @@ impl DecoderTask {
                                 );
                             }
 
-                            if self.decision_sequence % DECODER_SUMMARY_EVERY_DECISIONS == 0
+                            if self.decision_sequence.is_multiple_of(DECODER_SUMMARY_EVERY_DECISIONS)
                                 && self.emit_gate.allow_info()
                             {
                                 tracing::info!(
