@@ -16,6 +16,8 @@
 //! | `storage` | `neurohid-storage` | Secure profile and config storage |
 //! | `ipc` | `neurohid-ipc` | IPC layer for Rust↔Python communication |
 //! | `calibration` | `neurohid-calibration` | Calibration games and wizard |
+//! | `runtime` | `neurohid-core` | Managed runtime/service APIs |
+//! | `hub` | `neurohid-hub` | Hub GUI library |
 //! | `full` | All of the above | Everything enabled |
 //!
 //! ## Quick Start
@@ -51,3 +53,9 @@ pub use neurohid_ipc as ipc;
 
 #[cfg(feature = "calibration")]
 pub use neurohid_calibration as calibration;
+
+#[cfg(feature = "runtime")]
+pub use neurohid_core as runtime;
+
+#[cfg(feature = "hub")]
+pub use neurohid_hub as hub;

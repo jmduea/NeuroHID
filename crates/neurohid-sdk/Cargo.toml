@@ -22,6 +22,8 @@ platform = ["dep:neurohid-platform"]
 storage = ["dep:neurohid-storage"]
 ipc = ["dep:neurohid-ipc"]
 calibration = ["dep:neurohid-calibration"]
+runtime = ["dep:neurohid-core"]
+hub = ["dep:neurohid-hub"]
 full = [
     "types",
     "signal",
@@ -32,6 +34,8 @@ full = [
     "storage",
     "ipc",
     "calibration",
+    "runtime",
+    "hub",
 ]
 
 [dependencies]
@@ -42,3 +46,5 @@ neurohid-platform = { path = "../neurohid-platform", optional = true }
 neurohid-storage = { path = "../neurohid-storage", optional = true }
 neurohid-ipc = { path = "../neurohid-ipc", optional = true }
 neurohid-calibration = { path = "../neurohid-calibration", optional = true }
+neurohid-core = { path = "../neurohid-core", optional = true }
+neurohid-hub = { path = "../neurohid-hub", optional = true }

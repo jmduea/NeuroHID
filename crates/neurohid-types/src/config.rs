@@ -28,6 +28,10 @@ pub struct SystemConfig {
     /// Configuration for the decoder
     pub decoder: DecoderConfig,
 
+    /// Configuration for automatic recalibration prompts.
+    #[serde(default)]
+    pub recalibration: RecalibrationConfig,
+
     /// Configuration for the action output
     pub action: ActionConfig,
 
@@ -504,6 +508,9 @@ pub struct UiConfig {
     /// Font scale multiplier (1.0 = default).
     #[serde(default = "default_font_scale")]
     pub font_scale: f32,
+    /// End-user vs advanced UI mode.
+    #[serde(default)]
+    pub mode: UiMode,
     /// Theme preference.
     #[serde(default)]
     pub theme_mode: ThemeMode,
@@ -523,9 +530,45 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             font_scale: default_font_scale(),
+            mode: UiMode::default(),
             theme_mode: ThemeMode::default(),
             pane_resize_enabled: true,
             tray_mode_enabled: false,
+        }
+    }
+}
+
+/// Hub UI mode.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UiMode {
+    /// Default mode for daily use.
+    #[default]
+    Standard,
+    /// Power-user/research mode with advanced tooling.
+    Advanced,
+}
+
+/// Configuration for automatic recalibration prompts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RecalibrationConfig {
+    /// Minimum rolling signal quality before prompting recalibration.
+    pub rolling_signal_quality_threshold: f32,
+    /// Maximum rolling error rate before prompting recalibration.
+    pub rolling_error_rate_threshold: f32,
+    /// Duration threshold conditions must persist before prompting.
+    pub sustained_duration_secs: u64,
+    /// Minimum cooldown between recalibration prompts.
+    pub notification_cooldown_secs: u64,
+}
+
+impl Default for RecalibrationConfig {
+    fn default() -> Self {
+        Self {
+            rolling_signal_quality_threshold: 0.5,
+            rolling_error_rate_threshold: 0.35,
+            sustained_duration_secs: 120,
+            notification_cooldown_secs: 900,
         }
     }
 }
@@ -555,6 +598,10 @@ pub struct ServiceConfig {
 
     /// Path to log file (None for stdout only)
     pub log_file_path: Option<String>,
+
+    /// Latency alert policy for runtime decode/action p95 metrics.
+    #[serde(default)]
+    pub latency_alert: LatencyAlertConfig,
 }
 
 fn default_ipc_simulation_enabled() -> bool {
@@ -571,6 +618,34 @@ impl Default for ServiceConfig {
             notifications_enabled: true,
             log_level: "info".to_string(),
             log_file_path: None,
+            latency_alert: LatencyAlertConfig::default(),
+        }
+    }
+}
+
+/// Runtime latency alert thresholds and notification policy.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LatencyAlertConfig {
+    /// Master switch for latency alert monitoring.
+    pub enabled: bool,
+    /// Decoder latency p95 threshold in microseconds.
+    pub decode_p95_threshold_us: u64,
+    /// End-to-end action latency p95 threshold in microseconds.
+    pub action_p95_threshold_us: u64,
+    /// Duration thresholds must remain exceeded before alert activates.
+    pub sustained_duration_secs: u64,
+    /// Cooldown between repeated warning notifications.
+    pub notification_cooldown_secs: u64,
+}
+
+impl Default for LatencyAlertConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            decode_p95_threshold_us: 35_000,
+            action_p95_threshold_us: 60_000,
+            sustained_duration_secs: 30,
+            notification_cooldown_secs: 120,
         }
     }
 }
