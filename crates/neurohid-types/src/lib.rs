@@ -24,6 +24,7 @@
 
 pub mod action;
 pub mod config;
+pub mod control;
 pub mod device;
 pub mod error;
 pub mod event;
@@ -36,6 +37,9 @@ pub mod signal;
 
 // Re-export commonly used types at the crate root for convenience
 pub use action::{Action, Key, KeyAction, MouseAction, MouseButton};
+pub use control::{
+    ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
+};
 pub use device::{ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DiscoveredStream};
 pub use error::{Error, Result};
 pub use event::{MarkerPayload, MarkerType, StreamMarker};

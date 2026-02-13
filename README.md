@@ -159,6 +159,26 @@ cargo run --release -p neurohid
 
 # Start the background service
 cargo run --release -p neurohid --bin neurohid-service
+
+# (Windows) install and manage as a real Windows service
+cargo run --release -p neurohid --bin neurohid-service -- --service-command install
+cargo run --release -p neurohid --bin neurohid-service -- --service-command start
+cargo run --release -p neurohid --bin neurohid-service -- --service-command status
+cargo run --release -p neurohid --bin neurohid-service -- --service-command stop
+cargo run --release -p neurohid --bin neurohid-service -- --service-command uninstall
+```
+
+### Python ML Workflows (uv-first)
+
+```bash
+# Run bridge process
+uv run --directory python neurohid-ml bridge
+
+# Train + stage candidate for a profile from recorded sessions
+uv run --directory python neurohid-ml train-profile-candidate --profile-id <PROFILE_ID>
+
+# Run continuous trainer worker loop
+uv run --directory python neurohid-ml trainer-worker --profile-id <PROFILE_ID>
 ```
 
 ## Development Roadmap
