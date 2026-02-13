@@ -3,7 +3,6 @@
 //! The main overview screen. Shows service status, device info, signal quality,
 //! and quick controls for starting/stopping the service.
 
-use std::io::ErrorKind;
 use std::path::Path;
 use std::process::Command;
 use std::sync::mpsc::{self, Receiver, TryRecvError};
@@ -578,8 +577,8 @@ fn run_python_candidate_trainer(
     model_version: &str,
 ) -> std::result::Result<String, String> {
     let args = vec![
-        "-m".to_string(),
-        "neurohid_ml.cli".to_string(),
+        "run".to_string(),
+        "neurohid-ml".to_string(),
         "train-candidate".to_string(),
         "--session-dir".to_string(),
         session_dir.display().to_string(),
@@ -589,32 +588,24 @@ fn run_python_candidate_trainer(
         model_version.to_string(),
     ];
 
-    for executable in ["python3", "python"] {
-        let mut cmd = Command::new(executable);
-        cmd.args(&args).env("PYTHONPATH", "python/src");
+    let mut cmd = Command::new("uv");
+    cmd.current_dir("python").args(&args);
 
-        let output = match cmd.output() {
-            Ok(output) => output,
-            Err(error) if error.kind() == ErrorKind::NotFound => continue,
-            Err(error) => {
-                return Err(format!("Failed to execute '{}': {}\n", executable, error));
-            }
-        };
+    let output = cmd
+        .output()
+        .map_err(|error| format!("Failed to execute 'uv' for candidate training: {}\n", error))?;
 
-        let mut text = format!("$ {} {}\n", executable, args.join(" "));
-        text.push_str(&String::from_utf8_lossy(&output.stdout));
-        text.push_str(&String::from_utf8_lossy(&output.stderr));
-        if output.status.success() {
-            return Ok(text);
-        }
-
-        return Err(format!(
-            "{text}\nTrainer exited with status {}\n",
-            output.status
-        ));
+    let mut text = format!("$ uv {}\n", args.join(" "));
+    text.push_str(&String::from_utf8_lossy(&output.stdout));
+    text.push_str(&String::from_utf8_lossy(&output.stderr));
+    if output.status.success() {
+        return Ok(text);
     }
 
-    Err("Python interpreter not found (tried 'python3' then 'python')\n".to_string())
+    Err(format!(
+        "{text}\nTrainer exited with status {}\n",
+        output.status
+    ))
 }
 
 /// Returns a platform-specific remediation hint for known error patterns.
@@ -639,7 +630,9 @@ fn task_error_hint(error: &str) -> Option<&'static str> {
     }
 
     if lower.contains("connection refused") || lower.contains("connect error") {
-        return Some("Hint: Ensure the Python ML service is running (python -m neurohid_ml)");
+        return Some(
+            "Hint: Ensure the Python ML service is running (uv run --directory python neurohid-ml bridge)",
+        );
     }
 
     None

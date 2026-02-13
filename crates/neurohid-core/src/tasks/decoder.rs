@@ -324,6 +324,10 @@ impl DecoderTask {
             }
         }
 
+        let previous_active_artifacts = self
+            .backup_active_decoder_artifacts(&store, &profile_id)
+            .await;
+
         if let Err(error) = store.promote_decoder_candidate(&profile_id).await {
             tracing::warn!(
                 "Failed to promote candidate model for profile {}: {}",
@@ -333,8 +337,75 @@ impl DecoderTask {
             return;
         }
 
-        tracing::info!("Promoted candidate model for profile {}", profile_id);
-        self.reload_model().await;
+        match self.load_model_for_profile(&profile_id).await {
+            Ok(model) => {
+                self.active_model = Some(model);
+                self.set_decoder_status(self.active_model.as_ref()).await;
+                tracing::info!("Promoted candidate model for profile {}", profile_id);
+            }
+            Err(error) => {
+                tracing::warn!(
+                    "Candidate model promotion activation failed for profile {}: {}. Attempting rollback.",
+                    profile_id,
+                    error
+                );
+
+                if let Some((previous_model_bytes, previous_manifest)) = previous_active_artifacts {
+                    if let Err(restore_error) = store
+                        .save_decoder_model_onnx(&profile_id, &previous_model_bytes)
+                        .await
+                    {
+                        tracing::error!(
+                            "Rollback failed restoring previous decoder model for profile {}: {}",
+                            profile_id,
+                            restore_error
+                        );
+                        self.set_decoder_status(self.active_model.as_ref()).await;
+                        return;
+                    }
+
+                    if let Err(restore_error) = store
+                        .save_decoder_manifest(&profile_id, &previous_manifest)
+                        .await
+                    {
+                        tracing::error!(
+                            "Rollback failed restoring previous decoder manifest for profile {}: {}",
+                            profile_id,
+                            restore_error
+                        );
+                        self.set_decoder_status(self.active_model.as_ref()).await;
+                        return;
+                    }
+
+                    match self.load_model_for_profile(&profile_id).await {
+                        Ok(model) => {
+                            self.active_model = Some(model);
+                            self.set_decoder_status(self.active_model.as_ref()).await;
+                            tracing::info!(
+                                "Rollback restored previous decoder model for profile {}",
+                                profile_id
+                            );
+                        }
+                        Err(reload_error) => {
+                            tracing::error!(
+                                "Rollback artifacts restored for profile {}, but reload failed: {}",
+                                profile_id,
+                                reload_error
+                            );
+                            self.set_decoder_status(self.active_model.as_ref()).await;
+                        }
+                    }
+                } else {
+                    tracing::warn!(
+                        "No previous active artifacts available for rollback on profile {}",
+                        profile_id
+                    );
+                    self.set_decoder_status(self.active_model.as_ref()).await;
+                }
+
+                return;
+            }
+        }
 
         if let Err(error) = store.clear_decoder_candidate(&profile_id).await {
             tracing::warn!(
@@ -411,6 +482,38 @@ impl DecoderTask {
             ));
         }
         Ok(())
+    }
+
+    async fn backup_active_decoder_artifacts(
+        &self,
+        store: &ProfileStore,
+        profile_id: &ProfileId,
+    ) -> Option<(Vec<u8>, ModelManifest)> {
+        let active_model_bytes = match store.load_decoder_model_onnx(profile_id).await {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                tracing::debug!(
+                    "No active decoder ONNX artifacts to back up for profile {}: {}",
+                    profile_id,
+                    error
+                );
+                return None;
+            }
+        };
+
+        let active_manifest = match store.load_decoder_manifest(profile_id).await {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                tracing::debug!(
+                    "No active decoder manifest to back up for profile {}: {}",
+                    profile_id,
+                    error
+                );
+                return None;
+            }
+        };
+
+        Some((active_model_bytes, active_manifest))
     }
 
     async fn set_decoder_status(&self, loaded: Option<&LoadedModel>) {
