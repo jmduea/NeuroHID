@@ -1,0 +1,42 @@
+name: Docs Freshness
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "crates/**"
+      - "python/**"
+      - "README.md"
+      - "CHANGELOG.md"
+      - ".github/workflows/docs-freshness.yml"
+
+jobs:
+  docs-freshness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate docs linkage policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+          changed_files=$(git diff --name-only origin/main...HEAD)
+          echo "Changed files:"
+          echo "$changed_files"
+
+          if echo "$changed_files" | grep -Eq '^(crates/|python/src/|docs/runtime-ml-protocol-v2\.md|docs/SPECIFICATION\.md)'; then
+            if ! echo "$changed_files" | grep -Eq '^(docs/|README\.md|CHANGELOG\.md)'; then
+              echo "Architecture/protocol/code changes detected without docs or changelog updates."
+              exit 1
+            fi
+          fi
+
+          if echo "$changed_files" | grep -Eq '^docs/runtime-ml-protocol-v2\.md'; then
+            if ! echo "$changed_files" | grep -Eq '^(python/|crates/neurohid-ipc/|docs/)'; then
+              echo "Runtime ML protocol changed without corresponding implementation/docs context updates."
+              exit 1
+            fi
+          fi
+
+          echo "Docs freshness policy checks passed."

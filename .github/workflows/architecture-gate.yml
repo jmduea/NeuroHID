@@ -1,0 +1,36 @@
+name: Architecture Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "crates/neurohid-ipc/**"
+      - "crates/neurohid-storage/**"
+      - "crates/neurohid-core/**"
+      - "docs/SPECIFICATION.md"
+      - "docs/runtime-ml-protocol-v2.md"
+      - ".github/workflows/architecture-gate.yml"
+
+jobs:
+  adr-required:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check ADR reference in PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${PR_BODY:-}" ]]; then
+            echo "PR body is empty. Include an ADR reference when architecture-gated paths are changed."
+            exit 1
+          fi
+
+          if ! echo "$PR_BODY" | grep -Eiq 'docs/adr/ADR-|ADR-'; then
+            echo "Architecture-gated files changed but no ADR reference found in PR body."
+            echo "Add or link an ADR from docs/adr/ and re-run checks."
+            exit 1
+          fi
+
+          echo "ADR reference detected."

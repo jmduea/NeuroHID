@@ -1,0 +1,67 @@
+name: UV Command Policy
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "**/*.md"
+      - "**/*.yml"
+      - "**/*.yaml"
+      - "**/*.sh"
+      - "**/*.ps1"
+      - "**/*.bat"
+      - "**/*.cmd"
+      - ".github/workflows/uv-command-policy.yml"
+  push:
+    branches: [main]
+    paths:
+      - "**/*.md"
+      - "**/*.yml"
+      - "**/*.yaml"
+      - "**/*.sh"
+      - "**/*.ps1"
+      - "**/*.bat"
+      - "**/*.cmd"
+      - ".github/workflows/uv-command-policy.yml"
+
+jobs:
+  uv-policy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Enforce uv-only Python commands
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            git fetch origin main --depth=1
+            changed_files=$(git diff --name-only origin/main...HEAD)
+          else
+            changed_files=$(git diff-tree --no-commit-id --name-only -r HEAD)
+          fi
+
+          targets=$(echo "$changed_files" | grep -E '\.(md|yml|yaml|sh|ps1|bat|cmd)$' || true)
+
+          if [[ -z "${targets}" ]]; then
+            echo "No target files changed."
+            exit 0
+          fi
+
+          violations=0
+          while IFS= read -r file; do
+            [[ -z "$file" ]] && continue
+
+            if grep -nE '^\s*(\$|PS\s+)?(python|py)(\s+|$)' "$file" >/tmp/uv_policy_hits.txt 2>/dev/null; then
+              echo "Bare python command detected in $file"
+              cat /tmp/uv_policy_hits.txt
+              violations=1
+            fi
+          done <<< "$targets"
+
+          if [[ $violations -ne 0 ]]; then
+            echo "Use uv wrappers instead (e.g., 'uv run --project python ...' or 'uv python --command ...')."
+            exit 1
+          fi
+
+          echo "UV command policy check passed."
