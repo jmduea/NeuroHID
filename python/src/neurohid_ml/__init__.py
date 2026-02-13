@@ -22,6 +22,10 @@ __all__ = [
     "ErrPDetector",
     "ErrPConfig",
     "IpcClient",
+    "NeuroHidControlClient",
+    "NeuroHidNotebook",
+    "NeuroHidTelemetryClient",
+    "NotebookError",
     "TrainerConfig",
     "train_candidate_model",
 ]
@@ -56,5 +60,33 @@ def __getattr__(name: str):
             }
         )
         return globals()[name]
+
+    if name in {"NeuroHidNotebook", "NotebookError"}:
+        from neurohid_ml.notebook import NeuroHidNotebook, NotebookError
+
+        globals().update(
+            {
+                "NeuroHidNotebook": NeuroHidNotebook,
+                "NotebookError": NotebookError,
+            }
+        )
+        return globals()[name]
+
+    if name in {"NeuroHidControlClient", "NotebookError"}:
+        from neurohid_ml.control import NeuroHidControlClient, NotebookError
+
+        globals().update(
+            {
+                "NeuroHidControlClient": NeuroHidControlClient,
+                "NotebookError": NotebookError,
+            }
+        )
+        return globals()[name]
+
+    if name == "NeuroHidTelemetryClient":
+        from neurohid_ml.telemetry import NeuroHidTelemetryClient
+
+        globals().update({"NeuroHidTelemetryClient": NeuroHidTelemetryClient})
+        return NeuroHidTelemetryClient
 
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
