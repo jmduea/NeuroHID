@@ -22,7 +22,6 @@ egui-async = "0.3.4"
 egui_code_editor = "0.2.20"
 egui_console = "0.3.1"
 egui_logger = "0.9.2"
-rerun = { version = "0.22.1", default-features = false, features = ["sdk"] }
 
 # Async runtime
 tokio = { workspace = true }

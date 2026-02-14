@@ -28,11 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard candidate training/staging jobs now run through `egui-async` bindings instead of manual thread/channel plumbing, improving frame-safe async task handling consistency across Hub screens
 - Hub now integrates `egui_logger` with a toggleable in-app Runtime Logs window, and Hub binary startup now uses a combined logger bridge so log events are visible in UI while still flowing through tracing subscribers
 - Hub now includes initial `egui_kittest` smoke tests for Python Lab and Jupyter IDE controls to lock in baseline UI behavior for the new async/editor/console flows
-- Visualization now includes a rerun pilot bridge (`Connect` + `Mirror`) that streams key runtime metrics (signal quality, emitted actions, buffer samples) to a rerun viewer over SDK logging
 
 ### Changed
 
 - Reorganized project into Rust workspace with separate published and internal crates
+- Deferred in-app rerun integration for now; keep as a potential future optional visualization backend/replacement once runtime footprint and UX tradeoffs are re-evaluated
 - NeuroHID Hub UI received a cohesive visual refresh across Dashboard, Visualization, Devices, Profiles, Calibration, Jupyter IDE, and Settings screens, including upgraded dark-theme styling, improved sidebar/status readability, and standardized panel framing without protocol or config schema changes
 - Hub default service behavior now auto-starts the core service on app launch via `service.auto_start = true`
 - Hub now migrates legacy persisted configs with `service.auto_start = false` to `true` on load so existing installs auto-start the core service on app launch

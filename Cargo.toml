@@ -54,7 +54,7 @@ rand = "0.10.0"
 base64 = "0.22.1"
 
 # Time
-chrono = { version = "0.4.38", features = ["serde"] }
+chrono = { version = "0.4.43", features = ["serde"] }
 
 # GUI framework
 egui = "0.33.3"
