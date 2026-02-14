@@ -23,11 +23,11 @@ Try to read the agent file for your query type. The execution mode depends on wh
 
 | Query Type | Agent File Path |
 |------------|-----------------|
-| Crate info/version | `../../agents/crate-researcher.md` |
-| Rust version features | `../../agents/rust-changelog.md` |
-| Std library docs | `../../agents/std-docs-researcher.md` |
-| Third-party crate docs | `../../agents/docs-researcher.md` |
-| Clippy lints | `../../agents/clippy-researcher.md` |
+| Crate info/version | `../../agents/researcher.md` |
+| Rust version features | `../../agents/researcher.md` |
+| Std library docs | `../../agents/researcher.md` |
+| Third-party crate docs | `../../agents/researcher.md` |
+| Clippy lints | `../../agents/researcher.md` |
 
 ---
 
@@ -54,11 +54,11 @@ Task(
 
 | Query Type | Agent File | Source |
 |------------|------------|--------|
-| Rust version features | `../../agents/rust-changelog.md` | releases.rs |
-| Crate info/version | `../../agents/crate-researcher.md` | lib.rs, crates.io |
-| **Std library docs** (Send, Sync, Arc, etc.) | `../../agents/std-docs-researcher.md` | doc.rust-lang.org |
-| Third-party crate docs (tokio, serde, etc.) | `../../agents/docs-researcher.md` | docs.rs |
-| Clippy lints | `../../agents/clippy-researcher.md` | rust-clippy docs |
+| Rust version features | `../../agents/researcher.md` | releases.rs |
+| Crate info/version | `../../agents/researcher.md` | lib.rs, crates.io |
+| **Std library docs** (Send, Sync, Arc, etc.) | `../../agents/researcher.md` | doc.rust-lang.org |
+| Third-party crate docs (tokio, serde, etc.) | `../../agents/researcher.md` | docs.rs |
+| Clippy lints | `../../agents/researcher.md` | rust-clippy docs |
 
 ### Agent Mode Examples
 
@@ -67,7 +67,7 @@ Task(
 User: "tokio latest version"
 
 Claude:
-1. Read ../../agents/crate-researcher.md
+1. Read ../../agents/researcher.md
 2. Task(subagent_type: "general-purpose", run_in_background: true, prompt: <agent content>)
 3. Wait for agent
 4. Summarize results
@@ -78,7 +78,7 @@ Claude:
 User: "What's new in Rust 1.85?"
 
 Claude:
-1. Read ../../agents/rust-changelog.md
+1. Read ../../agents/researcher.md
 2. Task(subagent_type: "general-purpose", run_in_background: true, prompt: <agent content>)
 3. Wait for agent
 4. Summarize features

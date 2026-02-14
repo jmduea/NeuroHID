@@ -55,16 +55,15 @@ Domain-Correct Architectural Solution
 
 **CRITICAL: Check agent file availability first to determine execution mode.**
 
-Try to read layer analyzer files:
-- `../../agents/layer1-analyzer.md`
-- `../../agents/layer2-analyzer.md`
-- `../../agents/layer3-analyzer.md`
+Try to read core analysis agent files:
+- `../../agents/architect.md`
+- `../../agents/deep-executor.md`
 
 ---
 
 ## Agent Mode (Plugin Install) - Parallel Execution
 
-**When all layer analyzer files exist at `../../agents/`:**
+**When core analysis agent files exist at `../../agents/`:**
 
 ### Step 1: Parse User Query
 
@@ -83,21 +82,27 @@ Read agent files, then launch in parallel:
 Task(
   subagent_type: "general-purpose",
   run_in_background: true,
-  prompt: <content of ../../agents/layer1-analyzer.md>
-          + "\n\n## User Query\n" + $ARGUMENTS
+     prompt: <content of ../../agents/architect.md>
+                         + "\n\n## Layer 1 Focus: Language mechanics\n"
+                         + "Analyze ownership/borrowing/types/compiler rules in the user query."
+                         + "\n\n## User Query\n" + $ARGUMENTS
 )
 
 Task(
   subagent_type: "general-purpose",
   run_in_background: true,
-  prompt: <content of ../../agents/layer2-analyzer.md>
-          + "\n\n## User Query\n" + $ARGUMENTS
+     prompt: <content of ../../agents/deep-executor.md>
+                         + "\n\n## Layer 2 Focus: Design choices\n"
+                         + "Analyze design patterns, trade-offs, and implementation options only."
+                         + "\n\n## User Query\n" + $ARGUMENTS
 )
 
 Task(
   subagent_type: "general-purpose",
   run_in_background: true,
-  prompt: <content of ../../agents/layer3-analyzer.md>
+     prompt: <content of ../../agents/architect.md>
+                         + "\n\n## Layer 3 Focus: Domain constraints\n"
+                         + "Analyze domain-specific constraints and non-functional requirements."
           + "\n\n## User Query\n" + $ARGUMENTS
 )
 ```
@@ -114,7 +119,7 @@ With all three results, perform synthesis per template below.
 
 ## Inline Mode (Skills-only Install) - Sequential Execution
 
-**When layer analyzer files are NOT available, execute analysis directly:**
+**When core analysis agent files are NOT available, execute analysis directly:**
 
 ### Step 1: Parse User Query
 

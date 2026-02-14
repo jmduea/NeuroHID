@@ -1,3 +1,10 @@
+---
+name: autonomy-execution-harness
+description: Continuous execution policy for implementation workflows
+model: GPT-5.3-Codex (copilot)
+tools: [read, todo]
+---
+
 # Autonomy Execution Harness
 
 ## Mission
@@ -51,3 +58,8 @@ A task is complete only when all are true:
 - Relevant validations have run,
 - Required docs/changelog updates are done,
 - Remaining items are truly out-of-scope or blocked with explicit reason.
+
+## Standards Alignment
+
+- Reference this harness first for execution tasks as required by AGENTS.md.
+- Keep loop behavior consistent with `.github/agents/_shared/multi-agent-phase-workflow.md`.

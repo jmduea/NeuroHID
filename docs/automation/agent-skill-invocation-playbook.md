@@ -2,6 +2,10 @@
 
 Use these prompts directly in chat to trigger the current NeuroHID automation path.
 
+Related maintenance reference:
+
+- `docs/automation/agent-skill-hygiene-report.md`
+
 ## 0) Canonical Local/CI Entry Points
 
 - Impact classifier: `.github/scripts/classify-impact.ps1`

@@ -147,8 +147,8 @@ description: "Documentation for {crate_name} crate. Keywords: {keywords}"
 
 ## Documentation
 
-- `./references/overview.md` - Main overview
-- `./references/{module}.md` - Module documentation
+- `references/{topic}.md` - Main overview
+- `references/{module}.md` - Module documentation
 
 ## Links
 

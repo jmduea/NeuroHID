@@ -32,18 +32,18 @@ Fetch Rust community updates, filtered by time range.
 
 **CRITICAL: Check agent file availability first to determine execution mode.**
 
-Try to read: `../../agents/rust-daily-reporter.md`
+Try to read: `../../agents/researcher.md`
 
 ---
 
 ## Agent Mode (Plugin Install)
 
-**When `../../agents/rust-daily-reporter.md` exists:**
+**When `../../agents/researcher.md` exists:**
 
 ### Workflow
 
 ```
-1. Read: ../../agents/rust-daily-reporter.md
+1. Read: ../../agents/researcher.md
 2. Task(subagent_type: "general-purpose", run_in_background: false, prompt: <agent content>)
 3. Wait for result
 4. Format and present to user

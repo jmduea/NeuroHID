@@ -105,11 +105,11 @@ User: "Rename parse_config to load_config"
 | src/lib.rs | 8 | `pub use config::parse_config` | Re-export |
 | tests/config_test.rs | 15 | `parse_config("test.toml")` | Test |
 | tests/config_test.rs | 25 | `parse_config("")` | Test |
-| docs/api.md | 42 | `parse_config` | Documentation |
+| docs/SPECIFICATION.md | 42 | `parse_config` | Documentation |
 
 ### Potential Issues
 
-⚠️ **Documentation reference:** docs/api.md:42 may need manual update
+⚠️ **Documentation reference:** docs/SPECIFICATION.md:42 may need manual update
 ⚠️ **Re-export:** src/lib.rs:8 - public API change
 
 ### Proceed?

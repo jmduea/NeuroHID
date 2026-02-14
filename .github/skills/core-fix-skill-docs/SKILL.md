@@ -58,7 +58,7 @@ Extract referenced files from Documentation section:
 
 ```markdown
 ## Documentation
-- `./references/file1.md` - Description
+- `references/{module}.md` - Description
 ```
 
 #### 3. Check File Existence
@@ -120,8 +120,7 @@ Read SKILL.md and extract all `./references/*.md` patterns:
 Read("~/.claude/skills/{crate_name}/SKILL.md")
 
 # Look for lines like:
-# - `./references/sync.md` - Sync primitives
-# - `./references/runtime.md` - Runtime configuration
+# - `references/{module}.md` - Module documentation
 ```
 
 ### Step 3: Check File Existence
