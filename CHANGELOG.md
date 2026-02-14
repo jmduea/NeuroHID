@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
+- Branch policy enforcement workflow (`.github/workflows/branch-policy.yml`) and validator script (`.github/scripts/enforce-pr-only-main.ps1`) to require PR-based updates to `main`
 - Architecture index automation via `.github/scripts/generate-architecture-index.ps1` with tracked output at `docs/architecture/index.md`
 - CI enhancements for impact-aware job routing, focused gate execution, unsafe compliance, protocol contract validation, and harness smoke report artifact publishing
 - Executable protocol-documentation contract test in `neurohid-types` (`ipc_v2` tests)
@@ -40,6 +41,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Reorganized project into Rust workspace with separate published and internal crates
+- Release automation now separates tag-based pre-release verification (`.github/workflows/release.yml`) from manual crates.io publishing (`.github/workflows/publish-crates.yml`)
 - Deferred in-app rerun integration for now; keep as a potential future optional visualization backend/replacement once runtime footprint and UX tradeoffs are re-evaluated
 - NeuroHID Hub UI received a cohesive visual refresh across Dashboard, Visualization, Devices, Profiles, Calibration, Jupyter IDE, and Settings screens, including upgraded dark-theme styling, improved sidebar/status readability, and standardized panel framing without protocol or config schema changes
 - Hub default service behavior now auto-starts the core service on app launch via `service.auto_start = true`

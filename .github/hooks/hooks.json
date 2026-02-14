@@ -53,6 +53,12 @@
         ]
       },
       {
+        "matcher": "(?i)(\\brtk\\b|rust token killer|token reduction|token savings|command rewrite|prefix commands with rtk|rtk init|rtk gain)",
+        "agents": [
+          ".github/agents/deep-executor.md"
+        ]
+      },
+      {
         "matcher": "(?i)(implement|implementation|fix|refactor|coding|code change|finish coding|done coding|ship it|ready to commit|create commit)",
         "agents": [
           ".github/agents/writer.md",

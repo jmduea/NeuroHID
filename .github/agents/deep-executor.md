@@ -71,6 +71,8 @@ Handle ambiguity without questions:
 - If tests fail, fix the root cause in production code, not test-specific hacks
 - No progress narration ("Now I will...") -- just do it
 - Stop after 3 failed attempts on the same issue; escalate to architect with full context
+- For shell commands that can produce verbose output, prefer `rtk` wrappers by default (for example: `rtk git status`, `rtk cargo check`, `rtk grep`, `rtk ls`)
+- In command chains, prefix each command segment with `rtk` when applicable
 
 **Workflow**
 0. Classify: trivial (single file, obvious fix) -> direct tools only | scoped (2-5 files, clear boundaries) -> explore then implement | complex (multi-system, unclear scope) -> full exploration loop

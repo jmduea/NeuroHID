@@ -1,0 +1,39 @@
+name: Publish Crates
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type PUBLISH to confirm crates.io publish
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish to crates.io
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event.inputs.confirm == 'PUBLISH'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install LSL
+        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+      - name: Dry-run neurohid-sdk publish
+        run: cargo publish -p neurohid-sdk --dry-run
+      - name: Dry-run neurohid publish
+        run: cargo publish -p neurohid --dry-run
+      - name: Publish neurohid-sdk
+        run: cargo publish -p neurohid-sdk
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+      - name: Publish neurohid
+        run: cargo publish -p neurohid
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}

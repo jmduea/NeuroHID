@@ -57,3 +57,9 @@ Canonical workflow reference:
 - Keywords: rust, cargo, compiler diagnostics, ownership/borrow/lifetimes, unsafe/ffi
 - Typical paths: `crates/**`, `Cargo.toml`, Rust-related docs
 - Required behavior: route Rust prompts through `rust-router` and specialized Rust skills
+
+## deep-executor (rtk workflow)
+
+- Keywords: rtk, Rust Token Killer, token savings, command rewrite, `rtk init`, `rtk gain`
+- Typical paths: workspace command workflow, agent execution instructions, shell-heavy tasks
+- Required behavior: enforce RTK-first command execution policy in Copilot agent workflows

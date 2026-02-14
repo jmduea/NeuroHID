@@ -132,6 +132,18 @@ See the root [README.md](./README.md) for the full architecture overview.
 6. For Python changes, run `uv run --project python pytest python/tests -q`
 7. Open a PR with a clear description
 
+### Branch Policy (Required)
+
+- Do not push directly to `main`.
+- All `main` updates must come from a pull request merge.
+- CI enforces this via `.github/workflows/branch-policy.yml`.
+- Repository admin setup checklist: `docs/automation/branch-protection-checklist.md`.
+
+### Release Policy
+
+- Tag pushes (`v*`) run pre-release verification only (`.github/workflows/release.yml`).
+- crates.io publishing is manual-only through `.github/workflows/publish-crates.yml` and requires explicit operator confirmation.
+
 ## Areas Where Help Is Appreciated
 
 - Platform-specific testing (especially macOS)

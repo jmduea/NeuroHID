@@ -305,6 +305,13 @@ Impact-aware routing inputs for automation are defined in:
 - `.github/scripts/classify-impact.ps1`
 - `.github/automation/scope-map.json`
 
+### Branch and Release Automation Policy
+
+- `main` is PR-only: direct pushes are blocked by `.github/workflows/branch-policy.yml`.
+- Tag workflow `.github/workflows/release.yml` verifies pre-release quality on `v*` tags.
+- crates.io publishing is intentionally separated into manual workflow `.github/workflows/publish-crates.yml`.
+- Repository-admin setup checklist: `docs/automation/branch-protection-checklist.md`.
+
 ## Development Roadmap
 
 The current implementation roadmap is tracked in repository issues and milestones.
