@@ -217,7 +217,9 @@ impl LayoutManager {
             LayoutConfig::TwoColumns => tiles.insert_horizontal_tile(vec![pane_ids[0], pane_ids[1]]),
             LayoutConfig::TwoRows => tiles.insert_vertical_tile(vec![pane_ids[0], pane_ids[1]]),
             LayoutConfig::Grid2x2 => {
-                tiles.insert_grid_tile(vec![pane_ids[0], pane_ids[1], pane_ids[2], pane_ids[3]])
+                let top_row = tiles.insert_horizontal_tile(vec![pane_ids[0], pane_ids[1]]);
+                let bottom_row = tiles.insert_horizontal_tile(vec![pane_ids[2], pane_ids[3]]);
+                tiles.insert_vertical_tile(vec![top_row, bottom_row])
             }
             LayoutConfig::OneLeftTwoRight => {
                 let right = tiles.insert_vertical_tile(vec![pane_ids[1], pane_ids[2]]);
@@ -282,17 +284,17 @@ impl LayoutManager {
     pub fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Layout:");
-            let current_label = self.config.label();
+            let mut selected_layout = self.config;
+            let current_label = selected_layout.label();
             egui::ComboBox::from_id_salt("layout_selector")
                 .selected_text(current_label)
                 .show_ui(ui, |ui: &mut egui::Ui| {
                     for &layout in LayoutConfig::ALL {
                         if ui
-                            .selectable_value(&mut self.config, layout, layout.label())
+                            .selectable_value(&mut selected_layout, layout, layout.label())
                             .changed()
                         {
-                            let new_config = self.config;
-                            self.set_layout(new_config);
+                            self.set_layout(selected_layout);
                         }
                     }
                 });
@@ -359,16 +361,32 @@ impl Behavior<Pane> for LayoutBehavior<'_, '_> {
             return UiResponse::None;
         }
 
-        egui::ScrollArea::vertical()
-            .id_salt(("pane_scroll", tile_id))
-            .auto_shrink([false, false])
-            .show(ui, |ui| {
-                if let Some(widget) = self.widget_instances.get_mut(pane.slot) {
-                    widget.show(ui, self.widget_ctx, pane.slot);
-                } else {
-                    ui.colored_label(egui::Color32::YELLOW, "Missing widget instance");
-                }
-            });
+        let available = ui.available_size();
+        let width_scale = (available.x / 700.0).clamp(0.72, 1.0);
+        let height_scale = (available.y / 360.0).clamp(0.72, 1.0);
+        let fit_scale = width_scale.min(height_scale);
+
+        ui.scope(|ui| {
+            let mut style: egui::Style = ui.style().as_ref().clone();
+            style.spacing.item_spacing *= fit_scale;
+            style.spacing.button_padding *= fit_scale;
+
+            for font_id in style.text_styles.values_mut() {
+                font_id.size = (font_id.size * fit_scale).max(10.0);
+            }
+
+            ui.set_style(style);
+
+            egui::Frame::new()
+                .inner_margin(egui::Margin::symmetric(6, 6))
+                .show(ui, |ui| {
+                    if let Some(widget) = self.widget_instances.get_mut(pane.slot) {
+                        widget.show(ui, self.widget_ctx, pane.slot);
+                    } else {
+                        ui.colored_label(egui::Color32::YELLOW, "Missing widget instance");
+                    }
+                });
+        });
 
         UiResponse::None
     }
@@ -382,7 +400,7 @@ impl Behavior<Pane> for LayoutBehavior<'_, '_> {
     }
 
     fn min_size(&self) -> f32 {
-        140.0
+        240.0
     }
 
     fn simplification_options(&self) -> egui_tiles::SimplificationOptions {

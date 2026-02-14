@@ -9,6 +9,8 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+use egui_async::Bind;
+use egui_code_editor::{CodeEditor, ColorTheme, Syntax};
 use serde::{Deserialize, Serialize};
 
 use crate::data_bus::DataBus;
@@ -119,8 +121,7 @@ pub struct PythonLabScreen {
     pending_execution: Option<PendingExecution>,
     queued_cells: Vec<usize>,
     log_output: String,
-    tool_running: bool,
-    tool_rx: Option<Receiver<String>>,
+    uv_sync_task: Bind<String, String>,
     monitor_rows: usize,
     monitor_preview_values: usize,
 }
@@ -143,8 +144,7 @@ impl PythonLabScreen {
             pending_execution: None,
             queued_cells: vec![],
             log_output: String::new(),
-            tool_running: false,
-            tool_rx: None,
+            uv_sync_task: Bind::new(true),
             monitor_rows: 10,
             monitor_preview_values: 12,
         }
@@ -202,8 +202,9 @@ impl PythonLabScreen {
                 self.stop_kernel();
             }
 
+            let uv_sync_running = self.uv_sync_task.is_pending();
             if ui
-                .add_enabled(!self.tool_running, egui::Button::new("uv sync"))
+                .add_enabled(!uv_sync_running, egui::Button::new("uv sync"))
                 .clicked()
             {
                 self.run_uv_sync();
@@ -303,12 +304,14 @@ impl PythonLabScreen {
                                 }
                             });
 
-                            let code_editor = egui::TextEdit::multiline(&mut cell.code)
-                                .id_salt(("python_cell_code", index))
-                                .font(egui::TextStyle::Monospace)
-                                .desired_rows(8)
-                                .desired_width(f32::INFINITY);
-                            ui.add(code_editor);
+                            CodeEditor::default()
+                                .id_source(format!("python_cell_code_{}", index))
+                                .with_rows(8)
+                                .with_fontsize(14.0)
+                                .with_theme(ColorTheme::GRUVBOX)
+                                .with_syntax(Syntax::python())
+                                .with_numlines(true)
+                                .show(ui, &mut cell.code);
 
                             ui.label(egui::RichText::new("Output").small().strong());
                             let output_editor = egui::TextEdit::multiline(&mut cell.output)
@@ -765,61 +768,26 @@ impl PythonLabScreen {
     }
 
     fn run_uv_sync(&mut self) {
-        if self.tool_running {
+        if self.uv_sync_task.is_pending() {
             return;
         }
 
-        let (tx, rx) = mpsc::channel();
-        self.tool_running = true;
-        self.tool_rx = Some(rx);
         self.log_output.push_str("$ uv sync\n");
 
-        std::thread::spawn(move || {
-            let start = Instant::now();
-            let mut command = Command::new("uv");
-            command.arg("sync").current_dir("python");
-
-            let output = match command.output() {
-                Ok(out) => {
-                    let mut text = String::new();
-                    text.push_str(&String::from_utf8_lossy(&out.stdout));
-                    text.push_str(&String::from_utf8_lossy(&out.stderr));
-                    if text.trim().is_empty() {
-                        text.push_str("(command produced no output)\n");
-                    }
-                    if !out.status.success() {
-                        text.push_str(&format!("Command exited with status {}\n", out.status));
-                    }
-                    text.push_str(&format!(
-                        "[completed in {}]\n",
-                        format_duration(start.elapsed())
-                    ));
-                    text
-                }
-                Err(error) => format!("Failed to run uv sync: {}\n", error),
-            };
-
-            let _ = tx.send(output);
+        self.uv_sync_task.request(async {
+            tokio::task::spawn_blocking(run_uv_sync_blocking)
+                .await
+                .map_err(|error| format!("uv sync worker join failed: {}", error))
         });
     }
 
     fn poll_tool_output(&mut self) {
-        let Some(rx) = &self.tool_rx else {
-            return;
-        };
-
-        match rx.try_recv() {
-            Ok(text) => {
-                self.log_output.push_str(&text);
-                self.tool_running = false;
-                self.tool_rx = None;
-            }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                self.log_output
-                    .push_str("uv sync worker disconnected unexpectedly.\n");
-                self.tool_running = false;
-                self.tool_rx = None;
+        if let Some(result) = self.uv_sync_task.take() {
+            match result {
+                Ok(text) => self.log_output.push_str(&text),
+                Err(error) => self
+                    .log_output
+                    .push_str(&format!("Failed to run uv sync: {}\n", error)),
             }
         }
     }
@@ -989,4 +957,27 @@ fn format_duration(duration: Duration) -> String {
     let secs = duration.as_secs();
     let rem_millis = millis % 1_000;
     format!("{}.{:03} s", secs, rem_millis)
+}
+
+fn run_uv_sync_blocking() -> String {
+    let start = Instant::now();
+    let mut command = Command::new("uv");
+    command.arg("sync").current_dir("python");
+
+    match command.output() {
+        Ok(out) => {
+            let mut text = String::new();
+            text.push_str(&String::from_utf8_lossy(&out.stdout));
+            text.push_str(&String::from_utf8_lossy(&out.stderr));
+            if text.trim().is_empty() {
+                text.push_str("(command produced no output)\n");
+            }
+            if !out.status.success() {
+                text.push_str(&format!("Command exited with status {}\n", out.status));
+            }
+            text.push_str(&format!("[completed in {}]\n", format_duration(start.elapsed())));
+            text
+        }
+        Err(error) => format!("Failed to run uv sync: {}\n", error),
+    }
 }

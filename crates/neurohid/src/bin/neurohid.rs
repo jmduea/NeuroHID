@@ -10,7 +10,44 @@ use neurohid_hub::HubApp;
 #[path = "../tracing_init.rs"]
 mod tracing_init;
 
+struct CombinedLogger {
+    egui_logger: egui_logger::EguiLogger,
+    tracing_logger: tracing_log::LogTracer,
+}
+
+impl log::Log for CombinedLogger {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        self.egui_logger.enabled(metadata) || self.tracing_logger.enabled(metadata)
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.egui_logger.enabled(record.metadata()) {
+            self.egui_logger.log(record);
+        }
+        if self.tracing_logger.enabled(record.metadata()) {
+            self.tracing_logger.log(record);
+        }
+    }
+
+    fn flush(&self) {
+        self.egui_logger.flush();
+        self.tracing_logger.flush();
+    }
+}
+
+fn init_hub_logger() -> anyhow::Result<()> {
+    let logger = CombinedLogger {
+        egui_logger: egui_logger::builder().max_level(log::LevelFilter::Info).build(),
+        tracing_logger: tracing_log::LogTracer::new(),
+    };
+
+    log::set_max_level(log::LevelFilter::Trace);
+    log::set_boxed_logger(Box::new(logger))
+        .map_err(|error| anyhow::anyhow!("Failed to initialize combined logger: {}", error))
+}
+
 fn main() {
+    init_hub_logger().expect("Failed to initialize Hub logger");
     tracing_init::init_tracing("info").expect("Failed to initialize tracing");
 
     tracing::info!("Starting NeuroHID Hub");

@@ -106,26 +106,42 @@ impl CalibrationScreen {
     ) {
         let snap = &state.service_snapshot;
 
-        ui.heading("Calibration");
+        ui.label(
+            egui::RichText::new("Calibration")
+                .text_style(egui::TextStyle::Heading)
+                .color(egui::Color32::from_rgb(225, 233, 245)),
+        );
         ui.add_space(8.0);
-        ui.label("Calibrate your brain-computer interface by playing interactive games.");
-        ui.label("This process trains the ErrP detector and initial decoder model.");
+        ui.label(
+            egui::RichText::new("Calibrate your brain-computer interface by playing interactive games.")
+                .small()
+                .color(egui::Color32::from_rgb(128, 145, 167)),
+        );
+        ui.label(
+            egui::RichText::new("This process trains the ErrP detector and initial decoder model.")
+                .small()
+                .color(egui::Color32::from_rgb(128, 145, 167)),
+        );
         ui.add_space(16.0);
 
         if !snap.running {
-            ui.group(|ui| {
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(20, 25, 34))
+                .show(ui, |ui| {
                 ui.colored_label(egui::Color32::YELLOW, "Service is not running");
                 ui.label("Start the service from the Dashboard before calibrating.");
                 ui.label("The service provides the device connection needed for calibration.");
-            });
+                });
             return;
         }
 
         if !snap.device_connected {
-            ui.group(|ui| {
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(20, 25, 34))
+                .show(ui, |ui| {
                 ui.colored_label(egui::Color32::YELLOW, "No device connected");
                 ui.label("Wait for the device to connect, then start calibration.");
-            });
+                });
             return;
         }
 
@@ -133,7 +149,9 @@ impl CalibrationScreen {
         if let Some(profile_id) = &state.active_profile_id {
             let profile = state.profiles.iter().find(|p| &p.id == profile_id);
             if let Some(profile) = profile {
-                ui.group(|ui| {
+                egui::Frame::group(ui.style())
+                    .fill(egui::Color32::from_rgb(20, 25, 34))
+                    .show(ui, |ui| {
                     ui.label(format!("Active profile: {}", profile.name));
                     let cal_status = match &profile.calibration_state {
                         CalibrationState::NotCalibrated => "Not calibrated",
@@ -144,7 +162,7 @@ impl CalibrationScreen {
                         CalibrationState::NeedsRecalibration { .. } => "Needs recalibration",
                     };
                     ui.label(format!("Calibration: {}", cal_status));
-                });
+                    });
             }
         }
 

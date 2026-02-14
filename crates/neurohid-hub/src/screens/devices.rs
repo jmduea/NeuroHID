@@ -31,18 +31,30 @@ impl DevicesScreen {
         state: &HubState,
         service_manager: &mut ServiceManager,
     ) {
-        ui.heading("Devices");
-        ui.add_space(16.0);
+        ui.label(
+            egui::RichText::new("Devices")
+                .text_style(egui::TextStyle::Heading)
+                .color(egui::Color32::from_rgb(225, 233, 245)),
+        );
+        ui.label(
+            egui::RichText::new("Discover, connect, and monitor available streams")
+                .small()
+                .color(egui::Color32::from_rgb(128, 145, 167)),
+        );
+        ui.add_space(12.0);
 
         let snap = &state.service_snapshot;
 
         if !snap.running {
-            ui.label("Start the service to discover and connect to LSL streams.");
-            ui.add_space(8.0);
-            ui.label(
-                egui::RichText::new("Go to Dashboard to start the service.")
-                    .color(egui::Color32::GRAY),
-            );
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(20, 25, 34))
+                .show(ui, |ui| {
+                    ui.label("Start the service to discover and connect to LSL streams.");
+                    ui.label(
+                        egui::RichText::new("Go to Dashboard to start the service.")
+                            .color(egui::Color32::from_rgb(128, 145, 167)),
+                    );
+                });
             return;
         }
 
@@ -58,7 +70,9 @@ impl DevicesScreen {
         ui.add_space(8.0);
 
         if snap.discovered_streams.is_empty() {
-            ui.group(|ui| {
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(20, 25, 34))
+                .show(ui, |ui| {
                 ui.label("No streams found.");
                 ui.add_space(4.0);
                 ui.label(
@@ -70,7 +84,7 @@ impl DevicesScreen {
                     .small()
                     .color(egui::Color32::YELLOW),
                 );
-            });
+                });
         } else {
             // Group streams by source_id. Streams sharing a source_id come
             // from the same physical device and are rendered under a single
@@ -110,8 +124,11 @@ impl DevicesScreen {
 
         if connected_count > 0 {
             ui.add_space(12.0);
-            ui.heading("Signal Quality");
-            ui.add_space(8.0);
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(20, 25, 34))
+                .show(ui, |ui| {
+                ui.heading("Signal Quality");
+                ui.add_space(8.0);
 
             // Overall quality bar
             let quality = snap.signal_quality;
@@ -135,6 +152,7 @@ impl DevicesScreen {
                     .small()
                     .color(egui::Color32::GRAY),
             );
+                });
         }
     }
 
@@ -167,7 +185,9 @@ impl DevicesScreen {
             (egui::Color32::GRAY, "Available")
         };
 
-        ui.group(|ui| {
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
             // Device header — vertical card layout
             ui.horizontal(|ui| {
                 ui.colored_label(status_color, "\u{25CF}");
@@ -241,7 +261,7 @@ impl DevicesScreen {
                     ui.add_space(2.0);
                 }
             });
-        });
+            });
         ui.add_space(4.0);
     }
 
@@ -327,7 +347,9 @@ impl DevicesScreen {
         stream: &DiscoveredStream,
         service_manager: &mut ServiceManager,
     ) {
-        ui.group(|ui| {
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
             // Status + stream name + battery
             let (color, status) = if stream.connected {
                 (egui::Color32::GREEN, "Connected")
@@ -400,7 +422,7 @@ impl DevicesScreen {
                         );
                     }
                 }
-        });
+            });
     }
 }
 

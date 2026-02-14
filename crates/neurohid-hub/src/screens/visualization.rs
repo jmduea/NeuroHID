@@ -76,6 +76,18 @@ impl VisualizationScreen {
         state: &mut HubState,
         runtime: &tokio::runtime::Runtime,
     ) {
+        ui.label(
+            RichText::new("Visualization")
+                .text_style(egui::TextStyle::Heading)
+                .color(Color32::from_rgb(225, 233, 245)),
+        );
+        ui.label(
+            RichText::new("Live neural telemetry with configurable analysis workspaces")
+                .small()
+                .color(Color32::from_rgb(128, 145, 167)),
+        );
+        ui.add_space(6.0);
+
         let current_time = ui.input(|i| i.time);
         self.update_metrics(bus, current_time);
 
@@ -93,7 +105,11 @@ impl VisualizationScreen {
             let available = ui.available_size();
             let pane_height = (available.y - footer_height).max(0.0);
             ui.allocate_ui(egui::vec2(available.x, pane_height), |ui| {
-                self.layout.show_panes(ui, &ctx);
+                egui::Frame::new()
+                    .inner_margin(egui::Margin::symmetric(6, 4))
+                    .show(ui, |ui| {
+                        self.layout.show_panes(ui, &ctx);
+                    });
             });
 
             // Footer status strip
@@ -240,6 +256,7 @@ impl VisualizationScreen {
             layout_icon(self.layout.config),
             self.layout.config.label()
         );
+        let mut selected_layout = self.layout.config;
 
         egui::ComboBox::from_id_salt("layout_selector")
             .selected_text(current_label)
@@ -247,11 +264,10 @@ impl VisualizationScreen {
                 for &layout in LayoutConfig::ALL {
                     let label = format!("{} {}", layout_icon(layout), layout.label());
                     if ui
-                        .selectable_value(&mut self.layout.config, layout, label)
+                        .selectable_value(&mut selected_layout, layout, label)
                         .changed()
                     {
-                        let new_config = self.layout.config;
-                        self.layout.set_layout(new_config);
+                        self.layout.set_layout(selected_layout);
                     }
                 }
             });
@@ -351,7 +367,7 @@ impl VisualizationScreen {
         ui: &mut egui::Ui,
         bus: &DataBus,
         snapshot: &ServiceSnapshot,
-        _current_time: f64,
+        current_time: f64,
     ) {
         if !snapshot.running {
             ui.colored_label(Color32::from_rgb(244, 67, 54), "\u{25CF} Offline");
@@ -362,6 +378,14 @@ impl VisualizationScreen {
             ui.colored_label(color, "\u{25CF} Connecting...");
             ui.ctx().request_repaint();
         } else {
+            let pulse = ((current_time * 2.4).sin() * 0.5 + 0.5) as f32;
+            let live_color = Color32::from_rgba_unmultiplied(
+                106,
+                227,
+                130,
+                (180.0 + pulse * 75.0) as u8,
+            );
+
             // Show stream count and active stream types
             let connected: Vec<&str> = snapshot
                 .discovered_streams
@@ -384,7 +408,8 @@ impl VisualizationScreen {
                 )
             };
 
-            ui.colored_label(Color32::from_rgb(76, 175, 80), label);
+            ui.colored_label(live_color, label);
+            ui.ctx().request_repaint();
         }
     }
 
@@ -396,22 +421,26 @@ impl VisualizationScreen {
             ui.vertical_centered(|ui| {
                 ui.add_space(available.y * 0.3);
 
-                ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
-                ui.add_space(16.0);
+                egui::Frame::group(ui.style())
+                    .fill(Color32::from_rgb(20, 25, 34))
+                    .show(ui, |ui| {
+                        ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
+                        ui.add_space(12.0);
 
-                ui.label(
-                    RichText::new("Start the service to begin streaming data.")
-                        .size(14.0)
-                        .color(Color32::from_gray(150)),
-                );
+                        ui.label(
+                            RichText::new("Start the service to begin streaming data.")
+                                .size(14.0)
+                                .color(Color32::from_gray(150)),
+                        );
 
-                ui.add_space(24.0);
+                        ui.add_space(8.0);
 
-                ui.label(
-                    RichText::new("Go to the Dashboard screen to start the service.")
-                        .size(12.0)
-                        .color(Color32::from_gray(120)),
-                );
+                        ui.label(
+                            RichText::new("Go to the Dashboard screen to start the service.")
+                                .size(12.0)
+                                .color(Color32::from_gray(120)),
+                        );
+                    });
             });
         });
     }

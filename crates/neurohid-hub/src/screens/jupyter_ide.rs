@@ -7,6 +7,8 @@ use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use eframe::egui;
+use egui_async::Bind;
+use egui_console::{ConsoleBuilder, ConsoleEvent, ConsoleWindow};
 use neurohid_types::config::UiConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -21,8 +23,8 @@ pub struct JupyterIdeScreen {
     bootstrap_state: BootstrapState,
     bootstrap_started_once: bool,
     log_output: String,
-    tool_running: bool,
-    tool_rx: Option<Receiver<String>>,
+    bootstrap_task: Bind<String, String>,
+    console: ConsoleWindow,
     jupyter_process: Option<Child>,
     jupyter_events_rx: Option<Receiver<String>>,
     jupyter_ready: bool,
@@ -37,12 +39,30 @@ impl Default for JupyterIdeScreen {
 
 impl JupyterIdeScreen {
     pub fn new() -> Self {
+        let mut console = ConsoleBuilder::new()
+            .prompt("nh> ")
+            .history_size(64)
+            .scrollback_size(400)
+            .tab_quote_character('"')
+            .build();
+        console.command_table_mut().extend([
+            "help".to_string(),
+            "status".to_string(),
+            "bootstrap".to_string(),
+            "start".to_string(),
+            "stop".to_string(),
+            "open".to_string(),
+            "clear".to_string(),
+        ]);
+        console.write("NeuroHID Jupyter console ready. Type 'help' for commands.");
+        console.prompt();
+
         Self {
             bootstrap_state: BootstrapState::Idle,
             bootstrap_started_once: false,
             log_output: String::new(),
-            tool_running: false,
-            tool_rx: None,
+            bootstrap_task: Bind::new(true),
+            console,
             jupyter_process: None,
             jupyter_events_rx: None,
             jupyter_ready: false,
@@ -63,11 +83,15 @@ impl JupyterIdeScreen {
             self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
         }
 
-        ui.heading("Jupyter IDE");
+        ui.label(
+            egui::RichText::new("Jupyter IDE")
+            .text_style(egui::TextStyle::Heading)
+            .color(egui::Color32::from_rgb(225, 233, 245)),
+        );
         ui.label(
             egui::RichText::new("Managed JupyterLab for RL/ML experimentation")
                 .small()
-                .weak(),
+            .color(egui::Color32::from_rgb(128, 145, 167)),
         );
         ui.add_space(8.0);
 
@@ -117,16 +141,18 @@ impl JupyterIdeScreen {
 
         ui.add_space(6.0);
 
+        let bootstrap_running = self.bootstrap_task.is_pending();
+
         ui.horizontal(|ui| {
             if ui
-                .add_enabled(!self.tool_running, egui::Button::new("Prepare Environment"))
+                .add_enabled(!bootstrap_running, egui::Button::new("Prepare Environment"))
                 .clicked()
             {
                 self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
             }
 
             let can_start_jupyter = !jupyter_running
-                && !self.tool_running
+                && !bootstrap_running
                 && matches!(
                     self.bootstrap_state,
                     BootstrapState::Ready | BootstrapState::Idle
@@ -181,37 +207,49 @@ impl JupyterIdeScreen {
         );
 
         ui.separator();
-        ui.label(egui::RichText::new("IDE Log").strong());
-        egui::ScrollArea::vertical()
-            .id_salt("jupyter_ide_log_scroll")
-            .max_height(260.0)
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
             .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.log_output)
-                        .id_salt("jupyter_ide_log_output")
-                        .font(egui::TextStyle::Monospace)
-                        .desired_rows(12)
-                        .desired_width(f32::INFINITY),
-                );
+                ui.label(egui::RichText::new("IDE Log").strong());
+                egui::ScrollArea::vertical()
+                    .id_salt("jupyter_ide_log_scroll")
+                    .max_height(260.0)
+                    .show(ui, |ui| {
+                        ui.add(
+                            egui::TextEdit::multiline(&mut self.log_output)
+                                .id_salt("jupyter_ide_log_output")
+                                .font(egui::TextStyle::Monospace)
+                                .desired_rows(12)
+                                .desired_width(f32::INFINITY),
+                        );
+                    });
+            });
+
+        ui.add_space(8.0);
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
+                ui.label(egui::RichText::new("IDE Console").strong());
+                let console_response = self.console.draw(ui);
+                if let ConsoleEvent::Command(command) = console_response {
+                    self.handle_console_command(command, ui_cfg);
+                }
             });
     }
 
     fn start_bootstrap(&mut self, command_line: &str) {
-        if self.tool_running {
+        if self.bootstrap_task.is_pending() {
             return;
         }
         self.bootstrap_state = BootstrapState::Running;
-        self.tool_running = true;
         self.log_output
             .push_str(&format!("$ {}\n", command_line.trim()));
 
         let command_line = command_line.to_string();
-        let (tx, rx) = mpsc::channel();
-        self.tool_rx = Some(rx);
-
-        std::thread::spawn(move || {
-            let output = run_command_capture_output(&command_line);
-            let _ = tx.send(output);
+        self.bootstrap_task.request(async move {
+            tokio::task::spawn_blocking(move || run_command_capture_output(&command_line))
+                .await
+                .map_err(|error| format!("Bootstrap worker join failed: {}", error))
         });
     }
 
@@ -275,30 +313,92 @@ impl JupyterIdeScreen {
     }
 
     fn poll_tool_output(&mut self) {
-        let Some(rx) = &self.tool_rx else {
-            return;
-        };
-
-        match rx.try_recv() {
-            Ok(text) => {
-                self.log_output.push_str(&text);
-                self.tool_running = false;
-                self.tool_rx = None;
-                if text.contains("[exit=0]") {
-                    self.bootstrap_state = BootstrapState::Ready;
-                } else {
+        if let Some(result) = self.bootstrap_task.take() {
+            match result {
+                Ok(text) => {
+                    self.log_output.push_str(&text);
+                    if text.contains("[exit=0]") {
+                        self.bootstrap_state = BootstrapState::Ready;
+                    } else {
+                        self.bootstrap_state = BootstrapState::Failed;
+                    }
+                }
+                Err(error) => {
+                    self.log_output
+                        .push_str(&format!("Bootstrap failed: {}\n", error));
                     self.bootstrap_state = BootstrapState::Failed;
                 }
             }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
-                self.log_output
-                    .push_str("Bootstrap worker disconnected unexpectedly.\n");
-                self.tool_running = false;
-                self.tool_rx = None;
-                self.bootstrap_state = BootstrapState::Failed;
+        }
+    }
+
+    fn handle_console_command(&mut self, command: String, ui_cfg: &UiConfig) {
+        let cmd = command.trim();
+        if cmd.is_empty() {
+            self.console.prompt();
+            return;
+        }
+
+        match cmd {
+            "help" => {
+                self.console
+                    .write("Commands: help, status, bootstrap, start, stop, open, clear");
+            }
+            "status" => {
+                let bootstrap = match self.bootstrap_state {
+                    BootstrapState::Idle => "idle",
+                    BootstrapState::Running => "preparing",
+                    BootstrapState::Ready => "ready",
+                    BootstrapState::Failed => "failed",
+                };
+                let jupyter = if self.jupyter_process.is_some() {
+                    if self.jupyter_ready {
+                        "ready"
+                    } else {
+                        "starting"
+                    }
+                } else {
+                    "stopped"
+                };
+                self.console
+                    .write(&format!("Environment: {bootstrap} | Jupyter: {jupyter}"));
+            }
+            "bootstrap" => {
+                self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
+                self.console.write("Starting environment bootstrap...");
+            }
+            "start" => {
+                self.start_jupyter(&ui_cfg.jupyter_command);
+                self.console.write("Starting Jupyter...");
+            }
+            "stop" => {
+                self.stop_jupyter();
+                self.console.write("Stopping Jupyter...");
+            }
+            "open" => {
+                let browser_url = self
+                    .jupyter_session_url
+                    .as_deref()
+                    .unwrap_or(&ui_cfg.jupyter_url);
+                match open_url(browser_url) {
+                    Ok(()) => self
+                        .console
+                        .write(&format!("Opened browser at {}", browser_url)),
+                    Err(error) => self
+                        .console
+                        .write(&format!("Failed to open browser: {}", error)),
+                }
+            }
+            "clear" => {
+                self.console.clear();
+            }
+            _ => {
+                self.console
+                    .write(&format!("Unknown command: {} (type 'help')", cmd));
             }
         }
+
+        self.console.prompt();
     }
 
     fn poll_jupyter_events(&mut self) {

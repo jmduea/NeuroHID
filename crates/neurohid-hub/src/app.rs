@@ -34,6 +34,7 @@ pub struct HubApp {
     last_runtime_mode_state: Option<RuntimeModeState>,
     data_bus: DataBus,
     stream_console: StreamConsole,
+    show_log_window: bool,
     // Screen instances
     dashboard: DashboardScreen,
     visualization: VisualizationScreen,
@@ -82,6 +83,7 @@ impl HubApp {
             last_runtime_mode_state: None,
             data_bus: DataBus::new(),
             stream_console: StreamConsole::new(),
+            show_log_window: false,
             dashboard: DashboardScreen::new(),
             visualization,
             devices: DevicesScreen::new(),
@@ -243,21 +245,61 @@ impl HubApp {
 
     fn show_sidebar(&mut self, ctx: &egui::Context) {
         egui::SidePanel::left("sidebar")
-            .exact_width(220.0)
+            .exact_width(236.0)
             .show(ctx, |ui| {
-                ui.add_space(16.0);
-                ui.vertical_centered(|ui| {
-                    ui.heading("NeuroHID");
+                ui.add_space(14.0);
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new("NeuroHID")
+                            .size(24.0)
+                            .strong()
+                            .color(egui::Color32::from_rgb(225, 233, 245)),
+                    );
+                    ui.label(
+                        egui::RichText::new("Neural Interaction Console")
+                            .small()
+                            .color(egui::Color32::from_rgb(122, 138, 158)),
+                    );
                 });
-                ui.add_space(16.0);
+                ui.add_space(12.0);
 
                 ui.separator();
-                ui.add_space(8.0);
+                ui.add_space(10.0);
 
                 // Navigation items
                 for &screen in Screen::all_for_mode(&self.state.config.ui.mode) {
                     let selected = self.current_screen == screen;
-                    if ui.selectable_label(selected, screen.label()).clicked() {
+                    let nav_label = format!("{}  {}", screen_glyph(screen), screen.label());
+                    let nav_id = ui.make_persistent_id(("nav_item", screen.label()));
+                    let selected_phase = ui.ctx().animate_bool(nav_id.with("selected"), selected);
+
+                    let base_fill = egui::Color32::from_rgb(22, 28, 37);
+                    let accent_fill = egui::Color32::from_rgb(34, 57, 86);
+                    let fill = blend_color(base_fill, accent_fill, selected_phase * 0.9);
+
+                    let stroke_color = blend_color(
+                        egui::Color32::from_rgb(41, 52, 69),
+                        egui::Color32::from_rgb(89, 167, 255),
+                        selected_phase,
+                    );
+
+                    let text_color = blend_color(
+                        egui::Color32::from_rgb(168, 180, 198),
+                        egui::Color32::from_rgb(228, 239, 252),
+                        selected_phase,
+                    );
+
+                    let button = egui::Button::new(
+                        egui::RichText::new(nav_label)
+                            .color(text_color)
+                            .strong(),
+                    )
+                    .fill(fill)
+                    .stroke(egui::Stroke::new(1.0, stroke_color))
+                    .corner_radius(6.0);
+
+                    let response = ui.add_sized([ui.available_width(), 30.0], button);
+                    if response.clicked() {
                         self.current_screen = screen;
                     }
                 }
@@ -269,10 +311,16 @@ impl HubApp {
                 // Service status indicator
                 let snap = &self.state.service_snapshot;
                 let (status_color, status_text) = if snap.running {
-                    (egui::Color32::GREEN, "Running")
+                    (egui::Color32::from_rgb(73, 214, 117), "Running")
                 } else {
-                    (egui::Color32::GRAY, "Stopped")
+                    (egui::Color32::from_rgb(120, 130, 146), "Stopped")
                 };
+                ui.label(
+                    egui::RichText::new("Runtime")
+                        .small()
+                        .strong()
+                        .color(egui::Color32::from_rgb(150, 163, 181)),
+                );
                 ui.horizontal(|ui| {
                     ui.colored_label(status_color, "●");
                     ui.label(format!("Service: {}", status_text));
@@ -280,12 +328,12 @@ impl HubApp {
 
                 let (ipc_color, ipc_text) = if snap.ipc_connected {
                     if snap.ipc_simulated {
-                        (egui::Color32::YELLOW, "Simulated")
+                        (egui::Color32::from_rgb(248, 205, 95), "Simulated")
                     } else {
-                        (egui::Color32::GREEN, "Connected")
+                        (egui::Color32::from_rgb(73, 214, 117), "Connected")
                     }
                 } else {
-                    (egui::Color32::GRAY, "Disconnected")
+                    (egui::Color32::from_rgb(120, 130, 146), "Disconnected")
                 };
                 ui.horizontal(|ui| {
                     ui.colored_label(ipc_color, "●");
@@ -294,10 +342,10 @@ impl HubApp {
 
                 if let Some((task, _)) = &snap.task_error {
                     ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::RED, "●");
+                        ui.colored_label(egui::Color32::from_rgb(255, 95, 95), "●");
                         ui.label(
                             egui::RichText::new(format!("Error: {} task", task))
-                                .color(egui::Color32::RED)
+                                .color(egui::Color32::from_rgb(255, 95, 95))
                                 .small(),
                         );
                     });
@@ -385,11 +433,11 @@ impl HubApp {
                         let connected = streams.iter().filter(|s| s.connected).count();
                         let total = streams.len();
                         let header_color = if connected == total {
-                            egui::Color32::GREEN
+                            egui::Color32::from_rgb(73, 214, 117)
                         } else if connected > 0 {
-                            egui::Color32::YELLOW
+                            egui::Color32::from_rgb(248, 205, 95)
                         } else {
-                            egui::Color32::GRAY
+                            egui::Color32::from_rgb(120, 130, 146)
                         };
 
                         let header_id =
@@ -412,9 +460,9 @@ impl HubApp {
                         .body(|ui| {
                             for stream in streams {
                                 let s_color = if stream.connected {
-                                    egui::Color32::GREEN
+                                    egui::Color32::from_rgb(73, 214, 117)
                                 } else {
-                                    egui::Color32::GRAY
+                                    egui::Color32::from_rgb(120, 130, 146)
                                 };
                                 ui.horizontal(|ui| {
                                     ui.add_space(8.0);
@@ -439,7 +487,7 @@ impl HubApp {
                     }
                 } else if snap.running {
                     ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::YELLOW, "●");
+                        ui.colored_label(egui::Color32::from_rgb(248, 205, 95), "●");
                         ui.label("Device: Disconnected");
                     });
                 }
@@ -450,7 +498,7 @@ impl HubApp {
                     ui.label(
                         egui::RichText::new("v0.1.0")
                             .small()
-                            .color(egui::Color32::GRAY),
+                            .color(egui::Color32::from_rgb(108, 121, 140)),
                     );
                 });
             });
@@ -458,25 +506,34 @@ impl HubApp {
 
     fn show_status_bar(&mut self, ctx: &egui::Context) {
         egui::TopBottomPanel::bottom("status_bar")
-            .exact_height(28.0)
+            .exact_height(30.0)
             .show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     let snap = &self.state.service_snapshot;
+                    let pulse = (ctx.input(|i| i.time * 2.8).sin() * 0.5 + 0.5) as f32;
 
                     if snap.running {
-                        ui.label(format!("Signal: {:.0}%", snap.signal_quality * 100.0));
+                        let signal_color = blend_color(
+                            egui::Color32::from_rgb(97, 193, 99),
+                            egui::Color32::from_rgb(149, 243, 144),
+                            pulse,
+                        );
+                        ui.colored_label(
+                            signal_color,
+                            format!("Signal {:.0}%", snap.signal_quality * 100.0),
+                        );
                         ui.separator();
-                        ui.label(format!("Actions: {}", snap.actions_emitted));
+                        ui.label(format!("Actions {}", snap.actions_emitted));
                         ui.separator();
-                        ui.label(format!("Errors: {}", snap.errors_detected));
+                        ui.label(format!("Errors {}", snap.errors_detected));
                         ui.separator();
                         let mins = snap.uptime_secs / 60;
                         let secs = snap.uptime_secs % 60;
-                        ui.label(format!("Uptime: {}:{:02}", mins, secs));
+                        ui.label(format!("Uptime {}:{:02}", mins, secs));
 
                         if snap.calibration_mode {
                             ui.separator();
-                            ui.colored_label(egui::Color32::YELLOW, "CALIBRATING");
+                            ui.colored_label(egui::Color32::from_rgb(248, 205, 95), "CALIBRATING");
                         }
 
                         ui.separator();
@@ -488,13 +545,28 @@ impl HubApp {
                         if ui.small_button(console_label).clicked() {
                             self.stream_console.toggle();
                         }
+
+                        ui.separator();
+                        let logs_label = if self.show_log_window {
+                            "Logs [x]"
+                        } else {
+                            "Logs"
+                        };
+                        if ui.small_button(logs_label).clicked() {
+                            self.show_log_window = !self.show_log_window;
+                        }
+
+                        ctx.request_repaint();
                     } else if let Some((task, _)) = &snap.task_error {
                         ui.colored_label(
-                            egui::Color32::RED,
+                            egui::Color32::from_rgb(255, 95, 95),
                             format!("Service stopped: {} task failed", task),
                         );
                     } else {
-                        ui.label("Service not running");
+                        ui.colored_label(
+                            egui::Color32::from_rgb(120, 130, 146),
+                            "Service not running",
+                        );
                     }
                 });
             });
@@ -506,9 +578,56 @@ impl HubApp {
 
         match ui_cfg.theme_mode {
             neurohid_types::config::ThemeMode::Light => ctx.set_visuals(egui::Visuals::light()),
-            neurohid_types::config::ThemeMode::Dark => ctx.set_visuals(egui::Visuals::dark()),
-            neurohid_types::config::ThemeMode::System => {}
+            neurohid_types::config::ThemeMode::Dark | neurohid_types::config::ThemeMode::System => {
+                let mut visuals = egui::Visuals::dark();
+                visuals.window_fill = egui::Color32::from_rgb(19, 23, 30);
+                visuals.panel_fill = egui::Color32::from_rgb(16, 20, 27);
+                visuals.extreme_bg_color = egui::Color32::from_rgb(11, 15, 21);
+                visuals.faint_bg_color = egui::Color32::from_rgb(23, 28, 37);
+
+                visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(20, 25, 34);
+                visuals.widgets.noninteractive.bg_stroke =
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(43, 53, 69));
+
+                visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 35, 46);
+                visuals.widgets.inactive.bg_stroke =
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(47, 60, 79));
+
+                visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(38, 49, 64);
+                visuals.widgets.hovered.bg_stroke =
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(79, 157, 255));
+
+                visuals.widgets.active.bg_fill = egui::Color32::from_rgb(44, 61, 84);
+                visuals.widgets.active.bg_stroke =
+                    egui::Stroke::new(1.0, egui::Color32::from_rgb(94, 179, 255));
+
+                visuals.selection.bg_fill = egui::Color32::from_rgb(43, 82, 130);
+                visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(112, 196, 255));
+
+                ctx.set_visuals(visuals);
+            }
         }
+
+        let mut style = (*ctx.style()).clone();
+        style.spacing.item_spacing = egui::vec2(8.0, 7.0);
+        style.spacing.button_padding = egui::vec2(10.0, 5.0);
+        style.text_styles.insert(
+            egui::TextStyle::Heading,
+            egui::FontId::new(25.0, egui::FontFamily::Monospace),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Name("Section".into()),
+            egui::FontId::new(16.0, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Body,
+            egui::FontId::new(14.0, egui::FontFamily::Proportional),
+        );
+        style.text_styles.insert(
+            egui::TextStyle::Small,
+            egui::FontId::new(11.5, egui::FontFamily::Proportional),
+        );
+        ctx.set_style(style);
     }
 
     fn maybe_notify_latency_transition(&mut self) {
@@ -597,6 +716,8 @@ impl HubApp {
 
 impl eframe::App for HubApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        ctx.plugin_or_default::<egui_async::EguiAsyncPlugin>();
+
         self.apply_ui_preferences(ctx);
 
         if !Screen::all_for_mode(&self.state.config.ui.mode).contains(&self.current_screen) {
@@ -629,6 +750,22 @@ impl eframe::App for HubApp {
         self.stream_console
             .show(ctx, &self.data_bus, &self.state.service_snapshot);
 
+        if self.show_log_window {
+            egui::Window::new("Runtime Logs")
+                .open(&mut self.show_log_window)
+                .default_size(egui::vec2(760.0, 320.0))
+                .vscroll(true)
+                .show(ctx, |ui| {
+                    ui.horizontal(|ui| {
+                        if ui.button("Clear").clicked() {
+                            egui_logger::clear_logs();
+                        }
+                    });
+                    ui.separator();
+                    egui_logger::logger_ui().show(ui);
+                });
+        }
+
         // When calibration is active, the CalibrationPanel renders its own
         // CentralPanel directly into the remaining space (after sidebar/status bar).
         // We skip our own CentralPanel to avoid the double-panel conflict.
@@ -644,10 +781,19 @@ impl eframe::App for HubApp {
         }
 
         // Central panel — dispatch to the active screen
-        egui::CentralPanel::default().show(ctx, |ui| {
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::new()
+                    .fill(egui::Color32::from_rgb(14, 18, 24))
+                    .inner_margin(egui::Margin::symmetric(8, 8)),
+            )
+            .show(ctx, |ui| {
             // Show init error if any
             if let Some(err) = &self.state.init_error {
-                ui.colored_label(egui::Color32::RED, format!("Init error: {}", err));
+                ui.colored_label(
+                    egui::Color32::from_rgb(255, 95, 95),
+                    format!("Init error: {}", err),
+                );
                 ui.separator();
             }
 
@@ -686,11 +832,36 @@ impl eframe::App for HubApp {
                         .show(ui, &mut self.state, &self.service_manager, &self.runtime);
                 }
             }
-        });
+            });
 
         // Request continuous repainting for live updates
         ctx.request_repaint();
     }
+}
+
+fn screen_glyph(screen: Screen) -> &'static str {
+    match screen {
+        Screen::Dashboard => "◉",
+        Screen::Visualization => "◧",
+        Screen::Devices => "⌁",
+        Screen::Profiles => "◎",
+        Screen::Calibration => "◍",
+        Screen::JupyterIde => "⟡",
+        Screen::Settings => "⚙",
+    }
+}
+
+fn blend_color(from: egui::Color32, to: egui::Color32, t: f32) -> egui::Color32 {
+    let t = t.clamp(0.0, 1.0);
+    let from = egui::Rgba::from(from);
+    let to = egui::Rgba::from(to);
+
+    let r = from.r() + (to.r() - from.r()) * t;
+    let g = from.g() + (to.g() - from.g()) * t;
+    let b = from.b() + (to.b() - from.b()) * t;
+    let a = from.a() + (to.a() - from.a()) * t;
+
+    egui::Rgba::from_rgba_premultiplied(r, g, b, a).into()
 }
 
 impl Drop for HubApp {

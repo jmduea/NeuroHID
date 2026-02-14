@@ -6,10 +6,10 @@
 use std::collections::VecDeque;
 use std::path::Path;
 use std::process::Command;
-use std::sync::mpsc::{self, Receiver, TryRecvError};
 use std::time::{Duration, Instant};
 
 use eframe::egui;
+use egui_async::Bind;
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     config::{ServiceRuntimeMode, UiMode},
@@ -23,7 +23,7 @@ use crate::state::{HubState, ServiceSnapshot};
 pub struct DashboardScreen {
     train_stage_status: Option<TrainStageStatus>,
     train_stage_output: String,
-    train_stage_rx: Option<Receiver<TrainStageResult>>,
+    train_stage_task: Bind<TrainStageResult, String>,
     trainer_snapshot: Option<TrainerSnapshot>,
     last_trainer_snapshot_poll: Option<Instant>,
     last_observability_sample: Option<Instant>,
@@ -112,7 +112,7 @@ impl DashboardScreen {
         Self {
             train_stage_status: None,
             train_stage_output: String::new(),
-            train_stage_rx: None,
+            train_stage_task: Bind::new(true),
             trainer_snapshot: None,
             last_trainer_snapshot_poll: None,
             last_observability_sample: None,
@@ -137,8 +137,17 @@ impl DashboardScreen {
     ) {
         self.poll_train_stage_result();
 
-        ui.heading("Dashboard");
-        ui.add_space(16.0);
+        ui.label(
+            egui::RichText::new("Dashboard")
+                .text_style(egui::TextStyle::Heading)
+                .color(egui::Color32::from_rgb(225, 233, 245)),
+        );
+        ui.label(
+            egui::RichText::new("Mission control for runtime health, model operations, and signal confidence")
+                .small()
+                .color(egui::Color32::from_rgb(128, 145, 167)),
+        );
+        ui.add_space(12.0);
 
         let snap = &state.service_snapshot;
         self.poll_trainer_snapshot(service_manager, snap.running);
@@ -155,7 +164,9 @@ impl DashboardScreen {
             + snap.routed_auxiliary_streams
             + snap.routed_unknown_streams;
 
-        ui.group(|ui| {
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
             ui.label(egui::RichText::new("System Snapshot").small().strong());
             ui.add_space(6.0);
 
@@ -213,11 +224,13 @@ impl DashboardScreen {
                 ui.add_space(4.0);
                 ui.colored_label(egui::Color32::RED, format!("Service error in {} task", task));
             }
-        });
+            });
 
         ui.add_space(12.0);
 
-        ui.group(|ui| {
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
             ui.heading("Service");
             ui.add_space(8.0);
 
@@ -297,7 +310,7 @@ impl DashboardScreen {
                     ui.add_space(6.0);
                     let has_profile = state.active_profile_id.is_some();
                     let train_button = ui.add_enabled(
-                        self.train_stage_rx.is_none() && has_profile,
+                        !self.train_stage_task.is_pending() && has_profile,
                         egui::Button::new("Train + Stage Candidate"),
                     );
                     if train_button.clicked() {
@@ -370,11 +383,13 @@ impl DashboardScreen {
                 ui.add_space(6.0);
                 ui.colored_label(egui::Color32::RED, err);
             }
-        });
+            });
 
         ui.add_space(12.0);
 
-        ui.group(|ui| {
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
             ui.heading("Signal Quality");
             ui.add_space(8.0);
 
@@ -406,11 +421,14 @@ impl DashboardScreen {
                 ui.separator();
                 ui.colored_label(error_color, format!("Error rate: {:.1}%", error_rate));
             });
-        });
+            });
 
         ui.add_space(12.0);
 
-        ui.collapsing("Diagnostics", |ui| {
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
+            ui.collapsing("Diagnostics", |ui| {
             ui.label(
                 egui::RichText::new(format!("Runtime: {}", state.config.service.runtime_mode))
                     .small()
@@ -581,6 +599,7 @@ impl DashboardScreen {
                     });
             }
         });
+                    });
     }
 
     fn start_train_stage_job(&mut self, state: &HubState) {
@@ -598,36 +617,31 @@ impl DashboardScreen {
         self.train_stage_output.clear();
 
         let profile_store = state.profile_store.clone();
-        let (tx, rx) = mpsc::channel();
-        self.train_stage_rx = Some(rx);
-
-        std::thread::spawn(move || {
-            let result = run_train_stage_candidate_job(profile_store, profile_id);
-            let _ = tx.send(result);
+        self.train_stage_task.request(async move {
+            tokio::task::spawn_blocking(move || {
+                run_train_stage_candidate_job(profile_store, profile_id)
+            })
+            .await
+            .map_err(|error| format!("Training job failed to join: {}", error))
         });
     }
 
     fn poll_train_stage_result(&mut self) {
-        let Some(rx) = &self.train_stage_rx else {
-            return;
-        };
-
-        match rx.try_recv() {
-            Ok(result) => {
-                self.train_stage_status = Some(if result.success {
-                    TrainStageStatus::Success(result.message)
-                } else {
-                    TrainStageStatus::Error(result.message)
-                });
-                self.train_stage_output = result.output;
-                self.train_stage_rx = None;
-            }
-            Err(TryRecvError::Empty) => {}
-            Err(TryRecvError::Disconnected) => {
+        if let Some(result) = self.train_stage_task.take() {
+            match result {
+                Ok(result) => {
+                    self.train_stage_status = Some(if result.success {
+                        TrainStageStatus::Success(result.message)
+                    } else {
+                        TrainStageStatus::Error(result.message)
+                    });
+                    self.train_stage_output = result.output;
+                }
+                Err(error) => {
                 self.train_stage_status = Some(TrainStageStatus::Error(
-                    "Training job disconnected unexpectedly".to_string(),
+                    format!("Training job disconnected unexpectedly: {}", error),
                 ));
-                self.train_stage_rx = None;
+                }
             }
         }
     }
@@ -856,7 +870,22 @@ impl DashboardScreen {
         let (rect, response) =
             ui.allocate_exact_size(egui::vec2(ui.available_width(), 44.0), egui::Sense::hover());
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0, egui::Color32::from_gray(20));
+        painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(17, 22, 30));
+        painter.rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(45, 56, 73)),
+            egui::StrokeKind::Inside,
+        );
+
+        for division in 1..4 {
+            let y = rect.top() + rect.height() * (division as f32 / 4.0);
+            painter.hline(
+                rect.x_range(),
+                y,
+                egui::Stroke::new(0.8, egui::Color32::from_rgb(33, 42, 56)),
+            );
+        }
 
         if history.len() < 2 {
             painter.text(
@@ -882,7 +911,7 @@ impl DashboardScreen {
                 let x = if denom <= 0.0 {
                     rect.left()
                 } else {
-                    rect.left() + idx as f32 / denom * rect.width()
+                    rect.left() + rect.width() * (idx as f32 / denom)
                 };
                 let normalized = ((*value - min) / span) as f32;
                 let y = rect.bottom() - normalized * rect.height();
@@ -890,11 +919,31 @@ impl DashboardScreen {
             })
             .collect();
 
-        painter.add(egui::Shape::line(points, egui::Stroke::new(1.5, color)));
+        if let (Some(first), Some(last)) = (points.first().copied(), points.last().copied()) {
+            let mut area_points = Vec::with_capacity(points.len() + 2);
+            area_points.push(egui::pos2(first.x, rect.bottom()));
+            area_points.extend(points.iter().copied());
+            area_points.push(egui::pos2(last.x, rect.bottom()));
+            painter.add(egui::Shape::convex_polygon(
+                area_points,
+                color.gamma_multiply(0.16),
+                egui::Stroke::NONE,
+            ));
+        }
+
+        painter.add(egui::Shape::line(
+            points.clone(),
+            egui::Stroke::new(1.7, color),
+        ));
+
+        if let Some(last_point) = points.last() {
+            painter.circle_filled(*last_point, 2.4, color);
+        }
 
         if response.hovered() {
             response.on_hover_text(format!(
-                "min {} | max {}",
+                "latest {} | min {} | max {}",
+                Self::format_metric(history.latest(), precision, suffix),
                 Self::format_metric(Some(min), precision, suffix),
                 Self::format_metric(Some(max), precision, suffix)
             ));

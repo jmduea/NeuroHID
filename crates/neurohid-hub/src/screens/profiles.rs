@@ -38,9 +38,17 @@ impl ProfilesScreen {
         runtime: &tokio::runtime::Runtime,
         service_manager: &ServiceManager,
     ) {
-        ui.heading("Profiles");
+        ui.label(
+            egui::RichText::new("Profiles")
+                .text_style(egui::TextStyle::Heading)
+                .color(egui::Color32::from_rgb(225, 233, 245)),
+        );
         ui.add_space(8.0);
-        ui.label("Each profile stores personalized calibration data and decoder weights.");
+        ui.label(
+            egui::RichText::new("Each profile stores personalized calibration data and decoder weights.")
+                .small()
+                .color(egui::Color32::from_rgb(128, 145, 167)),
+        );
         ui.add_space(16.0);
 
         // Create profile button
@@ -51,7 +59,9 @@ impl ProfilesScreen {
 
         // Create dialog
         if self.show_create_dialog {
-            ui.group(|ui| {
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(20, 25, 34))
+                .show(ui, |ui| {
                 ui.heading("New Profile");
                 ui.horizontal(|ui| {
                     ui.label("Name:");
@@ -86,7 +96,7 @@ impl ProfilesScreen {
                         self.show_create_dialog = false;
                     }
                 });
-            });
+                });
         }
 
         ui.add_space(16.0);
@@ -101,7 +111,9 @@ impl ProfilesScreen {
         let mut delete_id = None;
         if let Some(id_str) = &self.delete_confirm {
             let id_str = id_str.clone();
-            ui.group(|ui| {
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(34, 20, 24))
+                .show(ui, |ui| {
                 ui.colored_label(
                     egui::Color32::RED,
                     format!("Delete profile \"{}\"?", id_str),
@@ -115,7 +127,7 @@ impl ProfilesScreen {
                         self.delete_confirm = None;
                     }
                 });
-            });
+                });
             ui.add_space(8.0);
         }
 
@@ -139,7 +151,9 @@ impl ProfilesScreen {
         for profile in &state.profiles {
             let is_active = state.active_profile_id.as_ref() == Some(&profile.id);
 
-            ui.group(|ui| {
+            egui::Frame::group(ui.style())
+                .fill(egui::Color32::from_rgb(20, 25, 34))
+                .show(ui, |ui| {
                 ui.horizontal(|ui| {
                     // Active indicator
                     if is_active {
@@ -200,7 +214,7 @@ impl ProfilesScreen {
                         }
                     });
                 });
-            });
+                });
         }
     }
 }

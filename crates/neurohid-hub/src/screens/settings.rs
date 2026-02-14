@@ -32,11 +32,23 @@ impl SettingsScreen {
         service_manager: &ServiceManager,
         runtime: &tokio::runtime::Runtime,
     ) {
-        ui.heading("Settings");
+        ui.label(
+            egui::RichText::new("Settings")
+                .text_style(egui::TextStyle::Heading)
+                .color(egui::Color32::from_rgb(225, 233, 245)),
+        );
+        ui.label(
+            egui::RichText::new("Configure runtime behavior, signal pipeline, devices, and interfaces")
+                .small()
+                .color(egui::Color32::from_rgb(128, 145, 167)),
+        );
         ui.add_space(8.0);
 
         // Save / Reset buttons
-        ui.horizontal(|ui| {
+        egui::Frame::group(ui.style())
+            .fill(egui::Color32::from_rgb(20, 25, 34))
+            .show(ui, |ui| {
+            ui.horizontal(|ui| {
             if ui
                 .add_enabled(self.unsaved_changes, egui::Button::new("Save"))
                 .clicked()
@@ -54,7 +66,12 @@ impl SettingsScreen {
                 state.config = neurohid_types::config::SystemConfig::default();
                 self.unsaved_changes = true;
             }
+            if self.unsaved_changes {
+                ui.separator();
+                ui.colored_label(egui::Color32::from_rgb(248, 205, 95), "Unsaved changes");
+            }
         });
+            });
 
         ui.add_space(16.0);
 

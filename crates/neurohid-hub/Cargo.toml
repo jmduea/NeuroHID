@@ -18,6 +18,10 @@ neurohid-signal = { path = "../neurohid-signal" }
 # GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
 egui = { workspace = true }
 egui_tiles = "0.14.1"
+egui-async = "0.3.4"
+egui_code_editor = "0.2.20"
+egui_console = "0.3.1"
+egui_logger = "0.9.2"
 
 # Async runtime
 tokio = { workspace = true }
