@@ -37,7 +37,7 @@ foreach ($package in $packages) {
 $lines.Add("")
 $lines.Add("## Governance Links")
 $lines.Add("")
-$lines.Add('- Default workflow: `.github/agents/_shared/multi-agent-phase-workflow.md`')
+$lines.Add('- Default workflow: `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md`')
 $lines.Add('- Scope map: `.github/automation/scope-map.json`')
 $lines.Add('- Architecture gate: `.github/workflows/architecture-gate.yml`')
 $lines.Add('- Protocol spec: `docs/runtime-ml-protocol-v2.md`')

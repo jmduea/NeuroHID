@@ -19,7 +19,23 @@ $resolvedHooksPath = if ([string]::IsNullOrWhiteSpace($HooksPath)) {
 $playbookPath = Join-Path $repoRoot "docs\automation\agent-skill-invocation-playbook.md"
 $topAgentsPath = Join-Path $repoRoot "AGENTS.md"
 $triggersPath = Join-Path $repoRoot ".github\hooks\TRIGGERS.md"
-$workflowContractPath = Join-Path $repoRoot ".github\agents\_shared\multi-agent-phase-workflow.md"
+$workflowContractPath = Join-Path $repoRoot "_bmad\neurohid\workflows\neurohid-phase-workflow\workflow.md"
+
+$knownAgentIds = @(
+    "writer",
+    "completion-finisher",
+    "rust-skill-router",
+    "architect",
+    "api-reviewer",
+    "product-manager",
+    "planner",
+    "test-engineer",
+    "verifier",
+    "ux-researcher",
+    "designer",
+    "scientist",
+    "deep-executor"
+)
 
 if (-not (Test-Path $resolvedHooksPath)) {
     throw "Missing hooks manifest: $resolvedHooksPath"
@@ -32,7 +48,7 @@ if ($routes.Count -eq 0) {
     throw "hooks.json has no UserPromptSubmit routes"
 }
 
-$missingAgentTargets = New-Object System.Collections.Generic.List[string]
+$unknownAgentIds = New-Object System.Collections.Generic.List[string]
 $duplicateMatchers = New-Object System.Collections.Generic.List[string]
 $duplicateAgentsInRoute = New-Object System.Collections.Generic.List[string]
 $seenMatchers = @{}
@@ -64,10 +80,8 @@ for ($index = 0; $index -lt $routes.Count; $index++) {
 
         [void]$hookAgentRefs.Add($relativeAgent)
 
-        $normalized = $relativeAgent -replace '^\.github/', '.github\\' -replace '/', '\\'
-        $target = Join-Path $repoRoot $normalized
-        if (-not (Test-Path $target)) {
-            $missingAgentTargets.Add($relativeAgent)
+        if (-not ($knownAgentIds -contains $relativeAgent)) {
+            $unknownAgentIds.Add($relativeAgent)
         }
     }
 }
@@ -85,38 +99,42 @@ if ($catchAllIndexes.Count -eq 0) {
 }
 
 $contentFiles = @($playbookPath, $topAgentsPath, $triggersPath, $workflowContractPath)
-$referencedAgents = New-Object System.Collections.Generic.HashSet[string]
-$agentRefPattern = '\.github/agents/[A-Za-z0-9._\-]+\.md'
+$requiredContractTokens = @(
+    "writer",
+    "completion-finisher",
+    "rust-skill-router",
+    "architect",
+    "api-reviewer",
+    "product-manager",
+    "planner",
+    "test-engineer",
+    "verifier",
+    "ux-researcher",
+    "designer",
+    "scientist"
+)
 
 if (-not $SkipContractReferenceChecks) {
+    $combinedContent = ""
     foreach ($file in $contentFiles) {
         if (-not (Test-Path $file)) {
             throw "Missing contract file: $file"
         }
 
-        $content = Get-Content -Raw -Path $file
-        $matches = [regex]::Matches($content, $agentRefPattern)
-        foreach ($match in $matches) {
-            [void]$referencedAgents.Add($match.Value)
+        $combinedContent += [string](Get-Content -Raw -Path $file)
+        $combinedContent += "`n"
+    }
+
+    $missingContractTokens = New-Object System.Collections.Generic.List[string]
+    foreach ($token in $requiredContractTokens) {
+        if (-not $combinedContent.Contains($token)) {
+            $missingContractTokens.Add($token)
         }
     }
-}
 
-$missingInContracts = New-Object System.Collections.Generic.List[string]
-if (-not $SkipContractReferenceChecks) {
-    foreach ($agentRef in $referencedAgents) {
-        $normalized = $agentRef -replace '^\.github/', '.github\\' -replace '/', '\\'
-        $target = Join-Path $repoRoot $normalized
-        if (-not (Test-Path $target)) {
-            $missingInContracts.Add($agentRef)
-        }
-    }
-}
-
-$undocumentedHookAgents = New-Object System.Collections.Generic.List[string]
-if (-not $SkipContractReferenceChecks) {
+    $undocumentedHookAgents = New-Object System.Collections.Generic.List[string]
     foreach ($agentRef in $hookAgentRefs) {
-        if (-not $referencedAgents.Contains($agentRef)) {
+        if (-not $combinedContent.Contains($agentRef)) {
             $undocumentedHookAgents.Add($agentRef)
         }
     }
@@ -124,10 +142,10 @@ if (-not $SkipContractReferenceChecks) {
 
 $failed = $false
 
-if ($missingAgentTargets.Count -gt 0) {
+if ($unknownAgentIds.Count -gt 0) {
     $failed = $true
-    Write-Host "Missing hook route targets:"
-    $missingAgentTargets | Sort-Object -Unique | ForEach-Object { Write-Host "  - $_" }
+    Write-Host "Unknown BMAD agent IDs in hook routes:"
+    $unknownAgentIds | Sort-Object -Unique | ForEach-Object { Write-Host "  - $_" }
 }
 
 if ($duplicateMatchers.Count -gt 0) {
@@ -148,15 +166,15 @@ if ($catchAllPolicyErrors.Count -gt 0) {
     $catchAllPolicyErrors | ForEach-Object { Write-Host "  - $_" }
 }
 
-if ($missingInContracts.Count -gt 0) {
+if ((-not $SkipContractReferenceChecks) -and ($missingContractTokens.Count -gt 0)) {
     $failed = $true
-    Write-Host "Missing agent files referenced by AGENTS.md/playbook:"
-    $missingInContracts | Sort-Object -Unique | ForEach-Object { Write-Host "  - $_" }
+    Write-Host "Routing vocabulary drift detected in contracts:"
+    $missingContractTokens | Sort-Object -Unique | ForEach-Object { Write-Host "  - $_" }
 }
 
-if ($undocumentedHookAgents.Count -gt 0) {
+if ((-not $SkipContractReferenceChecks) -and ($undocumentedHookAgents.Count -gt 0)) {
     $failed = $true
-    Write-Host "Hook-routed agents missing from documentation contracts:"
+    Write-Host "Hook-routed BMAD agents missing from documentation contracts:"
     $undocumentedHookAgents | Sort-Object -Unique | ForEach-Object { Write-Host "  - $_" }
 }
 

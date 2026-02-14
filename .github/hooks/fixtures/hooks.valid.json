@@ -5,16 +5,16 @@
       {
         "matcher": "(?i)(docs|readme|changelog)",
         "agents": [
-          ".github/agents/writer.md"
+          "writer"
         ]
       },
       {
         "matcher": "(?s).+",
         "agents": [
-          ".github/agents/deep-executor.md",
-          ".github/agents/verifier.md",
-          ".github/agents/writer.md",
-          ".github/agents/completion-finisher.md"
+          "deep-executor",
+          "verifier",
+          "writer",
+          "completion-finisher"
         ]
       }
     ]

@@ -55,42 +55,42 @@ $scenarios = @(
     @{
         Name = "Docs request"
         Prompt = "Please update docs and changelog for this protocol change"
-        RequiredAgents = @(".github/agents/writer.md", ".github/agents/completion-finisher.md")
+        RequiredAgents = @("writer", "completion-finisher")
     },
     @{
         Name = "Architecture review"
         Prompt = "Assess architecture and ADR impacts for this migration"
-        RequiredAgents = @(".github/agents/architect.md", ".github/agents/api-reviewer.md", ".github/agents/writer.md")
+        RequiredAgents = @("architect", "api-reviewer", "writer")
     },
     @{
         Name = "Feature planning"
         Prompt = "Do feature planning and define scope for this epic"
-        RequiredAgents = @(".github/agents/product-manager.md", ".github/agents/planner.md")
+        RequiredAgents = @("product-manager", "planner")
     },
     @{
         Name = "TDD workflow"
         Prompt = "Apply tdd approach and add a regression test"
-        RequiredAgents = @(".github/agents/test-engineer.md", ".github/agents/verifier.md")
+        RequiredAgents = @("test-engineer", "verifier")
     },
     @{
         Name = "UX review"
         Prompt = "Run a UX and accessibility review for onboarding"
-        RequiredAgents = @(".github/agents/ux-researcher.md", ".github/agents/designer.md", ".github/agents/writer.md")
+        RequiredAgents = @("ux-researcher", "designer", "writer")
     },
     @{
         Name = "Python ML"
         Prompt = "Review this ML training notebook and inference flow"
-        RequiredAgents = @(".github/agents/scientist.md", ".github/agents/test-engineer.md", ".github/agents/writer.md")
+        RequiredAgents = @("scientist", "test-engineer", "writer")
     },
     @{
         Name = "Rust issue"
         Prompt = "Rust E0502 borrow checker error in Cargo workspace"
-        RequiredAgents = @(".github/agents/rust-skill-router.md")
+        RequiredAgents = @("rust-skill-router")
     },
     @{
         Name = "Generic coding task"
         Prompt = "Implement this refactor and get it ready to commit"
-        RequiredAgents = @(".github/agents/deep-executor.md", ".github/agents/verifier.md", ".github/agents/writer.md", ".github/agents/completion-finisher.md")
+        RequiredAgents = @("deep-executor", "verifier", "writer", "completion-finisher")
     }
 )
 

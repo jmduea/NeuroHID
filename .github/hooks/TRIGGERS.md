@@ -6,14 +6,14 @@ This taxonomy defines which NeuroHID agent should activate for prompt intent and
 
 Default multi-agent flow for all prompts:
 
-- `.github/agents/deep-executor.md`
-- `.github/agents/verifier.md`
-- `.github/agents/writer.md`
-- `.github/agents/completion-finisher.md`
+- `deep-executor`
+- `verifier`
+- `writer`
+- `completion-finisher`
 
 Canonical workflow reference:
 
-- `.github/agents/_shared/multi-agent-phase-workflow.md`
+- `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md`
 
 ## writer
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
 - Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
 - Coverage quality gates in CI for both Rust (`cargo llvm-cov`) and Python (`pytest-cov`) with enforced minimum line-coverage thresholds and uploaded coverage artifacts
 - Coverage reporting integration via Codecov uploads (Rust `lcov.info`, Python `coverage.xml`) and top-level README coverage badge
@@ -36,7 +37,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hub now integrates `egui_logger` with a toggleable in-app Runtime Logs window, and Hub binary startup now uses a combined logger bridge so log events are visible in UI while still flowing through tracing subscribers
 - Hub now includes initial `egui_kittest` smoke tests for Python Lab and Jupyter IDE controls to lock in baseline UI behavior for the new async/editor/console flows
 - Visualization migration cookbook with phased `armas` and constrained `egui_dock` adoption guidance (`docs/ux/egui-visual-migration-cookbook.md`)
-- Default multi-agent phase workflow contract at `.github/agents/_shared/multi-agent-phase-workflow.md` with routing precedence and completion-phase artifacts
+- Default multi-agent phase workflow contract at `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md` with routing precedence and completion-phase artifacts
 - Agent routing integrity workflow `.github/workflows/agent-routing-integrity.yml` with hook schema checks, route integrity checks, and fixture-based regression checks
 - Hook policy validators: `.github/hooks/validate-routing.ps1`, `.github/hooks/test-validate-routing.ps1`, and `.github/hooks/validate-doc-contracts.ps1`
 
@@ -114,4 +115,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Legacy `.github/agents/**` directory and file-path based agent routing infrastructure; BMAD-native agent IDs and `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md` are now authoritative
 - Legacy in-tree Emotiv integration path (replaced by dedicated `emotiv-cortex-v2` and `emotiv-cortex-cli` crates in `https://github.com/jmduea/emotiv-cortex-rs`)

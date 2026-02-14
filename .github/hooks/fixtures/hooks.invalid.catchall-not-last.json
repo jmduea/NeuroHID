@@ -5,16 +5,16 @@
       {
         "matcher": "(?s).+",
         "agents": [
-          ".github/agents/deep-executor.md",
-          ".github/agents/verifier.md",
-          ".github/agents/writer.md",
-          ".github/agents/completion-finisher.md"
+          "deep-executor",
+          "verifier",
+          "writer",
+          "completion-finisher"
         ]
       },
       {
         "matcher": "(?i)(rust|cargo)",
         "agents": [
-          ".github/agents/rust-skill-router.md"
+          "rust-skill-router"
         ]
       }
     ]

@@ -7,7 +7,7 @@ $contractFiles = @(
     "AGENTS.md",
     ".github/hooks/TRIGGERS.md",
     "docs/automation/agent-skill-invocation-playbook.md",
-    ".github/agents/_shared/multi-agent-phase-workflow.md",
+    "_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md",
     ".github/automation/scope-map.json",
     "docs/architecture/index.md"
 )
@@ -20,18 +20,18 @@ $canonicalSources = @(
 )
 
 $requiredAgentTokens = @(
-    ".github/agents/writer.md",
-    ".github/agents/completion-finisher.md",
-    ".github/agents/rust-skill-router.md",
-    ".github/agents/architect.md",
-    ".github/agents/api-reviewer.md",
-    ".github/agents/product-manager.md",
-    ".github/agents/planner.md",
-    ".github/agents/test-engineer.md",
-    ".github/agents/verifier.md",
-    ".github/agents/ux-researcher.md",
-    ".github/agents/designer.md",
-    ".github/agents/scientist.md"
+    "writer",
+    "completion-finisher",
+    "rust-skill-router",
+    "architect",
+    "api-reviewer",
+    "product-manager",
+    "planner",
+    "test-engineer",
+    "verifier",
+    "ux-researcher",
+    "designer",
+    "scientist"
 )
 
 $missingFiles = New-Object System.Collections.Generic.List[string]
@@ -63,7 +63,7 @@ if ($missingFiles.Count -eq 0) {
         "AGENTS.md",
         ".github/hooks/TRIGGERS.md",
         "docs/automation/agent-skill-invocation-playbook.md",
-        ".github/agents/_shared/multi-agent-phase-workflow.md"
+        "_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md"
     )
 
     $combinedContent = ""

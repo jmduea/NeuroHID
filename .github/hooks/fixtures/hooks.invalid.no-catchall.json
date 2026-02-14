@@ -5,7 +5,7 @@
       {
         "matcher": "(?i)(docs|readme|changelog)",
         "agents": [
-          ".github/agents/writer.md"
+          "writer"
         ]
       }
     ]

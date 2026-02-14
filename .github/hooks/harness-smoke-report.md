@@ -1,6 +1,6 @@
 # Harness Smoke Report
 
-Generated: 2026-02-14T14:43:39.4424962-06:00
+Generated: 2026-02-14T17:00:14.3088576-06:00
 
 Overall: PASS
 
@@ -16,14 +16,14 @@ Overall: PASS
 
 | Scenario | Status | Missing Required Agents | Matched Agents |
 | --- | --- | --- | --- |
-| Docs request | PASS | - | .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/verifier.md, .github/agents/writer.md |
-| Architecture review | PASS | - | .github/agents/api-reviewer.md, .github/agents/architect.md, .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/verifier.md, .github/agents/writer.md |
-| Feature planning | PASS | - | .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/planner.md, .github/agents/product-manager.md, .github/agents/verifier.md, .github/agents/writer.md |
-| TDD workflow | PASS | - | .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/test-engineer.md, .github/agents/verifier.md, .github/agents/writer.md |
-| UX review | PASS | - | .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/designer.md, .github/agents/ux-researcher.md, .github/agents/verifier.md, .github/agents/writer.md |
-| Python ML | PASS | - | .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/scientist.md, .github/agents/test-engineer.md, .github/agents/verifier.md, .github/agents/writer.md |
-| Rust issue | PASS | - | .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/rust-skill-router.md, .github/agents/verifier.md, .github/agents/writer.md |
-| Generic coding task | PASS | - | .github/agents/completion-finisher.md, .github/agents/deep-executor.md, .github/agents/verifier.md, .github/agents/writer.md |
+| Docs request | PASS | - | completion-finisher, deep-executor, verifier, writer |
+| Architecture review | PASS | - | api-reviewer, architect, completion-finisher, deep-executor, verifier, writer |
+| Feature planning | PASS | - | completion-finisher, deep-executor, planner, product-manager, verifier, writer |
+| TDD workflow | PASS | - | completion-finisher, deep-executor, test-engineer, verifier, writer |
+| UX review | PASS | - | completion-finisher, deep-executor, designer, ux-researcher, verifier, writer |
+| Python ML | PASS | - | completion-finisher, deep-executor, scientist, test-engineer, verifier, writer |
+| Rust issue | PASS | - | completion-finisher, deep-executor, rust-skill-router, verifier, writer |
+| Generic coding task | PASS | - | completion-finisher, deep-executor, verifier, writer |
 
 ## Scenario Prompts
 

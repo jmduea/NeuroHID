@@ -19,18 +19,43 @@ Recommended local command:
 
 - `pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -RustScope focused -WithDocs -WithProtocol -WithUnsafe`
 
+## 0.1) BMAD-First Replacement Policy for `.github`
+
+Use BMAD as the implementation owner for all applicable components while preserving required GitHub platform boundaries.
+
+Replaceable (migrate to BMAD-owned assets first):
+
+- `.github/prompts/bmad-*` prompt/task logic → `_bmad/*/workflows/*` and `_bmad/*/agents/*`
+- `.github` process docs that describe BMAD flows → `docs/automation/*` and `_bmad/neurohid/*`
+
+Keep (platform/shared boundary, not BMAD-replaceable in current architecture):
+
+- `.github/workflows/*` (GitHub Actions event + checks integration)
+- `.github/hooks/*` (hook wiring contract)
+- `.github/skills/*` (shared Rust/domain skill registry)
+- `.github/PULL_REQUEST_TEMPLATE.md` (GitHub PR UI template)
+
+Hybrid (keep thin wrappers, move logic to BMAD workflows):
+
+- `.github/scripts/classify-impact.ps1`
+- `.github/scripts/generate-architecture-index.ps1`
+
+Canonical matrix:
+
+- `docs/automation/github-to-bmad-replacement-matrix.md`
+
 ## 1) Default Multi-Agent Coordination (Always On)
 
 Canonical phase workflow:
 
-- `.github/agents/_shared/multi-agent-phase-workflow.md`
+- `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md`
 
 Default agents for every prompt:
 
-- `.github/agents/deep-executor.md`
-- `.github/agents/verifier.md`
-- `.github/agents/writer.md`
-- `.github/agents/completion-finisher.md`
+- `deep-executor`
+- `verifier`
+- `writer`
+- `completion-finisher`
 
 Prompt example:
 
@@ -42,7 +67,7 @@ Prompt example:
 
 Agent:
 
-- `.github/agents/writer.md`
+- `writer`
 
 Skills:
 
@@ -66,8 +91,8 @@ Workflow:
 
 Agents:
 
-- `.github/agents/architect.md`
-- `.github/agents/api-reviewer.md`
+- `architect`
+- `api-reviewer`
 
 Prompt example:
 
@@ -85,18 +110,18 @@ Workflow:
 
 Planning agents:
 
-- `.github/agents/product-manager.md`
-- `.github/agents/planner.md`
+- `product-manager`
+- `planner`
 
 TDD/verification agents:
 
-- `.github/agents/test-engineer.md`
-- `.github/agents/verifier.md`
+- `test-engineer`
+- `verifier`
 
 UX agents:
 
-- `.github/agents/ux-researcher.md`
-- `.github/agents/designer.md`
+- `ux-researcher`
+- `designer`
 
 Prompt examples:
 
@@ -110,7 +135,7 @@ Prompt examples:
 
 Rust router agent:
 
-- `.github/agents/rust-skill-router.md`
+- `rust-skill-router`
 
 Primary skill router:
 
@@ -133,7 +158,7 @@ Prompt example:
 
 Checkpoint role:
 
-- `.github/agents/completion-finisher.md`
+- `completion-finisher`
 
 Prompt example:
 

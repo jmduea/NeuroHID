@@ -20,7 +20,7 @@ Generated: 2026-02-14T13:07:30.8561044-06:00
 
 ## Governance Links
 
-- Default workflow: `.github/agents/_shared/multi-agent-phase-workflow.md`
+- Default workflow: `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md`
 - Scope map: `.github/automation/scope-map.json`
 - Architecture gate: `.github/workflows/architecture-gate.yml`
 - Protocol spec: `docs/runtime-ml-protocol-v2.md`

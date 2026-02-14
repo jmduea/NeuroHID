@@ -56,7 +56,7 @@
       "docs": ["docs/SPECIFICATION.md", "README.md", "CHANGELOG.md"]
     },
     {
-      "pattern": ".github/agents/**",
+      "pattern": "_bmad/**",
       "owner": "automation",
       "checks": ["agent-routing-integrity"],
       "docs": ["AGENTS.md", "docs/automation/agent-skill-invocation-playbook.md", "CHANGELOG.md"]

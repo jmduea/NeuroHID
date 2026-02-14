@@ -22,21 +22,34 @@ pedantic = "warn"
 ### 0. Automation Ownership Model
 
 - Shared, reusable Rust intelligence lives in `.github/skills/*`.
-- NeuroHID-specific process automation lives in `.github/agents/*` and `.github/skills/*`.
+- NeuroHID-specific process automation is BMAD-first in `_bmad/neurohid/*` and `_bmad/*/workflows/*`.
 - Prompt/runtime hook wiring for NeuroHID-specific behavior lives in `.github/hooks/*`.
 
 ### 0.1 Agent Success Defaults
 
-- Use the autonomy harness first for execution tasks: `.github/agents/autonomy-execution-harness.md`.
+- Use the autonomy harness semantics first for execution tasks with BMAD-native role `deep-executor`.
 - Continue implementation loops without pausing for permission between normal sub-steps.
 - Stop only for clarification, approval-gated risky/destructive actions, or true no-work-left state.
 - Validate incrementally (smallest relevant checks first), then broader checks before handoff.
-- Default workflow phases are defined in `.github/agents/_shared/multi-agent-phase-workflow.md`.
+- Default workflow phases are defined in `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md`.
 - Classify changed-file impact with `.github/scripts/classify-impact.ps1` before selecting gates.
 - Use `.github/automation/scope-map.json` as the source of truth for path-to-check/docs routing.
 - Prefer canonical local/CI runner `.github/scripts/run-agent-ready-tasks.ps1`.
 - Keep architecture index current via `.github/scripts/generate-architecture-index.ps1`.
 - Use `.github/scripts/check-docs-freshness.ps1`, `.github/scripts/check-unsafe-compliance.ps1`, and `.github/scripts/verify-protocol-contracts.ps1` as required policy gates.
+
+### 0.2 BMAD ↔ GitHub Boundary
+
+- Replaceable `.github` components MUST be moved to BMAD-owned paths first:
+    - Prompt/task logic → `_bmad/*/workflows/*` or `_bmad/*/agents/*`
+    - Module-specific process documentation → `docs/automation/*` plus `_bmad/neurohid/*`
+- Keep these `.github` components as platform/shared boundaries:
+    - `.github/workflows/*` (GitHub Actions platform integration)
+    - `.github/hooks/*` (runtime prompt/hook wiring contract)
+    - `.github/skills/*` (shared Rust intelligence used by routing)
+    - `.github/PULL_REQUEST_TEMPLATE.md` (GitHub UI artifact)
+- Keep `.github/automation/scope-map.json` as CI/local routing source of truth unless CI is explicitly migrated to BMAD-native manifest loading.
+- For migration details, follow `docs/automation/github-to-bmad-replacement-matrix.md`.
 
 Preferred validation order in this repo:
 
@@ -57,14 +70,14 @@ Route Rust questions to appropriate skills:
 
 Route NeuroHID workflow questions to repo-local assets:
 
-- Documentation freshness + docs updates → `.github/agents/writer.md`
-- Architecture decisions/ADRs → `.github/agents/architect.md`, `.github/agents/api-reviewer.md`
-- Feature planning → `.github/agents/product-manager.md`, `.github/agents/planner.md`
-- TDD/test strategy → `.github/agents/test-engineer.md`, `.github/agents/verifier.md`
-- UX/UI review (app + docs + notebooks) → `.github/agents/ux-researcher.md`, `.github/agents/designer.md`
-- Python/ML & deep learning workflows → `.github/agents/scientist.md`
-- End-of-task hygiene (commit grouping + readiness) → `.github/agents/completion-finisher.md`
-- Continuous execution defaults (no unnecessary waiting) → `.github/agents/autonomy-execution-harness.md`
+- Documentation freshness + docs updates → BMAD agent `writer`
+- Architecture decisions/ADRs → BMAD agents `architect`, `api-reviewer`
+- Feature planning → BMAD agents `pm`, `sm`
+- TDD/test strategy → BMAD agents `qa`, `tea`, `verifier`
+- UX/UI review (app + docs + notebooks) → BMAD agents `ux-designer`, `designer`
+- Python/ML & deep learning workflows → BMAD agent `scientist`
+- End-of-task hygiene (commit grouping + readiness) → BMAD agent `completion-finisher`
+- Continuous execution defaults (no unnecessary waiting) → BMAD agent `deep-executor` + autonomy harness semantics
 
 ### Completion Protocol (Required)
 

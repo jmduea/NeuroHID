@@ -5,73 +5,73 @@
       {
         "matcher": "(?i)(docs|documentation|readme|spec|changelog|stale docs|doc drift|protocol doc)",
         "agents": [
-          ".github/agents/writer.md"
+          "writer"
         ]
       },
       {
         "matcher": "(?i)(architecture|adr|boundary|layering|cross-crate|protocol compatibility|storage format|migration)",
         "agents": [
-          ".github/agents/architect.md",
-          ".github/agents/api-reviewer.md",
-          ".github/agents/writer.md"
+          "architect",
+          "api-reviewer",
+          "writer"
         ]
       },
       {
         "matcher": "(?i)(feature planning|feature brief|roadmap|milestone|epic|scope|definition of ready|definition of done)",
         "agents": [
-          ".github/agents/product-manager.md",
-          ".github/agents/planner.md"
+          "product-manager",
+          "planner"
         ]
       },
       {
         "matcher": "(?i)(tdd|tests first|test-driven|add tests|failing test|regression test)",
         "agents": [
-          ".github/agents/test-engineer.md",
-          ".github/agents/verifier.md"
+          "test-engineer",
+          "verifier"
         ]
       },
       {
         "matcher": "(?i)(ux|ui|usability|interaction|onboarding|accessibility|notebook workflow|docs ux)",
         "agents": [
-          ".github/agents/ux-researcher.md",
-          ".github/agents/designer.md",
-          ".github/agents/writer.md"
+          "ux-researcher",
+          "designer",
+          "writer"
         ]
       },
       {
         "matcher": "(?i)(python|ml|deep learning|eegnet|decoder|errp|inference|training|notebook)",
         "agents": [
-          ".github/agents/scientist.md",
-          ".github/agents/test-engineer.md",
-          ".github/agents/writer.md"
+          "scientist",
+          "test-engineer",
+          "writer"
         ]
       },
       {
         "matcher": "(?i)(\\brust\\b|\\bcargo\\b|rustc|crate|Cargo\\.toml|\\.rs\\b|ownership|borrow|lifetime|trait|generic|async|await|tokio|serde|axum|unsafe|ffi|E0\\d{3,4}|value moved|cannot borrow|does not live long enough|mismatched types|not satisfied|Send|Sync)",
         "agents": [
-          ".github/agents/rust-skill-router.md"
+          "rust-skill-router"
         ]
       },
       {
         "matcher": "(?i)(\\brtk\\b|rust token killer|token reduction|token savings|command rewrite|prefix commands with rtk|rtk init|rtk gain)",
         "agents": [
-          ".github/agents/deep-executor.md"
+          "deep-executor"
         ]
       },
       {
         "matcher": "(?i)(implement|implementation|fix|refactor|coding|code change|finish coding|done coding|ship it|ready to commit|create commit)",
         "agents": [
-          ".github/agents/writer.md",
-          ".github/agents/completion-finisher.md"
+          "writer",
+          "completion-finisher"
         ]
       },
       {
         "matcher": "(?s).+",
         "agents": [
-          ".github/agents/deep-executor.md",
-          ".github/agents/verifier.md",
-          ".github/agents/writer.md",
-          ".github/agents/completion-finisher.md"
+          "deep-executor",
+          "verifier",
+          "writer",
+          "completion-finisher"
         ]
       }
     ]
