@@ -585,3 +585,42 @@ fn open_url(url: &str) -> std::io::Result<()> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use egui_kittest::{
+        kittest::Queryable,
+        Harness,
+    };
+
+    use super::JupyterIdeScreen;
+
+    struct JupyterHarnessState {
+        screen: JupyterIdeScreen,
+        ui_cfg: neurohid_types::config::UiConfig,
+    }
+
+    #[test]
+    fn renders_primary_controls_and_console_panel() {
+        let mut ui_cfg = neurohid_types::config::SystemConfig::default().ui;
+        ui_cfg.jupyter_auto_bootstrap = false;
+
+        let harness_state = JupyterHarnessState {
+            screen: JupyterIdeScreen::new(),
+            ui_cfg,
+        };
+
+        let harness = Harness::new_ui_state(
+            |ui, state: &mut JupyterHarnessState| {
+                state.screen.show(ui, &state.ui_cfg);
+            },
+            harness_state,
+        );
+
+        harness.get_by_label("Prepare Environment");
+        harness.get_by_label("Start Jupyter");
+        harness.get_by_label("Clear Log");
+        harness.get_by_label("IDE Log");
+        harness.get_by_label("IDE Console");
+    }
+}

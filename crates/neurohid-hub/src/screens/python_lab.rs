@@ -981,3 +981,53 @@ fn run_uv_sync_blocking() -> String {
         Err(error) => format!("Failed to run uv sync: {}\n", error),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use egui_kittest::{
+        kittest::Queryable,
+        Harness,
+    };
+
+    use super::PythonLabScreen;
+    use crate::{
+        data_bus::DataBus,
+        state::ServiceSnapshot,
+    };
+
+    struct PythonLabHarnessState {
+        screen: PythonLabScreen,
+        data_bus: DataBus,
+        service_snapshot: ServiceSnapshot,
+    }
+
+    #[test]
+    fn renders_controls_and_add_cell_interaction() {
+        let mut harness = Harness::new_ui_state(
+            |ui, state: &mut PythonLabHarnessState| {
+                state.screen.show(
+                    ui,
+                    "uv run --project python neurohid-ml kernel-adapter",
+                    &state.data_bus,
+                    &state.service_snapshot,
+                );
+            },
+            PythonLabHarnessState {
+                screen: PythonLabScreen::new(),
+                data_bus: DataBus::new(),
+                service_snapshot: ServiceSnapshot::default(),
+            },
+        );
+
+        harness.get_by_label("Add Cell");
+        harness.get_by_label("Run All");
+        harness.get_by_label("uv sync");
+        harness.get_by_label("Kernel / Tool Log");
+        harness.get_by_label("Cell 1");
+
+        harness.get_by_label("Add Cell").click();
+        harness.run();
+
+        harness.get_by_label("Cell 2");
+    }
+}
