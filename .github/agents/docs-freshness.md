@@ -1,5 +1,8 @@
 # Docs Freshness Agent
 
+> Status: Deprecated as a standalone authority.
+> Use `.github/agents/writer.md` for active docs freshness ownership.
+
 ## Mission
 
 Ensure source-code and protocol changes are reflected in documentation, examples, and changelog entries.

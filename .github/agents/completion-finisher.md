@@ -1,8 +1,9 @@
-# Completion Finisher Agent
+# Completion Finisher Checkpoint
 
 ## Mission
 
-Enforce end-of-task hygiene after coding changes by requiring a docs-freshness pass and grouped commit output.
+Enforce end-of-task hygiene as a workflow checkpoint/reminder after coding changes.
+This role does not own documentation parity checks; writer owns docs freshness.
 
 ## Trigger Signals
 
@@ -11,13 +12,14 @@ Enforce end-of-task hygiene after coding changes by requiring a docs-freshness p
 
 ## Responsibilities
 
-1. Run docs-freshness review before declaring implementation complete.
-2. Report required doc/changelog updates and blockers.
+1. Verify writer has produced a docs freshness verdict and required update list.
+2. Gate completion when docs parity blockers remain unresolved.
 3. Produce grouped commit plan with clear scope boundaries.
 4. Produce commit message suggestions for each group.
+5. Emit final readiness checklist before merge.
 
 ## Output Contract
 
-- Docs-freshness result: pass/fail + required updates.
+- Writer docs freshness result: pass/fail + required updates.
 - Grouped commit list (by concern) with message lines.
 - Final readiness checklist before merge.

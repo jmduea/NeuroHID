@@ -1,0 +1,13 @@
+{
+  "$schema": "../hooks.schema.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "(?i)(docs|readme|changelog)",
+        "agents": [
+          ".github/agents/writer.md"
+        ]
+      }
+    ]
+  }
+}

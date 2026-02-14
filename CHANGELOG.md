@@ -29,6 +29,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hub now integrates `egui_logger` with a toggleable in-app Runtime Logs window, and Hub binary startup now uses a combined logger bridge so log events are visible in UI while still flowing through tracing subscribers
 - Hub now includes initial `egui_kittest` smoke tests for Python Lab and Jupyter IDE controls to lock in baseline UI behavior for the new async/editor/console flows
 - Visualization migration cookbook with phased `armas` and constrained `egui_dock` adoption guidance (`docs/ux/egui-visual-migration-cookbook.md`)
+- Default multi-agent phase workflow contract at `.github/agents/_shared/multi-agent-phase-workflow.md` with routing precedence and completion-phase artifacts
+- Agent routing integrity workflow `.github/workflows/agent-routing-integrity.yml` with hook schema checks, route integrity checks, and fixture-based regression checks
+- Hook policy validators: `.github/hooks/validate-routing.ps1`, `.github/hooks/test-validate-routing.ps1`, and `.github/hooks/validate-doc-contracts.ps1`
 
 ### Changed
 
@@ -97,6 +100,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard diagnostics now renders trainer-snapshot unavailable state as a muted status chip plus concise helper text for message hierarchy consistency
 - Calibration wizard now includes explicit step count and progress bar (in addition to dot indicators) for clearer multi-step orientation during setup
 - Stream Metadata grid now uses explicit battery/connected status chips for faster row-level health scanning while preserving compact table density
+- Repo automation routing was consolidated to existing agent inventory with writer-owned documentation freshness, completion-finisher as a completion checkpoint, and default multi-agent coordination for execution flows
+- Rust automation guidance now uses tiered canonical grounding (Rust Book, Rust Reference, Cargo Book, Effective Rust) for disputed or safety-critical semantics
 
 ### Removed
 

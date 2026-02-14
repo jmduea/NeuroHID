@@ -1,198 +1,129 @@
 # Agent + Skill Invocation Playbook
 
-Use these prompts directly in chat to trigger the right NeuroHID automation path.
+Use these prompts directly in chat to trigger the current NeuroHID automation path.
 
-## 1) Documentation Freshness
+## 1) Default Multi-Agent Coordination (Always On)
 
-### Documentation Freshness Agent
+Canonical phase workflow:
 
-- Agent file: `.github/agents/docs-freshness.md`
-- Prompt:
-  - `Run docs-freshness review for this change. Identify every README/spec/changelog update required before merge.`
+- `.github/agents/_shared/multi-agent-phase-workflow.md`
 
-### Documentation Freshness Skill
+Default agents for every prompt:
 
-- Skill file: `.github/skills/docs-freshness/SKILL.md`
-- Prompt:
-  - `Apply docs-freshness skill: map changed code/protocol files to required documentation updates and list blockers.`
+- `.github/agents/deep-executor.md`
+- `.github/agents/verifier.md`
+- `.github/agents/writer.md`
+- `.github/agents/completion-finisher.md`
 
-### Documentation Freshness Workflow
+Prompt example:
 
-1. Implement code or protocol changes.
-2. Run docs-freshness prompt.
-3. Update `README.md`, `docs/*`, and `CHANGELOG.md` as required.
-4. Re-run docs-freshness until no blockers remain.
+- `Run the default multi-agent phase workflow and continue until completion or a true blocker.`
 
 ---
 
-## 2) Architecture Validation (ADR)
+## 2) Documentation Freshness + Docs Updates (Writer-Owned)
 
-### Architecture Validation Agent
+Agent:
 
-- Agent file: `.github/agents/architecture-validator.md`
-- Prompt:
-  - `Run architecture-validator on this diff. Tell me if ADR is required and what compatibility or migration notes are mandatory.`
+- `.github/agents/writer.md`
 
-### Architecture Validation Skill
+Skills:
 
-- Skill file: `.github/skills/architecture-validator/SKILL.md`
-- Prompt:
-  - `Apply architecture-validator skill to assess boundary/layering impact and produce ADR requirement rationale.`
+- `.github/skills/docs-freshness/SKILL.md`
+- `.github/skills/completion-finisher/SKILL.md`
 
-### Architecture Validation Workflow
+Prompt example:
 
-1. Draft or review architecture-impacting changes.
-2. Run architecture-validator prompt.
-3. If required, create/update ADR in `docs/adr/`.
-4. Add migration/compatibility notes and link ADR in PR body.
+- `Run writer docs freshness review for this change and list required README/spec/changelog updates with blockers.`
 
----
+Workflow:
 
-## 3) Feature Planning
-
-### Feature Planning Agent
-
-- Agent file: `.github/agents/feature-planner.md`
-- Prompt:
-  - `Use feature-planner to turn this feature request into implementation-ready scope with acceptance criteria, TDD test intent, and rollout steps.`
-
-### Feature Planning Skill
-
-- Skill file: `.github/skills/feature-planning/SKILL.md`
-- Prompt:
-  - `Apply feature-planning skill and produce a filled feature brief plus DoR/DoD status.`
-
-### Feature Planning Workflow
-
-1. Start from issue/feature request.
-2. Generate feature brief using planner prompt.
-3. Validate DoR in `docs/planning/definition-of-ready.md`.
-4. Execute in slices; close with DoD in `docs/planning/definition-of-done.md`.
+1. Implement or verify behavior changes.
+2. Run writer docs freshness review.
+3. Apply required `README.md` / `docs/*` / `CHANGELOG.md` updates.
+4. Re-run writer docs freshness review until no blockers remain.
 
 ---
 
-## 4) TDD Enforcement
+## 3) Architecture + Compatibility Review
 
-### TDD Enforcement Agent
+Agents:
 
-- Agent file: `.github/agents/tdd-enforcer.md`
-- Prompt:
-  - `Run tdd-enforcer: require failing-test intent first, then verify test deltas fully cover this behavior change.`
+- `.github/agents/architect.md`
+- `.github/agents/api-reviewer.md`
 
-### TDD Enforcement Skill
+Prompt example:
 
-- Skill file: `.github/skills/tdd-enforcement/SKILL.md`
-- Prompt:
-  - `Apply tdd-enforcement skill and report missing tests by module and merge blockers.`
+- `Run architecture and API compatibility review for this diff; identify ADR, migration, and compatibility requirements.`
 
-### TDD Enforcement Workflow
+Workflow:
 
-1. Describe expected behavior change.
-2. Write/identify failing test first.
-3. Implement minimal code change.
-4. Re-run tests and tdd-enforcer prompt.
-5. Merge only when no test gaps remain.
+1. Run architecture/API review.
+2. If required, update `docs/adr/*` and migration notes.
+3. Re-check docs freshness with writer.
 
 ---
 
-## 5) UX/UI Review
+## 4) Planning, TDD, and UX Specialization
 
-### UX/UI Review Agent
+Planning agents:
 
-- Agent file: `.github/agents/ux-reviewer.md`
-- Prompt:
-  - `Run ux-reviewer for this change across app UX, docs UX, and notebook UX using docs/ux/interaction-checklist.md.`
+- `.github/agents/product-manager.md`
+- `.github/agents/planner.md`
 
-### UX/UI Review Skill
+TDD/verification agents:
 
-- Skill file: `.github/skills/ux-ui-review/SKILL.md`
-- Prompt:
-  - `Apply ux-ui-review skill and return required fixes by severity.`
+- `.github/agents/test-engineer.md`
+- `.github/agents/verifier.md`
 
-### UX/UI Review Workflow
+UX agents:
 
-1. Complete a user-facing change.
-2. Run ux-reviewer prompt.
-3. Fix high-severity issues first.
-4. Confirm state coverage (loading/success/empty/error) and accessibility basics.
+- `.github/agents/ux-researcher.md`
+- `.github/agents/designer.md`
 
----
+Prompt examples:
 
-## 6) Python ML Specialist
-
-### Python ML Specialist Agent
-
-- Agent file: `.github/agents/python-ml-specialist.md`
-- Prompt:
-  - `Run python-ml-specialist review for this ML change: validate protocol compatibility, reproducibility, and required quality gates.`
-
-### Python ML Specialist Skill
-
-- Skill file: `.github/skills/python-ml-specialist/SKILL.md`
-- Prompt:
-  - `Apply python-ml-specialist skill and report integration risks, missing validation steps, and blockers.`
-
-### Python ML Specialist Workflow
-
-1. Update Python ML/runtime/notebook code.
-2. Run python-ml-specialist prompt.
-3. Run uv-only checks: `uv run --project python ruff check python/src python/tests`, `uv run --project python black --check python/src python/tests`, `uv run --project python mypy python/src`, `uv run --project python pytest python/tests -q`.
-4. Confirm protocol/docs alignment and close blockers.
+- `Generate implementation-ready scope and acceptance criteria for this feature.`
+- `Run TDD and verification coverage review for this behavior change.`
+- `Run UX and accessibility review for this user-facing change.`
 
 ---
 
-## 7) CI/CD Optimization
+## 5) Rust Skill Routing + Canonical Grounding
 
-No dedicated CI/CD agent exists yet. Use this prompt until one is added:
+Rust router agent:
 
-- Prompt:
-  - `Review this workflow or pipeline change for CI/CD hardening: path filters, gate relevance, failure quality, and release safety.`
+- `.github/agents/rust-skill-router.md`
 
-Typical workflow:
+Primary skill router:
 
-1. Modify `.github/workflows/*`.
-2. Run the CI/CD review prompt.
-3. Validate only relevant gates trigger.
-4. Confirm release safety and rollback clarity.
+- `.github/skills/rust-router/SKILL.md`
 
----
+Canonical Rust sources for tier-2 escalation:
 
-## 8) Completion Finisher (Always after coding)
+- Rust Book: <https://doc.rust-lang.org/book/>
+- Rust Reference: <https://doc.rust-lang.org/stable/reference/>
+- Cargo Book: <https://doc.rust-lang.org/stable/cargo/>
+- Effective Rust: <https://effective-rust.com/>
 
-### Completion Finisher Agent
+Prompt example:
 
-- Agent file: `.github/agents/completion-finisher.md`
-- Prompt:
-  - `Run completion-finisher now: execute docs-freshness checks and produce grouped commits with clear commit messages.`
-
-### Completion Finisher Skill
-
-- Skill file: `.github/skills/completion-finisher/SKILL.md`
-- Prompt:
-  - `Apply completion-finisher skill to confirm docs are fresh and output grouped commit plan + commit messages.`
-
-### Completion Finisher Workflow
-
-1. Finish implementation and tests.
-2. Run docs-freshness review.
-3. Apply required README/spec/changelog updates.
-4. Generate grouped commit plan (code/tests/docs/ci).
-5. Generate clear commit messages per group.
+- `Route this Rust issue through rust-router and cite canonical sources for any disputed or safety-critical guidance.`
 
 ---
 
-## 9) Autonomy Execution Harness (Run first on execution tasks)
+## 6) Completion Checkpoint (After Coding)
 
-### Autonomy Harness Agent
+Checkpoint role:
 
-- Agent file: `.github/agents/autonomy-execution-harness.md`
-- Prompt:
-  - `Run autonomy-execution-harness and continue implementing in a loop until the current request is complete or truly blocked. Do not pause for permission between normal sub-steps.`
+- `.github/agents/completion-finisher.md`
 
-### Autonomy Harness Workflow
+Prompt example:
 
-1. Start execution task.
-2. Run autonomy harness prompt.
-3. Continue implementation/validation loop without waiting for "continue/proceed" prompts.
-4. Stop only for clarification, required approval, or true no-work-left state.
-5. Then run completion-finisher flow.
+- `Run completion-finisher checkpoint: verify writer docs freshness output and produce grouped commit messages.`
+
+Workflow:
+
+1. Ensure implementation and verification evidence are complete.
+2. Ensure writer docs freshness output is PASS or blockers are explicit.
+3. Produce grouped commit plan and commit message suggestions.

@@ -9,6 +9,7 @@ user-invocable: true
 ## Purpose
 
 Standardize task completion for coding work.
+This skill acts as a completion checkpoint and does not replace writer docs freshness ownership.
 
 ## Inputs
 
@@ -18,13 +19,13 @@ Standardize task completion for coding work.
 
 ## Checks
 
-1. Docs-freshness has been run after coding changes.
+1. Writer docs freshness output exists after coding changes.
 2. Required README/spec/changelog updates are complete.
 3. Commit groups are logically scoped and non-overlapping.
 4. Each commit message is clear and audit-friendly.
 
 ## Output
 
-- Docs-freshness pass/fail.
+- Writer docs freshness pass/fail.
 - Required doc updates.
 - Grouped commit plan and message suggestions.

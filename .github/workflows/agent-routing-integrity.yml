@@ -1,0 +1,40 @@
+name: Agent Routing Integrity
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/agents/**"
+      - ".github/hooks/**"
+      - "docs/automation/**"
+      - "AGENTS.md"
+      - ".github/workflows/agent-routing-integrity.yml"
+  push:
+    branches: [main]
+    paths:
+      - ".github/agents/**"
+      - ".github/hooks/**"
+      - "docs/automation/**"
+      - "AGENTS.md"
+      - ".github/workflows/agent-routing-integrity.yml"
+
+jobs:
+  validate-routing:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate hook schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m json.tool .github/hooks/hooks.json > /dev/null
+          python -m json.tool .github/hooks/hooks.schema.json > /dev/null
+      - name: Validate routing integrity
+        shell: pwsh
+        run: ./.github/hooks/validate-routing.ps1
+      - name: Validate routing integrity fixtures
+        shell: pwsh
+        run: ./.github/hooks/test-validate-routing.ps1
+      - name: Validate documentation contracts
+        shell: pwsh
+        run: ./.github/hooks/validate-doc-contracts.ps1

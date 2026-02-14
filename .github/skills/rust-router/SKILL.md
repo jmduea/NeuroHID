@@ -208,6 +208,22 @@ pedantic = "warn"
 4. **Cross-reference skills** as indicated in "Trace" sections
 5. **Answer with reasoning chain**
 
+## Canonical Rust Grounding (Tiered)
+
+When answering Rust semantics/design/safety questions:
+
+1. Use repo-local skills and codebase patterns first.
+2. Escalate to canonical references when guidance is disputed, safety-critical, or depends on language/Cargo semantics:
+	- Rust Book: https://doc.rust-lang.org/book/
+	- Rust Reference: https://doc.rust-lang.org/stable/reference/
+	- Cargo Book: https://doc.rust-lang.org/stable/cargo/
+	- Effective Rust: https://effective-rust.com/
+
+Output requirement when tier-2 is used:
+
+- Name source and section/topic used.
+- Distinguish normative language rules (Reference/Cargo) from best-practice guidance (Book/Effective Rust).
+
 ### Keyword Conflict Resolution
 
 | Keyword | Resolution |

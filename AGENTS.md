@@ -1,7 +1,5 @@
 # Project Agents
 
-See `.rust-skills/AGENTS.md` for Rust development guidelines.
-
 ## Default Project Settings
 
 When creating Rust projects or Cargo.toml files, ALWAYS use:
@@ -23,9 +21,24 @@ pedantic = "warn"
 
 ### 0. Automation Ownership Model
 
-- Shared, reusable Rust intelligence lives in `.rust-skills/*`.
+- Shared, reusable Rust intelligence lives in `.github/skills/*`.
 - NeuroHID-specific process automation lives in `.github/agents/*` and `.github/skills/*`.
 - Prompt/runtime hook wiring for NeuroHID-specific behavior lives in `.github/hooks/*`.
+
+### 0.1 Agent Success Defaults
+
+- Use the autonomy harness first for execution tasks: `.github/agents/autonomy-execution-harness.md`.
+- Continue implementation loops without pausing for permission between normal sub-steps.
+- Stop only for clarification, approval-gated risky/destructive actions, or true no-work-left state.
+- Validate incrementally (smallest relevant checks first), then broader checks before handoff.
+- Default workflow phases are defined in `.github/agents/_shared/multi-agent-phase-workflow.md`.
+
+Preferred validation order in this repo:
+
+1. Focused crate checks (for touched Rust crates), e.g. `cargo check -p neurohid-hub`.
+2. Cross-crate checks for affected surfaces, e.g. `cargo check -p neurohid-hub -p neurohid-calibration`.
+3. Workspace check when changes are broad: `cargo check`.
+4. Python quality gates (when Python code changes), using `uv` only.
 
 ### 1. Question Routing
 
@@ -39,13 +52,13 @@ Route Rust questions to appropriate skills:
 
 Route NeuroHID workflow questions to repo-local assets:
 
-- Documentation freshness → `.github/agents/docs-freshness.md`
-- Architecture decisions/ADRs → `.github/agents/architecture-validator.md`
-- Feature planning → `.github/agents/feature-planner.md`
-- TDD/test strategy → `.github/agents/tdd-enforcer.md`
-- UX/UI review (app + docs + notebooks) → `.github/agents/ux-reviewer.md`
-- Python/ML & deep learning workflows → `.github/agents/python-ml-specialist.md`
-- End-of-task hygiene (docs + commits) → `.github/agents/completion-finisher.md`
+- Documentation freshness + docs updates → `.github/agents/writer.md`
+- Architecture decisions/ADRs → `.github/agents/architect.md`, `.github/agents/api-reviewer.md`
+- Feature planning → `.github/agents/product-manager.md`, `.github/agents/planner.md`
+- TDD/test strategy → `.github/agents/test-engineer.md`, `.github/agents/verifier.md`
+- UX/UI review (app + docs + notebooks) → `.github/agents/ux-researcher.md`, `.github/agents/designer.md`
+- Python/ML & deep learning workflows → `.github/agents/scientist.md`
+- End-of-task hygiene (commit grouping + readiness) → `.github/agents/completion-finisher.md`
 - Continuous execution defaults (no unnecessary waiting) → `.github/agents/autonomy-execution-harness.md`
 
 ### Completion Protocol (Required)
@@ -53,10 +66,23 @@ Route NeuroHID workflow questions to repo-local assets:
 For coding tasks, agents must complete this protocol before handoff:
 
 0. Run autonomy execution harness loop and continue until scope is complete or truly blocked.
-1. Run docs freshness review and resolve blockers.
+1. Run writer documentation freshness review and resolve blockers.
 2. Confirm README/spec/changelog updates required by the change.
 3. Prepare grouped commits by concern (e.g., code, tests, docs, CI).
 4. Prepare clear commit messages for each commit group.
+
+### Rust Grounding Policy
+
+When handling Rust design, semantics, unsafe/FFI, and Cargo behavior, use a tiered source strategy:
+
+1. Repo-local skills and existing codebase patterns first.
+2. Canonical references for disputed or safety-critical guidance:
+    - Rust Book: <https://doc.rust-lang.org/book/>
+    - Rust Reference: <https://doc.rust-lang.org/stable/reference/>
+    - Cargo Book: <https://doc.rust-lang.org/stable/cargo/>
+    - Effective Rust: <https://effective-rust.com/>
+
+Agent outputs should name the source and relevant section when tier-2 escalation is used.
 
 ### 2. Code Style
 
@@ -149,12 +175,12 @@ async fn main() {
 
 For detailed guidance, see:
 
-- `skills/rust-router/SKILL.md` - Question routing
-- `skills/coding-guidelines/SKILL.md` - Code style rules
-- `skills/unsafe-checker/SKILL.md` - Unsafe code review
-- `skills/m01-ownership/SKILL.md` - Ownership concepts
-- `skills/m06-error-handling/SKILL.md` - Error patterns
-- `skills/m07-concurrency/SKILL.md` - Concurrency patterns
+- `.github/skills/rust-router/SKILL.md` - Question routing
+- `.github/skills/coding-guidelines/SKILL.md` - Code style rules
+- `.github/skills/unsafe-checker/SKILL.md` - Unsafe code review
+- `.github/skills/m01-ownership/SKILL.md` - Ownership concepts
+- `.github/skills/m06-error-handling/SKILL.md` - Error patterns
+- `.github/skills/m07-concurrency/SKILL.md` - Concurrency patterns
 
 For NeuroHID custom agent/skill invocation prompts and workflows, see:
 

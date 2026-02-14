@@ -9,6 +9,7 @@ user-invocable: true
 ## Purpose
 
 Map source/protocol changes to required documentation updates.
+This skill is executed under writer-owned docs freshness flow.
 
 ## Inputs
 
@@ -26,3 +27,4 @@ Map source/protocol changes to required documentation updates.
 
 - Required doc updates list.
 - Blocking doc gaps.
+- Docs freshness verdict (pass/fail).

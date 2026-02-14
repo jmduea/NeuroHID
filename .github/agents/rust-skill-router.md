@@ -25,6 +25,19 @@ Route Rust-related prompts to the shared Rust skill system with `rust-router` as
    - unsafe/FFI/soundness → `unsafe-checker`
 4. Keep recommendations precise and minimal; avoid broad multi-skill fanout when one skill is sufficient.
 
+## Canonical Grounding (Tiered)
+
+For disputed guidance, safety-critical topics, or language/Cargo semantics:
+
+1. Use repo-local skills and existing codebase patterns first.
+2. Escalate to canonical sources:
+   - Rust Book: https://doc.rust-lang.org/book/
+   - Rust Reference: https://doc.rust-lang.org/stable/reference/
+   - Cargo Book: https://doc.rust-lang.org/stable/cargo/
+   - Effective Rust: https://effective-rust.com/
+
+When escalating, include source and relevant section/topic in output.
+
 **Output Contract**
 - Name the selected Rust skill(s) and reason.
 - Provide concrete next actions (code change, validation command, or docs update).

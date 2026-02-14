@@ -1,0 +1,22 @@
+{
+  "$schema": "../hooks.schema.json",
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "matcher": "(?s).+",
+        "agents": [
+          ".github/agents/deep-executor.md",
+          ".github/agents/verifier.md",
+          ".github/agents/writer.md",
+          ".github/agents/completion-finisher.md"
+        ]
+      },
+      {
+        "matcher": "(?i)(rust|cargo)",
+        "agents": [
+          ".github/agents/rust-skill-router.md"
+        ]
+      }
+    ]
+  }
+}
