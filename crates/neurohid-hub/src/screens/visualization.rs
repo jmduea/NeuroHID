@@ -30,6 +30,14 @@ pub struct VisualizationScreen {
     last_sample_time: Option<f64>,
     /// Animation phase for pulsing indicators.
     pulse_phase: f64,
+    /// Whether rerun metric mirroring is enabled.
+    rerun_enabled: bool,
+    /// Active rerun recording stream, if connected.
+    rerun_recording: Option<rerun::RecordingStream>,
+    /// Timeline sequence used for rerun metric points.
+    rerun_frame: u64,
+    /// Last rerun bridge error, shown in the toolbar.
+    rerun_last_error: Option<String>,
 }
 
 impl Default for VisualizationScreen {
@@ -48,6 +56,10 @@ impl VisualizationScreen {
             stream_start_time: None,
             last_sample_time: None,
             pulse_phase: 0.0,
+            rerun_enabled: false,
+            rerun_recording: None,
+            rerun_frame: 0,
+            rerun_last_error: None,
         }
     }
 
@@ -64,6 +76,10 @@ impl VisualizationScreen {
             stream_start_time: None,
             last_sample_time: None,
             pulse_phase: 0.0,
+            rerun_enabled: false,
+            rerun_recording: None,
+            rerun_frame: 0,
+            rerun_last_error: None,
         }
     }
 
@@ -90,6 +106,7 @@ impl VisualizationScreen {
 
         let current_time = ui.input(|i| i.time);
         self.update_metrics(bus, current_time);
+        self.maybe_log_to_rerun(snapshot, bus);
 
         let ctx = WidgetContext { bus, snapshot };
 
@@ -203,8 +220,8 @@ impl VisualizationScreen {
                 ui.separator();
                 ui.add_space(12.0);
 
-                // Recording placeholder (future-ready)
-                ui.colored_label(Color32::from_gray(80), "REC");
+                // Rerun pilot controls
+                self.show_rerun_controls(ui);
 
                 // Right-aligned status cluster
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -245,6 +262,86 @@ impl VisualizationScreen {
         );
 
         ui.add_space(4.0);
+    }
+
+    fn show_rerun_controls(&mut self, ui: &mut egui::Ui) {
+        let connected = self.rerun_recording.is_some();
+        let indicator_color = if connected {
+            Color32::from_rgb(73, 214, 117)
+        } else {
+            Color32::from_gray(105)
+        };
+        ui.colored_label(indicator_color, "Rerun");
+
+        let button_text = if connected {
+            "Disconnect"
+        } else {
+            "Connect"
+        };
+        if ui.button(button_text).clicked() {
+            if connected {
+                self.disconnect_rerun();
+            } else {
+                self.connect_rerun();
+            }
+        }
+
+        ui.checkbox(&mut self.rerun_enabled, "Mirror");
+
+        if let Some(error) = &self.rerun_last_error {
+            ui.colored_label(Color32::from_rgb(255, 152, 0), format!("Rerun: {}", error));
+        }
+    }
+
+    fn connect_rerun(&mut self) {
+        match rerun::RecordingStreamBuilder::new("neurohid_hub").connect_tcp() {
+            Ok(recording) => {
+                self.rerun_recording = Some(recording);
+                self.rerun_last_error = None;
+                self.rerun_enabled = true;
+                self.rerun_frame = 0;
+            }
+            Err(error) => {
+                self.rerun_recording = None;
+                self.rerun_last_error = Some(error.to_string());
+            }
+        }
+    }
+
+    fn disconnect_rerun(&mut self) {
+        self.rerun_recording = None;
+    }
+
+    fn maybe_log_to_rerun(&mut self, snapshot: &ServiceSnapshot, bus: &DataBus) {
+        if !self.rerun_enabled {
+            return;
+        }
+        let Some(recording) = &self.rerun_recording else {
+            return;
+        };
+
+        self.rerun_frame = self.rerun_frame.saturating_add(1);
+        let frame = self.rerun_frame as i64;
+
+        recording.set_time_sequence("frame", frame);
+
+        let signal_log = recording.log(
+            "neurohid/runtime/signal_quality",
+            &rerun::Points2D::new([(frame as f32, snapshot.signal_quality)]),
+        );
+        let actions_log = recording.log(
+            "neurohid/runtime/actions_emitted",
+            &rerun::Points2D::new([(frame as f32, snapshot.actions_emitted as f32)]),
+        );
+        let samples_log = recording.log(
+            "neurohid/runtime/latest_buffer_samples",
+            &rerun::Points2D::new([(frame as f32, bus.samples.len() as f32)]),
+        );
+
+        if let Err(error) = signal_log.and(actions_log).and(samples_log) {
+            self.rerun_last_error = Some(error.to_string());
+            self.rerun_recording = None;
+        }
     }
 
     /// Layout selector with Unicode icons.
