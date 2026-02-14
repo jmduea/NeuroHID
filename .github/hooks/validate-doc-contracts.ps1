@@ -7,7 +7,9 @@ $contractFiles = @(
     "AGENTS.md",
     ".github/hooks/TRIGGERS.md",
     "docs/automation/agent-skill-invocation-playbook.md",
-    ".github/agents/_shared/multi-agent-phase-workflow.md"
+    ".github/agents/_shared/multi-agent-phase-workflow.md",
+    ".github/automation/scope-map.json",
+    "docs/architecture/index.md"
 )
 
 $canonicalSources = @(
