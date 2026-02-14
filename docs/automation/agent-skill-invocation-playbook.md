@@ -178,3 +178,21 @@ Typical workflow:
 3. Apply required README/spec/changelog updates.
 4. Generate grouped commit plan (code/tests/docs/ci).
 5. Generate clear commit messages per group.
+
+---
+
+## 9) Autonomy Execution Harness (Run first on execution tasks)
+
+### Autonomy Harness Agent
+
+- Agent file: `.github/agents/autonomy-execution-harness.md`
+- Prompt:
+  - `Run autonomy-execution-harness and continue implementing in a loop until the current request is complete or truly blocked. Do not pause for permission between normal sub-steps.`
+
+### Autonomy Harness Workflow
+
+1. Start execution task.
+2. Run autonomy harness prompt.
+3. Continue implementation/validation loop without waiting for "continue/proceed" prompts.
+4. Stop only for clarification, required approval, or true no-work-left state.
+5. Then run completion-finisher flow.

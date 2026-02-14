@@ -46,11 +46,13 @@ Route NeuroHID workflow questions to repo-local assets:
 - UX/UI review (app + docs + notebooks) → `.github/agents/ux-reviewer.md`
 - Python/ML & deep learning workflows → `.github/agents/python-ml-specialist.md`
 - End-of-task hygiene (docs + commits) → `.github/agents/completion-finisher.md`
+- Continuous execution defaults (no unnecessary waiting) → `.github/agents/autonomy-execution-harness.md`
 
 ### Completion Protocol (Required)
 
 For coding tasks, agents must complete this protocol before handoff:
 
+0. Run autonomy execution harness loop and continue until scope is complete or truly blocked.
 1. Run docs freshness review and resolve blockers.
 2. Confirm README/spec/changelog updates required by the change.
 3. Prepare grouped commits by concern (e.g., code, tests, docs, CI).
