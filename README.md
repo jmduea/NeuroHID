@@ -1,5 +1,8 @@
 # NeuroHID
 
+[![CI](https://github.com/jmduea/neurohid/actions/workflows/ci.yml/badge.svg)](https://github.com/jmduea/neurohid/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/jmduea/neurohid/branch/main/graph/badge.svg)](https://codecov.io/gh/jmduea/neurohid)
+
 **Transform consumer EEG devices into standard PC peripherals using deep reinforcement learning.**
 
 NeuroHID is a system that learns to decode your intentions from brain signals and translates them into mouse movements, clicks, and keyboard inputs. It runs as a background service, requiring no application integration—your computer just gains a new input device that happens to be controlled by your thoughts.

@@ -23,6 +23,7 @@ Use this checklist to enforce branch-first development and block direct pushes t
    - `CI / Format`
    - `CI / Documentation`
    - `Docs Freshness / Docs Freshness`
+   - `codecov/patch`
 8. Enable **Require branches to be up to date before merging**.
 9. Enable **Include administrators**.
 10. Save rule.

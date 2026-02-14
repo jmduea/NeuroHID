@@ -1,0 +1,25 @@
+codecov:
+  require_ci_to_pass: true
+
+coverage:
+  status:
+    project:
+      default:
+        target: auto
+        threshold: 2%
+    patch:
+      default:
+        target: 90%
+        threshold: 0%
+        only_pulls: true
+
+comment: false
+
+flags:
+  rust:
+    paths:
+      - crates
+      - Cargo.toml
+  python:
+    paths:
+      - python/src

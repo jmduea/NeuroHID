@@ -200,11 +200,14 @@ pub fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool, tone: Button
             ButtonTone::Ghost => ButtonVariant::Ghost,
         };
         let theme = ui.ctx().armas_theme();
-        return Button::new(label)
+        let response = Button::new(label)
             .variant(variant)
             .size(ButtonSize::Small)
-            .show(ui, &theme)
-            .clicked();
+            .show(ui, &theme);
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
+        });
+        return response.clicked();
     }
 
     ui.add_enabled(false, egui::Button::new(label)).clicked()
@@ -217,11 +220,15 @@ pub fn nav_button(ui: &mut egui::Ui, label: &str, selected: bool) -> egui::Respo
     } else {
         ButtonVariant::Ghost
     };
-    Button::new(label)
+    let response = Button::new(label)
         .variant(variant)
         .size(ButtonSize::Small)
         .full_width(true)
-        .show(ui, &theme)
+        .show(ui, &theme);
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(egui::WidgetType::Button, ui.is_enabled(), label)
+    });
+    response
 }
 
 pub fn text_input(
@@ -366,4 +373,32 @@ pub fn progress_bar(ui: &mut egui::Ui, value_0_to_1: f32, width: f32) -> egui::R
     Progress::new((value_0_to_1.clamp(0.0, 1.0)) * 100.0)
         .width(width)
         .show(ui, &theme)
+}
+
+#[cfg(test)]
+mod tests {
+    use egui_kittest::{
+        kittest::Queryable,
+        Harness,
+    };
+
+    use super::{
+        action_button,
+        nav_button,
+        ButtonTone,
+    };
+
+    #[test]
+    fn armas_button_wrappers_expose_accessible_labels() {
+        let harness = Harness::new_ui_state(
+            |ui, _state: &mut ()| {
+                let _ = action_button(ui, "Wrapper Action", true, ButtonTone::Primary);
+                let _ = nav_button(ui, "Wrapper Nav", false);
+            },
+            (),
+        );
+
+        harness.get_by_label("Wrapper Action");
+        harness.get_by_label("Wrapper Nav");
+    }
 }

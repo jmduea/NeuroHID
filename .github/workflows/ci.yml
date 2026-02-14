@@ -9,6 +9,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  PYTHON_COVERAGE_MIN: "48"
+  RUST_COVERAGE_MIN: "30"
 
 jobs:
   determine-impact:
@@ -133,8 +135,54 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - name: Install Python dependencies
         run: uv sync --directory python --extra dev
-      - name: Run Python tests
-        run: uv run --project python pytest python/tests -q
+      - name: Run Python tests with coverage gate
+        run: >
+          uv run --project python pytest python/tests -q
+          --cov=neurohid_ml --cov-branch --cov-report=term-missing --cov-report=xml
+          --cov-fail-under=${{ env.PYTHON_COVERAGE_MIN }}
+      - name: Upload Python coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: python-coverage-xml
+          path: python/coverage.xml
+      - name: Upload Python coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: python/coverage.xml
+          flags: python
+          name: python-coverage
+          fail_ci_if_error: false
+
+  rust-coverage:
+    name: Rust Coverage
+    needs: determine-impact
+    if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install LSL
+        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+      - name: Run Rust coverage gate
+        run: >
+          cargo llvm-cov --workspace
+          --lcov --output-path target/llvm-cov/lcov.info
+          --fail-under-lines ${{ env.RUST_COVERAGE_MIN }}
+      - name: Upload Rust coverage artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-coverage-lcov
+          path: target/llvm-cov/lcov.info
+      - name: Upload Rust coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: target/llvm-cov/lcov.info
+          flags: rust
+          name: rust-coverage
+          fail_ci_if_error: false
 
   unsafe-compliance:
     name: Unsafe Compliance
