@@ -9,6 +9,8 @@
 //! mouse control use cases.
 
 use eframe::egui;
+use armas::components::Progress;
+use armas::prelude::{ArmasContextExt, Button, ButtonSize, ButtonVariant};
 
 /// Target tracking game state.
 pub struct TargetTrackingGame {
@@ -205,7 +207,7 @@ impl TargetTrackingGame {
 
                 ui.add_space(30.0);
 
-                if ui.button("Start").clicked() {
+                if action_button(ui, "Start", true, ButtonVariant::Default) {
                     self.phase = GamePhase::Tracking;
                 }
             });
@@ -237,12 +239,9 @@ impl TargetTrackingGame {
             ui.add_space(10.0);
 
             // Progress bar
-            ui.add(
-                egui::ProgressBar::new(self.elapsed_time / self.game_duration).text(format!(
-                    "{:.0}%",
-                    100.0 * self.elapsed_time / self.game_duration
-                )),
-            );
+            let progress_pct = (self.elapsed_time / self.game_duration).clamp(0.0, 1.0) * 100.0;
+            ui.label(format!("{progress_pct:.0}%"));
+            let _ = Progress::new(progress_pct).show(ui, &ui.ctx().armas_theme());
 
             ui.add_space(10.0);
 
@@ -355,4 +354,16 @@ impl Default for TargetTrackingGame {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool, variant: ButtonVariant) -> bool {
+    if !enabled {
+        return ui.add_enabled(false, egui::Button::new(label)).clicked();
+    }
+
+    Button::new(label)
+        .variant(variant)
+        .size(ButtonSize::Small)
+        .show(ui, &ui.ctx().armas_theme())
+        .clicked()
 }

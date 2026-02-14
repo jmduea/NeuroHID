@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use armas::components::{CollapsibleMode, Sidebar, SidebarState, SidebarVariant};
 use eframe::egui;
 use neurohid_types::control::RuntimeModeState;
 
@@ -15,12 +16,14 @@ use crate::screens::dashboard::DashboardScreen;
 use crate::screens::devices::{derive_device_label, DevicesScreen};
 use crate::screens::jupyter_ide::JupyterIdeScreen;
 use crate::screens::profiles::ProfilesScreen;
+use crate::screens::python_lab::PythonLabScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::visualization::VisualizationScreen;
 use crate::screens::Screen;
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 use crate::stream_console::StreamConsole;
+use crate::theme;
 
 /// The main hub application.
 pub struct HubApp {
@@ -34,6 +37,7 @@ pub struct HubApp {
     last_runtime_mode_state: Option<RuntimeModeState>,
     data_bus: DataBus,
     stream_console: StreamConsole,
+    sidebar_state: SidebarState,
     show_log_window: bool,
     // Screen instances
     dashboard: DashboardScreen,
@@ -42,6 +46,7 @@ pub struct HubApp {
     profiles: ProfilesScreen,
     calibration: CalibrationScreen,
     jupyter_ide: JupyterIdeScreen,
+    python_lab: PythonLabScreen,
     settings: SettingsScreen,
 }
 
@@ -83,6 +88,7 @@ impl HubApp {
             last_runtime_mode_state: None,
             data_bus: DataBus::new(),
             stream_console: StreamConsole::new(),
+            sidebar_state: SidebarState::new(true),
             show_log_window: false,
             dashboard: DashboardScreen::new(),
             visualization,
@@ -90,6 +96,7 @@ impl HubApp {
             profiles: ProfilesScreen::new(),
             calibration: CalibrationScreen::new(),
             jupyter_ide: JupyterIdeScreen::new(),
+            python_lab: PythonLabScreen::new(),
             settings: SettingsScreen::new(),
         };
 
@@ -244,257 +251,120 @@ impl HubApp {
     }
 
     fn show_sidebar(&mut self, ctx: &egui::Context) {
+        let panel_width = self.sidebar_state.width().clamp(56.0, 272.0) + 16.0;
         egui::SidePanel::left("sidebar")
-            .exact_width(236.0)
+            .exact_width(panel_width)
+            .resizable(false)
             .show(ctx, |ui| {
-                ui.add_space(14.0);
-                ui.vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new("NeuroHID")
-                            .size(24.0)
-                            .strong()
-                            .color(egui::Color32::from_rgb(225, 233, 245)),
-                    );
-                    ui.label(
-                        egui::RichText::new("Neural Interaction Console")
-                            .small()
-                            .color(egui::Color32::from_rgb(122, 138, 158)),
-                    );
-                });
-                ui.add_space(12.0);
-
-                ui.separator();
-                ui.add_space(10.0);
-
-                // Navigation items
-                for &screen in Screen::all_for_mode(&self.state.config.ui.mode) {
-                    let selected = self.current_screen == screen;
-                    let nav_label = format!("{}  {}", screen_glyph(screen), screen.label());
-                    let nav_id = ui.make_persistent_id(("nav_item", screen.label()));
-                    let selected_phase = ui.ctx().animate_bool(nav_id.with("selected"), selected);
-
-                    let base_fill = egui::Color32::from_rgb(22, 28, 37);
-                    let accent_fill = egui::Color32::from_rgb(34, 57, 86);
-                    let fill = blend_color(base_fill, accent_fill, selected_phase * 0.9);
-
-                    let stroke_color = blend_color(
-                        egui::Color32::from_rgb(41, 52, 69),
-                        egui::Color32::from_rgb(89, 167, 255),
-                        selected_phase,
-                    );
-
-                    let text_color = blend_color(
-                        egui::Color32::from_rgb(168, 180, 198),
-                        egui::Color32::from_rgb(228, 239, 252),
-                        selected_phase,
-                    );
-
-                    let button = egui::Button::new(
-                        egui::RichText::new(nav_label)
-                            .color(text_color)
-                            .strong(),
-                    )
-                    .fill(fill)
-                    .stroke(egui::Stroke::new(1.0, stroke_color))
-                    .corner_radius(6.0);
-
-                    let response = ui.add_sized([ui.available_width(), 30.0], button);
-                    if response.clicked() {
-                        self.current_screen = screen;
-                    }
-                }
-
-                ui.add_space(16.0);
-                ui.separator();
+                ui.label(egui::RichText::new("NeuroHID").heading().strong());
+                ui.label(egui::RichText::new("Neural Interaction Console").small().weak());
                 ui.add_space(8.0);
 
-                // Service status indicator
+                let screens = Screen::all_for_mode(&self.state.config.ui.mode);
                 let snap = &self.state.service_snapshot;
-                let (status_color, status_text) = if snap.running {
-                    (egui::Color32::from_rgb(73, 214, 117), "Running")
+                let service_text = if snap.running {
+                    "Running"
                 } else {
-                    (egui::Color32::from_rgb(120, 130, 146), "Stopped")
+                    "Stopped"
                 };
-                ui.label(
-                    egui::RichText::new("Runtime")
-                        .small()
-                        .strong()
-                        .color(egui::Color32::from_rgb(150, 163, 181)),
-                );
-                ui.horizontal(|ui| {
-                    ui.colored_label(status_color, "●");
-                    ui.label(format!("Service: {}", status_text));
-                });
 
-                let (ipc_color, ipc_text) = if snap.ipc_connected {
+                let ipc_text = if snap.ipc_connected {
                     if snap.ipc_simulated {
-                        (egui::Color32::from_rgb(248, 205, 95), "Simulated")
+                        "Simulated"
                     } else {
-                        (egui::Color32::from_rgb(73, 214, 117), "Connected")
+                        "Connected"
                     }
                 } else {
-                    (egui::Color32::from_rgb(120, 130, 146), "Disconnected")
+                    "Disconnected"
                 };
-                ui.horizontal(|ui| {
-                    ui.colored_label(ipc_color, "●");
-                    ui.label(format!("IPC: {}", ipc_text));
-                });
+                let sidebar_response = Sidebar::new()
+                    .state(&mut self.sidebar_state)
+                    .variant(SidebarVariant::Floating)
+                    .collapsible(CollapsibleMode::Icon)
+                    .show(ui, |sidebar| {
+                        sidebar.group_label("Platform");
+                        for &screen in screens {
+                            sidebar
+                                .item(screen_glyph(screen), screen.label())
+                                .active(self.current_screen == screen);
+                        }
 
-                if let Some((task, _)) = &snap.task_error {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::from_rgb(255, 95, 95), "●");
-                        ui.label(
-                            egui::RichText::new(format!("Error: {} task", task))
-                                .color(egui::Color32::from_rgb(255, 95, 95))
-                                .small(),
-                        );
+                        sidebar.group_label("Runtime");
+                        sidebar.item("◉", &format!("Service: {service_text}"));
+                        sidebar.item("◌", &format!("IPC: {ipc_text}"));
+
+                        let routed_total = snap.routed_eeg_streams
+                            + snap.routed_motion_streams
+                            + snap.routed_auxiliary_streams
+                            + snap.routed_unknown_streams;
+                        if routed_total > 0 {
+                            sidebar
+                                .item("⟳", &format!("Routes: {routed_total}"))
+                                .badge(routed_total.to_string());
+                        }
+
+                        if let Some((task, _)) = &snap.task_error {
+                            sidebar.item("⚠", &format!("Error: {task} task"));
+                        }
+
+                        if snap.device_connected {
+                            let mut groups: BTreeMap<
+                                Option<String>,
+                                Vec<&neurohid_types::device::DiscoveredStream>,
+                            > = BTreeMap::new();
+                            for stream in &snap.discovered_streams {
+                                groups
+                                    .entry(stream.source_id.clone())
+                                    .or_default()
+                                    .push(stream);
+                            }
+
+                            sidebar.group("⌁", "Devices", |group| {
+                                for (source_id, streams) in &groups {
+                                    let device_label = match source_id {
+                                        Some(src_id) if streams.len() > 1 => {
+                                            derive_device_label(streams, src_id)
+                                        }
+                                        _ => streams
+                                            .first()
+                                            .map(|stream| stream.name.clone())
+                                            .unwrap_or_default(),
+                                    };
+
+                                    let connected = streams.iter().filter(|stream| stream.connected).count();
+                                    let total = streams.len();
+                                    group.group("◍", &format!("{} ({}/{})", device_label, connected, total), |stream_group| {
+                                        for stream in streams {
+                                            stream_group.item(
+                                                "•",
+                                                &format!(
+                                                    "{} · {} · {}ch · {:.0}Hz",
+                                                    stream.name,
+                                                    stream.stream_type,
+                                                    stream.channel_count,
+                                                    stream.sample_rate
+                                                ),
+                                            );
+                                        }
+                                    });
+                                }
+                            });
+                        } else if snap.running {
+                            sidebar.item("◍", "Device: Disconnected");
+                        }
                     });
+
+                if let Some(clicked_id) = sidebar_response.clicked {
+                    for &screen in screens {
+                        let nav_id = format!("item_0_{}", screen.label());
+                        if clicked_id == nav_id {
+                            self.current_screen = screen;
+                            break;
+                        }
+                    }
                 }
 
-                if snap.device_connected {
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new("Devices")
-                            .small()
-                            .strong()
-                            .color(egui::Color32::LIGHT_GRAY),
-                    );
-
-                    let routed_total = snap.routed_eeg_streams
-                        + snap.routed_motion_streams
-                        + snap.routed_auxiliary_streams
-                        + snap.routed_unknown_streams;
-                    if routed_total > 0 {
-                        ui.horizontal_wrapped(|ui| {
-                            ui.label(
-                                egui::RichText::new("Routes")
-                                    .small()
-                                    .color(egui::Color32::GRAY),
-                            );
-
-                            ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "●");
-                            ui.label(
-                                egui::RichText::new(format!("EEG {}", snap.routed_eeg_streams))
-                                    .small(),
-                            );
-
-                            ui.colored_label(egui::Color32::from_rgb(80, 170, 255), "●");
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Motion {}",
-                                    snap.routed_motion_streams
-                                ))
-                                .small(),
-                            );
-
-                            ui.colored_label(egui::Color32::from_rgb(255, 180, 70), "●");
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Aux {}",
-                                    snap.routed_auxiliary_streams
-                                ))
-                                .small(),
-                            );
-
-                            ui.colored_label(egui::Color32::from_rgb(190, 140, 255), "●");
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "Unknown {}",
-                                    snap.routed_unknown_streams
-                                ))
-                                .small(),
-                            );
-                        });
-                    }
-
-                    // Group streams by source_id for collapsible device tree
-                    let mut groups: BTreeMap<
-                        Option<String>,
-                        Vec<&neurohid_types::device::DiscoveredStream>,
-                    > = BTreeMap::new();
-                    for stream in &snap.discovered_streams {
-                        groups
-                            .entry(stream.source_id.clone())
-                            .or_default()
-                            .push(stream);
-                    }
-
-                    for (source_id, streams) in &groups {
-                        let device_label = match source_id {
-                            Some(src_id) if streams.len() > 1 => {
-                                derive_device_label(streams, src_id)
-                            }
-                            _ => {
-                                // Single stream or no source_id — use the stream name
-                                streams.first().map(|s| s.name.clone()).unwrap_or_default()
-                            }
-                        };
-
-                        let connected = streams.iter().filter(|s| s.connected).count();
-                        let total = streams.len();
-                        let header_color = if connected == total {
-                            egui::Color32::from_rgb(73, 214, 117)
-                        } else if connected > 0 {
-                            egui::Color32::from_rgb(248, 205, 95)
-                        } else {
-                            egui::Color32::from_rgb(120, 130, 146)
-                        };
-
-                        let header_id =
-                            ui.make_persistent_id(source_id.as_deref().unwrap_or(&device_label));
-                        egui::collapsing_header::CollapsingState::load_with_default_open(
-                            ui.ctx(),
-                            header_id,
-                            false,
-                        )
-                        .show_header(ui, |ui| {
-                            ui.colored_label(header_color, "●");
-                            ui.label(
-                                egui::RichText::new(format!(
-                                    "{} ({}/{})",
-                                    device_label, connected, total
-                                ))
-                                .small(),
-                            );
-                        })
-                        .body(|ui| {
-                            for stream in streams {
-                                let s_color = if stream.connected {
-                                    egui::Color32::from_rgb(73, 214, 117)
-                                } else {
-                                    egui::Color32::from_rgb(120, 130, 146)
-                                };
-                                ui.horizontal(|ui| {
-                                    ui.add_space(8.0);
-                                    ui.colored_label(s_color, "○");
-                                    ui.label(egui::RichText::new(&stream.name).small());
-                                });
-                                ui.horizontal(|ui| {
-                                    ui.add_space(20.0);
-                                    ui.label(
-                                        egui::RichText::new(format!(
-                                            "{} · {}ch · {:.0}Hz",
-                                            stream.stream_type,
-                                            stream.channel_count,
-                                            stream.sample_rate
-                                        ))
-                                        .small()
-                                        .color(egui::Color32::GRAY),
-                                    );
-                                });
-                            }
-                        });
-                    }
-                } else if snap.running {
-                    ui.horizontal(|ui| {
-                        ui.colored_label(egui::Color32::from_rgb(248, 205, 95), "●");
-                        ui.label("Device: Disconnected");
-                    });
-                }
-
-                // Fill remaining space so the version label is at the bottom
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                    ui.add_space(8.0);
                     ui.label(
                         egui::RichText::new("v0.1.0")
                             .small()
@@ -513,23 +383,73 @@ impl HubApp {
                     let pulse = (ctx.input(|i| i.time * 2.8).sin() * 0.5 + 0.5) as f32;
 
                     if snap.running {
+                        if self.current_screen == Screen::Dashboard {
+                            let total_streams = snap.discovered_streams.len();
+                            let connected_streams = snap
+                                .discovered_streams
+                                .iter()
+                                .filter(|stream| stream.connected)
+                                .count();
+                            let routed_total = snap.routed_eeg_streams
+                                + snap.routed_motion_streams
+                                + snap.routed_auxiliary_streams
+                                + snap.routed_unknown_streams;
+
+                            let (service_color, service_text) = if snap.running {
+                                (egui::Color32::GREEN, "Service: running")
+                            } else {
+                                (egui::Color32::GRAY, "Service: stopped")
+                            };
+                            let (mode_color, mode_text) = match snap.runtime_mode_state {
+                                RuntimeModeState::Full => (egui::Color32::GREEN, "Mode: full"),
+                                RuntimeModeState::Fallback => {
+                                    (egui::Color32::YELLOW, "Mode: fallback")
+                                }
+                                RuntimeModeState::Degraded => {
+                                    (egui::Color32::RED, "Mode: degraded")
+                                }
+                            };
+
+                            ui.colored_label(service_color, "●");
+                            ui.label(service_text);
+                            ui.separator();
+                            ui.colored_label(mode_color, "●");
+                            ui.label(mode_text);
+                            ui.separator();
+                            ui.label(format!("Signal: {:.0}%", snap.signal_quality * 100.0));
+                            ui.separator();
+                            ui.label(format!("Devices: {}/{}", connected_streams, total_streams));
+
+                            if routed_total > 0 {
+                                ui.separator();
+                                ui.label("Routes:");
+                                ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "EEG");
+                                ui.label(snap.routed_eeg_streams.to_string());
+                                ui.colored_label(egui::Color32::from_rgb(80, 170, 255), "Motion");
+                                ui.label(snap.routed_motion_streams.to_string());
+                                ui.colored_label(egui::Color32::from_rgb(255, 180, 70), "Aux");
+                                ui.label(snap.routed_auxiliary_streams.to_string());
+                                ui.colored_label(egui::Color32::from_rgb(190, 140, 255), "Unknown");
+                                ui.label(snap.routed_unknown_streams.to_string());
+                            }
+
+                            ui.separator();
+                            ui.label(format!("Actions: {}", snap.actions_emitted));
+                            ui.separator();
+                            ui.label(format!("Errors: {}", snap.errors_detected));
+                            ui.separator();
+                            let mins = snap.uptime_secs / 60;
+                            let secs = snap.uptime_secs % 60;
+                            ui.label(format!("Uptime: {}:{:02}", mins, secs));
+                            ui.separator();
+                        }
+
                         let signal_color = blend_color(
                             egui::Color32::from_rgb(97, 193, 99),
                             egui::Color32::from_rgb(149, 243, 144),
                             pulse,
                         );
-                        ui.colored_label(
-                            signal_color,
-                            format!("Signal {:.0}%", snap.signal_quality * 100.0),
-                        );
-                        ui.separator();
-                        ui.label(format!("Actions {}", snap.actions_emitted));
-                        ui.separator();
-                        ui.label(format!("Errors {}", snap.errors_detected));
-                        ui.separator();
-                        let mins = snap.uptime_secs / 60;
-                        let secs = snap.uptime_secs % 60;
-                        ui.label(format!("Uptime {}:{:02}", mins, secs));
+                        ui.colored_label(signal_color, format!("Signal {:.0}%", snap.signal_quality * 100.0));
 
                         if snap.calibration_mode {
                             ui.separator();
@@ -542,7 +462,17 @@ impl HubApp {
                         } else {
                             "Console"
                         };
-                        if ui.small_button(console_label).clicked() {
+                        let console_clicked = theme::action_button(
+                            ui,
+                            console_label,
+                            true,
+                            if self.stream_console.visible {
+                                theme::ButtonTone::Secondary
+                            } else {
+                                theme::ButtonTone::Ghost
+                            },
+                        );
+                        if console_clicked {
                             self.stream_console.toggle();
                         }
 
@@ -552,7 +482,17 @@ impl HubApp {
                         } else {
                             "Logs"
                         };
-                        if ui.small_button(logs_label).clicked() {
+                        let logs_clicked = theme::action_button(
+                            ui,
+                            logs_label,
+                            true,
+                            if self.show_log_window {
+                                theme::ButtonTone::Secondary
+                            } else {
+                                theme::ButtonTone::Ghost
+                            },
+                        );
+                        if logs_clicked {
                             self.show_log_window = !self.show_log_window;
                         }
 
@@ -570,64 +510,6 @@ impl HubApp {
                     }
                 });
             });
-    }
-
-    fn apply_ui_preferences(&self, ctx: &egui::Context) {
-        let ui_cfg = &self.state.config.ui;
-        ctx.set_pixels_per_point(ui_cfg.font_scale.clamp(0.75, 2.0));
-
-        match ui_cfg.theme_mode {
-            neurohid_types::config::ThemeMode::Light => ctx.set_visuals(egui::Visuals::light()),
-            neurohid_types::config::ThemeMode::Dark | neurohid_types::config::ThemeMode::System => {
-                let mut visuals = egui::Visuals::dark();
-                visuals.window_fill = egui::Color32::from_rgb(19, 23, 30);
-                visuals.panel_fill = egui::Color32::from_rgb(16, 20, 27);
-                visuals.extreme_bg_color = egui::Color32::from_rgb(11, 15, 21);
-                visuals.faint_bg_color = egui::Color32::from_rgb(23, 28, 37);
-
-                visuals.widgets.noninteractive.bg_fill = egui::Color32::from_rgb(20, 25, 34);
-                visuals.widgets.noninteractive.bg_stroke =
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(43, 53, 69));
-
-                visuals.widgets.inactive.bg_fill = egui::Color32::from_rgb(28, 35, 46);
-                visuals.widgets.inactive.bg_stroke =
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(47, 60, 79));
-
-                visuals.widgets.hovered.bg_fill = egui::Color32::from_rgb(38, 49, 64);
-                visuals.widgets.hovered.bg_stroke =
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(79, 157, 255));
-
-                visuals.widgets.active.bg_fill = egui::Color32::from_rgb(44, 61, 84);
-                visuals.widgets.active.bg_stroke =
-                    egui::Stroke::new(1.0, egui::Color32::from_rgb(94, 179, 255));
-
-                visuals.selection.bg_fill = egui::Color32::from_rgb(43, 82, 130);
-                visuals.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(112, 196, 255));
-
-                ctx.set_visuals(visuals);
-            }
-        }
-
-        let mut style = (*ctx.style()).clone();
-        style.spacing.item_spacing = egui::vec2(8.0, 7.0);
-        style.spacing.button_padding = egui::vec2(10.0, 5.0);
-        style.text_styles.insert(
-            egui::TextStyle::Heading,
-            egui::FontId::new(25.0, egui::FontFamily::Monospace),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Name("Section".into()),
-            egui::FontId::new(16.0, egui::FontFamily::Proportional),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Body,
-            egui::FontId::new(14.0, egui::FontFamily::Proportional),
-        );
-        style.text_styles.insert(
-            egui::TextStyle::Small,
-            egui::FontId::new(11.5, egui::FontFamily::Proportional),
-        );
-        ctx.set_style(style);
     }
 
     fn maybe_notify_latency_transition(&mut self) {
@@ -718,7 +600,11 @@ impl eframe::App for HubApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         ctx.plugin_or_default::<egui_async::EguiAsyncPlugin>();
 
-        self.apply_ui_preferences(ctx);
+        theme::apply_ui_preferences(
+            ctx,
+            self.state.config.ui.theme_mode.clone(),
+            self.state.config.ui.font_scale,
+        );
 
         if !Screen::all_for_mode(&self.state.config.ui.mode).contains(&self.current_screen) {
             self.current_screen = Screen::Dashboard;
@@ -757,7 +643,9 @@ impl eframe::App for HubApp {
                 .vscroll(true)
                 .show(ctx, |ui| {
                     ui.horizontal(|ui| {
-                        if ui.button("Clear").clicked() {
+                        let clear_clicked =
+                            theme::action_button(ui, "Clear", true, theme::ButtonTone::Secondary);
+                        if clear_clicked {
                             egui_logger::clear_logs();
                         }
                     });
@@ -784,7 +672,7 @@ impl eframe::App for HubApp {
         egui::CentralPanel::default()
             .frame(
                 egui::Frame::new()
-                    .fill(egui::Color32::from_rgb(14, 18, 24))
+                    .fill(ctx.style().visuals.panel_fill)
                     .inner_margin(egui::Margin::symmetric(8, 8)),
             )
             .show(ctx, |ui| {
@@ -827,6 +715,14 @@ impl eframe::App for HubApp {
                 Screen::JupyterIde => {
                     self.jupyter_ide.show(ui, &self.state.config.ui);
                 }
+                Screen::PythonLab => {
+                    self.python_lab.show(
+                        ui,
+                        &self.state.config.ui.jupyter_command,
+                        &self.data_bus,
+                        &self.state.service_snapshot,
+                    );
+                }
                 Screen::Settings => {
                     self.settings
                         .show(ui, &mut self.state, &self.service_manager, &self.runtime);
@@ -847,6 +743,7 @@ fn screen_glyph(screen: Screen) -> &'static str {
         Screen::Profiles => "◎",
         Screen::Calibration => "◍",
         Screen::JupyterIde => "⟡",
+        Screen::PythonLab => "⌬",
         Screen::Settings => "⚙",
     }
 }

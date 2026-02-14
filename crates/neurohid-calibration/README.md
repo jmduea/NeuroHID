@@ -4,7 +4,7 @@ Calibration games and first-run wizard for NeuroHID.
 
 ## Features
 
-- Interactive egui-based calibration games (Grid Maze, Target Tracking)
+- Interactive calibration games (Grid Maze, Target Tracking) rendered in egui with Armas-backed control primitives
 - Labeled EEG data collection for decoder training
 - First-run wizard for device setup and profile creation
 - Real-time visual feedback during calibration sessions

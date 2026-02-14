@@ -19,6 +19,7 @@ use neurohid_types::{
 
 use crate::service_manager::ServiceManager;
 use crate::state::{HubState, ServiceSnapshot};
+use crate::theme;
 
 pub struct DashboardScreen {
     train_stage_status: Option<TrainStageStatus>,
@@ -137,100 +138,22 @@ impl DashboardScreen {
     ) {
         self.poll_train_stage_result();
 
-        ui.label(
-            egui::RichText::new("Dashboard")
-                .text_style(egui::TextStyle::Heading)
-                .color(egui::Color32::from_rgb(225, 233, 245)),
+        theme::page_header(
+            ui,
+            "Dashboard",
+            "Mission control for runtime health, model operations, and signal confidence",
         );
-        ui.label(
-            egui::RichText::new("Mission control for runtime health, model operations, and signal confidence")
-                .small()
-                .color(egui::Color32::from_rgb(128, 145, 167)),
-        );
-        ui.add_space(12.0);
 
         let snap = &state.service_snapshot;
         self.poll_trainer_snapshot(service_manager, snap.running);
         self.sample_trainer_observability(snap);
 
-        let total_streams = snap.discovered_streams.len();
-        let connected_streams = snap
-            .discovered_streams
-            .iter()
-            .filter(|stream| stream.connected)
-            .count();
         let routed_total = snap.routed_eeg_streams
             + snap.routed_motion_streams
             + snap.routed_auxiliary_streams
             + snap.routed_unknown_streams;
 
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
-            ui.label(egui::RichText::new("System Snapshot").small().strong());
-            ui.add_space(6.0);
-
-            let (service_color, service_text) = if snap.running {
-                (egui::Color32::GREEN, "Service: running")
-            } else {
-                (egui::Color32::GRAY, "Service: stopped")
-            };
-            let (mode_color, mode_text) = match snap.runtime_mode_state {
-                RuntimeModeState::Full => (egui::Color32::GREEN, "Mode: full"),
-                RuntimeModeState::Fallback => (egui::Color32::YELLOW, "Mode: fallback"),
-                RuntimeModeState::Degraded => (egui::Color32::RED, "Mode: degraded"),
-            };
-
-            ui.horizontal_wrapped(|ui| {
-                ui.colored_label(service_color, "●");
-                ui.label(service_text);
-                ui.separator();
-                ui.colored_label(mode_color, "●");
-                ui.label(mode_text);
-                ui.separator();
-                ui.label(format!("Signal: {:.0}%", snap.signal_quality * 100.0));
-                ui.separator();
-                ui.label(format!("Devices: {}/{}", connected_streams, total_streams));
-                if routed_total > 0 {
-                    ui.separator();
-                    ui.label("Routes:");
-
-                    ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "●");
-                    ui.label(format!("EEG {}", snap.routed_eeg_streams));
-
-                    ui.colored_label(egui::Color32::from_rgb(80, 170, 255), "●");
-                    ui.label(format!("Motion {}", snap.routed_motion_streams));
-
-                    ui.colored_label(egui::Color32::from_rgb(255, 180, 70), "●");
-                    ui.label(format!("Aux {}", snap.routed_auxiliary_streams));
-
-                    ui.colored_label(egui::Color32::from_rgb(190, 140, 255), "●");
-                    ui.label(format!("Unknown {}", snap.routed_unknown_streams));
-                }
-                ui.separator();
-                ui.label(format!("Actions: {}", snap.actions_emitted));
-                ui.separator();
-                ui.label(format!("Errors: {}", snap.errors_detected));
-
-                if snap.running {
-                    ui.separator();
-                    let mins = snap.uptime_secs / 60;
-                    let secs = snap.uptime_secs % 60;
-                    ui.label(format!("Uptime: {}:{:02}", mins, secs));
-                }
-            });
-
-            if let Some((task, _)) = &snap.task_error {
-                ui.add_space(4.0);
-                ui.colored_label(egui::Color32::RED, format!("Service error in {} task", task));
-            }
-            });
-
-        ui.add_space(12.0);
-
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
+        theme::card_frame(ui).show(ui, |ui| {
             ui.heading("Service");
             ui.add_space(8.0);
 
@@ -283,18 +206,31 @@ impl DashboardScreen {
                 } else {
                     "Stop Service"
                 };
-                if ui.button(stop_label).clicked() {
+                let stop_clicked =
+                    theme::action_button(ui, stop_label, true, theme::ButtonTone::Secondary);
+                if stop_clicked {
                     service_manager.stop();
                 }
 
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    if ui.button("Reload Model").clicked() {
+                    let reload_clicked = theme::action_button(
+                        ui,
+                        "Reload Model",
+                        true,
+                        theme::ButtonTone::Secondary,
+                    );
+                    if reload_clicked {
                         service_manager.reload_model();
                     }
                     let can_promote = snap.profile_ready;
-                    let promote = ui.add_enabled(can_promote, egui::Button::new("Promote Candidate"));
-                    if promote.clicked() {
+                    let promote = theme::action_button(
+                        ui,
+                        "Promote Candidate",
+                        can_promote,
+                        theme::ButtonTone::Primary,
+                    );
+                    if promote {
                         service_manager.promote_candidate_model();
                     }
                 });
@@ -309,11 +245,14 @@ impl DashboardScreen {
                 if state.config.ui.mode == UiMode::Advanced {
                     ui.add_space(6.0);
                     let has_profile = state.active_profile_id.is_some();
-                    let train_button = ui.add_enabled(
-                        !self.train_stage_task.is_pending() && has_profile,
-                        egui::Button::new("Train + Stage Candidate"),
+                    let can_train = !self.train_stage_task.is_pending() && has_profile;
+                    let train_clicked = theme::action_button(
+                        ui,
+                        "Train + Stage Candidate",
+                        can_train,
+                        theme::ButtonTone::Primary,
                     );
-                    if train_button.clicked() {
+                    if train_clicked {
                         self.start_train_stage_job(state);
                     }
                     if !has_profile {
@@ -330,7 +269,9 @@ impl DashboardScreen {
                 } else {
                     "Start Service"
                 };
-                if ui.button(start_label).clicked() {
+                let start_clicked =
+                    theme::action_button(ui, start_label, true, theme::ButtonTone::Primary);
+                if start_clicked {
                     service_manager.start(
                         runtime,
                         state.config.clone(),
@@ -370,10 +311,13 @@ impl DashboardScreen {
                 ui.add_space(4.0);
                 ui.collapsing("Train + Stage Output", |ui| {
                     egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.train_stage_output)
-                                .font(egui::TextStyle::Monospace)
-                                .desired_width(f32::INFINITY),
+                        let _ = theme::textarea_input(
+                            ui,
+                            "dashboard_train_stage_output",
+                            &mut self.train_stage_output,
+                            "",
+                            6,
+                            f32::INFINITY,
                         );
                     });
                 });
@@ -387,47 +331,7 @@ impl DashboardScreen {
 
         ui.add_space(12.0);
 
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
-            ui.heading("Signal Quality");
-            ui.add_space(8.0);
-
-            let quality = snap.signal_quality;
-            let quality_color = if quality > 0.7 {
-                egui::Color32::GREEN
-            } else if quality > 0.5 {
-                egui::Color32::YELLOW
-            } else {
-                egui::Color32::RED
-            };
-
-            ui.add(
-                egui::ProgressBar::new(quality)
-                    .text(format!("{:.0}%", quality * 100.0))
-                    .fill(quality_color),
-            );
-
-            let error_rate = state.error_rate();
-            let error_color = if error_rate < 10.0 {
-                egui::Color32::GREEN
-            } else if error_rate < 30.0 {
-                egui::Color32::YELLOW
-            } else {
-                egui::Color32::RED
-            };
-            ui.horizontal_wrapped(|ui| {
-                ui.label(egui::RichText::new("5-channel average").small().color(egui::Color32::GRAY));
-                ui.separator();
-                ui.colored_label(error_color, format!("Error rate: {:.1}%", error_rate));
-            });
-            });
-
-        ui.add_space(12.0);
-
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
+        theme::card_frame(ui).show(ui, |ui| {
             ui.collapsing("Diagnostics", |ui| {
             ui.label(
                 egui::RichText::new(format!("Runtime: {}", state.config.service.runtime_mode))
@@ -517,19 +421,42 @@ impl DashboardScreen {
             ui.add_space(8.0);
             ui.collapsing("ML Bridge & Trainer", |ui| {
                 let mut learning_enabled = snap.learning_enabled;
-                if ui.checkbox(&mut learning_enabled, "Learning enabled").changed() {
+                ui.label("Learning enabled");
+                if theme::toggle_switch(
+                    ui,
+                    "dashboard_learning_enabled",
+                    &mut learning_enabled,
+                ) {
                     service_manager.set_learning_enabled(learning_enabled);
                 }
 
                 ui.horizontal_wrapped(|ui| {
-                    if ui.button("Reconnect Bridge").clicked() {
+                    let reconnect_clicked = theme::action_button(
+                        ui,
+                        "Reconnect Bridge",
+                        true,
+                        theme::ButtonTone::Secondary,
+                    );
+                    if reconnect_clicked {
                         service_manager.ml_bridge_reconnect();
                     }
-                    if ui.button("Apply Fallback Policy").clicked() {
+                    let apply_fallback_clicked = theme::action_button(
+                        ui,
+                        "Apply Fallback Policy",
+                        true,
+                        theme::ButtonTone::Secondary,
+                    );
+                    if apply_fallback_clicked {
                         service_manager
                             .set_fallback_policy(state.config.service.fallback_policy.clone());
                     }
-                    if ui.button("Refresh Trainer Snapshot").clicked() {
+                    let refresh_snapshot_clicked = theme::action_button(
+                        ui,
+                        "Refresh Trainer Snapshot",
+                        true,
+                        theme::ButtonTone::Ghost,
+                    );
+                    if refresh_snapshot_clicked {
                         self.trainer_snapshot = service_manager.trainer_snapshot();
                         self.last_trainer_snapshot_poll = Some(Instant::now());
                     }
@@ -576,7 +503,7 @@ impl DashboardScreen {
 
             if let Some((task, error)) = &snap.task_error {
                 ui.add_space(8.0);
-                egui::Frame::group(ui.style())
+                theme::card_frame(ui)
                     .fill(egui::Color32::from_rgb(60, 20, 20))
                     .show(ui, |ui| {
                         ui.colored_label(
@@ -800,12 +727,13 @@ impl DashboardScreen {
                 .saturating_add(snap.candidate_promotions_rejected);
             if total > 0 {
                 let success_ratio = snap.candidate_promotions_succeeded as f32 / total as f32;
-                ui.add(egui::ProgressBar::new(success_ratio).text(format!(
+                ui.label(format!(
                     "Candidate promotion success {:.0}% ({}/{})",
                     success_ratio * 100.0,
                     snap.candidate_promotions_succeeded,
                     total
-                )));
+                ));
+                let _ = theme::progress_bar(ui, success_ratio, ui.available_width());
             }
 
             ui.columns(2, |cols| {
@@ -1129,3 +1057,4 @@ fn task_error_hint(error: &str) -> Option<&'static str> {
 
     None
 }
+

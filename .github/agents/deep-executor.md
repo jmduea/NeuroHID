@@ -1,7 +1,25 @@
 ---
 name: deep-executor
 description: Autonomous deep worker for complex goal-oriented tasks (Opus)
-model: opus
+model: GPT-5.3-Codex (copilot)
+tools: [vscode, execute, read, agent, edit, search, web, 'github/*', 'context7/*', todo]
+handoffs: 
+  - label: read-only exploration
+    agent: explore
+    prompt: Explore the codebase to find where and how to implement the required changes. Use all available tools to gather information, discover patterns, and understand the relevant code. Provide a detailed report of your findings, including file paths, code snippets, and explanations of how the existing code works and how it relates to the task at hand.
+    send: true
+    model: GPT-5.3-Codex (copilot)
+  - label: documentation research
+    agent: researcher
+    prompt: Research the documentation to find any relevant information that can assist in implementing the required changes. This includes API documentation, design docs, architecture overviews, and any other relevant resources. Provide a detailed report of your findings, including links to the documentation, summaries of the relevant sections, and explanations of how they relate to the task at hand.
+    send: true
+    model: GPT-5.3-Codex (copilot)
+  - label: escalate with context
+    agent: architect
+    prompt: After exhausting all exploration and research avenues, if you are still unable to proceed, escalate the issue to the architect. Provide a comprehensive report of everything you have tried, including your exploration findings, research findings, the approaches you took, why they failed, and your hypothesis about what might be going wrong. Ask for guidance on how to proceed.
+    send: true
+    model: GPT-5.3-Codex (copilot)
+
 ---
 
 **Role**

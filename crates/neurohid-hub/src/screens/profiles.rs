@@ -9,6 +9,7 @@ use neurohid_types::profile::CalibrationState;
 
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
+use crate::theme;
 
 pub struct ProfilesScreen {
     new_profile_name: String,
@@ -38,30 +39,22 @@ impl ProfilesScreen {
         runtime: &tokio::runtime::Runtime,
         service_manager: &ServiceManager,
     ) {
-        ui.label(
-            egui::RichText::new("Profiles")
-                .text_style(egui::TextStyle::Heading)
-                .color(egui::Color32::from_rgb(225, 233, 245)),
+        theme::page_header(
+            ui,
+            "Profiles",
+            "Each profile stores personalized calibration data and decoder weights.",
         );
-        ui.add_space(8.0);
-        ui.label(
-            egui::RichText::new("Each profile stores personalized calibration data and decoder weights.")
-                .small()
-                .color(egui::Color32::from_rgb(128, 145, 167)),
-        );
-        ui.add_space(16.0);
+        ui.add_space(6.0);
 
         // Create profile button
-        if !self.show_create_dialog && ui.button("Create New Profile").clicked() {
+        if !self.show_create_dialog && action_button(ui, "Create New Profile", true) {
             self.show_create_dialog = true;
             self.new_profile_name.clear();
         }
 
         // Create dialog
         if self.show_create_dialog {
-            egui::Frame::group(ui.style())
-                .fill(egui::Color32::from_rgb(20, 25, 34))
-                .show(ui, |ui| {
+            theme::card_frame(ui).show(ui, |ui| {
                 ui.heading("New Profile");
                 ui.horizontal(|ui| {
                     ui.label("Name:");
@@ -69,8 +62,7 @@ impl ProfilesScreen {
                 });
                 ui.horizontal(|ui| {
                     let name_valid = !self.new_profile_name.trim().is_empty();
-                    ui.add_enabled_ui(name_valid, |ui| {
-                        if ui.button("Create").clicked() {
+                    if action_button(ui, "Create", name_valid) {
                             let name = self.new_profile_name.trim().to_string();
                             match runtime.block_on(state.profile_store.create_profile(name)) {
                                 Ok(metadata) => {
@@ -90,9 +82,8 @@ impl ProfilesScreen {
                                 }
                             }
                             self.show_create_dialog = false;
-                        }
-                    });
-                    if ui.button("Cancel").clicked() {
+                    }
+                    if action_button(ui, "Cancel", true) {
                         self.show_create_dialog = false;
                     }
                 });
@@ -111,19 +102,19 @@ impl ProfilesScreen {
         let mut delete_id = None;
         if let Some(id_str) = &self.delete_confirm {
             let id_str = id_str.clone();
-            egui::Frame::group(ui.style())
-                .fill(egui::Color32::from_rgb(34, 20, 24))
+            theme::card_frame(ui)
+                .fill(egui::Color32::from_rgb(40, 20, 24))
                 .show(ui, |ui| {
                 ui.colored_label(
                     egui::Color32::RED,
                     format!("Delete profile \"{}\"?", id_str),
                 );
                 ui.horizontal(|ui| {
-                    if ui.button("Yes, Delete").clicked() {
+                    if action_button(ui, "Yes, Delete", true) {
                         delete_id = Some(id_str.clone());
                         self.delete_confirm = None;
                     }
-                    if ui.button("Cancel").clicked() {
+                    if action_button(ui, "Cancel", true) {
                         self.delete_confirm = None;
                     }
                 });
@@ -151,9 +142,7 @@ impl ProfilesScreen {
         for profile in &state.profiles {
             let is_active = state.active_profile_id.as_ref() == Some(&profile.id);
 
-            egui::Frame::group(ui.style())
-                .fill(egui::Color32::from_rgb(20, 25, 34))
-                .show(ui, |ui| {
+            theme::card_frame(ui).show(ui, |ui| {
                 ui.horizontal(|ui| {
                     // Active indicator
                     if is_active {
@@ -200,11 +189,11 @@ impl ProfilesScreen {
 
                     // Action buttons (right-aligned)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.small_button("Delete").clicked() {
+                        if action_button(ui, "Delete", true) {
                             self.delete_confirm = Some(profile.id.to_string());
                         }
 
-                        if !is_active && ui.small_button("Set Active").clicked() {
+                        if !is_active && action_button(ui, "Set Active", true) {
                             state.active_profile_id = Some(profile.id.clone());
                             service_manager.set_active_profile(
                                 Some(profile.id.clone()),
@@ -217,4 +206,8 @@ impl ProfilesScreen {
                 });
         }
     }
+}
+
+fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
+    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
 }

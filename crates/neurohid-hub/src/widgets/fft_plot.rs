@@ -3,6 +3,7 @@
 //! Displays the power spectral density of the EEG signal in real time.
 //! X-axis is frequency (0-64 Hz), Y-axis is amplitude in uV.
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use std::collections::VecDeque;
@@ -590,61 +591,84 @@ impl Widget for FftPlotWidget {
         ui.horizontal(|ui| {
             // Freeze toggle
             let freeze_text = if self.frozen { "Unfreeze" } else { "Freeze" };
-            let freeze_color = if self.frozen {
-                egui::Color32::from_rgb(100, 181, 246)
+            let freeze_tone = if self.frozen {
+                theme::ButtonTone::Secondary
             } else {
-                ui.visuals().widgets.inactive.fg_stroke.color
+                theme::ButtonTone::Ghost
             };
-            if ui
-                .button(egui::RichText::new(freeze_text).color(freeze_color))
-                .clicked()
-            {
+            if theme::action_button(ui, freeze_text, true, freeze_tone) {
                 self.frozen = !self.frozen;
             }
 
             ui.separator();
 
             ui.label("Y-Axis:");
-            egui::ComboBox::from_id_salt(format!("fft_scale_{}", pane_index))
-                .selected_text(if self.log_scale { "Log" } else { "Linear" })
-                .width(60.0)
-                .show_ui(ui, |ui: &mut egui::Ui| {
-                    ui.selectable_value(&mut self.log_scale, true, "Log");
-                    ui.selectable_value(&mut self.log_scale, false, "Linear");
-                });
+            let mut y_scale_idx = if self.log_scale { 0 } else { 1 };
+            if theme::select_index(
+                ui,
+                format!("fft_scale_{}", pane_index),
+                &mut y_scale_idx,
+                &["Log", "Linear"],
+                90.0,
+            ) {
+                self.log_scale = y_scale_idx == 0;
+            }
 
             ui.label("Smooth:");
-            ui.add(egui::Slider::new(&mut self.smoothing, 0.0..=0.95).max_decimals(2));
+            let _ = theme::slider_f32(
+                ui,
+                format!("fft_smoothing_{}", pane_index),
+                &mut self.smoothing,
+                0.0,
+                0.95,
+                None,
+            );
 
             ui.label("Max Hz:");
-            egui::ComboBox::from_id_salt(format!("fft_maxfreq_{}", pane_index))
-                .selected_text(format!("{:.0}", self.max_freq))
-                .width(50.0)
-                .show_ui(ui, |ui: &mut egui::Ui| {
-                    for &v in &[30.0, 45.0, 60.0, 64.0f32] {
-                        ui.selectable_value(&mut self.max_freq, v, format!("{:.0}", v));
-                    }
-                });
+            let freq_options = ["30", "45", "60", "64"];
+            let mut max_freq_idx = match self.max_freq as i32 {
+                30 => 0,
+                45 => 1,
+                60 => 2,
+                _ => 3,
+            };
+            if theme::select_index(
+                ui,
+                format!("fft_maxfreq_{}", pane_index),
+                &mut max_freq_idx,
+                &freq_options,
+                80.0,
+            ) {
+                self.max_freq = match max_freq_idx {
+                    0 => 30.0,
+                    1 => 45.0,
+                    2 => 60.0,
+                    _ => 64.0,
+                };
+            }
 
             if !source_options.is_empty() {
                 ui.label("Source:");
                 let prev = self.selected_source.clone();
-                egui::ComboBox::from_id_salt(format!("fft_src_{}", pane_index))
-                    .selected_text(
-                        self.selected_source
-                            .as_deref()
-                            .unwrap_or("<auto>")
-                            .to_string(),
-                    )
-                    .show_ui(ui, |ui| {
-                        for source in &source_options {
-                            ui.selectable_value(
-                                &mut self.selected_source,
-                                Some(source.id.clone()),
-                                format!("{} ({})", source.name, source.id),
-                            );
-                        }
-                    });
+                let labels: Vec<String> = source_options
+                    .iter()
+                    .map(|source| format!("{} ({})", source.name, source.id))
+                    .collect();
+                let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+                let mut selected_idx = self
+                    .selected_source
+                    .as_ref()
+                    .and_then(|id| source_options.iter().position(|source| source.id == *id))
+                    .unwrap_or(0);
+                if theme::select_index(
+                    ui,
+                    format!("fft_src_{}", pane_index),
+                    &mut selected_idx,
+                    &label_refs,
+                    190.0,
+                ) {
+                    self.selected_source = Some(source_options[selected_idx].id.clone());
+                }
                 if self.selected_source != prev {
                     self.cached_fft.clear();
                 }
@@ -654,16 +678,12 @@ impl Widget for FftPlotWidget {
             ui.separator();
             for ch in 0..5 {
                 let color = CHANNEL_COLORS[ch];
-                let mut enabled = self.channel_enabled[ch];
-                if ui
-                    .checkbox(
-                        &mut enabled,
-                        egui::RichText::new(CHANNEL_NAMES[ch]).color(color).small(),
-                    )
-                    .changed()
-                {
-                    self.channel_enabled[ch] = enabled;
-                }
+                ui.colored_label(color, CHANNEL_NAMES[ch]);
+                let _ = theme::toggle_switch(
+                    ui,
+                    format!("fft_channel_enabled_{}_{}", pane_index, ch),
+                    &mut self.channel_enabled[ch],
+                );
             }
 
             ui.separator();

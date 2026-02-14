@@ -6,6 +6,8 @@
 //! host application (the hub).
 
 use eframe::egui;
+use armas::components::Progress;
+use armas::prelude::{ArmasContextExt, Button, ButtonSize, ButtonVariant};
 
 use neurohid_types::profile::CalibrationStep;
 
@@ -156,13 +158,13 @@ impl CalibrationPanel {
 
                 ui.horizontal(|ui| {
                     ui.add_enabled_ui(can_start, |ui| {
-                        if ui.button("Begin Calibration").clicked() {
+                        if action_button(ui, "Begin Calibration", true, ButtonVariant::Default) {
                             self.screen = Screen::Wizard;
                             self.wizard.start();
                         }
                     });
 
-                    if ui.button("Cancel").clicked() {
+                    if action_button(ui, "Cancel", true, ButtonVariant::Secondary) {
                         *result = CalibrationPanelResult::Cancelled;
                     }
                 });
@@ -243,7 +245,7 @@ impl CalibrationPanel {
         if quality_good {
             ui.colored_label(egui::Color32::GREEN, "Signal quality is good!");
             ui.add_space(10.0);
-            if ui.button("Continue").clicked() {
+            if action_button(ui, "Continue", true, ButtonVariant::Default) {
                 self.wizard.advance();
             }
         } else {
@@ -262,7 +264,7 @@ impl CalibrationPanel {
 
         ui.add_space(20.0);
 
-        if ui.button("Start Grid Maze").clicked() {
+        if action_button(ui, "Start Grid Maze", true, ButtonVariant::Default) {
             self.grid_maze = Some(GridMazeGame::new());
             self.screen = Screen::GridMaze;
         }
@@ -275,7 +277,7 @@ impl CalibrationPanel {
 
         ui.add_space(20.0);
 
-        if ui.button("Start Target Tracking").clicked() {
+        if action_button(ui, "Start Target Tracking", true, ButtonVariant::Default) {
             self.target_tracking = Some(TargetTrackingGame::new());
             self.screen = Screen::TargetTracking;
         }
@@ -289,9 +291,8 @@ impl CalibrationPanel {
 
         ui.label("Training your personalized decoder...");
         ui.add_space(10.0);
-        ui.add(
-            egui::ProgressBar::new(progress).text(format!("Training... {:.0}%", progress * 100.0)),
-        );
+        ui.label(format!("Training... {:.0}%", progress * 100.0));
+        let _ = Progress::new(progress * 100.0).show(ui, &ui.ctx().armas_theme());
         ui.add_space(12.0);
 
         if progress < 1.0 {
@@ -300,7 +301,7 @@ impl CalibrationPanel {
         }
 
         ui.colored_label(egui::Color32::GREEN, "Training completed.");
-        if ui.button("Continue").clicked() {
+        if action_button(ui, "Continue", true, ButtonVariant::Default) {
             self.decoder_training_started_at = None;
             self.wizard.advance();
         }
@@ -310,7 +311,7 @@ impl CalibrationPanel {
         ui.label("Let's do a quick test to make sure everything works!");
         ui.add_space(20.0);
 
-        if ui.button("Complete Calibration").clicked() {
+        if action_button(ui, "Complete Calibration", true, ButtonVariant::Default) {
             self.screen = Screen::Complete;
         }
     }
@@ -369,4 +370,16 @@ impl Default for CalibrationPanel {
     fn default() -> Self {
         Self::new()
     }
+}
+
+fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool, variant: ButtonVariant) -> bool {
+    if !enabled {
+        return ui.add_enabled(false, egui::Button::new(label)).clicked();
+    }
+
+    Button::new(label)
+        .variant(variant)
+        .size(ButtonSize::Small)
+        .show(ui, &ui.ctx().armas_theme())
+        .clicked()
 }

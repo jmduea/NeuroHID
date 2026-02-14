@@ -6,6 +6,7 @@
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use std::collections::VecDeque;
+use crate::theme;
 
 const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
@@ -284,35 +285,45 @@ impl Widget for BandPowerWidget {
         // Settings bar
         ui.horizontal(|ui| {
             ui.label("Display:");
-            egui::ComboBox::from_id_salt(format!("bp_mode_{}", pane_index))
-                .selected_text(if self.relative {
-                    "Relative %"
-                } else {
-                    "Absolute"
-                })
-                .width(80.0)
-                .show_ui(ui, |ui: &mut egui::Ui| {
-                    ui.selectable_value(&mut self.relative, true, "Relative %");
-                    ui.selectable_value(&mut self.relative, false, "Absolute");
-                });
+            let mut mode_idx = if self.relative { 0 } else { 1 };
+            if theme::select_index(
+                ui,
+                format!("bp_mode_{}", pane_index),
+                &mut mode_idx,
+                &["Relative %", "Absolute"],
+                130.0,
+            ) {
+                self.relative = mode_idx == 0;
+            }
 
             ui.label("Channel:");
-            let ch_text = self
-                .selected_channel
-                .map(|ch| CHANNEL_NAMES.get(ch).unwrap_or(&"?").to_string())
-                .unwrap_or_else(|| "All".to_string());
-            egui::ComboBox::from_id_salt(format!("bp_channel_{}", pane_index))
-                .selected_text(&ch_text)
-                .width(60.0)
-                .show_ui(ui, |ui: &mut egui::Ui| {
-                    ui.selectable_value(&mut self.selected_channel, None, "All");
-                    for (i, name) in CHANNEL_NAMES.iter().enumerate() {
-                        ui.selectable_value(&mut self.selected_channel, Some(i), *name);
-                    }
-                });
+            let channel_options: Vec<&str> = std::iter::once("All")
+                .chain(CHANNEL_NAMES.iter().copied())
+                .collect();
+            let mut channel_idx = self.selected_channel.map_or(0, |idx| idx + 1);
+            if theme::select_index(
+                ui,
+                format!("bp_channel_{}", pane_index),
+                &mut channel_idx,
+                &channel_options,
+                100.0,
+            ) {
+                self.selected_channel = if channel_idx == 0 {
+                    None
+                } else {
+                    Some(channel_idx - 1)
+                };
+            }
 
             ui.label("Smooth:");
-            ui.add(egui::Slider::new(&mut self.smoothing, 0.0..=0.95).max_decimals(2));
+            let _ = theme::slider_f32(
+                ui,
+                format!("bp_smoothing_{}", pane_index),
+                &mut self.smoothing,
+                0.0,
+                0.95,
+                None,
+            );
         });
 
         // Try pre-computed FFT stream first (e.g. EmotivBandPower),

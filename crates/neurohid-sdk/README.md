@@ -17,7 +17,7 @@ Feature-gated SDK for [NeuroHID](https://github.com/jmduea/neurohid) — a brain
 | `platform` | `neurohid-platform` | Cross-platform HID emulation (mouse, keyboard) |
 | `storage` | `neurohid-storage` | Encrypted profile and configuration storage |
 | `ipc` | `neurohid-ipc` | IPC layer for Rust ↔ Python ML communication |
-| `calibration` | `neurohid-calibration` | Calibration games and first-run wizard (egui) |
+| `calibration` | `neurohid-calibration` | Calibration games and first-run wizard (egui + Armas-backed controls) |
 | `runtime` | `neurohid-core` | Managed runtime/service APIs |
 | `hub` | `neurohid-hub` | Hub GUI library |
 | `full` | *all of the above* | Everything enabled |

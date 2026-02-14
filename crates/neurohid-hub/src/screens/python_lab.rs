@@ -15,6 +15,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
+use crate::theme;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CellStatus {
@@ -160,57 +161,42 @@ impl PythonLabScreen {
         self.poll_kernel_events(kernel_command);
         self.poll_tool_output();
 
-        ui.heading("Python Lab");
-        ui.label(
-            egui::RichText::new("Notebook-style execution over decoupled kernel IPC")
-                .small()
-                .weak(),
+        theme::page_header(
+            ui,
+            "Python Lab",
+            "Notebook-style execution over decoupled kernel IPC. Kernel protocol: JSON lines over stdio (execute/reset/ping/shutdown)",
         );
-        ui.label(
-            egui::RichText::new(
-                "Kernel protocol: JSON lines over stdio (execute/reset/ping/shutdown)",
-            )
-            .small()
-            .weak(),
-        );
-        ui.add_space(8.0);
         self.show_bridge_monitor(ui, data_bus, service_snapshot);
 
         ui.horizontal(|ui| {
-            if ui.button("Add Cell").clicked() {
+            if action_button(ui, "Add Cell", true) {
                 self.cells.push(NotebookCell::new(String::new()));
                 self.selected_cell = self.cells.len().saturating_sub(1);
             }
 
             let run_selected = self.selected_cell < self.cells.len();
-            if ui
-                .add_enabled(run_selected, egui::Button::new("Run Selected"))
-                .clicked()
-            {
+            if action_button(ui, "Run Selected", run_selected) {
                 self.enqueue_cell(self.selected_cell, kernel_command);
             }
 
-            if ui.button("Run All").clicked() {
+            if action_button(ui, "Run All", true) {
                 self.enqueue_all_cells(kernel_command);
             }
 
-            if ui.button("Restart Kernel").clicked() {
+            if action_button(ui, "Restart Kernel", true) {
                 self.restart_kernel(kernel_command);
             }
 
-            if ui.button("Stop Kernel").clicked() {
+            if action_button(ui, "Stop Kernel", true) {
                 self.stop_kernel();
             }
 
             let uv_sync_running = self.uv_sync_task.is_pending();
-            if ui
-                .add_enabled(!uv_sync_running, egui::Button::new("uv sync"))
-                .clicked()
-            {
+            if action_button(ui, "uv sync", !uv_sync_running) {
                 self.run_uv_sync();
             }
 
-            if ui.button("Clear Log").clicked() {
+            if action_button(ui, "Clear Log", true) {
                 self.log_output.clear();
             }
         });
@@ -259,29 +245,26 @@ impl PythonLabScreen {
                 for index in 0..self.cells.len() {
                     let cell = &mut self.cells[index];
                     ui.push_id(("python_cell", index), |ui| {
-                        egui::Frame::group(ui.style()).show(ui, |ui| {
+                        theme::card_frame(ui).show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 let selected = self.selected_cell == index;
-                                if ui
-                                    .selectable_label(selected, format!("Cell {}", index + 1))
-                                    .clicked()
+                                if theme::nav_button(
+                                    ui,
+                                    &format!("Cell {}", index + 1),
+                                    selected,
+                                )
+                                .clicked()
                                 {
                                     self.selected_cell = index;
                                 }
 
-                                let run_button = ui.add_enabled(
-                                    !matches!(cell.status, CellStatus::Running),
-                                    egui::Button::new("Run"),
-                                );
-                                if run_button.clicked() {
+                                let can_run = !matches!(cell.status, CellStatus::Running);
+                                if action_button(ui, "Run", can_run) {
                                     run_clicked = Some(index);
                                 }
 
-                                let delete_button = ui.add_enabled(
-                                    !matches!(cell.status, CellStatus::Running),
-                                    egui::Button::new("Delete"),
-                                );
-                                if delete_button.clicked() {
+                                let can_delete = !matches!(cell.status, CellStatus::Running);
+                                if action_button(ui, "Delete", can_delete) {
                                     delete_clicked = Some(index);
                                 }
 
@@ -314,13 +297,14 @@ impl PythonLabScreen {
                                 .show(ui, &mut cell.code);
 
                             ui.label(egui::RichText::new("Output").small().strong());
-                            let output_editor = egui::TextEdit::multiline(&mut cell.output)
-                                .id_salt(("python_cell_output", index))
-                                .font(egui::TextStyle::Monospace)
-                                .desired_rows(4)
-                                .desired_width(f32::INFINITY)
-                                .interactive(false);
-                            ui.add(output_editor);
+                            let _ = theme::textarea_input(
+                                ui,
+                                format!("python_cell_output_{}", index),
+                                &mut cell.output,
+                                "",
+                                4,
+                                f32::INFINITY,
+                            );
                         });
                     });
                     ui.add_space(8.0);
@@ -335,20 +319,22 @@ impl PythonLabScreen {
         }
 
         ui.separator();
-        ui.label(egui::RichText::new("Kernel / Tool Log").strong());
-        egui::ScrollArea::vertical()
-            .id_salt("python_lab_log_scroll")
-            .max_height(180.0)
-            .show(ui, |ui| {
-                ui.add(
-                    egui::TextEdit::multiline(&mut self.log_output)
-                        .id_salt("python_lab_log_output")
-                        .font(egui::TextStyle::Monospace)
-                        .desired_rows(8)
-                        .desired_width(f32::INFINITY)
-                        .interactive(false),
-                );
-            });
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.label(egui::RichText::new("Kernel / Tool Log").strong());
+            egui::ScrollArea::vertical()
+                .id_salt("python_lab_log_scroll")
+                .max_height(180.0)
+                .show(ui, |ui| {
+                    let _ = theme::textarea_input(
+                        ui,
+                        "python_lab_log_output",
+                        &mut self.log_output,
+                        "",
+                        8,
+                        f32::INFINITY,
+                    );
+                });
+        });
     }
 
     fn show_bridge_monitor(
@@ -357,7 +343,7 @@ impl PythonLabScreen {
         data_bus: &DataBus,
         service_snapshot: &ServiceSnapshot,
     ) {
-        egui::Frame::group(ui.style()).show(ui, |ui| {
+        theme::card_frame(ui).show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Bridge Monitor (Always On)").strong());
 
@@ -388,8 +374,29 @@ impl PythonLabScreen {
                         .small()
                         .weak(),
                 );
-                ui.add(egui::Slider::new(&mut self.monitor_rows, 3..=40).text("rows"));
-                ui.add(egui::Slider::new(&mut self.monitor_preview_values, 4..=64).text("values"));
+                let mut monitor_rows = self.monitor_rows as f32;
+                if theme::slider_f32(
+                    ui,
+                    "python_lab_monitor_rows",
+                    &mut monitor_rows,
+                    3.0,
+                    40.0,
+                    Some("rows"),
+                ) {
+                    self.monitor_rows = monitor_rows.round().clamp(3.0, 40.0) as usize;
+                }
+                let mut monitor_preview_values = self.monitor_preview_values as f32;
+                if theme::slider_f32(
+                    ui,
+                    "python_lab_monitor_preview_values",
+                    &mut monitor_preview_values,
+                    4.0,
+                    64.0,
+                    Some("values"),
+                ) {
+                    self.monitor_preview_values =
+                        monitor_preview_values.round().clamp(4.0, 64.0) as usize;
+                }
             });
 
             if let Some(latest) = data_bus.features.back() {
@@ -980,6 +987,10 @@ fn run_uv_sync_blocking() -> String {
         }
         Err(error) => format!("Failed to run uv sync: {}\n", error),
     }
+}
+
+fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
+    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
 }
 
 #[cfg(test)]

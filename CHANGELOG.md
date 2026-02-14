@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard candidate training/staging jobs now run through `egui-async` bindings instead of manual thread/channel plumbing, improving frame-safe async task handling consistency across Hub screens
 - Hub now integrates `egui_logger` with a toggleable in-app Runtime Logs window, and Hub binary startup now uses a combined logger bridge so log events are visible in UI while still flowing through tracing subscribers
 - Hub now includes initial `egui_kittest` smoke tests for Python Lab and Jupyter IDE controls to lock in baseline UI behavior for the new async/editor/console flows
+- Visualization migration cookbook with phased `armas` and constrained `egui_dock` adoption guidance (`docs/ux/egui-visual-migration-cookbook.md`)
 
 ### Changed
 
@@ -45,10 +46,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Core action task placeholder tracking field now uses underscore-prefixed naming to reduce explicit dead-code allowances while preserving future wiring intent
 - Workspace Rust baseline updated to edition 2024 and rust-version 1.85
 - Python test workflow standardized on `uv` + `pytest` in CI and contributor guidance
-- Hub visualization layout engine in `neurohid-hub` now uses `egui_tiles` for pane tiling/resizing/drag-rearrangement while preserving existing layout presets and per-pane widget selection
+- Hub visualization layout engine in `neurohid-hub` now uses `egui_dock` as the standard pane docking/rearrangement system while preserving existing layout presets and per-pane widget selection
 - Hub now persists visualization pane arrangement, widget assignments, and layout preset across launches via UI config state
 - Mixed LSL stream handling now classifies streams by metadata and routes only EEG-like streams into decoder feature extraction, while non-EEG streams remain connected and observable without crashing the service
 - Signal feature extraction now gracefully handles low-channel streams (including 1-channel sources) by bounds-checking frontal asymmetry indices instead of panicking
+- Hub UI now uses an always-on Armas-first component layer (no runtime pilot gate), with centralized theme/style primitives in `neurohid-hub/src/theme.rs` applied across shell, screens, and primary action controls
+- Hub shell navigation now uses `armas::components::Sidebar` (floating, icon-collapsible) in `neurohid-hub/src/app.rs`, replacing the prior custom sidebar composition
+- Theme wrappers `card_frame` and `panel_frame` in `neurohid-hub/src/theme.rs` now render through `armas::components::Card` (`CardVariant::Outlined`) so screen containers inherit a single Armas-backed surface implementation
+- Stream Console control actions (close/clear/pause/filter-clear) now use shared Armas-backed button wrappers instead of raw `egui::Button` instances
+- Hub screen controls across Settings, Dashboard, Devices, Visualization, Python Lab, and Jupyter IDE now route through shared Armas wrappers for select/input/toggle/slider/textarea/progress interactions
+- Visualization widget toolbars (`fft_plot`, `band_power`, `time_series`, `action_preview`, `accelerometer`, `focus`, `headplot`, `spectrogram`) now use shared Armas-backed navigation/control wrappers for interaction consistency
+- Progress indicators in Dashboard/Devices/widgets now render through shared Armas progress wrapper primitives
+- Visualization now uses always-on `egui_dock` with no backend feature gating; legacy `visualization_docking_backend` config selection has been retired while layout preset/widget persistence remains intact
+- Python Lab screen is re-enabled in Advanced mode sidebar routing and active central-panel dispatch
+- Hub numeric controls now route through shared `theme::drag_value` wrappers (replacing direct per-screen `egui::DragValue` usage in Settings, Stream Console, and visualization widgets)
+- Calibration crate interaction controls now use Armas button/progress primitives for consistent component usage across Hub and embedded calibration flows
 
 ### Removed
 

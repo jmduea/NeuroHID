@@ -2,26 +2,21 @@
 //!
 //! Manages the multi-pane widget layout for the Visualization screen.
 //! Users choose a layout configuration (e.g., 2x2, 1+2), assign
-//! a widget to each pane, and can drag/resize panes via `egui_tiles`.
+//! a widget to each pane, and drag/resize panes via `egui_dock`.
 
 use crate::widgets::{create_widget, Widget, WidgetContext, WidgetId};
 use eframe::egui;
-use egui_tiles::{Behavior, EditAction, Tile, TileId, Tiles, Tree, UiResponse};
+use egui_dock::{DockArea, DockState, NodeIndex, Style, TabViewer};
+use neurohid_types::config::UiConfig;
+use crate::theme;
 
-/// Available layout configurations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LayoutConfig {
-    /// Single full-width pane.
     Single,
-    /// Two panes side by side.
     TwoColumns,
-    /// Two panes stacked vertically.
     TwoRows,
-    /// 2x2 grid.
     Grid2x2,
-    /// One large pane on the left, two smaller on the right.
     OneLeftTwoRight,
-    /// Two smaller on the left, one large on the right.
     TwoLeftOneRight,
 }
 
@@ -69,7 +64,6 @@ impl LayoutConfig {
         }
     }
 
-    /// Number of panes in this layout.
     pub fn pane_count(&self) -> usize {
         match self {
             LayoutConfig::Single => 1,
@@ -95,14 +89,12 @@ impl Pane {
 pub struct PersistedLayoutState {
     pub layout_preset: String,
     pub pane_widgets: Vec<String>,
-    pub tree_json: Option<String>,
 }
 
-/// The layout manager for the Visualization workspace.
 pub struct LayoutManager {
     pub config: LayoutConfig,
     pane_widget_ids: Vec<WidgetId>,
-    tree: Tree<Pane>,
+    dock_state: DockState<Pane>,
     widget_instances: Vec<Box<dyn Widget>>,
     dirty: bool,
 }
@@ -114,34 +106,28 @@ impl Default for LayoutManager {
 }
 
 impl LayoutManager {
-    /// Create a new layout manager with default widget assignments.
-    pub fn new() -> Self {
-        Self::from_persisted("grid2x2", &[], None)
+    pub fn from_ui_config(ui_config: &UiConfig) -> Self {
+        Self::from_persisted(
+            &ui_config.visualization_layout_preset,
+            &ui_config.visualization_pane_widgets,
+        )
     }
 
-    /// Restore layout manager from persisted keys and serialized tree state.
-    pub fn from_persisted(
-        layout_preset: &str,
-        pane_widgets: &[String],
-        tree_json: Option<&str>,
-    ) -> Self {
+    pub fn new() -> Self {
+        Self::from_persisted("grid2x2", &[])
+    }
+
+    pub fn from_persisted(layout_preset: &str, pane_widgets: &[String]) -> Self {
         let config = LayoutConfig::from_key(layout_preset).unwrap_or(LayoutConfig::Grid2x2);
         let pane_count = config.pane_count();
 
-        let mut pane_widget_ids: Vec<WidgetId> = (0..pane_count).map(Self::default_widget_for).collect();
+        let mut pane_widget_ids: Vec<WidgetId> =
+            (0..pane_count).map(Self::default_widget_for).collect();
         for (index, key) in pane_widgets.iter().take(pane_count).enumerate() {
             if let Some(widget_id) = widget_from_key(key) {
                 pane_widget_ids[index] = widget_id;
             }
         }
-
-        let mut tree = Self::build_tree(config, &pane_widget_ids);
-        if let Some(raw) = tree_json
-            && let Ok(parsed_tree) = serde_json::from_str::<Tree<Pane>>(raw)
-                && let Some(from_tree) = Self::assignments_from_tree(&parsed_tree, pane_count) {
-                    pane_widget_ids = from_tree;
-                    tree = parsed_tree;
-                }
 
         let widget_instances = pane_widget_ids
             .iter()
@@ -149,37 +135,58 @@ impl LayoutManager {
             .map(create_widget)
             .collect();
 
+        let dock_state = Self::build_dock_state(config, &pane_widget_ids);
+
         Self {
             config,
             pane_widget_ids,
-            tree,
+            dock_state,
             widget_instances,
             dirty: false,
         }
     }
 
-    fn assignments_from_tree(tree: &Tree<Pane>, pane_count: usize) -> Option<Vec<WidgetId>> {
-        let mut assignments = vec![None; pane_count];
-        let mut pane_tiles = 0usize;
+    fn build_dock_state(config: LayoutConfig, assignments: &[WidgetId]) -> DockState<Pane> {
+        let make_tab = |slot: usize| {
+            Pane::new(
+                slot,
+                assignments
+                    .get(slot)
+                    .copied()
+                    .unwrap_or_else(|| Self::default_widget_for(slot)),
+            )
+        };
 
-        for (_, tile) in tree.tiles.iter() {
-            if let Tile::Pane(pane) = tile {
-                pane_tiles = pane_tiles.saturating_add(1);
-                if pane.slot >= pane_count {
-                    return None;
-                }
-                if assignments[pane.slot].is_some() {
-                    return None;
-                }
-                assignments[pane.slot] = Some(pane.widget_id);
+        let mut dock_state = DockState::new(vec![make_tab(0)]);
+        let surface = dock_state.main_surface_mut();
+
+        match config {
+            LayoutConfig::Single => {}
+            LayoutConfig::TwoColumns => {
+                surface.split_right(NodeIndex::root(), 0.5, vec![make_tab(1)]);
+            }
+            LayoutConfig::TwoRows => {
+                surface.split_below(NodeIndex::root(), 0.5, vec![make_tab(1)]);
+            }
+            LayoutConfig::Grid2x2 => {
+                let [left, right] =
+                    surface.split_right(NodeIndex::root(), 0.5, vec![make_tab(1)]);
+                surface.split_below(left, 0.5, vec![make_tab(2)]);
+                surface.split_below(right, 0.5, vec![make_tab(3)]);
+            }
+            LayoutConfig::OneLeftTwoRight => {
+                let [_left, right] =
+                    surface.split_right(NodeIndex::root(), 0.62, vec![make_tab(1)]);
+                surface.split_below(right, 0.5, vec![make_tab(2)]);
+            }
+            LayoutConfig::TwoLeftOneRight => {
+                let [left, _right] =
+                    surface.split_right(NodeIndex::root(), 0.38, vec![make_tab(2)]);
+                surface.split_below(left, 0.5, vec![make_tab(1)]);
             }
         }
 
-        if pane_tiles != pane_count {
-            return None;
-        }
-
-        assignments.into_iter().collect()
+        dock_state
     }
 
     fn default_widget_for(index: usize) -> WidgetId {
@@ -196,46 +203,18 @@ impl LayoutManager {
         while self.pane_widget_ids.len() < count {
             let idx = self.pane_widget_ids.len();
             self.pane_widget_ids.push(Self::default_widget_for(idx));
-            self.widget_instances
-                .push(create_widget(*self.pane_widget_ids.last().unwrap_or(&WidgetId::SignalQuality)));
+            self.widget_instances.push(create_widget(
+                *self
+                    .pane_widget_ids
+                    .last()
+                    .unwrap_or(&WidgetId::SignalQuality),
+            ));
         }
         self.pane_widget_ids.truncate(count);
         self.widget_instances.truncate(count);
+        self.dock_state = Self::build_dock_state(self.config, &self.pane_widget_ids);
     }
 
-    fn build_tree(config: LayoutConfig, assignments: &[WidgetId]) -> Tree<Pane> {
-        let mut tiles = Tiles::default();
-        let pane_ids: Vec<TileId> = assignments
-            .iter()
-            .copied()
-            .enumerate()
-            .map(|(slot, id)| tiles.insert_pane(Pane::new(slot, id)))
-            .collect();
-
-        let root = match config {
-            LayoutConfig::Single => pane_ids[0],
-            LayoutConfig::TwoColumns => tiles.insert_horizontal_tile(vec![pane_ids[0], pane_ids[1]]),
-            LayoutConfig::TwoRows => tiles.insert_vertical_tile(vec![pane_ids[0], pane_ids[1]]),
-            LayoutConfig::Grid2x2 => {
-                let top_row = tiles.insert_horizontal_tile(vec![pane_ids[0], pane_ids[1]]);
-                let bottom_row = tiles.insert_horizontal_tile(vec![pane_ids[2], pane_ids[3]]);
-                tiles.insert_vertical_tile(vec![top_row, bottom_row])
-            }
-            LayoutConfig::OneLeftTwoRight => {
-                let right = tiles.insert_vertical_tile(vec![pane_ids[1], pane_ids[2]]);
-                tiles.insert_horizontal_tile(vec![pane_ids[0], right])
-            }
-            LayoutConfig::TwoLeftOneRight => {
-                let left = tiles.insert_vertical_tile(vec![pane_ids[0], pane_ids[1]]);
-                tiles.insert_horizontal_tile(vec![left, pane_ids[2]])
-            }
-        };
-
-        Tree::new("visualization_layout_tree", root, tiles)
-    }
-
-    /// Change the layout configuration, keeping as many pane assignments
-    /// as possible and filling new panes with defaults.
     pub fn set_layout(&mut self, config: LayoutConfig) {
         if self.config == config {
             return;
@@ -243,22 +222,22 @@ impl LayoutManager {
 
         self.ensure_assignment_count(config.pane_count());
         self.config = config;
-        self.tree = Self::build_tree(self.config, &self.pane_widget_ids);
+        self.dock_state = Self::build_dock_state(self.config, &self.pane_widget_ids);
         self.dirty = true;
     }
 
-    /// Change the widget in a specific pane.
     #[allow(dead_code)]
     pub fn set_pane_widget(&mut self, pane_index: usize, widget_id: WidgetId) {
         if let Some(current) = self.pane_widget_ids.get_mut(pane_index)
-            && *current != widget_id {
-                *current = widget_id;
-                if let Some(widget) = self.widget_instances.get_mut(pane_index) {
-                    *widget = create_widget(widget_id);
-                }
-                self.tree = Self::build_tree(self.config, &self.pane_widget_ids);
-                self.dirty = true;
+            && *current != widget_id
+        {
+            *current = widget_id;
+            if let Some(widget) = self.widget_instances.get_mut(pane_index) {
+                *widget = create_widget(widget_id);
             }
+            self.dock_state = Self::build_dock_state(self.config, &self.pane_widget_ids);
+            self.dirty = true;
+        }
     }
 
     pub fn take_persisted_state(&mut self) -> Option<PersistedLayoutState> {
@@ -276,76 +255,93 @@ impl LayoutManager {
                 .map(widget_to_key)
                 .map(str::to_string)
                 .collect(),
-            tree_json: serde_json::to_string(&self.tree).ok(),
         })
     }
 
-    /// Render the layout toolbar (layout selector).
     pub fn show_toolbar(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
             ui.label("Layout:");
-            let mut selected_layout = self.config;
-            let current_label = selected_layout.label();
-            egui::ComboBox::from_id_salt("layout_selector")
-                .selected_text(current_label)
-                .show_ui(ui, |ui: &mut egui::Ui| {
-                    for &layout in LayoutConfig::ALL {
-                        if ui
-                            .selectable_value(&mut selected_layout, layout, layout.label())
-                            .changed()
-                        {
-                            self.set_layout(selected_layout);
-                        }
-                    }
-                });
+            let options: Vec<&str> = LayoutConfig::ALL.iter().map(LayoutConfig::label).collect();
+            let mut selected_index = LayoutConfig::ALL
+                .iter()
+                .position(|layout| *layout == self.config)
+                .unwrap_or(0);
+            if theme::select_index(
+                ui,
+                "layout_manager_layout_selector",
+                &mut selected_index,
+                &options,
+                160.0,
+            ) {
+                self.set_layout(LayoutConfig::ALL[selected_index]);
+            }
         });
     }
 
-    /// Render all panes with their widgets.
     pub fn show_panes(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
-        let mut behavior = LayoutBehavior {
+        ui.label(
+            egui::RichText::new("Drag tab titles and drop on panel edges/centers to re-dock.")
+                .small()
+                .weak(),
+        );
+
+        let mut viewer = DockTabViewer {
             widget_ids: &mut self.pane_widget_ids,
             widget_instances: &mut self.widget_instances,
             widget_ctx: ctx,
             changed: false,
         };
-        self.tree.ui(&mut behavior, ui);
-        if behavior.changed {
+        let mut dock_style = Style::from_egui(ui.style().as_ref());
+        dock_style.tab_bar.height = 28.0;
+        dock_style.tab.minimum_width = Some(128.0);
+        DockArea::new(&mut self.dock_state)
+            .id(egui::Id::new("visualization_dock_area"))
+            .style(dock_style)
+            .draggable_tabs(true)
+            .show_tab_name_on_hover(true)
+            .show_inside(ui, &mut viewer);
+
+        if viewer.changed {
             self.dirty = true;
         }
     }
 }
 
-struct LayoutBehavior<'a, 'b> {
+struct DockTabViewer<'a, 'b> {
     widget_ids: &'a mut [WidgetId],
     widget_instances: &'a mut [Box<dyn Widget>],
     widget_ctx: &'a WidgetContext<'b>,
     changed: bool,
 }
 
-impl Behavior<Pane> for LayoutBehavior<'_, '_> {
-    fn tab_title_for_pane(&mut self, pane: &Pane) -> egui::WidgetText {
-        format!("#{} {}", pane.slot + 1, pane.widget_id.label()).into()
+impl TabViewer for DockTabViewer<'_, '_> {
+    type Tab = Pane;
+
+    fn title(&mut self, tab: &mut Self::Tab) -> egui::WidgetText {
+        format!("#{} {}", tab.slot + 1, tab.widget_id.label()).into()
     }
 
-    fn pane_ui(&mut self, ui: &mut egui::Ui, tile_id: TileId, pane: &mut Pane) -> UiResponse {
+    fn ui(&mut self, ui: &mut egui::Ui, tab: &mut Self::Tab) {
         ui.horizontal(|ui| {
             ui.label("Widget:");
-            let mut selected = pane.widget_id;
-            egui::ComboBox::from_id_salt(("pane_widget", tile_id))
-                .selected_text(selected.label())
-                .show_ui(ui, |ui| {
-                    for &wid in WidgetId::ALL {
-                        ui.selectable_value(&mut selected, wid, wid.label());
-                    }
-                });
-
-            if selected != pane.widget_id {
-                pane.widget_id = selected;
-                if let Some(slot_value) = self.widget_ids.get_mut(pane.slot) {
+            let options: Vec<&str> = WidgetId::ALL.iter().map(WidgetId::label).collect();
+            let mut selected_index = WidgetId::ALL
+                .iter()
+                .position(|widget_id| *widget_id == tab.widget_id)
+                .unwrap_or(0);
+            if theme::select_index(
+                ui,
+                format!("dock_pane_widget_{}", tab.slot),
+                &mut selected_index,
+                &options,
+                180.0,
+            ) {
+                let selected = WidgetId::ALL[selected_index];
+                tab.widget_id = selected;
+                if let Some(slot_value) = self.widget_ids.get_mut(tab.slot) {
                     *slot_value = selected;
                 }
-                if let Some(widget) = self.widget_instances.get_mut(pane.slot) {
+                if let Some(widget) = self.widget_instances.get_mut(tab.slot) {
                     *widget = create_widget(selected);
                 }
                 self.changed = true;
@@ -354,71 +350,11 @@ impl Behavior<Pane> for LayoutBehavior<'_, '_> {
 
         ui.separator();
 
-        if ui.available_height() < 40.0 {
-            ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new("Panel too small").small());
-            });
-            return UiResponse::None;
+        if let Some(widget) = self.widget_instances.get_mut(tab.slot) {
+            widget.show(ui, self.widget_ctx, tab.slot);
+        } else {
+            ui.colored_label(egui::Color32::YELLOW, "Missing widget instance");
         }
-
-        let available = ui.available_size();
-        let width_scale = (available.x / 700.0).clamp(0.72, 1.0);
-        let height_scale = (available.y / 360.0).clamp(0.72, 1.0);
-        let fit_scale = width_scale.min(height_scale);
-
-        ui.scope(|ui| {
-            let mut style: egui::Style = ui.style().as_ref().clone();
-            style.spacing.item_spacing *= fit_scale;
-            style.spacing.button_padding *= fit_scale;
-
-            for font_id in style.text_styles.values_mut() {
-                font_id.size = (font_id.size * fit_scale).max(10.0);
-            }
-
-            ui.set_style(style);
-
-            egui::Frame::new()
-                .inner_margin(egui::Margin::symmetric(6, 6))
-                .show(ui, |ui| {
-                    if let Some(widget) = self.widget_instances.get_mut(pane.slot) {
-                        widget.show(ui, self.widget_ctx, pane.slot);
-                    } else {
-                        ui.colored_label(egui::Color32::YELLOW, "Missing widget instance");
-                    }
-                });
-        });
-
-        UiResponse::None
-    }
-
-    fn on_edit(&mut self, _edit_action: EditAction) {
-        self.changed = true;
-    }
-
-    fn tab_bar_height(&self, _style: &egui::Style) -> f32 {
-        0.0
-    }
-
-    fn min_size(&self) -> f32 {
-        240.0
-    }
-
-    fn simplification_options(&self) -> egui_tiles::SimplificationOptions {
-        egui_tiles::SimplificationOptions {
-            all_panes_must_have_tabs: false,
-            ..Default::default()
-        }
-    }
-
-    fn retain_pane(&mut self, _pane: &Pane) -> bool {
-        true
-    }
-
-    fn tab_title_for_tile(&mut self, tiles: &Tiles<Pane>, tile_id: TileId) -> egui::WidgetText {
-        if let Some(Tile::Pane(pane)) = tiles.get(tile_id) {
-            return self.tab_title_for_pane(pane);
-        }
-        "Pane".into()
     }
 }
 

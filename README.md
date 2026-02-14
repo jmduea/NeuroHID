@@ -12,7 +12,7 @@ Imagine putting on a lightweight EEG headset, thinking "move left," and watching
 
 NeuroHID uses a hybrid Rust/Python architecture:
 
-```
+```text
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           RUST CORE SERVICE                             │
 │                     (neurohid-core + related crates)                    │
@@ -83,7 +83,7 @@ crashing the service.
 
 ## Project Structure
 
-```
+```text
 neurohid/
 ├── Cargo.toml                 # Workspace root
 ├── crates/
@@ -231,7 +231,10 @@ The Hub now includes a Jupyter-first IDE workflow in Advanced mode.
 4. Click **Prepare Environment** once, then **Start Jupyter**.
 5. Click **Open in Browser** and use notebooks under `python/notebooks`.
 
-The Hub Visualization workspace supports draggable/resizable tiled panes and restores your
+Advanced mode also exposes **Python Lab** in the sidebar for in-app notebook-style
+kernel execution and bridge monitoring.
+
+The Hub Visualization workspace supports draggable/resizable docked panes and restores your
 last layout automatically across launches.
 
 Control endpoint requests are line-delimited JSON with
@@ -245,7 +248,11 @@ Persisted visualization UI state is stored in `UiConfig` via:
 
 - `visualization_layout_preset`
 - `visualization_pane_widgets`
-- `visualization_layout_tree_json`
+- Visualization workspace uses `egui_dock` as the standard docking backend
+
+Hub UI shell and primary controls now follow an always-on Armas-first component layer
+(`Sidebar`, shared theme wrappers for input/select/toggle/slider/textarea/progress).
+For migration and maintenance guidance, see `docs/ux/egui-visual-migration-cookbook.md`.
 
 ### Python ML Workflows (uv-first)
 
@@ -260,29 +267,47 @@ uv run --directory python neurohid-ml train-profile-candidate --profile-id <PROF
 uv run --directory python neurohid-ml trainer-worker --profile-id <PROFILE_ID>
 ```
 
+### Validation Harness (V1 Matrix)
+
+Use the built-in validation binary to run soak, latency, and boot-mode matrix checks:
+
+```bash
+# 24h soak with periodic forced bridge reconnects
+cargo run -p neurohid --bin neurohid-validate -- soak --duration-secs 86400 --reconnect-interval-secs 120
+
+# Full/fallback/degraded latency/resource comparison
+cargo run -p neurohid --bin neurohid-validate -- latency-matrix --duration-secs-per-mode 120
+
+# No-Python-bridge boot scenario matrix
+cargo run -p neurohid --bin neurohid-validate -- boot-matrix --settle-secs 8
+```
+
+Use `--service-bin <path>` (or `NEUROHID_SERVICE_BIN`) when the validation binary cannot auto-locate
+`neurohid-service`.
+
 ## Development Roadmap
 
 The current implementation roadmap is tracked in repository issues and milestones.
 
-**Phase 1 (Weeks 1-3): Foundation**
+### Phase 1 (Weeks 1-3): Foundation
 
 - Emotiv Cortex adapter
 - Cross-platform HID emission
 - Signal processing pipeline
 
-**Phase 2 (Weeks 4-7): Core Infrastructure**
+### Phase 2 (Weeks 4-7): Core Infrastructure
 
 - ErrP detection and calibration
 - IPC layer
 - Profile storage
 
-**Phase 3 (Weeks 8-10): ML Integration**
+### Phase 3 (Weeks 8-10): ML Integration
 
 - Decoder (PPO policy network)
 - Online training loop
 - Reward integration
 
-**Phase 4 (Weeks 11-14): Calibration & Polish**
+### Phase 4 (Weeks 11-14): Calibration & Polish
 
 - Calibration games (Grid Maze, Target Tracking)
 - First-run wizard

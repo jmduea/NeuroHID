@@ -2,6 +2,7 @@
 //!
 //! Displays a simple topographic heatmap over the five canonical EEG channels.
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 
@@ -65,22 +66,25 @@ impl Widget for HeadplotWidget {
 
             ui.horizontal(|ui| {
                 ui.label("Source:");
-                egui::ComboBox::from_id_salt(format!("headplot_src_{pane_index}"))
-                    .selected_text(
-                        self.selected_source
-                            .as_deref()
-                            .unwrap_or("<auto>")
-                            .to_string(),
-                    )
-                    .show_ui(ui, |ui| {
-                        for source in &source_options {
-                            ui.selectable_value(
-                                &mut self.selected_source,
-                                Some(source.id.clone()),
-                                format!("{} ({})", source.name, source.id),
-                            );
-                        }
-                    });
+                let labels: Vec<String> = source_options
+                    .iter()
+                    .map(|source| format!("{} ({})", source.name, source.id))
+                    .collect();
+                let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+                let mut selected_idx = self
+                    .selected_source
+                    .as_ref()
+                    .and_then(|id| source_options.iter().position(|source| source.id == *id))
+                    .unwrap_or(0);
+                if theme::select_index(
+                    ui,
+                    format!("headplot_src_{pane_index}"),
+                    &mut selected_idx,
+                    &label_refs,
+                    190.0,
+                ) {
+                    self.selected_source = Some(source_options[selected_idx].id.clone());
+                }
             });
         }
 

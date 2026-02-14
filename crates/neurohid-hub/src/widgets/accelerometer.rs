@@ -2,6 +2,7 @@
 //!
 //! Displays motion stream values (X/Y/Z + magnitude) and short trend bars.
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 
@@ -62,21 +63,25 @@ impl Widget for AccelerometerWidget {
             }
             ui.horizontal(|ui| {
                 ui.label("Source:");
-                egui::ComboBox::from_id_salt(format!("acc_src_{}", pane_index))
-                    .selected_text(
-                        self.selected_source
-                            .clone()
-                            .unwrap_or_else(|| "<auto>".to_string()),
-                    )
-                    .show_ui(ui, |ui| {
-                        for stream in &motion_streams {
-                            ui.selectable_value(
-                                &mut self.selected_source,
-                                Some(stream.id.clone()),
-                                format!("{} ({})", stream.name, stream.id),
-                            );
-                        }
-                    });
+                let labels: Vec<String> = motion_streams
+                    .iter()
+                    .map(|stream| format!("{} ({})", stream.name, stream.id))
+                    .collect();
+                let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+                let mut selected_idx = self
+                    .selected_source
+                    .as_ref()
+                    .and_then(|id| motion_streams.iter().position(|stream| stream.id == *id))
+                    .unwrap_or(0);
+                if theme::select_index(
+                    ui,
+                    format!("acc_src_{}", pane_index),
+                    &mut selected_idx,
+                    &label_refs,
+                    190.0,
+                ) {
+                    self.selected_source = Some(motion_streams[selected_idx].id.clone());
+                }
             });
         }
 

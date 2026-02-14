@@ -3,6 +3,7 @@
 //! Displays real-time scrolling EEG waveforms for all channels.
 //! Each channel is rendered as a separate trace with a unique color.
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use neurohid_types::event::{MarkerType, StreamMarker};
@@ -483,15 +484,12 @@ impl Widget for TimeSeriesWidget {
         ui.horizontal(|ui| {
             // Pause toggle
             let pause_text = if self.paused { "Resume" } else { "Pause" };
-            let pause_color = if self.paused {
-                egui::Color32::from_rgb(255, 193, 7)
+            let pause_tone = if self.paused {
+                theme::ButtonTone::Secondary
             } else {
-                ui.visuals().widgets.inactive.fg_stroke.color
+                theme::ButtonTone::Ghost
             };
-            if ui
-                .button(egui::RichText::new(pause_text).color(pause_color))
-                .clicked()
-            {
+            if theme::action_button(ui, pause_text, true, pause_tone) {
                 self.paused = !self.paused;
                 if self.paused {
                     // Cache current samples when pausing
@@ -512,54 +510,70 @@ impl Widget for TimeSeriesWidget {
             ui.separator();
 
             ui.label("Scale:");
-            let mut auto = self.auto_scale;
-            if ui
-                .selectable_label(auto, "Auto")
-                .on_hover_text("Automatically fit waveform to view")
-                .clicked()
-            {
-                auto = !auto;
-            }
-            self.auto_scale = auto;
+            let _ = theme::toggle_switch(
+                ui,
+                format!("ts_auto_scale_{}", pane_index),
+                &mut self.auto_scale,
+            );
             if !self.auto_scale {
-                let drag = egui::DragValue::new(&mut self.vertical_scale)
-                    .speed(5.0)
-                    .range(1.0..=50000.0)
-                    .suffix(" µV")
-                    .min_decimals(0)
-                    .max_decimals(0);
-                ui.add(drag);
+                let _ = theme::drag_value(
+                    ui,
+                    &mut self.vertical_scale,
+                    1.0..=50_000.0,
+                    5.0,
+                    Some(" µV"),
+                );
             }
 
             ui.label("Window:");
-            egui::ComboBox::from_id_salt(format!("ts_window_{}", pane_index))
-                .selected_text(format!("{:.0}s", self.window_secs))
-                .width(60.0)
-                .show_ui(ui, |ui: &mut egui::Ui| {
-                    for &v in &[1.0, 2.0, 5.0, 10.0, 20.0, 30.0f32] {
-                        ui.selectable_value(&mut self.window_secs, v, format!("{:.0}s", v));
-                    }
-                });
+            let window_options = ["1s", "2s", "5s", "10s", "20s", "30s"];
+            let mut window_idx = match self.window_secs as i32 {
+                1 => 0,
+                2 => 1,
+                5 => 2,
+                10 => 3,
+                20 => 4,
+                _ => 5,
+            };
+            if theme::select_index(
+                ui,
+                format!("ts_window_{}", pane_index),
+                &mut window_idx,
+                &window_options,
+                90.0,
+            ) {
+                self.window_secs = match window_idx {
+                    0 => 1.0,
+                    1 => 2.0,
+                    2 => 5.0,
+                    3 => 10.0,
+                    4 => 20.0,
+                    _ => 30.0,
+                };
+            }
 
             if !source_options.is_empty() {
                 ui.separator();
                 ui.label("Source:");
-                egui::ComboBox::from_id_salt(format!("ts_src_{}", pane_index))
-                    .selected_text(
-                        self.selected_source
-                            .as_deref()
-                            .unwrap_or("<auto>")
-                            .to_string(),
-                    )
-                    .show_ui(ui, |ui| {
-                        for source in &source_options {
-                            ui.selectable_value(
-                                &mut self.selected_source,
-                                Some(source.id.clone()),
-                                format!("{} ({})", source.name, source.id),
-                            );
-                        }
-                    });
+                let labels: Vec<String> = source_options
+                    .iter()
+                    .map(|source| format!("{} ({})", source.name, source.id))
+                    .collect();
+                let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+                let mut selected_idx = self
+                    .selected_source
+                    .as_ref()
+                    .and_then(|id| source_options.iter().position(|source| source.id == *id))
+                    .unwrap_or(0);
+                if theme::select_index(
+                    ui,
+                    format!("ts_src_{}", pane_index),
+                    &mut selected_idx,
+                    &label_refs,
+                    190.0,
+                ) {
+                    self.selected_source = Some(source_options[selected_idx].id.clone());
+                }
             }
 
             // Channel toggles
@@ -582,30 +596,53 @@ impl Widget for TimeSeriesWidget {
             for ch in 0..num_ch {
                 let name = CHANNEL_NAMES.get(ch).unwrap_or(&"?");
                 let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
-                let mut enabled = self.channel_enabled[ch];
-                if ui
-                    .checkbox(
-                        &mut enabled,
-                        egui::RichText::new(*name).color(color).small(),
-                    )
-                    .changed()
-                {
-                    self.channel_enabled[ch] = enabled;
-                }
+                ui.colored_label(color, *name);
+                let _ = theme::toggle_switch(
+                    ui,
+                    format!("ts_channel_enabled_{}_{}", pane_index, ch),
+                    &mut self.channel_enabled[ch],
+                );
             }
 
             ui.separator();
-            ui.checkbox(&mut self.show_markers, "Markers");
+            ui.label("Markers");
+            let _ = theme::toggle_switch(
+                ui,
+                format!("ts_show_markers_{}", pane_index),
+                &mut self.show_markers,
+            );
             if self.show_markers {
-                ui.checkbox(&mut self.show_marker_click, "Click");
-                ui.checkbox(&mut self.show_marker_movement, "Move");
-                ui.checkbox(&mut self.show_marker_head, "Head");
-                ui.checkbox(&mut self.show_marker_errp, "ErrP");
+                ui.label("Click");
+                let _ = theme::toggle_switch(
+                    ui,
+                    format!("ts_show_marker_click_{}", pane_index),
+                    &mut self.show_marker_click,
+                );
+                ui.label("Move");
+                let _ = theme::toggle_switch(
+                    ui,
+                    format!("ts_show_marker_movement_{}", pane_index),
+                    &mut self.show_marker_movement,
+                );
+                ui.label("Head");
+                let _ = theme::toggle_switch(
+                    ui,
+                    format!("ts_show_marker_head_{}", pane_index),
+                    &mut self.show_marker_head,
+                );
+                ui.label("ErrP");
+                let _ = theme::toggle_switch(
+                    ui,
+                    format!("ts_show_marker_errp_{}", pane_index),
+                    &mut self.show_marker_errp,
+                );
                 ui.label("Src:");
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.marker_source_filter)
-                        .desired_width(70.0)
-                        .hint_text("id"),
+                let _ = theme::text_input(
+                    ui,
+                    format!("ts_marker_source_filter_{}", pane_index),
+                    &mut self.marker_source_filter,
+                    "id",
+                    90.0,
                 );
             }
 

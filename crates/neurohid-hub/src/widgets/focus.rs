@@ -4,6 +4,7 @@
 
 use std::collections::VecDeque;
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 
@@ -79,22 +80,25 @@ impl Widget for FocusWidget {
         ui.horizontal(|ui| {
             if !source_options.is_empty() {
                 ui.label("Source:");
-                egui::ComboBox::from_id_salt(format!("focus_src_{pane_index}"))
-                    .selected_text(
-                        self.selected_source
-                            .as_deref()
-                            .unwrap_or("<auto>")
-                            .to_string(),
-                    )
-                    .show_ui(ui, |ui| {
-                        for source in &source_options {
-                            ui.selectable_value(
-                                &mut self.selected_source,
-                                Some(source.id.clone()),
-                                format!("{} ({})", source.name, source.id),
-                            );
-                        }
-                    });
+                let labels: Vec<String> = source_options
+                    .iter()
+                    .map(|source| format!("{} ({})", source.name, source.id))
+                    .collect();
+                let label_refs: Vec<&str> = labels.iter().map(String::as_str).collect();
+                let mut selected_idx = self
+                    .selected_source
+                    .as_ref()
+                    .and_then(|id| source_options.iter().position(|source| source.id == *id))
+                    .unwrap_or(0);
+                if theme::select_index(
+                    ui,
+                    format!("focus_src_{pane_index}"),
+                    &mut selected_idx,
+                    &label_refs,
+                    190.0,
+                ) {
+                    self.selected_source = Some(source_options[selected_idx].id.clone());
+                }
             }
 
             ui.label("Channel:");
@@ -108,13 +112,17 @@ impl Widget for FocusWidget {
             if self.channel >= num_channels {
                 self.channel = 0;
             }
-            egui::ComboBox::from_id_salt(format!("focus_ch_{pane_index}"))
-                .selected_text(format!("{}", self.channel + 1))
-                .show_ui(ui, |ui| {
-                    for ch in 0..num_channels {
-                        ui.selectable_value(&mut self.channel, ch, format!("{}", ch + 1));
-                    }
-                });
+            let channel_labels: Vec<String> = (0..num_channels)
+                .map(|ch| format!("{}", ch + 1))
+                .collect();
+            let channel_refs: Vec<&str> = channel_labels.iter().map(String::as_str).collect();
+            let _ = theme::select_index(
+                ui,
+                format!("focus_ch_{pane_index}"),
+                &mut self.channel,
+                &channel_refs,
+                80.0,
+            );
         });
 
         let samples =
@@ -152,11 +160,10 @@ impl Widget for FocusWidget {
             egui::Color32::from_rgb(244, 67, 54)
         };
 
-        ui.add(
-            egui::ProgressBar::new(self.smoothed_focus)
-                .text(format!("Focus: {:.0}%", self.smoothed_focus * 100.0))
-                .fill(color),
-        );
+        ui.horizontal(|ui| {
+            ui.colored_label(color, format!("Focus: {:.0}%", self.smoothed_focus * 100.0));
+            let _ = theme::progress_bar(ui, self.smoothed_focus, ui.available_width());
+        });
 
         ui.horizontal(|ui| {
             ui.label(format!("Theta: {:.2}", theta));

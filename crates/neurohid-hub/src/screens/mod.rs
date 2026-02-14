@@ -23,6 +23,7 @@ pub enum Screen {
     Profiles,
     Calibration,
     JupyterIde,
+    PythonLab,
     Settings,
 }
 
@@ -35,6 +36,7 @@ impl Screen {
             Screen::Profiles => "Profiles",
             Screen::Calibration => "Calibration",
             Screen::JupyterIde => "Jupyter IDE",
+            Screen::PythonLab => "Python Lab",
             Screen::Settings => "Settings",
         }
     }
@@ -55,6 +57,7 @@ impl Screen {
                 Screen::Profiles,
                 Screen::Calibration,
                 Screen::JupyterIde,
+                Screen::PythonLab,
                 Screen::Settings,
             ],
         }
@@ -72,6 +75,7 @@ mod tests {
         let standard = Screen::all_for_mode(&UiMode::Standard);
         assert!(!standard.contains(&Screen::Visualization));
         assert!(!standard.contains(&Screen::JupyterIde));
+        assert!(!standard.contains(&Screen::PythonLab));
         assert!(standard.contains(&Screen::Dashboard));
         assert!(standard.contains(&Screen::Settings));
     }
@@ -86,5 +90,6 @@ mod tests {
         }
         assert!(advanced.contains(&Screen::Visualization));
         assert!(advanced.contains(&Screen::JupyterIde));
+        assert!(advanced.contains(&Screen::PythonLab));
     }
 }

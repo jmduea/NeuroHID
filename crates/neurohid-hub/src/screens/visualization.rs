@@ -10,6 +10,7 @@ use neurohid_types::config::UiConfig;
 use crate::data_bus::DataBus;
 use crate::layout::{LayoutConfig, LayoutManager};
 use crate::state::{HubState, ServiceSnapshot};
+use crate::theme;
 use crate::widgets::WidgetContext;
 
 /// Data freshness threshold in seconds.
@@ -53,11 +54,7 @@ impl VisualizationScreen {
 
     pub fn from_ui_config(ui_config: &UiConfig) -> Self {
         Self {
-            layout: LayoutManager::from_persisted(
-                &ui_config.visualization_layout_preset,
-                &ui_config.visualization_pane_widgets,
-                ui_config.visualization_layout_tree_json.as_deref(),
-            ),
+            layout: LayoutManager::from_ui_config(ui_config),
             last_total_samples: 0,
             last_rate_check_time: 0.0,
             data_rate_sps: 0.0,
@@ -76,17 +73,11 @@ impl VisualizationScreen {
         state: &mut HubState,
         runtime: &tokio::runtime::Runtime,
     ) {
-        ui.label(
-            RichText::new("Visualization")
-                .text_style(egui::TextStyle::Heading)
-                .color(Color32::from_rgb(225, 233, 245)),
+        theme::page_header(
+            ui,
+            "Visualization",
+            "Live neural telemetry with configurable analysis workspaces",
         );
-        ui.label(
-            RichText::new("Live neural telemetry with configurable analysis workspaces")
-                .small()
-                .color(Color32::from_rgb(128, 145, 167)),
-        );
-        ui.add_space(6.0);
 
         let current_time = ui.input(|i| i.time);
         self.update_metrics(bus, current_time);
@@ -105,9 +96,7 @@ impl VisualizationScreen {
             let available = ui.available_size();
             let pane_height = (available.y - footer_height).max(0.0);
             ui.allocate_ui(egui::vec2(available.x, pane_height), |ui| {
-                egui::Frame::new()
-                    .inner_margin(egui::Margin::symmetric(6, 4))
-                    .show(ui, |ui| {
+                theme::panel_frame(ui).show(ui, |ui| {
                         self.layout.show_panes(ui, &ctx);
                     });
             });
@@ -126,7 +115,6 @@ impl VisualizationScreen {
 
         state.config.ui.visualization_layout_preset = persisted.layout_preset;
         state.config.ui.visualization_pane_widgets = persisted.pane_widgets;
-        state.config.ui.visualization_layout_tree_json = persisted.tree_json;
 
         if let Err(error) = runtime.block_on(state.config_store.save(&state.config)) {
             tracing::warn!("Failed to persist visualization layout state: {}", error);
@@ -251,26 +239,26 @@ impl VisualizationScreen {
     fn show_layout_selector(&mut self, ui: &mut egui::Ui) {
         ui.label("Layout:");
 
-        let current_label = format!(
-            "{} {}",
-            layout_icon(self.layout.config),
-            self.layout.config.label()
-        );
-        let mut selected_layout = self.layout.config;
+        let options: Vec<String> = LayoutConfig::ALL
+            .iter()
+            .map(|layout| format!("{} {}", layout_icon(*layout), layout.label()))
+            .collect();
+        let option_refs: Vec<&str> = options.iter().map(String::as_str).collect();
 
-        egui::ComboBox::from_id_salt("layout_selector")
-            .selected_text(current_label)
-            .show_ui(ui, |ui| {
-                for &layout in LayoutConfig::ALL {
-                    let label = format!("{} {}", layout_icon(layout), layout.label());
-                    if ui
-                        .selectable_value(&mut selected_layout, layout, label)
-                        .changed()
-                    {
-                        self.layout.set_layout(selected_layout);
-                    }
-                }
-            });
+        let mut selected_index = LayoutConfig::ALL
+            .iter()
+            .position(|layout| *layout == self.layout.config)
+            .unwrap_or(0);
+
+        if theme::select_index(
+            ui,
+            "visualization_layout_selector",
+            &mut selected_index,
+            &option_refs,
+            180.0,
+        ) {
+            self.layout.set_layout(LayoutConfig::ALL[selected_index]);
+        }
     }
 
     /// Data rate display.
@@ -369,9 +357,12 @@ impl VisualizationScreen {
         snapshot: &ServiceSnapshot,
         current_time: f64,
     ) {
+        let has_buffered_samples = !bus.samples.is_empty()
+            || bus.samples_by_source.values().any(|buffer| !buffer.is_empty());
+
         if !snapshot.running {
             ui.colored_label(Color32::from_rgb(244, 67, 54), "\u{25CF} Offline");
-        } else if bus.samples.is_empty() {
+        } else if !has_buffered_samples {
             let pulse = (self.pulse_phase.sin() * 0.5 + 0.5) as f32;
             let alpha = (128.0 + pulse * 127.0) as u8;
             let color = Color32::from_rgba_unmultiplied(255, 193, 7, alpha);
@@ -395,7 +386,16 @@ impl VisualizationScreen {
                 .collect();
 
             let label = if connected.is_empty() {
-                format!("\u{25CF} Live - {} samples", bus.samples.len())
+                let buffered_count = if bus.samples_by_source.is_empty() {
+                    bus.samples.len()
+                } else {
+                    bus.samples_by_source
+                        .values()
+                        .map(std::collections::VecDeque::len)
+                        .sum()
+                };
+
+                format!("\u{25CF} Live - {} samples", buffered_count)
             } else {
                 let mut types = connected;
                 types.sort_unstable();
@@ -421,9 +421,7 @@ impl VisualizationScreen {
             ui.vertical_centered(|ui| {
                 ui.add_space(available.y * 0.3);
 
-                egui::Frame::group(ui.style())
-                    .fill(Color32::from_rgb(20, 25, 34))
-                    .show(ui, |ui| {
+                theme::card_frame(ui).show(ui, |ui| {
                         ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
                         ui.add_space(12.0);
 

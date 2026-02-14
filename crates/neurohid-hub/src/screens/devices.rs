@@ -10,6 +10,7 @@ use eframe::egui;
 
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
+use crate::theme;
 use neurohid_types::device::DiscoveredStream;
 
 pub struct DevicesScreen;
@@ -31,24 +32,12 @@ impl DevicesScreen {
         state: &HubState,
         service_manager: &mut ServiceManager,
     ) {
-        ui.label(
-            egui::RichText::new("Devices")
-                .text_style(egui::TextStyle::Heading)
-                .color(egui::Color32::from_rgb(225, 233, 245)),
-        );
-        ui.label(
-            egui::RichText::new("Discover, connect, and monitor available streams")
-                .small()
-                .color(egui::Color32::from_rgb(128, 145, 167)),
-        );
-        ui.add_space(12.0);
+        theme::page_header(ui, "Devices", "Discover, connect, and monitor available streams");
 
         let snap = &state.service_snapshot;
 
         if !snap.running {
-            egui::Frame::group(ui.style())
-                .fill(egui::Color32::from_rgb(20, 25, 34))
-                .show(ui, |ui| {
+            theme::card_frame(ui).show(ui, |ui| {
                     ui.label("Start the service to discover and connect to LSL streams.");
                     ui.label(
                         egui::RichText::new("Go to Dashboard to start the service.")
@@ -62,7 +51,7 @@ impl DevicesScreen {
         ui.horizontal(|ui| {
             ui.heading("Available Streams");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if ui.button("Rescan").clicked() {
+                if action_button(ui, "Rescan", true) {
                     service_manager.rescan_streams();
                 }
             });
@@ -70,9 +59,7 @@ impl DevicesScreen {
         ui.add_space(8.0);
 
         if snap.discovered_streams.is_empty() {
-            egui::Frame::group(ui.style())
-                .fill(egui::Color32::from_rgb(20, 25, 34))
-                .show(ui, |ui| {
+            theme::card_frame(ui).show(ui, |ui| {
                 ui.label("No streams found.");
                 ui.add_space(4.0);
                 ui.label(
@@ -124,9 +111,7 @@ impl DevicesScreen {
 
         if connected_count > 0 {
             ui.add_space(12.0);
-            egui::Frame::group(ui.style())
-                .fill(egui::Color32::from_rgb(20, 25, 34))
-                .show(ui, |ui| {
+            theme::card_frame(ui).show(ui, |ui| {
                 ui.heading("Signal Quality");
                 ui.add_space(8.0);
 
@@ -140,11 +125,10 @@ impl DevicesScreen {
                 egui::Color32::RED
             };
 
-            ui.add(
-                egui::ProgressBar::new(quality)
-                    .text(format!("Overall: {:.0}%", quality * 100.0))
-                    .fill(quality_color),
-            );
+            ui.horizontal(|ui| {
+                ui.colored_label(quality_color, format!("Overall: {:.0}%", quality * 100.0));
+                let _ = theme::progress_bar(ui, quality, 220.0);
+            });
 
             ui.add_space(4.0);
             ui.label(
@@ -185,9 +169,7 @@ impl DevicesScreen {
             (egui::Color32::GRAY, "Available")
         };
 
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
+        theme::card_frame(ui).show(ui, |ui| {
             // Device header — vertical card layout
             ui.horizontal(|ui| {
                 ui.colored_label(status_color, "\u{25CF}");
@@ -216,12 +198,12 @@ impl DevicesScreen {
             // Connect All / Disconnect All buttons
             ui.horizontal(|ui| {
                 if all_connected {
-                    if ui.button("Disconnect All").clicked() {
+                    if action_button(ui, "Disconnect All", true) {
                         let ids: Vec<&str> = streams.iter().map(|s| s.id.as_str()).collect();
                         service_manager.disconnect_streams(&ids);
                     }
                 } else {
-                    if ui.button("Connect All").clicked() {
+                    if action_button(ui, "Connect All", true) {
                         let ids: Vec<&str> = streams
                             .iter()
                             .filter(|s| !s.connected)
@@ -230,7 +212,7 @@ impl DevicesScreen {
                         service_manager.connect_streams(&ids);
                     }
                     if any_connected
-                        && ui.button("Disconnect All").clicked() {
+                        && action_button(ui, "Disconnect All", true) {
                             let ids: Vec<&str> = streams
                                 .iter()
                                 .filter(|s| s.connected)
@@ -302,10 +284,10 @@ impl DevicesScreen {
         ui.horizontal(|ui| {
             ui.add_space(32.0); // indent button
             if stream.connected {
-                if ui.button("Disconnect").clicked() {
+                if action_button(ui, "Disconnect", true) {
                     service_manager.disconnect_stream(&stream.id);
                 }
-            } else if ui.button("Connect").clicked() {
+            } else if action_button(ui, "Connect", true) {
                 service_manager.connect_stream(&stream.id);
             }
         });
@@ -329,12 +311,8 @@ impl DevicesScreen {
                             } else {
                                 egui::Color32::RED
                             };
-                            ui.add(
-                                egui::ProgressBar::new(q)
-                                    .text(format!("Ch{}: {:.0}%", i, q * 100.0))
-                                    .fill(q_color)
-                                    .desired_width(ui.available_width()),
-                            );
+                            let _ = theme::progress_bar(ui, q, ui.available_width());
+                            ui.colored_label(q_color, format!("Ch{}: {:.0}%", i, q * 100.0));
                         }
                     });
                 });
@@ -347,9 +325,7 @@ impl DevicesScreen {
         stream: &DiscoveredStream,
         service_manager: &mut ServiceManager,
     ) {
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
+        theme::card_frame(ui).show(ui, |ui| {
             // Status + stream name + battery
             let (color, status) = if stream.connected {
                 (egui::Color32::GREEN, "Connected")
@@ -390,10 +366,10 @@ impl DevicesScreen {
             ui.add_space(4.0);
             // Connect/Disconnect button
             if stream.connected {
-                if ui.button("Disconnect").clicked() {
+                if action_button(ui, "Disconnect", true) {
                     service_manager.disconnect_stream(&stream.id);
                 }
-            } else if ui.button("Connect").clicked() {
+            } else if action_button(ui, "Connect", true) {
                 service_manager.connect_stream(&stream.id);
             }
 
@@ -414,16 +390,16 @@ impl DevicesScreen {
                         } else {
                             egui::Color32::RED
                         };
-                        ui.add(
-                            egui::ProgressBar::new(q)
-                                .text(format!("Ch{}: {:.0}%", i, q * 100.0))
-                                .fill(q_color)
-                                .desired_width(ui.available_width()),
-                        );
+                        let _ = theme::progress_bar(ui, q, ui.available_width());
+                        ui.colored_label(q_color, format!("Ch{}: {:.0}%", i, q * 100.0));
                     }
                 }
             });
     }
+}
+
+fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
+    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
 }
 
 /// Derive a human-friendly device label from the stream names in a group.

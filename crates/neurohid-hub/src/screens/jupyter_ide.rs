@@ -10,6 +10,7 @@ use eframe::egui;
 use egui_async::Bind;
 use egui_console::{ConsoleBuilder, ConsoleEvent, ConsoleWindow};
 use neurohid_types::config::UiConfig;
+use crate::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BootstrapState {
@@ -83,17 +84,7 @@ impl JupyterIdeScreen {
             self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
         }
 
-        ui.label(
-            egui::RichText::new("Jupyter IDE")
-            .text_style(egui::TextStyle::Heading)
-            .color(egui::Color32::from_rgb(225, 233, 245)),
-        );
-        ui.label(
-            egui::RichText::new("Managed JupyterLab for RL/ML experimentation")
-                .small()
-            .color(egui::Color32::from_rgb(128, 145, 167)),
-        );
-        ui.add_space(8.0);
+        theme::page_header(ui, "Jupyter IDE", "Managed JupyterLab for RL/ML experimentation");
 
         let bootstrap_text = match self.bootstrap_state {
             BootstrapState::Idle => "idle",
@@ -144,10 +135,7 @@ impl JupyterIdeScreen {
         let bootstrap_running = self.bootstrap_task.is_pending();
 
         ui.horizontal(|ui| {
-            if ui
-                .add_enabled(!bootstrap_running, egui::Button::new("Prepare Environment"))
-                .clicked()
-            {
+            if action_button(ui, "Prepare Environment", !bootstrap_running) {
                 self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
             }
 
@@ -157,24 +145,15 @@ impl JupyterIdeScreen {
                     self.bootstrap_state,
                     BootstrapState::Ready | BootstrapState::Idle
                 );
-            if ui
-                .add_enabled(can_start_jupyter, egui::Button::new("Start Jupyter"))
-                .clicked()
-            {
+            if action_button(ui, "Start Jupyter", can_start_jupyter) {
                 self.start_jupyter(&ui_cfg.jupyter_command);
             }
 
-            if ui
-                .add_enabled(jupyter_running, egui::Button::new("Stop Jupyter"))
-                .clicked()
-            {
+            if action_button(ui, "Stop Jupyter", jupyter_running) {
                 self.stop_jupyter();
             }
 
-            if ui
-                .add_enabled(jupyter_running, egui::Button::new("Open in Browser"))
-                .clicked()
-            {
+            if action_button(ui, "Open in Browser", jupyter_running) {
                 let browser_url = self
                     .jupyter_session_url
                     .as_deref()
@@ -185,7 +164,7 @@ impl JupyterIdeScreen {
                 }
             }
 
-            if ui.button("Clear Log").clicked() {
+            if action_button(ui, "Clear Log", true) {
                 self.log_output.clear();
             }
         });
@@ -207,28 +186,25 @@ impl JupyterIdeScreen {
         );
 
         ui.separator();
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
+        theme::card_frame(ui).show(ui, |ui| {
                 ui.label(egui::RichText::new("IDE Log").strong());
                 egui::ScrollArea::vertical()
                     .id_salt("jupyter_ide_log_scroll")
                     .max_height(260.0)
                     .show(ui, |ui| {
-                        ui.add(
-                            egui::TextEdit::multiline(&mut self.log_output)
-                                .id_salt("jupyter_ide_log_output")
-                                .font(egui::TextStyle::Monospace)
-                                .desired_rows(12)
-                                .desired_width(f32::INFINITY),
+                        let _ = theme::textarea_input(
+                            ui,
+                            "jupyter_ide_log_output",
+                            &mut self.log_output,
+                            "",
+                            12,
+                            f32::INFINITY,
                         );
                     });
             });
 
         ui.add_space(8.0);
-        egui::Frame::group(ui.style())
-            .fill(egui::Color32::from_rgb(20, 25, 34))
-            .show(ui, |ui| {
+        theme::card_frame(ui).show(ui, |ui| {
                 ui.label(egui::RichText::new("IDE Console").strong());
                 let console_response = self.console.draw(ui);
                 if let ConsoleEvent::Command(command) = console_response {
@@ -450,6 +426,10 @@ impl JupyterIdeScreen {
             }
         }
     }
+}
+
+fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
+    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
 }
 
 impl Drop for JupyterIdeScreen {

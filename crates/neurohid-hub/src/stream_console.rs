@@ -5,7 +5,8 @@
 
 use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
-use eframe::egui::{self, Color32, RichText, ScrollArea, TextEdit};
+use crate::theme;
+use eframe::egui::{self, Color32, RichText, ScrollArea};
 use std::collections::VecDeque;
 
 /// Terminal-style dark background color.
@@ -221,25 +222,14 @@ impl StreamConsole {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Close button
-                    if ui
-                        .add(
-                            egui::Button::new(RichText::new("X").monospace().size(12.0))
-                                .frame(false),
-                        )
-                        .clicked()
-                    {
+                    if theme::action_button(ui, "Close", true, theme::ButtonTone::Ghost) {
                         self.visible = false;
                     }
 
                     ui.add_space(8.0);
 
                     // Clear button
-                    if ui
-                        .add(egui::Button::new(
-                            RichText::new("Clear").monospace().size(11.0),
-                        ))
-                        .clicked()
-                    {
+                    if theme::action_button(ui, "Clear", true, theme::ButtonTone::Secondary) {
                         self.lines.clear();
                         self.total_lines_received = 0;
                         self.new_lines_while_scrolled = 0;
@@ -249,20 +239,12 @@ impl StreamConsole {
 
                     // Pause/Resume button
                     let pause_label = if self.paused { "Resume" } else { "Pause" };
-                    let pause_color = if self.paused {
-                        Color32::from_rgb(76, 175, 80)
+                    let pause_tone = if self.paused {
+                        theme::ButtonTone::Primary
                     } else {
-                        Color32::from_gray(180)
+                        theme::ButtonTone::Ghost
                     };
-                    if ui
-                        .add(egui::Button::new(
-                            RichText::new(pause_label)
-                                .monospace()
-                                .size(11.0)
-                                .color(pause_color),
-                        ))
-                        .clicked()
-                    {
+                    if theme::action_button(ui, pause_label, true, pause_tone) {
                         self.paused = !self.paused;
                     }
                 });
@@ -286,10 +268,7 @@ impl StreamConsole {
 
                 // "All" toggle
                 let all_selected = self.stream_type_filter.is_none();
-                if ui
-                    .selectable_label(all_selected, RichText::new("All").monospace().size(10.0))
-                    .clicked()
-                {
+                if theme::nav_button(ui, "All", all_selected).clicked() {
                     self.stream_type_filter = None;
                 }
 
@@ -299,10 +278,7 @@ impl StreamConsole {
                         .stream_type_filter
                         .as_deref()
                         .is_some_and(|f| f.eq_ignore_ascii_case(st));
-                    if ui
-                        .selectable_label(selected, RichText::new(*st).monospace().size(10.0))
-                        .clicked()
-                    {
+                    if theme::nav_button(ui, st, selected).clicked() {
                         self.stream_type_filter = Some(st.to_string());
                     }
                 }
@@ -318,18 +294,16 @@ impl StreamConsole {
             );
             ui.add_space(4.0);
 
-            let filter_edit = TextEdit::singleline(&mut self.filter_text)
-                .font(egui::TextStyle::Monospace)
-                .desired_width(200.0)
-                .hint_text("type to filter...");
-
-            ui.add(filter_edit);
+            let _ = theme::text_input(
+                ui,
+                "stream_console_filter_text",
+                &mut self.filter_text,
+                "type to filter...",
+                200.0,
+            );
 
             if !self.filter_text.is_empty() {
-                if ui
-                    .add(egui::Button::new(RichText::new("X").monospace().size(10.0)).frame(false))
-                    .clicked()
-                {
+                if theme::action_button(ui, "Clear", true, theme::ButtonTone::Ghost) {
                     self.filter_text.clear();
                 }
 

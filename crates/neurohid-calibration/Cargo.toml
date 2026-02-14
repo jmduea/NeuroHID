@@ -19,6 +19,7 @@ neurohid-storage = { path = "../neurohid-storage" }
 
 # GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
 egui = { workspace = true }
+armas = { version = "0.1.2" }
 
 # Async runtime
 tokio = { workspace = true }

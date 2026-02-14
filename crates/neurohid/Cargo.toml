@@ -9,6 +9,9 @@ description = "Brain-computer interface — transforms EEG devices into standard
 keywords = ["bci", "eeg", "brain-computer-interface", "neurohid", "hid"]
 categories = ["science", "accessibility"]
 
+[features]
+default = []
+
 [[bin]]
 name = "neurohid"
 path = "src/bin/neurohid.rs"

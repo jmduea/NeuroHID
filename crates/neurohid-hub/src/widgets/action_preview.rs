@@ -3,6 +3,7 @@
 //! Displays a virtual cursor minimap, direction indicator, action log,
 //! and real-time feedback about decoded HID actions.
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use std::collections::VecDeque;
@@ -21,15 +22,6 @@ enum ActionFilter {
 }
 
 impl ActionFilter {
-    fn label(&self) -> &'static str {
-        match self {
-            ActionFilter::All => "All",
-            ActionFilter::Mouse => "Mouse",
-            ActionFilter::Keyboard => "Keyboard",
-            ActionFilter::Scroll => "Scroll",
-        }
-    }
-
     fn matches(&self, entry: &ActionLogEntry) -> bool {
         match self {
             ActionFilter::All => true,
@@ -526,27 +518,32 @@ impl ActionPreviewWidget {
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Time format toggle
-                if ui
-                    .small_button(if self.show_relative_time {
-                        "Abs"
-                    } else {
-                        "Rel"
-                    })
-                    .clicked()
-                {
+                let toggle_label = if self.show_relative_time { "Abs" } else { "Rel" };
+                if theme::action_button(ui, toggle_label, true, theme::ButtonTone::Ghost) {
                     self.show_relative_time = !self.show_relative_time;
                 }
 
                 // Filter dropdown
-                egui::ComboBox::from_id_salt(format!("action_filter_{}", pane_index))
-                    .selected_text(self.filter.label())
-                    .width(70.0)
-                    .show_ui(ui, |ui: &mut egui::Ui| {
-                        ui.selectable_value(&mut self.filter, ActionFilter::All, "All");
-                        ui.selectable_value(&mut self.filter, ActionFilter::Mouse, "Mouse");
-                        ui.selectable_value(&mut self.filter, ActionFilter::Keyboard, "Keyboard");
-                        ui.selectable_value(&mut self.filter, ActionFilter::Scroll, "Scroll");
-                    });
+                let mut filter_idx = match self.filter {
+                    ActionFilter::All => 0,
+                    ActionFilter::Mouse => 1,
+                    ActionFilter::Keyboard => 2,
+                    ActionFilter::Scroll => 3,
+                };
+                if theme::select_index(
+                    ui,
+                    format!("action_filter_{}", pane_index),
+                    &mut filter_idx,
+                    &["All", "Mouse", "Keyboard", "Scroll"],
+                    120.0,
+                ) {
+                    self.filter = match filter_idx {
+                        0 => ActionFilter::All,
+                        1 => ActionFilter::Mouse,
+                        2 => ActionFilter::Keyboard,
+                        _ => ActionFilter::Scroll,
+                    };
+                }
             });
         });
 
@@ -656,14 +653,19 @@ impl Widget for ActionPreviewWidget {
 
         // Controls
         ui.horizontal(|ui| {
-            ui.checkbox(&mut self.show_trail, "Trail");
-            if ui.button("Reset Cursor").clicked() {
+            ui.label("Trail");
+            let _ = theme::toggle_switch(
+                ui,
+                format!("action_preview_show_trail_{}", pane_index),
+                &mut self.show_trail,
+            );
+            if theme::action_button(ui, "Reset Cursor", true, theme::ButtonTone::Secondary) {
                 self.cursor_x = 0.5;
                 self.cursor_y = 0.5;
                 self.cursor_trail.clear();
                 self.total_distance = 0.0;
             }
-            if ui.button("Clear Log").clicked() {
+            if theme::action_button(ui, "Clear Log", true, theme::ButtonTone::Ghost) {
                 self.log.clear();
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {

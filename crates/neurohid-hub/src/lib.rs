@@ -10,6 +10,7 @@ pub mod screens;
 pub mod service_manager;
 pub mod state;
 pub mod stream_console;
+pub mod theme;
 pub mod widgets;
 
 pub use app::HubApp;

@@ -526,9 +526,6 @@ pub struct UiConfig {
     /// Persisted visualization widget assignments by pane slot.
     #[serde(default = "default_visualization_pane_widgets")]
     pub visualization_pane_widgets: Vec<String>,
-    /// Serialized `egui_tiles` tree state for visualization layout.
-    #[serde(default)]
-    pub visualization_layout_tree_json: Option<String>,
     /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
     ///
     /// Deprecated: retained for backward compatibility with older configs.
@@ -583,7 +580,6 @@ impl Default for UiConfig {
             jupyter_url: default_jupyter_url(),
             visualization_layout_preset: default_visualization_layout_preset(),
             visualization_pane_widgets: default_visualization_pane_widgets(),
-            visualization_layout_tree_json: None,
             lab_kernel_command: default_lab_kernel_command(),
         }
     }
@@ -922,7 +918,7 @@ impl Default for ServiceState {
 mod tests {
     use serde_json::Value;
 
-    use super::ServiceConfig;
+    use super::{ServiceConfig, UiConfig};
 
     #[test]
     fn service_config_defaults_include_observability_policy() {
@@ -961,5 +957,25 @@ mod tests {
         assert!(observability.contains_key("action"));
         assert!(observability.contains_key("ipc"));
         assert!(observability.contains_key("control"));
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_with_legacy_docking_backend_field() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.insert(
+            "visualization_docking_backend".to_string(),
+            Value::String("tiles".to_string()),
+        );
+
+        let decoded: UiConfig =
+            serde_json::from_value(json).expect("deserialize ui config without docking backend");
+
+        assert_eq!(
+            decoded.visualization_layout_preset,
+            UiConfig::default().visualization_layout_preset
+        );
     }
 }
