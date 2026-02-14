@@ -54,14 +54,10 @@ class NeuroHidControlClient:
         return snapshot
 
     def set_output_enabled(self, enabled: bool) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "set_output_enabled", "enabled": bool(enabled)}
-        )
+        return self.send_command({"type": "set_output_enabled", "enabled": bool(enabled)})
 
     def set_learning_enabled(self, enabled: bool) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "set_learning_enabled", "enabled": bool(enabled)}
-        )
+        return self.send_command({"type": "set_learning_enabled", "enabled": bool(enabled)})
 
     def set_fallback_policy(self, policy: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(policy, dict):
@@ -81,14 +77,10 @@ class NeuroHidControlClient:
         return self.send_command({"type": "rescan_streams"})
 
     def connect_stream(self, stream_id: str) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "connect_stream", "stream_id": str(stream_id)}
-        )
+        return self.send_command({"type": "connect_stream", "stream_id": str(stream_id)})
 
     def disconnect_stream(self, stream_id: str) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "disconnect_stream", "stream_id": str(stream_id)}
-        )
+        return self.send_command({"type": "disconnect_stream", "stream_id": str(stream_id)})
 
     def ensure_connected_stream(self, *, rescan: bool = True) -> str | None:
         if rescan:
@@ -133,9 +125,7 @@ class NeuroHidControlClient:
         response = json.loads(data)
         response_payload = response.get("payload", {})
         if response_payload.get("type") == "error":
-            raise NotebookError(
-                response_payload.get("message", "unknown control error")
-            )
+            raise NotebookError(response_payload.get("message", "unknown control error"))
         return response
 
     def endpoint_label(self) -> str:
@@ -185,17 +175,13 @@ class NeuroHidControlClient:
             f"{startup_suffix}"
         )
 
-    def _try_configured_endpoint(
-        self, payload: str
-    ) -> tuple[Exception | None, str | None]:
+    def _try_configured_endpoint(self, payload: str) -> tuple[Exception | None, str | None]:
         first_error: Exception | None = None
         transport = self.control_transport.strip().lower()
 
         if transport == "pipe":
             if os.name != "nt":
-                raise NotebookError(
-                    "control_transport='pipe' is only supported on Windows"
-                )
+                raise NotebookError("control_transport='pipe' is only supported on Windows")
             try:
                 data = _request_named_pipe(payload, self.control_pipe_name)
                 return first_error, data
@@ -247,8 +233,7 @@ class NeuroHidControlClient:
                 exit_code = process.poll()
                 if exit_code is not None:
                     errors.append(
-                        " ".join(command)
-                        + f" (exited immediately with code {exit_code})"
+                        " ".join(command) + f" (exited immediately with code {exit_code})"
                     )
                     continue
                 self._service_process = process
@@ -256,9 +241,7 @@ class NeuroHidControlClient:
             except OSError as error:
                 errors.append(f"{' '.join(command)} ({error})")
 
-        raise NotebookError(
-            "failed to auto-start neurohid service: " + "; ".join(errors)
-        )
+        raise NotebookError("failed to auto-start neurohid service: " + "; ".join(errors))
 
     def _service_launch_commands(self) -> list[tuple[list[str], str | None]]:
         if self.service_launch_command:

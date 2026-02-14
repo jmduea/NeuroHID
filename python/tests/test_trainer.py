@@ -43,6 +43,7 @@ class TrainerTests(unittest.TestCase):
             )
 
             output_dir = root / "candidate"
+
             def fake_export(*args, **kwargs) -> None:
                 onnx_path = args[2]
                 Path(onnx_path).write_bytes(b"fake-onnx")

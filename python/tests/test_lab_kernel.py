@@ -54,10 +54,7 @@ class LabKernelTests(unittest.TestCase):
         self.assertEqual(responses[2], {"type": "pong", "request_id": 2})
 
     def test_run_stdio_emits_error_for_invalid_request(self) -> None:
-        input_lines = (
-            '{"type":"execute","request_id":9,"code":3}\n'
-            '{"type":"shutdown"}\n'
-        )
+        input_lines = '{"type":"execute","request_id":9,"code":3}\n' '{"type":"shutdown"}\n'
         original_stdin = sys.stdin
         original_stdout = sys.stdout
         captured = io.StringIO()

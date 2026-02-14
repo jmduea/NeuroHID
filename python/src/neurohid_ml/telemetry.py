@@ -39,9 +39,7 @@ class NeuroHidTelemetryClient:
         try:
             if mode == "named_pipe":
                 if os.name != "nt":
-                    raise NotebookError(
-                        "transport='named_pipe' is only supported on Windows"
-                    )
+                    raise NotebookError("transport='named_pipe' is only supported on Windows")
                 with open(self.pipe_name, "r+b", buffering=0) as pipe:
                     return _read_framed_json(pipe)
 
@@ -59,9 +57,7 @@ class NeuroHidTelemetryClient:
                 f"{self.endpoint_label()} ({error})"
             ) from error
 
-    def iter_messages(
-        self, *, max_messages: int | None = None
-    ) -> Iterator[dict[str, Any]]:
+    def iter_messages(self, *, max_messages: int | None = None) -> Iterator[dict[str, Any]]:
         emitted = 0
         while max_messages is None or emitted < max_messages:
             message = self.recv()

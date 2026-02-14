@@ -10,16 +10,16 @@ The generated artifacts are intended for guarded promotion by the Rust runtime.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 import json
-from pathlib import Path
 import time
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Iterable, List, Sequence
 
 import numpy as np
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+import torch.nn.functional as functional
 
 
 @dataclass
@@ -132,7 +132,7 @@ def train_candidate_model(
     example = torch.randn(1, x_train.shape[1], dtype=torch.float32, device=device)
     torch.onnx.export(
         model,
-        example,
+        (example,),
         str(onnx_path),
         input_names=["input"],
         output_names=["output"],
@@ -228,9 +228,9 @@ def _normalize(values: np.ndarray, mean: np.ndarray, std: np.ndarray) -> np.ndar
 
 
 def _composite_loss(pred: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-    move_loss = F.mse_loss(pred[:, :2], target[:, :2])
-    click_loss = F.binary_cross_entropy_with_logits(pred[:, 2:4], target[:, 2:4])
-    conf_loss = F.binary_cross_entropy_with_logits(pred[:, 4], target[:, 4])
+    move_loss = functional.mse_loss(pred[:, :2], target[:, :2])
+    click_loss = functional.binary_cross_entropy_with_logits(pred[:, 2:4], target[:, 2:4])
+    conf_loss = functional.binary_cross_entropy_with_logits(pred[:, 4], target[:, 4])
     return move_loss + click_loss + 0.5 * conf_loss
 
 

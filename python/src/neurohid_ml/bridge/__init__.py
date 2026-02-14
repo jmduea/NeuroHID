@@ -114,20 +114,21 @@ class IpcClient:
 
         try:
             if self.config.transport == IpcTransport.TCP_LOOPBACK:
-                self.reader, self.writer = await asyncio.wait_for(
+                reader, writer = await asyncio.wait_for(
                     asyncio.open_connection(self.config.host, self.config.port),
                     timeout=self.config.connect_timeout_sec,
                 )
-                sock = self.writer.get_extra_info("socket")
+                self.reader = reader
+                self.writer = writer
+
+                sock = writer.get_extra_info("socket")
                 if sock is not None:
                     import socket
 
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             else:
                 if os.name != "nt":
-                    raise RuntimeError(
-                        "named_pipe transport is only supported on Windows hosts"
-                    )
+                    raise RuntimeError("named_pipe transport is only supported on Windows hosts")
                 self.pipe = await asyncio.wait_for(
                     asyncio.to_thread(self._open_named_pipe_blocking),
                     timeout=self.config.connect_timeout_sec,
@@ -247,9 +248,7 @@ class IpcClient:
                 last_error = error
                 time.sleep(0.1)
 
-        raise TimeoutError(
-            f"timed out opening named pipe {self.config.pipe_name}: {last_error}"
-        )
+        raise TimeoutError(f"timed out opening named pipe {self.config.pipe_name}: {last_error}")
 
     def _pipe_read_exact(self, size: int) -> bytes:
         if self.pipe is None:
@@ -354,9 +353,7 @@ class BridgeSession:
         decoder_confidence = float(
             np.clip(float(payload.get("decoder_confidence") or 0.0), 0.0, 1.0)
         )
-        signal_quality = float(
-            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
-        )
+        signal_quality = float(np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0))
 
         feature_values = payload.get("feature_values")
         if isinstance(feature_values, list):
@@ -381,9 +378,7 @@ class BridgeSession:
     async def handle_errp_window(self, payload: dict[str, Any]) -> None:
         decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
         action_timestamp = int(payload.get("action_timestamp_us") or now_micros())
-        signal_quality = float(
-            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
-        )
+        signal_quality = float(np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0))
 
         channels = payload.get("channel_data")
         if isinstance(channels, list) and channels:
@@ -525,9 +520,7 @@ async def main_async(
         transport=(
             transport
             if transport is not None
-            else (
-                IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK
-            )
+            else (IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK)
         ),
     )
 
@@ -564,9 +557,7 @@ def main() -> None:
         "--transport",
         choices=[transport.value for transport in IpcTransport],
         default=(
-            IpcTransport.NAMED_PIPE.value
-            if os.name == "nt"
-            else IpcTransport.TCP_LOOPBACK.value
+            IpcTransport.NAMED_PIPE.value if os.name == "nt" else IpcTransport.TCP_LOOPBACK.value
         ),
     )
     parser.add_argument("--host", default=DEFAULT_HOST)
