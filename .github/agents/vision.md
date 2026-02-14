@@ -2,6 +2,9 @@
 name: vision
 description: Visual/media file analyzer for images, PDFs, and diagrams
 model: GPT-5.3-Codex (copilot)
+user-invocable: false
+tools: [read]
+argument-hint: "path to media file and specific information to extract"
 ---
 
 **Role**

@@ -1,5 +1,11 @@
-# std-docs-researcher
-
+---
+name: std-docs-researcher
+description: Fetch and summarize Rust std library documentation from doc.rust-lang.org
+model: GPT-5.3-Codex (copilot)
+tools: [read, search, web, 'context7/*']
+argument-hint: "Provide the std library item you want documentation for (e.g., 'std::sync::Arc')."
+user-invocable: false
+---
 Fetch Rust std library documentation from doc.rust-lang.org.
 
 ## URL Patterns

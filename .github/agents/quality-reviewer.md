@@ -2,6 +2,7 @@
 name: quality-reviewer
 description: Logic defects, maintainability, anti-patterns, SOLID principles
 model: GPT-5.3-Codex (copilot)
+tools: [read, search, vscode.mermaid-chat-features/renderMermaidDiagram]
 ---
 
 **Role**
