@@ -91,7 +91,7 @@ impl Widget for AccelerometerWidget {
             .and_then(|id| ctx.samples_for_source(id))
             .unwrap_or_else(|| ctx.samples_for(WidgetId::Accelerometer));
         if samples.is_empty() {
-            ui.label(egui::RichText::new("No motion stream samples yet").weak());
+            theme::status_chip(ui, "No motion stream samples yet", theme::Intent::Warning);
             return;
         }
 
@@ -182,13 +182,13 @@ impl Widget for AccelerometerWidget {
         );
 
         ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new(format!(
+        theme::status_chip(
+            ui,
+            &format!(
                 "Means: X {x_mean:.3}  Y {y_mean:.3}  Z {z_mean:.3}  | {} samples",
                 window.len()
-            ))
-            .small()
-            .weak(),
+            ),
+            theme::Intent::Muted,
         );
     }
 }

@@ -152,7 +152,7 @@ impl Widget for SpectrogramWidget {
         let samples =
             ctx.samples_for_widget_source(WidgetId::Spectrogram, self.selected_source.as_deref());
         if samples.len() < self.window_samples {
-            ui.label(egui::RichText::new("Waiting for enough samples...").weak());
+            theme::status_chip(ui, "Waiting for enough samples", theme::Intent::Warning);
             return;
         }
 
@@ -174,7 +174,7 @@ impl Widget for SpectrogramWidget {
         }
 
         if self.history.is_empty() {
-            ui.label(egui::RichText::new("No spectrogram rows yet").weak());
+            theme::status_chip(ui, "No spectrogram rows yet", theme::Intent::Warning);
             return;
         }
 
@@ -207,15 +207,15 @@ impl Widget for SpectrogramWidget {
         }
 
         ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new(format!(
+        theme::status_chip(
+            ui,
+            &format!(
                 "rows={} bins={} max={max_v:.4} (channel {})",
                 self.history.len(),
                 bins,
                 self.channel + 1
-            ))
-            .small()
-            .weak(),
+            ),
+            theme::Intent::Muted,
         );
     }
 }

@@ -723,7 +723,7 @@ impl Widget for FftPlotWidget {
             ctx.samples_for_widget_source(WidgetId::FftPlot, self.selected_source.as_deref());
         if eeg_samples.len() < 64 {
             ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new("Collecting data...").weak());
+                theme::status_chip(ui, "Collecting data", theme::Intent::Warning);
             });
             return;
         }

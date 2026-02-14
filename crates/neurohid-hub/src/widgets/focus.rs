@@ -128,7 +128,7 @@ impl Widget for FocusWidget {
         let samples =
             ctx.samples_for_widget_source(WidgetId::Focus, self.selected_source.as_deref());
         if samples.len() < 128 {
-            ui.label(egui::RichText::new("Waiting for samples...").weak());
+            theme::status_chip(ui, "Waiting for samples", theme::Intent::Warning);
             return;
         }
 
@@ -159,9 +159,20 @@ impl Widget for FocusWidget {
         } else {
             egui::Color32::from_rgb(244, 67, 54)
         };
+        let focus_intent = if self.smoothed_focus > 0.66 {
+            theme::Intent::Success
+        } else if self.smoothed_focus > 0.33 {
+            theme::Intent::Warning
+        } else {
+            theme::Intent::Danger
+        };
 
         ui.horizontal(|ui| {
-            ui.colored_label(color, format!("Focus: {:.0}%", self.smoothed_focus * 100.0));
+            theme::status_chip(
+                ui,
+                &format!("Focus {:.0}%", self.smoothed_focus * 100.0),
+                focus_intent,
+            );
             let _ = theme::progress_bar(ui, self.smoothed_focus, ui.available_width());
         });
 

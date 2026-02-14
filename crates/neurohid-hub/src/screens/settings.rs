@@ -39,9 +39,71 @@ impl SettingsScreen {
             "Configure runtime behavior, signal pipeline, devices, and interfaces",
         );
 
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                theme::status_chip(
+                    ui,
+                    if self.unsaved_changes {
+                        "Unsaved changes"
+                    } else {
+                        "All changes saved"
+                    },
+                    if self.unsaved_changes {
+                        theme::Intent::Warning
+                    } else {
+                        theme::Intent::Success
+                    },
+                );
+
+                let runtime_mode_label = match state.config.service.runtime_mode {
+                    neurohid_types::config::ServiceRuntimeMode::Embedded => "Runtime embedded",
+                    neurohid_types::config::ServiceRuntimeMode::External => "Runtime external",
+                };
+                theme::status_chip(ui, runtime_mode_label, theme::Intent::Info);
+
+                let ui_mode_label = if state.config.ui.mode == neurohid_types::config::UiMode::Advanced {
+                    "UI advanced"
+                } else {
+                    "UI standard"
+                };
+                theme::status_chip(ui, ui_mode_label, theme::Intent::Info);
+
+                let backend_label = match state.config.device.backend {
+                    neurohid_types::config::DeviceBackend::Auto => "Backend auto",
+                    neurohid_types::config::DeviceBackend::Lsl => "Backend LSL",
+                    neurohid_types::config::DeviceBackend::Mock => "Backend mock",
+                    neurohid_types::config::DeviceBackend::Serial => "Backend serial",
+                    neurohid_types::config::DeviceBackend::BrainFlow => "Backend BrainFlow",
+                };
+                theme::status_chip(ui, backend_label, theme::Intent::Muted);
+
+                theme::status_chip(
+                    ui,
+                    if state.config.service.notifications_enabled {
+                        "Notifications on"
+                    } else {
+                        "Notifications off"
+                    },
+                    if state.config.service.notifications_enabled {
+                        theme::Intent::Info
+                    } else {
+                        theme::Intent::Muted
+                    },
+                );
+            });
+            ui.add_space(6.0);
+            theme::status_chip(
+                ui,
+                "Tip: Save commits all modified sections at once",
+                theme::Intent::Muted,
+            );
+        });
+
+        ui.add_space(10.0);
+
         // Save / Reset buttons
         theme::card_frame(ui).show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
             let save_clicked = theme::action_button(
                 ui,
                 "Save",
@@ -65,8 +127,7 @@ impl SettingsScreen {
                 self.unsaved_changes = true;
             }
             if self.unsaved_changes {
-                ui.separator();
-                ui.colored_label(egui::Color32::from_rgb(248, 205, 95), "Unsaved changes");
+                theme::status_chip(ui, "Unsaved changes", theme::Intent::Warning);
             }
         });
             });
@@ -76,6 +137,7 @@ impl SettingsScreen {
         let mut signal_changed_this_frame = false;
 
         egui::ScrollArea::vertical().show(ui, |ui| {
+            ui.label(egui::RichText::new("Device & acquisition").small().weak());
             // Device settings
             let changed = egui::CollapsingHeader::new("Device")
                 .default_open(true)
@@ -128,13 +190,10 @@ impl SettingsScreen {
                                 changed = true;
                             }
                         });
-                        ui.label(
-                            egui::RichText::new(
-                                "Filter streams by predicate, e.g. \"type='EEG'\" \
-                                 or leave empty for all streams.",
-                            )
-                            .small()
-                            .weak(),
+                        theme::status_chip(
+                            ui,
+                            "Example: type='EEG' (leave empty for all streams)",
+                            theme::Intent::Muted,
                         );
                     }
 
@@ -274,7 +333,9 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            ui.add_space(8.0);
 
+            ui.label(egui::RichText::new("Signal & action pipeline").small().weak());
             // Signal settings
             let changed = egui::CollapsingHeader::new("Signal Processing")
                 .default_open(false)
@@ -345,6 +406,7 @@ impl SettingsScreen {
                 self.unsaved_changes = true;
                 signal_changed_this_frame = true;
             }
+            ui.add_space(8.0);
 
             // Action settings
             let changed = egui::CollapsingHeader::new("Action")
@@ -424,6 +486,7 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            ui.add_space(8.0);
 
             // Decoder settings (advanced)
             let changed = egui::CollapsingHeader::new("Decoder (Advanced)")
@@ -475,7 +538,9 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            ui.add_space(8.0);
 
+            ui.label(egui::RichText::new("Runtime orchestration").small().weak());
             // Service settings
             let changed = egui::CollapsingHeader::new("Service")
                 .default_open(false)
@@ -529,20 +594,16 @@ impl SettingsScreen {
                                 changed = true;
                             }
                         });
-                        ui.label(
-                            egui::RichText::new(
-                                "External mode expects a running `neurohid-service --control-port` endpoint.",
-                            )
-                            .small()
-                            .weak(),
+                        theme::status_chip(
+                            ui,
+                            "External mode requires neurohid-service --control-port",
+                            theme::Intent::Warning,
                         );
                     } else {
-                        ui.label(
-                            egui::RichText::new(
-                                "Embedded mode runs the runtime inside the hub process.",
-                            )
-                            .small()
-                            .weak(),
+                        theme::status_chip(
+                            ui,
+                            "Embedded mode runs runtime inside hub process",
+                            theme::Intent::Muted,
                         );
                     }
 
@@ -646,6 +707,7 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            ui.add_space(8.0);
 
             // Outlet settings
             let changed = egui::CollapsingHeader::new("Outlets")
@@ -770,7 +832,9 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            ui.add_space(8.0);
 
+            ui.label(egui::RichText::new("UI experience").small().weak());
             // UI settings
             let changed = egui::CollapsingHeader::new("UI")
                 .default_open(false)
@@ -834,10 +898,10 @@ impl SettingsScreen {
                         }
                     });
 
-                    ui.label(
-                        egui::RichText::new("Visualization docking backend: egui_dock (standard)")
-                            .small()
-                            .weak(),
+                    theme::status_chip(
+                        ui,
+                        "Visualization docking backend: egui_dock",
+                        theme::Intent::Muted,
                     );
 
                     ui.horizontal(|ui| {
@@ -912,12 +976,15 @@ impl SettingsScreen {
                         }
                     });
 
-                    ui.label(
-                        egui::RichText::new(
-                            "Advanced mode uses managed Jupyter IDE settings above. Legacy lab-kernel config remains only for backward compatibility.",
-                        )
-                        .small()
-                        .weak(),
+                    theme::status_chip(
+                        ui,
+                        "Advanced mode uses managed Jupyter IDE settings above",
+                        theme::Intent::Info,
+                    );
+                    theme::status_chip(
+                        ui,
+                        "Legacy lab-kernel config remains for backward compatibility",
+                        theme::Intent::Muted,
                     );
 
                     changed
@@ -925,6 +992,7 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            ui.add_space(8.0);
 
             // Recalibration settings
             let changed = egui::CollapsingHeader::new("Recalibration")
@@ -992,7 +1060,9 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            ui.add_space(8.0);
 
+            ui.label(egui::RichText::new("Persistence & retention").small().weak());
             // Storage settings
             let changed = egui::CollapsingHeader::new("Storage")
                 .default_open(false)

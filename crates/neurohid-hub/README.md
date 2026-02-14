@@ -18,6 +18,13 @@ NeuroHID Hub GUI library.
 - Settings/Dashboard/Devices/Visualization/Python Lab/Jupyter IDE/Stream Console controls migrated to wrapper-backed Armas components
 - `egui_dock` is the standard visualization layout engine (no feature gate)
 
+## Recent UI Polish Highlights
+
+- Shell/status surfaces now prefer explicit status chips over color-only indicators (service/runtime/console/log visibility)
+- Python Lab and Jupyter IDE now expose clearer operation states with chip summaries and stronger primary-vs-utility action hierarchy
+- Devices/Profiles/Settings/Calibration entry flows use denser summary cues for faster triage and reduced scan time
+- Visualization toolbar and layout panes include clearer live/rate/buffer/staleness context without changing dock behavior
+
 ## Usage
 
 This crate is a library for the `neurohid` binary. End users should use the `neurohid-sdk` facade crate with the `hub` feature enabled.

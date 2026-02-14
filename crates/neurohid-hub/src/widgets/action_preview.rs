@@ -255,11 +255,7 @@ impl ActionPreviewWidget {
             );
 
             ui.add_space(12.0);
-            ui.label(
-                egui::RichText::new("Waiting for decoded actions...")
-                    .size(14.0)
-                    .color(egui::Color32::from_gray(150)),
-            );
+            theme::status_chip(ui, "Waiting for decoded actions", theme::Intent::Warning);
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(
@@ -552,7 +548,7 @@ impl ActionPreviewWidget {
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 if self.log.is_empty() {
-                    ui.label(egui::RichText::new("No actions yet...").weak());
+                    theme::status_chip(ui, "No actions yet", theme::Intent::Warning);
                     return;
                 }
 
@@ -565,7 +561,7 @@ impl ActionPreviewWidget {
                     .collect();
 
                 if filtered.is_empty() {
-                    ui.label(egui::RichText::new("No matching actions...").weak());
+                    theme::status_chip(ui, "No matching actions", theme::Intent::Muted);
                     return;
                 }
 

@@ -46,8 +46,54 @@ impl ProfilesScreen {
         );
         ui.add_space(6.0);
 
+        let profile_count = state.profiles.len();
+        let calibrated_count = state
+            .profiles
+            .iter()
+            .filter(|profile| profile.calibration_state.is_ready())
+            .count();
+        let has_active = state.active_profile_id.is_some();
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                theme::status_chip(
+                    ui,
+                    &format!("Profiles {}", profile_count),
+                    if profile_count > 0 {
+                        theme::Intent::Info
+                    } else {
+                        theme::Intent::Muted
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Calibrated {}", calibrated_count),
+                    if calibrated_count > 0 {
+                        theme::Intent::Success
+                    } else {
+                        theme::Intent::Warning
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    if has_active {
+                        "Active profile set"
+                    } else {
+                        "No active profile"
+                    },
+                    if has_active {
+                        theme::Intent::Success
+                    } else {
+                        theme::Intent::Warning
+                    },
+                );
+            });
+        });
+        ui.add_space(8.0);
+
         // Create profile button
-        if !self.show_create_dialog && action_button(ui, "Create New Profile", true) {
+        if !self.show_create_dialog
+            && theme::action_button(ui, "Create New Profile", true, theme::ButtonTone::Primary)
+        {
             self.show_create_dialog = true;
             self.new_profile_name.clear();
         }
@@ -58,11 +104,18 @@ impl ProfilesScreen {
                 ui.heading("New Profile");
                 ui.horizontal(|ui| {
                     ui.label("Name:");
-                    ui.text_edit_singleline(&mut self.new_profile_name);
+                    let _ = theme::text_input(
+                        ui,
+                        "profiles_new_profile_name",
+                        &mut self.new_profile_name,
+                        "Profile name",
+                        240.0,
+                    );
                 });
                 ui.horizontal(|ui| {
                     let name_valid = !self.new_profile_name.trim().is_empty();
-                    if action_button(ui, "Create", name_valid) {
+                    if theme::action_button(ui, "Create", name_valid, theme::ButtonTone::Primary)
+                    {
                             let name = self.new_profile_name.trim().to_string();
                             match runtime.block_on(state.profile_store.create_profile(name)) {
                                 Ok(metadata) => {
@@ -83,7 +136,7 @@ impl ProfilesScreen {
                             }
                             self.show_create_dialog = false;
                     }
-                    if action_button(ui, "Cancel", true) {
+                    if theme::action_button(ui, "Cancel", true, theme::ButtonTone::Ghost) {
                         self.show_create_dialog = false;
                     }
                 });
@@ -94,7 +147,8 @@ impl ProfilesScreen {
 
         // Profile list
         if state.profiles.is_empty() {
-            ui.label("No profiles yet. Create one to get started.");
+            theme::status_chip(ui, "No profiles yet", theme::Intent::Warning);
+            theme::status_chip(ui, "Create a profile to get started", theme::Intent::Muted);
             return;
         }
 
@@ -105,16 +159,17 @@ impl ProfilesScreen {
             theme::card_frame(ui)
                 .fill(egui::Color32::from_rgb(40, 20, 24))
                 .show(ui, |ui| {
-                ui.colored_label(
-                    egui::Color32::RED,
-                    format!("Delete profile \"{}\"?", id_str),
+                theme::status_chip(
+                    ui,
+                    &format!("Delete profile \"{}\"?", id_str),
+                    theme::Intent::Danger,
                 );
                 ui.horizontal(|ui| {
-                    if action_button(ui, "Yes, Delete", true) {
+                    if theme::action_button(ui, "Yes, Delete", true, theme::ButtonTone::Ghost) {
                         delete_id = Some(id_str.clone());
                         self.delete_confirm = None;
                     }
-                    if action_button(ui, "Cancel", true) {
+                    if theme::action_button(ui, "Cancel", true, theme::ButtonTone::Secondary) {
                         self.delete_confirm = None;
                     }
                 });
@@ -146,9 +201,9 @@ impl ProfilesScreen {
                 ui.horizontal(|ui| {
                     // Active indicator
                     if is_active {
-                        ui.colored_label(egui::Color32::GREEN, "●");
+                        theme::status_chip(ui, "Active", theme::Intent::Success);
                     } else {
-                        ui.colored_label(egui::Color32::GRAY, "○");
+                        theme::status_chip(ui, "Inactive", theme::Intent::Muted);
                     }
 
                     ui.vertical(|ui| {
@@ -156,28 +211,27 @@ impl ProfilesScreen {
                             ui.strong(&profile.name);
 
                             // Calibration badge
-                            let (badge_color, badge_text) = match &profile.calibration_state {
+                            let (badge_text, badge_intent) = match &profile.calibration_state {
                                 CalibrationState::CompletedGood { .. } => {
-                                    (egui::Color32::GREEN, "Good")
+                                    ("Good", theme::Intent::Success)
                                 }
                                 CalibrationState::CompletedAcceptable { .. } => {
-                                    (egui::Color32::YELLOW, "Acceptable")
+                                    ("Acceptable", theme::Intent::Warning)
                                 }
                                 CalibrationState::CompletedPoor { .. } => {
-                                    (egui::Color32::RED, "Poor")
+                                    ("Poor", theme::Intent::Danger)
                                 }
                                 CalibrationState::InProgress { .. } => {
-                                    (egui::Color32::GRAY, "In Progress")
+                                    ("In Progress", theme::Intent::Info)
                                 }
                                 CalibrationState::NeedsRecalibration { .. } => {
-                                    (egui::Color32::RED, "Needs Recalibration")
+                                    ("Needs Recalibration", theme::Intent::Danger)
                                 }
                                 CalibrationState::NotCalibrated => {
-                                    (egui::Color32::GRAY, "Not Calibrated")
+                                    ("Not Calibrated", theme::Intent::Muted)
                                 }
                             };
-
-                            ui.colored_label(badge_color, format!("[{}]", badge_text));
+                            theme::status_chip(ui, badge_text, badge_intent);
                         });
 
                         ui.label(
@@ -189,11 +243,18 @@ impl ProfilesScreen {
 
                     // Action buttons (right-aligned)
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if action_button(ui, "Delete", true) {
+                        if theme::action_button(ui, "Delete", true, theme::ButtonTone::Ghost) {
                             self.delete_confirm = Some(profile.id.to_string());
                         }
 
-                        if !is_active && action_button(ui, "Set Active", true) {
+                        if !is_active
+                            && theme::action_button(
+                                ui,
+                                "Set Active",
+                                true,
+                                theme::ButtonTone::Primary,
+                            )
+                        {
                             state.active_profile_id = Some(profile.id.clone());
                             service_manager.set_active_profile(
                                 Some(profile.id.clone()),
@@ -206,8 +267,4 @@ impl ProfilesScreen {
                 });
         }
     }
-}
-
-fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
 }

@@ -139,17 +139,17 @@ impl CalibrationPanel {
                     ui.heading("Signal Status");
                     ui.add_space(8.0);
 
-                    ui.horizontal(|ui| {
-                        let quality_pct = self.signal_quality * 100.0;
-                        let color = if quality_pct > 70.0 {
-                            egui::Color32::GREEN
-                        } else if quality_pct > 50.0 {
-                            egui::Color32::YELLOW
-                        } else {
-                            egui::Color32::RED
-                        };
-                        ui.colored_label(color, format!("Signal quality: {:.0}%", quality_pct));
-                    });
+                    let quality_pct = self.signal_quality * 100.0;
+                    ui.label(format!("Signal quality: {:.0}%", quality_pct));
+                    let _ = Progress::new(quality_pct).show(ui, &ui.ctx().armas_theme());
+                    let quality_text = if quality_pct > 70.0 {
+                        "Status: good"
+                    } else if quality_pct > 50.0 {
+                        "Status: fair"
+                    } else {
+                        "Status: low"
+                    };
+                    ui.label(egui::RichText::new(quality_text).small());
                 });
 
                 ui.add_space(20.0);
@@ -203,6 +203,13 @@ impl CalibrationPanel {
                     }
                 });
 
+                let current_step = self.wizard.current_step().index() + 1;
+                let total_steps = CalibrationStep::total_steps();
+                let progress_pct = (current_step as f32 / total_steps as f32) * 100.0;
+                ui.add_space(8.0);
+                ui.label(format!("Step {}/{}", current_step, total_steps));
+                let _ = Progress::new(progress_pct).show(ui, &ui.ctx().armas_theme());
+
                 ui.add_space(20.0);
                 ui.heading(self.wizard.current_step().display_name());
                 ui.add_space(20.0);
@@ -233,10 +240,9 @@ impl CalibrationPanel {
         ui.label("Let's verify your signal quality before we begin.");
         ui.add_space(10.0);
 
-        ui.label(format!(
-            "Current signal quality: {:.0}%",
-            self.signal_quality * 100.0
-        ));
+        let quality_pct = self.signal_quality * 100.0;
+        ui.label(format!("Current signal quality: {:.0}%", quality_pct));
+        let _ = Progress::new(quality_pct).show(ui, &ui.ctx().armas_theme());
 
         let quality_good = self.signal_quality > 0.7;
 

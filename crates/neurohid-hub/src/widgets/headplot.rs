@@ -91,7 +91,7 @@ impl Widget for HeadplotWidget {
         let samples =
             ctx.samples_for_widget_source(WidgetId::Headplot, self.selected_source.as_deref());
         if samples.len() < 32 {
-            ui.label(egui::RichText::new("Waiting for EEG samples...").weak());
+            theme::status_chip(ui, "Waiting for EEG samples", theme::Intent::Warning);
             return;
         }
 
@@ -159,10 +159,10 @@ impl Widget for HeadplotWidget {
         }
 
         ui.add_space(4.0);
-        ui.label(
-            egui::RichText::new("Relative power heatmap (windowed variance)")
-                .small()
-                .weak(),
+        theme::status_chip(
+            ui,
+            "Relative power heatmap (windowed variance)",
+            theme::Intent::Muted,
         );
     }
 }

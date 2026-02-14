@@ -168,70 +168,124 @@ impl PythonLabScreen {
         );
         self.show_bridge_monitor(ui, data_bus, service_snapshot);
 
-        ui.horizontal(|ui| {
-            if action_button(ui, "Add Cell", true) {
-                self.cells.push(NotebookCell::new(String::new()));
-                self.selected_cell = self.cells.len().saturating_sub(1);
-            }
+        let running_cells = self
+            .cells
+            .iter()
+            .filter(|cell| matches!(cell.status, CellStatus::Running))
+            .count();
+        let error_cells = self
+            .cells
+            .iter()
+            .filter(|cell| matches!(cell.status, CellStatus::Error))
+            .count();
+        let success_cells = self
+            .cells
+            .iter()
+            .filter(|cell| matches!(cell.status, CellStatus::Success))
+            .count();
 
-            let run_selected = self.selected_cell < self.cells.len();
-            if action_button(ui, "Run Selected", run_selected) {
-                self.enqueue_cell(self.selected_cell, kernel_command);
-            }
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                let kernel_status = self.kernel_status();
+                let (kernel_label, kernel_intent) = match kernel_status.as_str() {
+                    "running" => ("Kernel running", theme::Intent::Success),
+                    "starting" => ("Kernel starting", theme::Intent::Warning),
+                    _ => ("Kernel stopped", theme::Intent::Muted),
+                };
+                theme::status_chip(ui, kernel_label, kernel_intent);
 
-            if action_button(ui, "Run All", true) {
-                self.enqueue_all_cells(kernel_command);
-            }
-
-            if action_button(ui, "Restart Kernel", true) {
-                self.restart_kernel(kernel_command);
-            }
-
-            if action_button(ui, "Stop Kernel", true) {
-                self.stop_kernel();
-            }
-
-            let uv_sync_running = self.uv_sync_task.is_pending();
-            if action_button(ui, "uv sync", !uv_sync_running) {
-                self.run_uv_sync();
-            }
-
-            if action_button(ui, "Clear Log", true) {
-                self.log_output.clear();
-            }
-        });
-
-        ui.add_space(6.0);
-        ui.label(
-            egui::RichText::new(format!(
-                "Kernel cmd: {}",
-                if kernel_command.trim().is_empty() {
-                    "<empty>"
-                } else {
-                    kernel_command
-                }
-            ))
-            .small()
-            .weak(),
-        );
-
-        let kernel_status = self.kernel_status();
-        let (status_color, status_text) = match kernel_status.as_str() {
-            "running" => (egui::Color32::GREEN, "Kernel: running"),
-            "starting" => (egui::Color32::YELLOW, "Kernel: starting"),
-            _ => (egui::Color32::GRAY, "Kernel: stopped"),
-        };
-
-        ui.horizontal(|ui| {
-            ui.colored_label(status_color, "●");
-            ui.label(status_text);
-            if !self.queued_cells.is_empty() {
-                ui.label(
-                    egui::RichText::new(format!("Queued cells: {}", self.queued_cells.len()))
-                        .small()
-                        .color(egui::Color32::YELLOW),
+                theme::status_chip(
+                    ui,
+                    &format!("Cells {}", self.cells.len()),
+                    theme::Intent::Info,
                 );
-            }
+                theme::status_chip(
+                    ui,
+                    &format!("Queued {}", self.queued_cells.len()),
+                    if self.queued_cells.is_empty() {
+                        theme::Intent::Muted
+                    } else {
+                        theme::Intent::Warning
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Running {}", running_cells),
+                    if running_cells == 0 {
+                        theme::Intent::Muted
+                    } else {
+                        theme::Intent::Info
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Succeeded {}", success_cells),
+                    if success_cells == 0 {
+                        theme::Intent::Muted
+                    } else {
+                        theme::Intent::Success
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Errors {}", error_cells),
+                    if error_cells == 0 {
+                        theme::Intent::Muted
+                    } else {
+                        theme::Intent::Danger
+                    },
+                );
+            });
+
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "Kernel cmd: {}",
+                    if kernel_command.trim().is_empty() {
+                        "<empty>"
+                    } else {
+                        kernel_command
+                    }
+                ))
+                .small()
+                .weak(),
+            );
+
+            ui.add_space(8.0);
+            ui.horizontal_wrapped(|ui| {
+                if action_button_tone(ui, "Add Cell", true, theme::ButtonTone::Secondary) {
+                    self.cells.push(NotebookCell::new(String::new()));
+                    self.selected_cell = self.cells.len().saturating_sub(1);
+                }
+
+                let run_selected = self.selected_cell < self.cells.len();
+                if action_button_tone(ui, "Run Selected", run_selected, theme::ButtonTone::Primary)
+                {
+                    self.enqueue_cell(self.selected_cell, kernel_command);
+                }
+
+                if action_button_tone(ui, "Run All", true, theme::ButtonTone::Secondary) {
+                    self.enqueue_all_cells(kernel_command);
+                }
+
+                if action_button_tone(ui, "Restart Kernel", true, theme::ButtonTone::Secondary) {
+                    self.restart_kernel(kernel_command);
+                }
+
+                if action_button_tone(ui, "Stop Kernel", true, theme::ButtonTone::Ghost) {
+                    self.stop_kernel();
+                }
+
+                let uv_sync_running = self.uv_sync_task.is_pending();
+                if action_button_tone(ui, "uv sync", !uv_sync_running, theme::ButtonTone::Secondary)
+                {
+                    self.run_uv_sync();
+                }
+
+                if action_button_tone(ui, "Clear Log", true, theme::ButtonTone::Ghost) {
+                    self.log_output.clear();
+                }
+            });
         });
 
         ui.separator();
@@ -259,17 +313,27 @@ impl PythonLabScreen {
                                 }
 
                                 let can_run = !matches!(cell.status, CellStatus::Running);
-                                if action_button(ui, "Run", can_run) {
+                                if action_button_tone(
+                                    ui,
+                                    "Run",
+                                    can_run,
+                                    theme::ButtonTone::Primary,
+                                ) {
                                     run_clicked = Some(index);
                                 }
 
                                 let can_delete = !matches!(cell.status, CellStatus::Running);
-                                if action_button(ui, "Delete", can_delete) {
+                                if action_button_tone(
+                                    ui,
+                                    "Delete",
+                                    can_delete,
+                                    theme::ButtonTone::Ghost,
+                                ) {
                                     delete_clicked = Some(index);
                                 }
 
-                                let (color, text) = status_badge(&cell.status);
-                                ui.colored_label(color, text);
+                                let (text, intent) = status_badge(&cell.status);
+                                theme::status_chip(ui, text, intent);
 
                                 if let Some(duration_ms) = cell.duration_ms {
                                     ui.label(
@@ -297,11 +361,10 @@ impl PythonLabScreen {
                                 .show(ui, &mut cell.code);
 
                             ui.label(egui::RichText::new("Output").small().strong());
-                            let _ = theme::textarea_input(
+                            let _ = theme::textarea_readonly(
                                 ui,
                                 format!("python_cell_output_{}", index),
                                 &mut cell.output,
-                                "",
                                 4,
                                 f32::INFINITY,
                             );
@@ -325,11 +388,10 @@ impl PythonLabScreen {
                 .id_salt("python_lab_log_scroll")
                 .max_height(180.0)
                 .show(ui, |ui| {
-                    let _ = theme::textarea_input(
+                    let _ = theme::textarea_readonly(
                         ui,
                         "python_lab_log_output",
                         &mut self.log_output,
-                        "",
                         8,
                         f32::INFINITY,
                     );
@@ -347,16 +409,16 @@ impl PythonLabScreen {
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new("Bridge Monitor (Always On)").strong());
 
-                let (bridge_color, bridge_text) = if service_snapshot.ml_bridge_connected {
+                let (bridge_text, bridge_intent) = if service_snapshot.ml_bridge_connected {
                     if service_snapshot.ml_bridge_stalled {
-                        (egui::Color32::YELLOW, "stalled")
+                        ("ML bridge stalled", theme::Intent::Warning)
                     } else {
-                        (egui::Color32::GREEN, "connected")
+                        ("ML bridge connected", theme::Intent::Success)
                     }
                 } else {
-                    (egui::Color32::GRAY, "disconnected")
+                    ("ML bridge disconnected", theme::Intent::Muted)
                 };
-                ui.colored_label(bridge_color, format!("ML bridge: {}", bridge_text));
+                theme::status_chip(ui, bridge_text, bridge_intent);
 
                 ui.label(
                     egui::RichText::new(format!(
@@ -409,11 +471,7 @@ impl PythonLabScreen {
                     .small(),
                 );
             } else {
-                ui.label(
-                    egui::RichText::new("No feature vectors yet.")
-                        .small()
-                        .weak(),
-                );
+                theme::status_chip(ui, "No feature vectors yet", theme::Intent::Warning);
             }
 
             egui::ScrollArea::vertical()
@@ -806,13 +864,13 @@ impl Drop for PythonLabScreen {
     }
 }
 
-fn status_badge(status: &CellStatus) -> (egui::Color32, &'static str) {
+fn status_badge(status: &CellStatus) -> (&'static str, theme::Intent) {
     match status {
-        CellStatus::Idle => (egui::Color32::GRAY, "idle"),
-        CellStatus::Queued => (egui::Color32::YELLOW, "queued"),
-        CellStatus::Running => (egui::Color32::LIGHT_BLUE, "running"),
-        CellStatus::Success => (egui::Color32::GREEN, "ok"),
-        CellStatus::Error => (egui::Color32::RED, "error"),
+        CellStatus::Idle => ("idle", theme::Intent::Muted),
+        CellStatus::Queued => ("queued", theme::Intent::Warning),
+        CellStatus::Running => ("running", theme::Intent::Info),
+        CellStatus::Success => ("ok", theme::Intent::Success),
+        CellStatus::Error => ("error", theme::Intent::Danger),
     }
 }
 
@@ -989,8 +1047,13 @@ fn run_uv_sync_blocking() -> String {
     }
 }
 
-fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
+fn action_button_tone(
+    ui: &mut egui::Ui,
+    label: &str,
+    enabled: bool,
+    tone: theme::ButtonTone,
+) -> bool {
+    theme::action_button(ui, label, enabled, tone)
 }
 
 #[cfg(test)]

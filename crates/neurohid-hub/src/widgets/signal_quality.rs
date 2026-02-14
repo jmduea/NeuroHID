@@ -3,6 +3,7 @@
 //! Displays per-channel signal quality indicators, RMS amplitude,
 //! and railed-sample percentages to help users optimize electrode placement.
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 
@@ -492,7 +493,7 @@ impl Widget for SignalQualityWidget {
 
         if ctx.samples_for(WidgetId::SignalQuality).len() < 32 {
             ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new("Waiting for data...").weak());
+                theme::status_chip(ui, "Waiting for signal data", theme::Intent::Warning);
             });
             return;
         }
@@ -711,7 +712,7 @@ impl Widget for SignalQualityWidget {
 
         // --- Visual quality bars at the bottom ---
         ui.add_space(8.0);
-        ui.label(egui::RichText::new("Quality Overview").small().weak());
+        theme::status_chip(ui, "Quality Overview", theme::Intent::Muted);
 
         for ch in 0..num_channels {
             let m = &self.cached_metrics[ch];

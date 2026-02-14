@@ -279,11 +279,14 @@ impl LayoutManager {
     }
 
     pub fn show_panes(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>) {
-        ui.label(
-            egui::RichText::new("Drag tab titles and drop on panel edges/centers to re-dock.")
-                .small()
-                .weak(),
-        );
+        ui.horizontal_wrapped(|ui| {
+            theme::status_chip(ui, "Docking enabled", theme::Intent::Info);
+            theme::status_chip(
+                ui,
+                "Drag tabs to panel edges/centers to re-dock",
+                theme::Intent::Muted,
+            );
+        });
 
         let mut viewer = DockTabViewer {
             widget_ids: &mut self.pane_widget_ids,
@@ -353,7 +356,7 @@ impl TabViewer for DockTabViewer<'_, '_> {
         if let Some(widget) = self.widget_instances.get_mut(tab.slot) {
             widget.show(ui, self.widget_ctx, tab.slot);
         } else {
-            ui.colored_label(egui::Color32::YELLOW, "Missing widget instance");
+            theme::status_chip(ui, "Missing widget instance", theme::Intent::Warning);
         }
     }
 }

@@ -145,7 +145,23 @@ pub fn page_header(ui: &mut egui::Ui, title: &str, subtitle: &str) {
             .strong(),
     );
     ui.label(RichText::new(subtitle).small().weak());
-    ui.add_space(10.0);
+    ui.add_space(6.0);
+    ui.separator();
+    ui.add_space(8.0);
+}
+
+pub fn status_chip(ui: &mut egui::Ui, label: &str, intent: Intent) {
+    let fg = intent_color(intent);
+    let bg = fg.gamma_multiply(0.16);
+    let stroke = fg.gamma_multiply(0.45);
+    egui::Frame::new()
+        .corner_radius(egui::CornerRadius::same(6))
+        .fill(bg)
+        .stroke(egui::Stroke::new(1.0, stroke))
+        .inner_margin(egui::Margin::symmetric(8, 3))
+        .show(ui, |ui| {
+            ui.label(RichText::new(label).small().color(fg).strong());
+        });
 }
 
 pub fn card_frame(_ui: &egui::Ui) -> ArmasFrame {
@@ -237,6 +253,24 @@ pub fn textarea_input(
         .rows(rows)
         .show(ui, value)
         .changed
+}
+
+pub fn textarea_readonly(
+    ui: &mut egui::Ui,
+    id: impl Into<egui::Id>,
+    value: &mut String,
+    rows: usize,
+    width: f32,
+) -> bool {
+    ui.add(
+        egui::TextEdit::multiline(value)
+            .id(id.into())
+            .font(egui::TextStyle::Monospace)
+            .desired_rows(rows)
+            .desired_width(width)
+            .interactive(false),
+    )
+    .changed()
 }
 
 pub fn toggle_switch(

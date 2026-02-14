@@ -212,12 +212,31 @@ impl StreamConsole {
             .inner_margin(egui::Margin::symmetric(8, 4));
 
         header_frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.label(
                     RichText::new("Stream Console")
                         .monospace()
                         .size(13.0)
                         .color(Color32::from_gray(200)),
+                );
+
+                theme::status_chip(
+                    ui,
+                    if self.paused { "Paused" } else { "Live" },
+                    if self.paused {
+                        theme::Intent::Warning
+                    } else {
+                        theme::Intent::Success
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Buffered {}", self.lines.len()),
+                    if self.lines.is_empty() {
+                        theme::Intent::Muted
+                    } else {
+                        theme::Intent::Info
+                    },
                 );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -309,12 +328,7 @@ impl StreamConsole {
 
                 // Show filtered count
                 let filtered_count = self.get_filtered_lines().count();
-                ui.label(
-                    RichText::new(format!("{} matches", filtered_count))
-                        .monospace()
-                        .size(10.0)
-                        .color(Color32::from_gray(100)),
-                );
+                theme::status_chip(ui, &format!("{} matches", filtered_count), theme::Intent::Info);
             }
         });
     }
@@ -513,7 +527,7 @@ impl StreamConsole {
             .inner_margin(egui::Margin::symmetric(8, 4));
 
         stats_frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let visible_lines =
                     if self.filter_text.is_empty() && self.stream_type_filter.is_none() {
                         self.lines.len()
@@ -523,17 +537,12 @@ impl StreamConsole {
 
                 let buffer_pct = (self.lines.len() as f32 / self.max_lines as f32 * 100.0) as u32;
 
-                let status = if self.paused { "Paused" } else { "Live" };
-                let status_color = if self.paused {
-                    Color32::from_rgb(255, 152, 0)
-                } else {
-                    Color32::from_rgb(76, 175, 80)
-                };
-
                 // Build per-stream sample count summary
+                let mut connected_streams = 0usize;
                 let mut stream_info = String::new();
                 for ds in &snapshot.discovered_streams {
                     if ds.connected {
+                        connected_streams += 1;
                         let count = bus.samples_by_source.get(&ds.id).map_or(0, |b| b.len());
                         if !stream_info.is_empty() {
                             stream_info.push_str(", ");
@@ -542,30 +551,62 @@ impl StreamConsole {
                     }
                 }
 
-                let main_stats = format!(
-                    "Lines: {}/{} | Rate: {:.0} sps | Buffer: {}%",
-                    visible_lines, self.max_lines, self.data_rate_lps, buffer_pct
+                theme::status_chip(
+                    ui,
+                    &format!("Lines {}/{}", visible_lines, self.max_lines),
+                    if visible_lines > 0 {
+                        theme::Intent::Info
+                    } else {
+                        theme::Intent::Muted
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Rate {:.0} sps", self.data_rate_lps),
+                    if self.data_rate_lps > 0.0 {
+                        theme::Intent::Success
+                    } else {
+                        theme::Intent::Muted
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Buffer {}%", buffer_pct),
+                    if buffer_pct >= 80 {
+                        theme::Intent::Success
+                    } else if buffer_pct >= 30 {
+                        theme::Intent::Info
+                    } else {
+                        theme::Intent::Muted
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Streams {}", connected_streams),
+                    if connected_streams > 0 {
+                        theme::Intent::Info
+                    } else {
+                        theme::Intent::Muted
+                    },
                 );
 
-                let full_stats = if stream_info.is_empty() {
-                    main_stats
-                } else {
-                    format!("{} | Streams: {}", main_stats, stream_info)
-                };
-
-                ui.label(
-                    RichText::new(full_stats)
-                        .monospace()
-                        .size(10.0)
-                        .color(Color32::from_gray(140)),
-                );
+                if !stream_info.is_empty() {
+                    theme::status_chip(
+                        ui,
+                        &format!("Streams {}", stream_info),
+                        theme::Intent::Muted,
+                    );
+                }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(
-                        RichText::new(format!("\u{25CF} {}", status))
-                            .monospace()
-                            .size(10.0)
-                            .color(status_color),
+                    theme::status_chip(
+                        ui,
+                        if self.paused { "Paused" } else { "Live" },
+                        if self.paused {
+                            theme::Intent::Warning
+                        } else {
+                            theme::Intent::Success
+                        },
                     );
                 });
             });

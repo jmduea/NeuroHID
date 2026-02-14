@@ -113,19 +113,74 @@ impl CalibrationScreen {
             "Calibrate your brain-computer interface by playing interactive games. This process trains the ErrP detector and initial decoder model.",
         );
 
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                theme::status_chip(
+                    ui,
+                    if snap.running {
+                        "Service running"
+                    } else {
+                        "Service stopped"
+                    },
+                    if snap.running {
+                        theme::Intent::Success
+                    } else {
+                        theme::Intent::Warning
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    if snap.device_connected {
+                        "Device connected"
+                    } else {
+                        "Device disconnected"
+                    },
+                    if snap.device_connected {
+                        theme::Intent::Success
+                    } else {
+                        theme::Intent::Warning
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Signal {:.0}%", snap.signal_quality * 100.0),
+                    if snap.signal_quality > 0.7 {
+                        theme::Intent::Success
+                    } else if snap.signal_quality > 0.5 {
+                        theme::Intent::Warning
+                    } else {
+                        theme::Intent::Danger
+                    },
+                );
+            });
+        });
+        ui.add_space(8.0);
+
         if !snap.running {
             theme::card_frame(ui).show(ui, |ui| {
-                ui.colored_label(egui::Color32::YELLOW, "Service is not running");
-                ui.label("Start the service from the Dashboard before calibrating.");
-                ui.label("The service provides the device connection needed for calibration.");
+                theme::status_chip(ui, "Service is not running", theme::Intent::Warning);
+                theme::status_chip(
+                    ui,
+                    "Start the service from Dashboard before calibrating",
+                    theme::Intent::Warning,
+                );
+                theme::status_chip(
+                    ui,
+                    "Service provides device connection required for calibration",
+                    theme::Intent::Muted,
+                );
             });
             return;
         }
 
         if !snap.device_connected {
             theme::card_frame(ui).show(ui, |ui| {
-                ui.colored_label(egui::Color32::YELLOW, "No device connected");
-                ui.label("Wait for the device to connect, then start calibration.");
+                theme::status_chip(ui, "No device connected", theme::Intent::Warning);
+                theme::status_chip(
+                    ui,
+                    "Wait for the device to connect before starting calibration",
+                    theme::Intent::Warning,
+                );
             });
             return;
         }
@@ -135,7 +190,13 @@ impl CalibrationScreen {
             let profile = state.profiles.iter().find(|p| &p.id == profile_id);
             if let Some(profile) = profile {
                 theme::card_frame(ui).show(ui, |ui| {
-                    ui.label(format!("Active profile: {}", profile.name));
+                    ui.horizontal_wrapped(|ui| {
+                        theme::status_chip(
+                            ui,
+                            &format!("Active profile {}", profile.name),
+                            theme::Intent::Info,
+                        );
+                    });
                     let cal_status = match &profile.calibration_state {
                         CalibrationState::NotCalibrated => "Not calibrated",
                         CalibrationState::InProgress { .. } => "In progress",
@@ -144,14 +205,22 @@ impl CalibrationScreen {
                         CalibrationState::CompletedPoor { .. } => "Poor",
                         CalibrationState::NeedsRecalibration { .. } => "Needs recalibration",
                     };
-                    ui.label(format!("Calibration: {}", cal_status));
+                    let cal_intent = match &profile.calibration_state {
+                        CalibrationState::CompletedGood { .. } => theme::Intent::Success,
+                        CalibrationState::CompletedAcceptable { .. } => theme::Intent::Warning,
+                        CalibrationState::CompletedPoor { .. }
+                        | CalibrationState::NeedsRecalibration { .. } => theme::Intent::Danger,
+                        CalibrationState::InProgress { .. } => theme::Intent::Info,
+                        CalibrationState::NotCalibrated => theme::Intent::Muted,
+                    };
+                    theme::status_chip(ui, &format!("Calibration {}", cal_status), cal_intent);
                 });
             }
         }
 
         ui.add_space(16.0);
 
-        if action_button(ui, "Start Calibration", true) {
+        if theme::action_button(ui, "Start Calibration", true, theme::ButtonTone::Primary) {
             service_manager.enter_calibration_mode();
 
             let mut panel = CalibrationPanel::new();
@@ -252,10 +321,6 @@ impl CalibrationScreen {
         }
         profile_ready
     }
-}
-
-fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    theme::action_button(ui, label, enabled, theme::ButtonTone::Primary)
 }
 
 fn to_profile_quality(

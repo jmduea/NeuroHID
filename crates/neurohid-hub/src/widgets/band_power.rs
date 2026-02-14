@@ -337,7 +337,7 @@ impl Widget for BandPowerWidget {
 
         if !use_fft && ctx.samples_for(WidgetId::BandPower).len() < 64 {
             ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new("Collecting data...").weak());
+                theme::status_chip(ui, "Collecting data", theme::Intent::Warning);
             });
             return;
         }

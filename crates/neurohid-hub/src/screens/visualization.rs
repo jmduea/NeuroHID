@@ -169,37 +169,33 @@ impl VisualizationScreen {
             .inner_margin(egui::Margin::symmetric(8, 6));
 
         toolbar_frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 // Layout selector with icons
                 self.show_layout_selector(ui);
 
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(12.0);
+                ui.add_space(10.0);
 
                 // Data rate indicator
                 self.show_data_rate(ui);
 
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(12.0);
+                ui.add_space(10.0);
 
                 // Buffer health indicator
                 self.show_buffer_health(ui, bus, snapshot);
 
-                ui.add_space(12.0);
-                ui.separator();
-                ui.add_space(12.0);
-
-                // Recording placeholder (future-ready)
-                ui.colored_label(Color32::from_gray(80), "REC");
+                ui.add_space(10.0);
+                theme::status_chip(ui, "REC standby", theme::Intent::Muted);
 
                 // Right-aligned status cluster
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Elapsed time
                     if let Some(start) = self.stream_start_time {
                         let elapsed = current_time - start;
-                        ui.label(format_elapsed(elapsed));
+                        theme::status_chip(
+                            ui,
+                            &format!("Elapsed {}", format_elapsed(elapsed)),
+                            theme::Intent::Muted,
+                        );
                         ui.add_space(12.0);
                     }
 
@@ -211,9 +207,10 @@ impl VisualizationScreen {
                         let stale_secs = current_time - last;
                         if stale_secs > STALE_DATA_THRESHOLD_SECS && snapshot.running {
                             ui.add_space(12.0);
-                            ui.colored_label(
-                                Color32::from_rgb(255, 152, 0),
-                                format!("Data stale - last {:.1}s ago", stale_secs),
+                            theme::status_chip(
+                                ui,
+                                &format!("Data stale {:.1}s", stale_secs),
+                                theme::Intent::Warning,
                             );
                         }
                     }
@@ -268,8 +265,12 @@ impl VisualizationScreen {
         } else {
             "-- sps".to_string()
         };
-
-        ui.label(RichText::new(rate_text).monospace());
+        let intent = if self.data_rate_sps > 0.0 {
+            theme::Intent::Info
+        } else {
+            theme::Intent::Muted
+        };
+        theme::status_chip(ui, &format!("Rate {}", rate_text), intent);
     }
 
     /// Buffer health indicator.
@@ -298,7 +299,17 @@ impl VisualizationScreen {
                     Color32::from_gray(100)
                 };
 
-                ui.colored_label(color, format!("{}:{}", ds.stream_type, count));
+                let intent = if ratio > 0.9 {
+                    theme::Intent::Success
+                } else if ratio > 0.5 {
+                    theme::Intent::Warning
+                } else if ratio > 0.0 {
+                    theme::Intent::Info
+                } else {
+                    theme::Intent::Muted
+                };
+                let _ = color;
+                theme::status_chip(ui, &format!("{}:{}", ds.stream_type, count), intent);
             }
         } else {
             // Fallback: flat buffer view
@@ -315,7 +326,17 @@ impl VisualizationScreen {
                 Color32::from_gray(100)
             };
 
-            ui.colored_label(color, format!("{}/{}", count, MAX_SAMPLES));
+            let intent = if ratio > 0.9 {
+                theme::Intent::Success
+            } else if ratio > 0.5 {
+                theme::Intent::Warning
+            } else if ratio > 0.0 {
+                theme::Intent::Info
+            } else {
+                theme::Intent::Muted
+            };
+            let _ = color;
+            theme::status_chip(ui, &format!("Buffer {}/{}", count, MAX_SAMPLES), intent);
         }
 
         // Mini progress bar based on total samples across all streams
@@ -361,12 +382,9 @@ impl VisualizationScreen {
             || bus.samples_by_source.values().any(|buffer| !buffer.is_empty());
 
         if !snapshot.running {
-            ui.colored_label(Color32::from_rgb(244, 67, 54), "\u{25CF} Offline");
+            theme::status_chip(ui, "Offline", theme::Intent::Danger);
         } else if !has_buffered_samples {
-            let pulse = (self.pulse_phase.sin() * 0.5 + 0.5) as f32;
-            let alpha = (128.0 + pulse * 127.0) as u8;
-            let color = Color32::from_rgba_unmultiplied(255, 193, 7, alpha);
-            ui.colored_label(color, "\u{25CF} Connecting...");
+            theme::status_chip(ui, "Connecting...", theme::Intent::Warning);
             ui.ctx().request_repaint();
         } else {
             let pulse = ((current_time * 2.4).sin() * 0.5 + 0.5) as f32;
@@ -401,14 +419,14 @@ impl VisualizationScreen {
                 types.sort_unstable();
                 types.dedup();
                 format!(
-                    "\u{25CF} Live - {} stream{} ({})",
+                    "Live {} stream{} ({})",
                     types.len(),
                     if types.len() == 1 { "" } else { "s" },
                     types.join(", ")
                 )
             };
-
-            ui.colored_label(live_color, label);
+            let _ = live_color;
+            theme::status_chip(ui, &label, theme::Intent::Success);
             ui.ctx().request_repaint();
         }
     }
@@ -425,19 +443,21 @@ impl VisualizationScreen {
                         ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
                         ui.add_space(12.0);
 
-                        ui.label(
-                            RichText::new("Start the service to begin streaming data.")
-                                .size(14.0)
-                                .color(Color32::from_gray(150)),
-                        );
+                    theme::status_chip(ui, "Service stopped", theme::Intent::Warning);
+                    theme::status_chip(ui, "No live stream data", theme::Intent::Muted);
 
-                        ui.add_space(8.0);
+                    theme::status_chip(
+                        ui,
+                        "Start service to begin streaming",
+                        theme::Intent::Info,
+                    );
+                    theme::status_chip(
+                        ui,
+                        "Use Dashboard to start service",
+                        theme::Intent::Muted,
+                    );
 
-                        ui.label(
-                            RichText::new("Go to the Dashboard screen to start the service.")
-                                .size(12.0)
-                                .color(Color32::from_gray(120)),
-                        );
+                    ui.add_space(10.0);
                     });
             });
         });
@@ -452,17 +472,24 @@ impl VisualizationScreen {
             .inner_margin(egui::Margin::symmetric(8, 4));
 
         footer_frame.show(ui, |ui| {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let layout_name = self.layout.config.label();
                 let pane_count = self.layout.config.pane_count();
 
-                ui.label(
-                    RichText::new(format!(
-                        "Layout: {} | {} widgets active | Select widgets from dropdown menus",
-                        layout_name, pane_count
-                    ))
-                    .size(11.0)
-                    .color(Color32::from_gray(140)),
+                theme::status_chip(ui, &format!("Layout {}", layout_name), theme::Intent::Info);
+                theme::status_chip(
+                    ui,
+                    &format!("Widgets {}", pane_count),
+                    if pane_count > 0 {
+                        theme::Intent::Success
+                    } else {
+                        theme::Intent::Muted
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    "Select widgets from pane dropdowns",
+                    theme::Intent::Muted,
                 );
             });
         });

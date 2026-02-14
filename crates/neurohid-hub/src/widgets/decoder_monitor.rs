@@ -3,6 +3,7 @@
 //! Displays decoder performance metrics: action probability distribution,
 //! confidence gauge, decoded-actions-per-minute, and feature-vector summary.
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use neurohid_types::action::Action;
@@ -645,7 +646,7 @@ impl DecoderMonitorWidget {
                 }
             }
         } else {
-            ui.label(egui::RichText::new("No feature data yet").weak());
+            theme::status_chip(ui, "No feature data yet", theme::Intent::Warning);
         }
     }
 }

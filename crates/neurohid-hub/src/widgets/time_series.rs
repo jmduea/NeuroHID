@@ -437,11 +437,7 @@ impl TimeSeriesWidget {
                     .circle_filled(rect.center(), 4.0 + pulse * 2.0, dot_color);
 
                 ui.add_space(8.0);
-                ui.label(
-                    egui::RichText::new("Waiting for device connection...")
-                        .weak()
-                        .size(13.0),
-                );
+                theme::status_chip(ui, "Waiting for device connection", theme::Intent::Warning);
                 ui.label(
                     egui::RichText::new("Connect a BCI device to see live EEG data")
                         .weak()
@@ -759,7 +755,7 @@ impl Widget for TimeSeriesWidget {
 
         if enabled_count == 0 {
             ui.centered_and_justified(|ui| {
-                ui.label(egui::RichText::new("No channels enabled").weak());
+                theme::status_chip(ui, "No channels enabled", theme::Intent::Warning);
             });
             return;
         }

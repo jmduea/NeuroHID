@@ -61,6 +61,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Python Lab screen is re-enabled in Advanced mode sidebar routing and active central-panel dispatch
 - Hub numeric controls now route through shared `theme::drag_value` wrappers (replacing direct per-screen `egui::DragValue` usage in Settings, Stream Console, and visualization widgets)
 - Calibration crate interaction controls now use Armas button/progress primitives for consistent component usage across Hub and embedded calibration flows
+- Hub shell status bar now keeps Console/Logs toggles always available (running or stopped) with consistent button tones, and sidebar footer version styling now follows shared weak-text semantics
+- Python Lab now presents a chip-based execution summary (kernel/cell/queue/outcome counts) and clearer action hierarchy (primary run actions, secondary utilities, ghost destructive/cleanup) for faster notebook workflow scanning
+- Dashboard diagnostics and ML Bridge sections now use denser chip-based health summaries and aligned toggle/action rows, improving runtime/trainer status scanability without changing control behavior
+- Settings now includes an always-visible configuration summary (save state/runtime/UI/backend/notifications) plus lightweight category cues across collapsible sections to improve information architecture and reduce scan time
+- Devices screen now surfaces stream/signal/route health chips, replaces color-only state bullets with explicit status chips, and applies clearer primary vs ghost connect/disconnect action emphasis for faster connection triage
+- Profiles screen now includes a top-level profile health summary (count/calibration/active state), upgraded status badges via shared chips, and consistent primary/secondary/ghost action emphasis across create/activate/delete flows
+- Jupyter IDE screen now uses chip-based environment/session status plus clearer action hierarchy (primary prepare/start, secondary open, ghost stop/clear) for quicker managed-lab operations
+- Calibration entry now surfaces readiness chips (service/device/signal), explicit calibration-status chips for active profile context, and unified warning/status messaging before launch
+- Stream Console header/footer now uses explicit live/paused + buffer/match status chips and clearer action emphasis, improving readability during high-throughput monitoring
+- Calibration panel signal-check/welcome phases now include explicit progress visuals and clearer textual quality states (good/fair/low) to improve pre-game calibration guidance
+- Visualization toolbar now uses explicit status chips for rate/buffer/connection/staleness/elapsed context with reduced separator clutter, improving live situational scanability without changing pane/layout behavior
+- Dashboard now replaces remaining color-only warning/error/outcome lines with explicit status chips for runtime constraints, training state, bridge/trainer alerts, and candidate outcomes
+- Visualization layout manager now includes explicit docking guidance/status chips and warning-chip fallbacks for missing pane widget instances, improving pane-level affordance clarity
+- Final hub consistency sweep converted remaining high-visibility color-only statuses (Python Lab cell/bridge state, Devices quality labels, app init error banner) to shared status-chip semantics
+- Minor follow-up consistency pass converted residual inline warning/error labels in Settings, Profiles delete confirmation, and Dashboard task-error remediation to shared status chips
+- Focus widget headline now uses shared status-chip semantics for focus percentage state while retaining existing graph/trend color rendering
+- Devices empty-state guidance now uses warning chips (plus concise helper text), and Profiles calibration badges now map directly from calibration state to intent without color-based inference
+- Visualization offline welcome panel now exposes explicit service/data status chips, and Stream Metadata widget now includes discovered/connected summary chips plus warning-chip empty state
+- Widget empty states now consistently use warning/info status chips across Time Series, Spectrogram, Signal Quality, Action Preview, and Headplot when waiting for data/samples
+- Focus widget waiting state now also uses the shared warning chip, completing waiting-state consistency across core visualization widgets
+- Devices/Calibration/Profiles precondition and empty states now use the same chip-first warning pattern with concise helper text, improving startup-path consistency across screens
+- Additional widget consistency pass now applies status-chip empty states for Accelerometer, Decoder Monitor, Action Preview log states, Spectrogram row absence, and Time Series channel-disable states
+- FFT Plot and Band Power widgets now render collecting-data placeholders as warning status chips for consistency with other visualization empty states
+- Dashboard trainer-disconnect helper text and Stream Metadata source-id rows now use chip-based cues for more consistent operational scanning
+- Hub status bar stopped-state indicator now uses shared muted status-chip semantics instead of a custom color-blended badge
+- Dashboard Diagnostics and ML Trainer detail lines now render runtime/model/capability/protocol context as chips for denser operational scanning
+- Visualization welcome/footer guidance, docking instructions, and Stream Console per-stream summary now use shared chip cues for helper-text consistency
+- Widget-level helper/subheader metadata in Headplot, Spectrogram, Accelerometer, and Signal Quality now uses muted chips for cross-widget consistency
+- Wrap-heavy chip labels in Dashboard/Layout/Visualization/Stream Console were compacted for denser readability on smaller panel widths
+- Remaining screen precondition/empty-state helper lines (Devices/Calibration/Profiles) and dashboard task-error detail now use chip-first status semantics
+- Settings helper guidance (save tip, runtime mode notes, docking/Jupyter hints, LSL predicate example) now uses chip-first hint semantics for copy consistency
+- Jupyter IDE command metadata lines (bootstrap/jupyter/url) now render as compact chips for better scanability and consistency with the chip-first operational UI style
+- Stream Console footer now presents lines/rate/buffer/stream metrics as compact chips (with optional per-stream detail text) instead of a single dense status sentence
+- Dashboard diagnostics now renders trainer-snapshot unavailable state as a muted status chip plus concise helper text for message hierarchy consistency
+- Calibration wizard now includes explicit step count and progress bar (in addition to dot indicators) for clearer multi-step orientation during setup
+- Stream Metadata grid now uses explicit battery/connected status chips for faster row-level health scanning while preserving compact table density
 
 ### Removed
 

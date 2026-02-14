@@ -38,20 +38,71 @@ impl DevicesScreen {
 
         if !snap.running {
             theme::card_frame(ui).show(ui, |ui| {
-                    ui.label("Start the service to discover and connect to LSL streams.");
-                    ui.label(
-                        egui::RichText::new("Go to Dashboard to start the service.")
-                            .color(egui::Color32::from_rgb(128, 145, 167)),
+                    theme::status_chip(ui, "Service stopped", theme::Intent::Warning);
+                    theme::status_chip(
+                        ui,
+                        "Start service to discover/connect LSL streams",
+                        theme::Intent::Info,
+                    );
+                    theme::status_chip(
+                        ui,
+                        "Use Dashboard to start service",
+                        theme::Intent::Muted,
                     );
                 });
             return;
         }
 
+        let total_streams = snap.discovered_streams.len();
+        let connected_streams = snap
+            .discovered_streams
+            .iter()
+            .filter(|stream| stream.connected)
+            .count();
+        let route_total = snap.routed_eeg_streams
+            + snap.routed_motion_streams
+            + snap.routed_auxiliary_streams
+            + snap.routed_unknown_streams;
+
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                theme::status_chip(
+                    ui,
+                    &format!("Streams {}/{}", connected_streams, total_streams),
+                    if connected_streams > 0 {
+                        theme::Intent::Success
+                    } else {
+                        theme::Intent::Muted
+                    },
+                );
+                theme::status_chip(
+                    ui,
+                    &format!("Signal {:.0}%", snap.signal_quality * 100.0),
+                    if snap.signal_quality > 0.7 {
+                        theme::Intent::Success
+                    } else if snap.signal_quality > 0.5 {
+                        theme::Intent::Warning
+                    } else {
+                        theme::Intent::Danger
+                    },
+                );
+                if route_total > 0 {
+                    theme::status_chip(ui, &format!("Routes {}", route_total), theme::Intent::Info);
+                }
+                if snap.device_connected {
+                    theme::status_chip(ui, "Device linked", theme::Intent::Info);
+                } else {
+                    theme::status_chip(ui, "Device idle", theme::Intent::Muted);
+                }
+            });
+        });
+        ui.add_space(8.0);
+
         // Header with rescan button
         ui.horizontal(|ui| {
             ui.heading("Available Streams");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if action_button(ui, "Rescan", true) {
+                if theme::action_button(ui, "Rescan", true, theme::ButtonTone::Primary) {
                     service_manager.rescan_streams();
                 }
             });
@@ -60,16 +111,17 @@ impl DevicesScreen {
 
         if snap.discovered_streams.is_empty() {
             theme::card_frame(ui).show(ui, |ui| {
-                ui.label("No streams found.");
+                theme::status_chip(ui, "No streams found", theme::Intent::Warning);
                 ui.add_space(4.0);
-                ui.label(
-                    egui::RichText::new(
-                        "Ensure your device software is running and pushing to LSL.\n\
-                         Streams are rescanned automatically when none are connected.\n\
-                         Use the Rescan button to check manually.",
-                    )
-                    .small()
-                    .color(egui::Color32::YELLOW),
+                theme::status_chip(
+                    ui,
+                    "Ensure device software is pushing to LSL; use Rescan to check manually",
+                    theme::Intent::Warning,
+                );
+                theme::status_chip(
+                    ui,
+                    "Auto-rescan runs when none are connected",
+                    theme::Intent::Muted,
                 );
                 });
         } else {
@@ -103,11 +155,7 @@ impl DevicesScreen {
         }
 
         // Connected stream detail section
-        let connected_count = snap
-            .discovered_streams
-            .iter()
-            .filter(|s| s.connected)
-            .count();
+        let connected_count = connected_streams;
 
         if connected_count > 0 {
             ui.add_space(12.0);
@@ -117,17 +165,17 @@ impl DevicesScreen {
 
             // Overall quality bar
             let quality = snap.signal_quality;
-            let quality_color = if quality > 0.7 {
-                egui::Color32::GREEN
+            let quality_intent = if quality > 0.7 {
+                theme::Intent::Success
             } else if quality > 0.5 {
-                egui::Color32::YELLOW
+                theme::Intent::Warning
             } else {
-                egui::Color32::RED
+                theme::Intent::Danger
             };
 
             ui.horizontal(|ui| {
-                ui.colored_label(quality_color, format!("Overall: {:.0}%", quality * 100.0));
-                let _ = theme::progress_bar(ui, quality, 220.0);
+                theme::status_chip(ui, &format!("Overall {:.0}%", quality * 100.0), quality_intent);
+                let _ = theme::progress_bar(ui, quality, ui.available_width().min(260.0));
             });
 
             ui.add_space(4.0);
@@ -161,28 +209,35 @@ impl DevicesScreen {
         let battery = streams.iter().find_map(|s| s.battery_percent);
 
         // Device-level status indicator
-        let (status_color, status_text) = if all_connected {
-            (egui::Color32::GREEN, "All connected")
+        let status_text = if all_connected {
+            "All connected"
         } else if any_connected {
-            (egui::Color32::YELLOW, "Partially connected")
+            "Partially connected"
         } else {
-            (egui::Color32::GRAY, "Available")
+            "Available"
         };
 
         theme::card_frame(ui).show(ui, |ui| {
             // Device header — vertical card layout
             ui.horizontal(|ui| {
-                ui.colored_label(status_color, "\u{25CF}");
                 ui.label(egui::RichText::new(&device_label).strong().size(15.0));
+                let status_intent = if all_connected {
+                    theme::Intent::Success
+                } else if any_connected {
+                    theme::Intent::Warning
+                } else {
+                    theme::Intent::Muted
+                };
+                theme::status_chip(ui, status_text, status_intent);
                 if let Some(bat) = battery {
-                    let bat_color = if bat > 50 {
-                        egui::Color32::GREEN
+                    let battery_intent = if bat > 50 {
+                        theme::Intent::Success
                     } else if bat > 20 {
-                        egui::Color32::YELLOW
+                        theme::Intent::Warning
                     } else {
-                        egui::Color32::RED
+                        theme::Intent::Danger
                     };
-                    ui.colored_label(bat_color, format!("\u{1F50B} {}%", bat));
+                    theme::status_chip(ui, &format!("Battery {}%", bat), battery_intent);
                 }
             });
             ui.label(
@@ -198,12 +253,12 @@ impl DevicesScreen {
             // Connect All / Disconnect All buttons
             ui.horizontal(|ui| {
                 if all_connected {
-                    if action_button(ui, "Disconnect All", true) {
+                    if theme::action_button(ui, "Disconnect All", true, theme::ButtonTone::Ghost) {
                         let ids: Vec<&str> = streams.iter().map(|s| s.id.as_str()).collect();
                         service_manager.disconnect_streams(&ids);
                     }
                 } else {
-                    if action_button(ui, "Connect All", true) {
+                    if theme::action_button(ui, "Connect All", true, theme::ButtonTone::Primary) {
                         let ids: Vec<&str> = streams
                             .iter()
                             .filter(|s| !s.connected)
@@ -212,7 +267,7 @@ impl DevicesScreen {
                         service_manager.connect_streams(&ids);
                     }
                     if any_connected
-                        && action_button(ui, "Disconnect All", true) {
+                        && theme::action_button(ui, "Disconnect All", true, theme::ButtonTone::Ghost) {
                             let ids: Vec<&str> = streams
                                 .iter()
                                 .filter(|s| s.connected)
@@ -253,16 +308,16 @@ impl DevicesScreen {
         stream: &DiscoveredStream,
         service_manager: &mut ServiceManager,
     ) {
-        let (color, status) = if stream.connected {
-            (egui::Color32::GREEN, "Connected")
+        let (status, status_intent) = if stream.connected {
+            ("Connected", theme::Intent::Success)
         } else {
-            (egui::Color32::GRAY, "Available")
+            ("Available", theme::Intent::Muted)
         };
 
         ui.horizontal(|ui| {
             ui.add_space(16.0); // indent
-            ui.colored_label(color, "\u{25CB}"); // hollow bullet for child
             ui.label(egui::RichText::new(&stream.name).strong());
+            theme::status_chip(ui, status, status_intent);
         });
         ui.horizontal(|ui| {
             ui.add_space(32.0); // indent metadata
@@ -279,15 +334,14 @@ impl DevicesScreen {
                 .small()
                 .color(egui::Color32::LIGHT_GRAY),
             );
-            ui.label(egui::RichText::new(status).small().color(color));
         });
         ui.horizontal(|ui| {
             ui.add_space(32.0); // indent button
             if stream.connected {
-                if action_button(ui, "Disconnect", true) {
+                if theme::action_button(ui, "Disconnect", true, theme::ButtonTone::Ghost) {
                     service_manager.disconnect_stream(&stream.id);
                 }
-            } else if action_button(ui, "Connect", true) {
+            } else if theme::action_button(ui, "Connect", true, theme::ButtonTone::Primary) {
                 service_manager.connect_stream(&stream.id);
             }
         });
@@ -304,15 +358,15 @@ impl DevicesScreen {
                                 .color(egui::Color32::GRAY),
                         );
                         for (i, &q) in qualities.iter().enumerate() {
-                            let q_color = if q > 0.7 {
-                                egui::Color32::GREEN
+                            let q_intent = if q > 0.7 {
+                                theme::Intent::Success
                             } else if q > 0.4 {
-                                egui::Color32::YELLOW
+                                theme::Intent::Warning
                             } else {
-                                egui::Color32::RED
+                                theme::Intent::Danger
                             };
                             let _ = theme::progress_bar(ui, q, ui.available_width());
-                            ui.colored_label(q_color, format!("Ch{}: {:.0}%", i, q * 100.0));
+                            theme::status_chip(ui, &format!("Ch{} {:.0}%", i, q * 100.0), q_intent);
                         }
                     });
                 });
@@ -327,23 +381,23 @@ impl DevicesScreen {
     ) {
         theme::card_frame(ui).show(ui, |ui| {
             // Status + stream name + battery
-            let (color, status) = if stream.connected {
-                (egui::Color32::GREEN, "Connected")
+            let (status, status_intent) = if stream.connected {
+                ("Connected", theme::Intent::Success)
             } else {
-                (egui::Color32::GRAY, "Available")
+                ("Available", theme::Intent::Muted)
             };
             ui.horizontal(|ui| {
-                ui.colored_label(color, "\u{25CF}"); // bullet
                 ui.label(egui::RichText::new(&stream.name).strong());
+                theme::status_chip(ui, status, status_intent);
                 if let Some(bat) = stream.battery_percent {
-                    let bat_color = if bat > 50 {
-                        egui::Color32::GREEN
+                    let battery_intent = if bat > 50 {
+                        theme::Intent::Success
                     } else if bat > 20 {
-                        egui::Color32::YELLOW
+                        theme::Intent::Warning
                     } else {
-                        egui::Color32::RED
+                        theme::Intent::Danger
                     };
-                    ui.colored_label(bat_color, format!("{}%", bat));
+                    theme::status_chip(ui, &format!("Battery {}%", bat), battery_intent);
                 }
             });
             // Stream metadata
@@ -361,15 +415,14 @@ impl DevicesScreen {
                     .small()
                     .color(egui::Color32::LIGHT_GRAY),
                 );
-                ui.label(egui::RichText::new(status).small().color(color));
             });
             ui.add_space(4.0);
             // Connect/Disconnect button
             if stream.connected {
-                if action_button(ui, "Disconnect", true) {
+                if theme::action_button(ui, "Disconnect", true, theme::ButtonTone::Ghost) {
                     service_manager.disconnect_stream(&stream.id);
                 }
-            } else if action_button(ui, "Connect", true) {
+            } else if theme::action_button(ui, "Connect", true, theme::ButtonTone::Primary) {
                 service_manager.connect_stream(&stream.id);
             }
 
@@ -383,23 +436,19 @@ impl DevicesScreen {
                             .color(egui::Color32::GRAY),
                     );
                     for (i, &q) in qualities.iter().enumerate() {
-                        let q_color = if q > 0.7 {
-                            egui::Color32::GREEN
+                        let q_intent = if q > 0.7 {
+                            theme::Intent::Success
                         } else if q > 0.4 {
-                            egui::Color32::YELLOW
+                            theme::Intent::Warning
                         } else {
-                            egui::Color32::RED
+                            theme::Intent::Danger
                         };
                         let _ = theme::progress_bar(ui, q, ui.available_width());
-                        ui.colored_label(q_color, format!("Ch{}: {:.0}%", i, q * 100.0));
+                        theme::status_chip(ui, &format!("Ch{} {:.0}%", i, q * 100.0), q_intent);
                     }
                 }
             });
     }
-}
-
-fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
 }
 
 /// Derive a human-friendly device label from the stream names in a group.

@@ -8,6 +8,7 @@ Calibration games and first-run wizard for NeuroHID.
 - Labeled EEG data collection for decoder training
 - First-run wizard for device setup and profile creation
 - Real-time visual feedback during calibration sessions
+- Welcome/signal-check phases include progress visuals and explicit quality-state messaging (good/fair/low) before game launch
 
 ## Usage
 

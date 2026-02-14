@@ -86,48 +86,47 @@ impl JupyterIdeScreen {
 
         theme::page_header(ui, "Jupyter IDE", "Managed JupyterLab for RL/ML experimentation");
 
-        let bootstrap_text = match self.bootstrap_state {
-            BootstrapState::Idle => "idle",
-            BootstrapState::Running => "preparing",
-            BootstrapState::Ready => "ready",
-            BootstrapState::Failed => "failed",
-        };
-        let bootstrap_color = match self.bootstrap_state {
-            BootstrapState::Ready => egui::Color32::GREEN,
-            BootstrapState::Running => egui::Color32::YELLOW,
-            BootstrapState::Failed => egui::Color32::RED,
-            BootstrapState::Idle => egui::Color32::GRAY,
-        };
-
         let jupyter_running = self
             .jupyter_process
             .as_mut()
             .is_some_and(|child| child.try_wait().ok().flatten().is_none());
 
-        ui.horizontal(|ui| {
-            ui.colored_label(bootstrap_color, "●");
-            ui.label(format!("Environment: {bootstrap_text}"));
+        let env_text = match self.bootstrap_state {
+            BootstrapState::Idle => "Environment idle",
+            BootstrapState::Running => "Environment preparing",
+            BootstrapState::Ready => "Environment ready",
+            BootstrapState::Failed => "Environment failed",
+        };
+        let env_intent = match self.bootstrap_state {
+            BootstrapState::Ready => theme::Intent::Success,
+            BootstrapState::Running => theme::Intent::Warning,
+            BootstrapState::Failed => theme::Intent::Danger,
+            BootstrapState::Idle => theme::Intent::Muted,
+        };
 
-            ui.separator();
+        let jupyter_text = if jupyter_running && self.jupyter_ready {
+            "Jupyter ready"
+        } else if jupyter_running {
+            "Jupyter starting"
+        } else {
+            "Jupyter stopped"
+        };
+        let jupyter_intent = if jupyter_running && self.jupyter_ready {
+            theme::Intent::Success
+        } else if jupyter_running {
+            theme::Intent::Warning
+        } else {
+            theme::Intent::Muted
+        };
 
-            let jupyter_color = if jupyter_running && self.jupyter_ready {
-                egui::Color32::GREEN
-            } else if jupyter_running {
-                egui::Color32::YELLOW
-            } else {
-                egui::Color32::GRAY
-            };
-            ui.colored_label(jupyter_color, "●");
-            ui.label(format!(
-                "Jupyter: {}",
-                if jupyter_running && self.jupyter_ready {
-                    "ready"
-                } else if jupyter_running {
-                    "starting"
-                } else {
-                    "stopped"
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+                theme::status_chip(ui, env_text, env_intent);
+                theme::status_chip(ui, jupyter_text, jupyter_intent);
+                if let Some(session_url) = &self.jupyter_session_url {
+                    theme::status_chip(ui, &format!("Session {}", session_url), theme::Intent::Info);
                 }
-            ));
+            });
         });
 
         ui.add_space(6.0);
@@ -135,7 +134,7 @@ impl JupyterIdeScreen {
         let bootstrap_running = self.bootstrap_task.is_pending();
 
         ui.horizontal(|ui| {
-            if action_button(ui, "Prepare Environment", !bootstrap_running) {
+            if theme::action_button(ui, "Prepare Environment", !bootstrap_running, theme::ButtonTone::Primary) {
                 self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
             }
 
@@ -145,15 +144,15 @@ impl JupyterIdeScreen {
                     self.bootstrap_state,
                     BootstrapState::Ready | BootstrapState::Idle
                 );
-            if action_button(ui, "Start Jupyter", can_start_jupyter) {
+            if theme::action_button(ui, "Start Jupyter", can_start_jupyter, theme::ButtonTone::Primary) {
                 self.start_jupyter(&ui_cfg.jupyter_command);
             }
 
-            if action_button(ui, "Stop Jupyter", jupyter_running) {
+            if theme::action_button(ui, "Stop Jupyter", jupyter_running, theme::ButtonTone::Ghost) {
                 self.stop_jupyter();
             }
 
-            if action_button(ui, "Open in Browser", jupyter_running) {
+            if theme::action_button(ui, "Open in Browser", jupyter_running, theme::ButtonTone::Secondary) {
                 let browser_url = self
                     .jupyter_session_url
                     .as_deref()
@@ -164,26 +163,28 @@ impl JupyterIdeScreen {
                 }
             }
 
-            if action_button(ui, "Clear Log", true) {
+            if theme::action_button(ui, "Clear Log", true, theme::ButtonTone::Ghost) {
                 self.log_output.clear();
             }
         });
 
-        ui.label(
-            egui::RichText::new(format!("Bootstrap cmd: {}", ui_cfg.jupyter_bootstrap_command))
-                .small()
-                .weak(),
-        );
-        ui.label(
-            egui::RichText::new(format!("Jupyter cmd: {}", ui_cfg.jupyter_command))
-                .small()
-                .weak(),
-        );
-        ui.label(
-            egui::RichText::new(format!("Jupyter url: {}", ui_cfg.jupyter_url))
-                .small()
-                .weak(),
-        );
+        ui.horizontal_wrapped(|ui| {
+            theme::status_chip(
+                ui,
+                &format!("Bootstrap cmd {}", ui_cfg.jupyter_bootstrap_command),
+                theme::Intent::Muted,
+            );
+            theme::status_chip(
+                ui,
+                &format!("Jupyter cmd {}", ui_cfg.jupyter_command),
+                theme::Intent::Muted,
+            );
+            theme::status_chip(
+                ui,
+                &format!("URL {}", ui_cfg.jupyter_url),
+                theme::Intent::Info,
+            );
+        });
 
         ui.separator();
         theme::card_frame(ui).show(ui, |ui| {
@@ -192,11 +193,10 @@ impl JupyterIdeScreen {
                     .id_salt("jupyter_ide_log_scroll")
                     .max_height(260.0)
                     .show(ui, |ui| {
-                        let _ = theme::textarea_input(
+                        let _ = theme::textarea_readonly(
                             ui,
                             "jupyter_ide_log_output",
                             &mut self.log_output,
-                            "",
                             12,
                             f32::INFINITY,
                         );
@@ -426,10 +426,6 @@ impl JupyterIdeScreen {
             }
         }
     }
-}
-
-fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool) -> bool {
-    theme::action_button(ui, label, enabled, theme::ButtonTone::Secondary)
 }
 
 impl Drop for JupyterIdeScreen {

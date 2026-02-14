@@ -365,11 +365,7 @@ impl HubApp {
                 }
 
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                    ui.label(
-                        egui::RichText::new("v0.1.0")
-                            .small()
-                            .color(egui::Color32::from_rgb(108, 121, 140)),
-                    );
+                    ui.label(egui::RichText::new("v0.1.0").small().weak());
                 });
             });
     }
@@ -380,83 +376,8 @@ impl HubApp {
             .show(ctx, |ui| {
                 ui.horizontal_wrapped(|ui| {
                     let snap = &self.state.service_snapshot;
-                    let pulse = (ctx.input(|i| i.time * 2.8).sin() * 0.5 + 0.5) as f32;
 
-                    if snap.running {
-                        if self.current_screen == Screen::Dashboard {
-                            let total_streams = snap.discovered_streams.len();
-                            let connected_streams = snap
-                                .discovered_streams
-                                .iter()
-                                .filter(|stream| stream.connected)
-                                .count();
-                            let routed_total = snap.routed_eeg_streams
-                                + snap.routed_motion_streams
-                                + snap.routed_auxiliary_streams
-                                + snap.routed_unknown_streams;
-
-                            let (service_color, service_text) = if snap.running {
-                                (egui::Color32::GREEN, "Service: running")
-                            } else {
-                                (egui::Color32::GRAY, "Service: stopped")
-                            };
-                            let (mode_color, mode_text) = match snap.runtime_mode_state {
-                                RuntimeModeState::Full => (egui::Color32::GREEN, "Mode: full"),
-                                RuntimeModeState::Fallback => {
-                                    (egui::Color32::YELLOW, "Mode: fallback")
-                                }
-                                RuntimeModeState::Degraded => {
-                                    (egui::Color32::RED, "Mode: degraded")
-                                }
-                            };
-
-                            ui.colored_label(service_color, "●");
-                            ui.label(service_text);
-                            ui.separator();
-                            ui.colored_label(mode_color, "●");
-                            ui.label(mode_text);
-                            ui.separator();
-                            ui.label(format!("Signal: {:.0}%", snap.signal_quality * 100.0));
-                            ui.separator();
-                            ui.label(format!("Devices: {}/{}", connected_streams, total_streams));
-
-                            if routed_total > 0 {
-                                ui.separator();
-                                ui.label("Routes:");
-                                ui.colored_label(egui::Color32::from_rgb(80, 200, 120), "EEG");
-                                ui.label(snap.routed_eeg_streams.to_string());
-                                ui.colored_label(egui::Color32::from_rgb(80, 170, 255), "Motion");
-                                ui.label(snap.routed_motion_streams.to_string());
-                                ui.colored_label(egui::Color32::from_rgb(255, 180, 70), "Aux");
-                                ui.label(snap.routed_auxiliary_streams.to_string());
-                                ui.colored_label(egui::Color32::from_rgb(190, 140, 255), "Unknown");
-                                ui.label(snap.routed_unknown_streams.to_string());
-                            }
-
-                            ui.separator();
-                            ui.label(format!("Actions: {}", snap.actions_emitted));
-                            ui.separator();
-                            ui.label(format!("Errors: {}", snap.errors_detected));
-                            ui.separator();
-                            let mins = snap.uptime_secs / 60;
-                            let secs = snap.uptime_secs % 60;
-                            ui.label(format!("Uptime: {}:{:02}", mins, secs));
-                            ui.separator();
-                        }
-
-                        let signal_color = blend_color(
-                            egui::Color32::from_rgb(97, 193, 99),
-                            egui::Color32::from_rgb(149, 243, 144),
-                            pulse,
-                        );
-                        ui.colored_label(signal_color, format!("Signal {:.0}%", snap.signal_quality * 100.0));
-
-                        if snap.calibration_mode {
-                            ui.separator();
-                            ui.colored_label(egui::Color32::from_rgb(248, 205, 95), "CALIBRATING");
-                        }
-
-                        ui.separator();
+                    let mut render_surface_controls = |ui: &mut egui::Ui| {
                         let console_label = if self.stream_console.visible {
                             "Console [x]"
                         } else {
@@ -476,7 +397,6 @@ impl HubApp {
                             self.stream_console.toggle();
                         }
 
-                        ui.separator();
                         let logs_label = if self.show_log_window {
                             "Logs [x]"
                         } else {
@@ -495,19 +415,75 @@ impl HubApp {
                         if logs_clicked {
                             self.show_log_window = !self.show_log_window;
                         }
+                    };
+
+                    if snap.running {
+                        let mode_label = match snap.runtime_mode_state {
+                            RuntimeModeState::Full => "Mode: full",
+                            RuntimeModeState::Fallback => "Mode: fallback",
+                            RuntimeModeState::Degraded => "Mode: degraded",
+                        };
+                        let mode_intent = match snap.runtime_mode_state {
+                            RuntimeModeState::Full => theme::Intent::Success,
+                            RuntimeModeState::Fallback => theme::Intent::Warning,
+                            RuntimeModeState::Degraded => theme::Intent::Danger,
+                        };
+                        theme::status_chip(ui, mode_label, mode_intent);
+
+                        let signal_intent = if snap.signal_quality >= 0.7 {
+                            theme::Intent::Success
+                        } else if snap.signal_quality >= 0.5 {
+                            theme::Intent::Warning
+                        } else {
+                            theme::Intent::Danger
+                        };
+                        theme::status_chip(
+                            ui,
+                            &format!("Signal {:.0}%", snap.signal_quality * 100.0),
+                            signal_intent,
+                        );
+
+                        let connected_streams = snap
+                            .discovered_streams
+                            .iter()
+                            .filter(|stream| stream.connected)
+                            .count();
+                        let total_streams = snap.discovered_streams.len();
+                        theme::status_chip(
+                            ui,
+                            &format!("Devices {}/{}", connected_streams, total_streams),
+                            if connected_streams > 0 {
+                                theme::Intent::Info
+                            } else {
+                                theme::Intent::Muted
+                            },
+                        );
+
+                        let mins = snap.uptime_secs / 60;
+                        let secs = snap.uptime_secs % 60;
+                        theme::status_chip(
+                            ui,
+                            &format!("Uptime {}:{:02}", mins, secs),
+                            theme::Intent::Muted,
+                        );
+
+                        if snap.calibration_mode {
+                            theme::status_chip(ui, "Calibrating", theme::Intent::Warning);
+                        }
 
                         ctx.request_repaint();
                     } else if let Some((task, _)) = &snap.task_error {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(255, 95, 95),
-                            format!("Service stopped: {} task failed", task),
+                        theme::status_chip(
+                            ui,
+                            &format!("Service stopped: {} task failed", task),
+                            theme::Intent::Danger,
                         );
                     } else {
-                        ui.colored_label(
-                            egui::Color32::from_rgb(120, 130, 146),
-                            "Service not running",
-                        );
+                        theme::status_chip(ui, "Service not running", theme::Intent::Muted);
                     }
+
+                    ui.separator();
+                    render_surface_controls(ui);
                 });
             });
     }
@@ -678,10 +654,7 @@ impl eframe::App for HubApp {
             .show(ctx, |ui| {
             // Show init error if any
             if let Some(err) = &self.state.init_error {
-                ui.colored_label(
-                    egui::Color32::from_rgb(255, 95, 95),
-                    format!("Init error: {}", err),
-                );
+                theme::status_chip(ui, &format!("Init error: {}", err), theme::Intent::Danger);
                 ui.separator();
             }
 
@@ -746,19 +719,6 @@ fn screen_glyph(screen: Screen) -> &'static str {
         Screen::PythonLab => "⌬",
         Screen::Settings => "⚙",
     }
-}
-
-fn blend_color(from: egui::Color32, to: egui::Color32, t: f32) -> egui::Color32 {
-    let t = t.clamp(0.0, 1.0);
-    let from = egui::Rgba::from(from);
-    let to = egui::Rgba::from(to);
-
-    let r = from.r() + (to.r() - from.r()) * t;
-    let g = from.g() + (to.g() - from.g()) * t;
-    let b = from.b() + (to.b() - from.b()) * t;
-    let a = from.a() + (to.a() - from.a()) * t;
-
-    egui::Rgba::from_rgba_premultiplied(r, g, b, a).into()
 }
 
 impl Drop for HubApp {
