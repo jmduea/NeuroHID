@@ -17,17 +17,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v4
-      - name: Install Python dependencies
-        run: uv sync --directory python --extra dev
-      - name: Ruff
-        run: uv run --project python ruff check python/src python/tests
-      - name: Black
-        run: uv run --project python black --check python/src python/tests
-      - name: MyPy
-        run: uv run --project python mypy python/src
-      - name: Pytest
-        run: uv run --project python pytest python/tests -q
+      - name: Run canonical Python quality gates
+        shell: pwsh
+        run: ./.github/scripts/run-agent-ready-tasks.ps1 -SkipRust -WithPython

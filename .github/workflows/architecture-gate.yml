@@ -9,6 +9,8 @@ on:
       - "crates/neurohid-core/**"
       - "docs/SPECIFICATION.md"
       - "docs/runtime-ml-protocol-v2.md"
+      - "docs/architecture/index.md"
+      - ".github/scripts/generate-architecture-index.ps1"
       - ".github/workflows/architecture-gate.yml"
 
 jobs:
@@ -34,3 +36,11 @@ jobs:
           fi
 
           echo "ADR reference detected."
+      - name: Regenerate architecture index
+        shell: pwsh
+        run: ./.github/scripts/generate-architecture-index.ps1
+      - name: Verify architecture index committed
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff --exit-code -- docs/architecture/index.md

@@ -38,3 +38,11 @@ jobs:
       - name: Validate documentation contracts
         shell: pwsh
         run: ./.github/hooks/validate-doc-contracts.ps1
+      - name: Run harness smoke report
+        shell: pwsh
+        run: ./.github/hooks/run-harness-smoke.ps1
+      - name: Upload harness smoke artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: harness-smoke-report
+          path: .github/hooks/harness-smoke-report.md

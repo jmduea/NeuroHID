@@ -11,8 +11,53 @@ env:
   RUST_BACKTRACE: 1
 
 jobs:
+  determine-impact:
+    name: Determine Impact
+    runs-on: ubuntu-latest
+    outputs:
+      rust: ${{ steps.impact.outputs.rust }}
+      python: ${{ steps.impact.outputs.python }}
+      docs: ${{ steps.impact.outputs.docs }}
+      protocol: ${{ steps.impact.outputs.protocol }}
+      architecture: ${{ steps.impact.outputs.architecture }}
+      unsafe: ${{ steps.impact.outputs.unsafe }}
+      automation: ${{ steps.impact.outputs.automation }}
+      required_checks: ${{ steps.impact.outputs.required_checks }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Classify change impact
+        id: impact
+        shell: pwsh
+        run: ./.github/scripts/classify-impact.ps1 -OutputJsonPath .github/automation/impact-output.json
+      - name: Upload impact artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: impact-output
+          path: .github/automation/impact-output.json
+
+  focused-gates:
+    name: Focused Gates
+    runs-on: ubuntu-latest
+    needs: determine-impact
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Run canonical focused gates
+        shell: pwsh
+        run: |
+          $args = @('-File', './.github/scripts/run-agent-ready-tasks.ps1', '-RustScope', 'focused')
+          if ('${{ needs.determine-impact.outputs.python }}' -eq 'true') { $args += '-WithPython' }
+          if ('${{ needs.determine-impact.outputs.docs }}' -eq 'true') { $args += '-WithDocs' }
+          if ('${{ needs.determine-impact.outputs.protocol }}' -eq 'true') { $args += '-WithProtocol' }
+          if ('${{ needs.determine-impact.outputs.unsafe }}' -eq 'true') { $args += '-WithUnsafe' }
+          & pwsh @args
+
   test:
     name: Test
+    needs: determine-impact
+    if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -32,6 +77,8 @@ jobs:
 
   clippy:
     name: Clippy
+    needs: determine-impact
+    if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -42,10 +89,12 @@ jobs:
       - name: Install LSL
         run: sudo apt-get update && sudo apt-get install -y liblsl-dev
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings
+        run: cargo clippy --workspace -- -D warnings -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
 
   fmt:
     name: Format
+    needs: determine-impact
+    if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -57,6 +106,8 @@ jobs:
 
   docs:
     name: Documentation
+    needs: determine-impact
+    if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -71,6 +122,8 @@ jobs:
 
   python-tests:
     name: Python Tests
+    needs: determine-impact
+    if: needs.determine-impact.outputs.python == 'true' || github.event_name == 'push'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -82,3 +135,27 @@ jobs:
         run: uv sync --directory python --extra dev
       - name: Run Python tests
         run: uv run --project python pytest python/tests -q
+
+  unsafe-compliance:
+    name: Unsafe Compliance
+    needs: determine-impact
+    if: needs.determine-impact.outputs.unsafe == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate unsafe compliance
+        shell: pwsh
+        run: ./.github/scripts/check-unsafe-compliance.ps1
+
+  protocol-contracts:
+    name: Protocol Contracts
+    needs: determine-impact
+    if: needs.determine-impact.outputs.protocol == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Verify protocol contracts
+        shell: pwsh
+        run: ./.github/scripts/verify-protocol-contracts.ps1
