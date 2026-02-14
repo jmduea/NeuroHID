@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
+- Architecture index automation via `.github/scripts/generate-architecture-index.ps1` with tracked output at `docs/architecture/index.md`
+- CI enhancements for impact-aware job routing, focused gate execution, unsafe compliance, protocol contract validation, and harness smoke report artifact publishing
+- Executable protocol-documentation contract test in `neurohid-types` (`ipc_v2` tests)
 - SDK facade library (`neurohid-sdk`) with feature-gated re-exports
 - LSL (Lab Streaming Layer) integration with feature-gating
 - Headless service binary (`neurohid-service`)

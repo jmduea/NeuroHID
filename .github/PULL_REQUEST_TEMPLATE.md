@@ -12,9 +12,11 @@
 
 - [ ] I updated documentation impacted by this change.
 - [ ] I updated `CHANGELOG.md` when behavior or public surface changed.
+- [ ] I reviewed impact classification outputs (rust/python/docs/protocol/unsafe/architecture) and covered required gates.
 - [ ] I evaluated whether an ADR is required.
 - [ ] If required, I linked an ADR in `docs/adr/`.
 - [ ] I ran a docs-freshness pass and resolved blockers.
+- [ ] I refreshed `docs/architecture/index.md` when architecture-gated surfaces changed.
 
 ## Testing / TDD
 
@@ -22,6 +24,8 @@
 - [ ] I described the failing test intent that guided implementation.
 - [ ] Rust checks pass for affected crates.
 - [ ] Python checks pass for affected modules.
+- [ ] Protocol contract checks pass when protocol/runtime types changed.
+- [ ] Unsafe compliance checks pass when unsafe code paths changed.
 
 ## Risk and Rollout
 

@@ -32,6 +32,11 @@ pedantic = "warn"
 - Stop only for clarification, approval-gated risky/destructive actions, or true no-work-left state.
 - Validate incrementally (smallest relevant checks first), then broader checks before handoff.
 - Default workflow phases are defined in `.github/agents/_shared/multi-agent-phase-workflow.md`.
+- Classify changed-file impact with `.github/scripts/classify-impact.ps1` before selecting gates.
+- Use `.github/automation/scope-map.json` as the source of truth for path-to-check/docs routing.
+- Prefer canonical local/CI runner `.github/scripts/run-agent-ready-tasks.ps1`.
+- Keep architecture index current via `.github/scripts/generate-architecture-index.ps1`.
+- Use `.github/scripts/check-docs-freshness.ps1`, `.github/scripts/check-unsafe-compliance.ps1`, and `.github/scripts/verify-protocol-contracts.ps1` as required policy gates.
 
 Preferred validation order in this repo:
 

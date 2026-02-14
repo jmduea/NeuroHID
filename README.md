@@ -285,6 +285,26 @@ cargo run -p neurohid --bin neurohid-validate -- boot-matrix --settle-secs 8
 Use `--service-bin <path>` (or `NEUROHID_SERVICE_BIN`) when the validation binary cannot auto-locate
 `neurohid-service`.
 
+### Automation Harness Commands
+
+Run canonical local quality gates (same script family used by CI):
+
+```bash
+# Focused Rust + docs/protocol/unsafe policy checks
+pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -RustScope focused -WithDocs -WithProtocol -WithUnsafe
+
+# Python-only quality gates
+pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -SkipRust -WithPython
+
+# Generate architecture index used by architecture gate
+pwsh -File ./.github/scripts/generate-architecture-index.ps1
+```
+
+Impact-aware routing inputs for automation are defined in:
+
+- `.github/scripts/classify-impact.ps1`
+- `.github/automation/scope-map.json`
+
 ## Development Roadmap
 
 The current implementation roadmap is tracked in repository issues and milestones.

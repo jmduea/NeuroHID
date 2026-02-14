@@ -257,9 +257,10 @@ impl From<DecisionEventV2> for TrainingEpisode {
 
 #[cfg(test)]
 mod tests {
+    use serde_json::to_string;
+
     use super::{
-        DecisionEventV2, HelloV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2,
-        RUNTIME_ML_PROTOCOL_V2,
+        DecisionEventV2, HelloV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2, RUNTIME_ML_PROTOCOL_V2,
     };
 
     #[test]
@@ -308,5 +309,40 @@ mod tests {
         let decoded: DecisionEventV2 = envelope.decode_payload().expect("decode payload");
         assert_eq!(decoded.decision_id, "dec_1");
         assert_eq!(decoded.action.decision_id.as_deref(), Some("dec_1"));
+    }
+
+    #[test]
+    fn runtime_ml_protocol_docs_cover_current_contract() {
+        let doc = include_str!("../../../docs/runtime-ml-protocol-v2.md").to_lowercase();
+        assert!(doc.contains("\"v\": 2"));
+
+        let message_kinds = [
+            RuntimeMlKindV2::Hello,
+            RuntimeMlKindV2::SessionBoundary,
+            RuntimeMlKindV2::DecisionEvent,
+            RuntimeMlKindV2::ErrpWindow,
+            RuntimeMlKindV2::RuntimeTelemetry,
+            RuntimeMlKindV2::Ping,
+            RuntimeMlKindV2::Shutdown,
+            RuntimeMlKindV2::ErrpResult,
+            RuntimeMlKindV2::TrainerStatus,
+            RuntimeMlKindV2::CandidateModelReady,
+            RuntimeMlKindV2::Pong,
+            RuntimeMlKindV2::Ack,
+            RuntimeMlKindV2::Error,
+        ];
+
+        for kind in message_kinds {
+            let token = to_string(&kind)
+                .expect("serialize kind")
+                .trim_matches('"')
+                .to_string();
+            assert!(
+                doc.contains(&token),
+                "protocol doc is missing message kind token: {token}"
+            );
+        }
+
+        assert_eq!(RUNTIME_ML_PROTOCOL_V2, 2);
     }
 }

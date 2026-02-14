@@ -2,6 +2,19 @@
 
 Use these prompts directly in chat to trigger the current NeuroHID automation path.
 
+## 0) Canonical Local/CI Entry Points
+
+- Impact classifier: `.github/scripts/classify-impact.ps1`
+- Scope map: `.github/automation/scope-map.json`
+- Canonical quality runner: `.github/scripts/run-agent-ready-tasks.ps1`
+- Docs freshness validator: `.github/scripts/check-docs-freshness.ps1`
+- Unsafe validator: `.github/scripts/check-unsafe-compliance.ps1`
+- Protocol validator: `.github/scripts/verify-protocol-contracts.ps1`
+
+Recommended local command:
+
+- `pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -RustScope focused -WithDocs -WithProtocol -WithUnsafe`
+
 ## 1) Default Multi-Agent Coordination (Always On)
 
 Canonical phase workflow:
