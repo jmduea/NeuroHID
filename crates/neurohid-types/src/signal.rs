@@ -5,6 +5,7 @@
 
 use crate::Timestamp;
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 /// Unique identifier for an EEG channel.
 /// We use a string-based ID to support different naming conventions
@@ -255,4 +256,216 @@ pub enum FeatureType {
     Hjorth,
     /// All of the above combined
     Full,
+}
+
+/// Potential types for an XDF stream.
+///
+/// Reference: XDF stream content type recommendations.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum XdfStreamType {
+    Eeg,
+    Markers,
+    Gaze,
+    Mocap,
+    Nirs,
+    Audio,
+    VideoRaw,
+    VideoCompressed,
+    Quality,
+    Performance,
+    Device,
+}
+
+impl XdfStreamType {
+    #[must_use]
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "eeg" => Some(Self::Eeg),
+            "markers" => Some(Self::Markers),
+            "gaze" => Some(Self::Gaze),
+            "mocap" => Some(Self::Mocap),
+            "nirs" => Some(Self::Nirs),
+            "audio" => Some(Self::Audio),
+            "video_raw" | "videoraw" => Some(Self::VideoRaw),
+            "video_compressed" | "videocompressed" => Some(Self::VideoCompressed),
+            "quality" => Some(Self::Quality),
+            "performance" => Some(Self::Performance),
+            "device" => Some(Self::Device),
+            _ => None,
+        }
+    }
+}
+
+/// A lossless XML-like metadata node used for raw XDF/LSL header capture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct XdfMetaNode {
+    pub name: String,
+    pub value: Option<String>,
+    pub children: Vec<XdfMetaNode>,
+}
+
+/// Flattened lookup index derived from an [`XdfMetaNode`] tree.
+pub type XdfPathIndex = BTreeMap<String, Vec<String>>;
+
+/// Parsed convenience fields from the `<info>` stream header.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct XdfStreamHeaderCore {
+    pub name: Option<String>,
+    pub stream_type_raw: Option<String>,
+    pub stream_type: Option<XdfStreamType>,
+    pub channel_count: Option<i32>,
+    pub nominal_srate: Option<f64>,
+    pub channel_format: Option<String>,
+    pub source_id: Option<String>,
+    pub version: Option<i32>,
+    pub created_at: Option<f64>,
+    pub uid: Option<String>,
+    pub session_id: Option<String>,
+    pub hostname: Option<String>,
+}
+
+/// Raw XDF stream header payload with both canonical tree and derived lookup.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct XdfStreamHeaderRaw {
+    pub info: XdfMetaNode,
+    pub core: XdfStreamHeaderCore,
+    pub path_index: XdfPathIndex,
+}
+
+/// Build a flattened path index from a raw XDF metadata tree.
+#[must_use]
+pub fn build_xdf_path_index(info: &XdfMetaNode) -> XdfPathIndex {
+    let mut out = BTreeMap::new();
+    index_node(info, &info.name, &mut out);
+    out
+}
+
+fn index_node(node: &XdfMetaNode, path: &str, out: &mut XdfPathIndex) {
+    if let Some(value) = &node.value {
+        out.entry(path.to_string()).or_default().push(value.clone());
+    }
+
+    let mut total_by_name: BTreeMap<&str, usize> = BTreeMap::new();
+    for child in &node.children {
+        *total_by_name.entry(child.name.as_str()).or_insert(0) += 1;
+    }
+
+    let mut seen_by_name: BTreeMap<&str, usize> = BTreeMap::new();
+    for child in &node.children {
+        let seen = seen_by_name.entry(child.name.as_str()).or_insert(0);
+        let total = total_by_name.get(child.name.as_str()).copied().unwrap_or(1);
+        let child_path = if total > 1 {
+            format!("{path}.{}[{seen}]", child.name)
+        } else {
+            format!("{path}.{}", child.name)
+        };
+        *seen += 1;
+        index_node(child, &child_path, out);
+    }
+}
+
+#[cfg(test)]
+mod xdf_metadata_tests {
+    use super::*;
+
+    #[test]
+    fn xdf_stream_type_parse_is_case_insensitive() {
+        assert_eq!(XdfStreamType::parse("EEG"), Some(XdfStreamType::Eeg));
+        assert_eq!(XdfStreamType::parse("eeg"), Some(XdfStreamType::Eeg));
+        assert_eq!(
+            XdfStreamType::parse("VideoCompressed"),
+            Some(XdfStreamType::VideoCompressed)
+        );
+        assert_eq!(XdfStreamType::parse("unknown_type"), None);
+    }
+
+    #[test]
+    fn xdf_path_index_preserves_repeated_channel_labels_in_order() {
+        let info = XdfMetaNode {
+            name: "info".to_string(),
+            value: None,
+            children: vec![
+                XdfMetaNode {
+                    name: "name".to_string(),
+                    value: Some("MetaTester".to_string()),
+                    children: vec![],
+                },
+                XdfMetaNode {
+                    name: "type".to_string(),
+                    value: Some("EEG".to_string()),
+                    children: vec![],
+                },
+                XdfMetaNode {
+                    name: "desc".to_string(),
+                    value: None,
+                    children: vec![
+                        XdfMetaNode {
+                            name: "manufacturer".to_string(),
+                            value: Some("SCCN".to_string()),
+                            children: vec![],
+                        },
+                        XdfMetaNode {
+                            name: "cap".to_string(),
+                            value: None,
+                            children: vec![
+                                XdfMetaNode {
+                                    name: "name".to_string(),
+                                    value: Some("EasyCap".to_string()),
+                                    children: vec![],
+                                },
+                                XdfMetaNode {
+                                    name: "size".to_string(),
+                                    value: Some("54".to_string()),
+                                    children: vec![],
+                                },
+                            ],
+                        },
+                        XdfMetaNode {
+                            name: "channels".to_string(),
+                            value: None,
+                            children: vec![
+                                XdfMetaNode {
+                                    name: "channel".to_string(),
+                                    value: None,
+                                    children: vec![XdfMetaNode {
+                                        name: "label".to_string(),
+                                        value: Some("C3".to_string()),
+                                        children: vec![],
+                                    }],
+                                },
+                                XdfMetaNode {
+                                    name: "channel".to_string(),
+                                    value: None,
+                                    children: vec![XdfMetaNode {
+                                        name: "label".to_string(),
+                                        value: Some("C4".to_string()),
+                                        children: vec![],
+                                    }],
+                                },
+                            ],
+                        },
+                    ],
+                },
+            ],
+        };
+
+        let path_index = build_xdf_path_index(&info);
+
+        assert_eq!(
+            path_index.get("info.desc.manufacturer"),
+            Some(&vec!["SCCN".to_string()])
+        );
+        assert_eq!(
+            path_index.get("info.desc.cap.size"),
+            Some(&vec!["54".to_string()])
+        );
+        assert_eq!(
+            path_index.get("info.desc.channels.channel[0].label"),
+            Some(&vec!["C3".to_string()])
+        );
+        assert_eq!(
+            path_index.get("info.desc.channels.channel[1].label"),
+            Some(&vec!["C4".to_string()])
+        );
+    }
 }

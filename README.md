@@ -22,8 +22,10 @@ NeuroHID uses a hybrid Rust/Python architecture:
 ├─────────────────────────────────────────────────────────────────────────┤
 │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐     │
 │  │ Device       │  │ Signal       │  │ Platform (HID Emulation)   │     │
-│  │ Abstraction  │──│ Processing   │  │ Linux / Windows / macOS    │     │
-│  │ (Emotiv API) │  │ Pipeline     │  └─────────────┬──────────────┘     │
+│  │ Backends     │──│ Processing   │  │ Linux / Windows / macOS    │     │
+│  │ (LSL/Serial/ │  │ Pipeline     │  └─────────────┬──────────────┘     │
+│  │ BrainFlow/   │  │              │                │                    │
+│  │ Mock/Auto)   │  │              │                │                    │
 │  └──────┬───────┘  └──────┬───────┘                │                    │
 │         │                 │                        │                    │
 │    EEG Samples        Features                  Actions                 │
@@ -84,6 +86,23 @@ EEG-like streams feed decoder feature extraction, while auxiliary streams
 (quality/metrics/motion/control) remain connected and observable without
 crashing the service.
 
+### LSL Terminology
+
+The core framework uses generic trait names across all backends:
+
+- `DeviceProvider` for discovery/connection
+- `Device` for streaming/status lifecycle
+
+For the LSL backend, the equivalent stream-native semantics are:
+
+- `discover/connect` ≈ resolve stream/open inlet
+- `start_streaming` ≈ pull samples from the inlet
+
+To make this explicit in code, the device crate also exports aliases:
+
+- `LslStreamResolver` (alias of `LslProvider`)
+- `LslInletClient` (alias of `LslDevice`)
+
 ## Project Structure
 
 ```text
@@ -91,7 +110,7 @@ neurohid/
 ├── Cargo.toml                 # Workspace root
 ├── crates/
 │   ├── neurohid-types/        # Shared type definitions
-│   ├── neurohid-device/       # Device abstraction (Emotiv, mock)
+│   ├── neurohid-device/       # Device backends (LSL, Serial, BrainFlow, Mock, Auto)
 │   ├── neurohid-signal/       # Signal processing pipeline
 │   ├── neurohid-platform/     # Cross-platform HID emulation
 │   ├── neurohid-storage/      # Secure profile storage

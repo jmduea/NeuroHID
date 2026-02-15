@@ -3,12 +3,16 @@
 //! Consumes any LSL stream available on the local network. Device-specific
 //! software (e.g., emotiv-cortex-cli, MuseLSL, OpenBCI GUI) pushes data
 //! into LSL; this adapter pulls it into the NeuroHID pipeline.
+//!
+//! Terminology note: this backend keeps framework trait names (`DeviceProvider`/
+//! `Device`) but also exposes stream-native aliases (`LslStreamResolver` and
+//! `LslInletClient`). See README "LSL Terminology" for the mapping rationale.
 
 pub(crate) mod device;
 mod provider;
 
-pub use device::LslDevice;
-pub use provider::LslProvider;
+pub use device::{LslDevice, LslInletClient};
+pub use provider::{LslProvider, LslStreamResolver};
 
 /// Prepare liblsl for use.
 ///

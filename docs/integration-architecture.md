@@ -33,6 +33,17 @@ NeuroHID uses a local-process integration model between:
 4. Python bridge consumes events, applies model logic, emits status/results
 5. Runtime applies outputs and updates control/telemetry state
 
+## Device Discovery and Connection Lifecycle
+
+For a detailed, code-anchored walkthrough of discovery → connect → stream behavior
+across interactive and headless modes, see:
+
+- `docs/plans/2026-02-15-device-discovery-connection-design.md`
+
+LSL backend terminology note: framework traits remain `DeviceProvider`/`Device`,
+while stream-native aliases (`LslStreamResolver`, `LslInletClient`) reflect
+resolve/open-inlet semantics.
+
 ## Data Flow Diagram
 
 ```mermaid

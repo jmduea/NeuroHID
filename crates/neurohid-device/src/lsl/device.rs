@@ -1,4 +1,4 @@
-//! LSL device — pulls samples from an LSL inlet.
+//! LSL inlet client — pulls samples from an LSL inlet.
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -20,12 +20,12 @@ use crate::traits::{Device, SampleStream};
 ///
 /// liblsl inlets are internally thread-safe (the C library uses its own locking),
 /// but the Rust bindings contain a raw pointer which is `!Send` by default.
-pub(crate) struct SendInlet(pub lsl::StreamInlet);
+pub(crate) struct ThreadSafeInlet(pub lsl::StreamInlet);
 
 // SAFETY: liblsl inlets are thread-safe. The underlying C library handles
 // synchronization for pull operations.
-unsafe impl Send for SendInlet {}
-unsafe impl Sync for SendInlet {}
+unsafe impl Send for ThreadSafeInlet {}
+unsafe impl Sync for ThreadSafeInlet {}
 
 /// An LSL stream consumer that implements the [`Device`] trait.
 pub struct LslDevice {
@@ -33,7 +33,7 @@ pub struct LslDevice {
     channel_config: DeviceChannelConfig,
 
     /// The LSL inlet (shared with the pull thread).
-    inlet: Option<Arc<SendInlet>>,
+    inlet: Option<Arc<ThreadSafeInlet>>,
 
     // State tracking
     streaming: Arc<AtomicBool>,
@@ -45,7 +45,7 @@ pub struct LslDevice {
 }
 
 impl LslDevice {
-    pub(crate) fn new(inlet: SendInlet, info: DeviceInfo) -> Self {
+    pub(crate) fn new(inlet: ThreadSafeInlet, info: DeviceInfo) -> Self {
         let channel_config = info
             .channel_config
             .clone()
@@ -63,7 +63,7 @@ impl LslDevice {
             samples_dropped: 0,
             battery_percent: None,
             channel_quality: None,
-            message: Some("LSL stream connected".to_string()),
+            message: Some("LSL inlet opened".to_string()),
         };
 
         let (status_tx, status_rx) = watch::channel(initial_status);
@@ -137,7 +137,7 @@ impl Device for LslDevice {
         let inlet = Arc::clone(inlet);
         let streaming = Arc::clone(&self.streaming);
         let samples_received = Arc::clone(&self.samples_received);
-        let device_id_for_thread = self.info.id.0.clone();
+        let stream_id_for_thread = self.info.id.0.clone();
 
         let (tx, rx) = mpsc::channel::<Result<Sample>>(1024);
 
@@ -176,7 +176,7 @@ impl Device for LslDevice {
                         if sequence == 1 {
                             tracing::info!(
                                 "LSL: first sample pulled from '{}' ({} channels, ts={:.3})",
-                                device_id_for_thread,
+                                stream_id_for_thread,
                                 data.len(),
                                 timestamp
                             );
@@ -188,7 +188,7 @@ impl Device for LslDevice {
                         let system_ts = now_micros();
 
                         let sample = Sample {
-                            source_id: Some(device_id_for_thread.clone()),
+                            source_id: Some(stream_id_for_thread.clone()),
                             device_timestamp: Some(device_ts),
                             system_timestamp: system_ts,
                             sequence_number: Some(sequence),
@@ -209,14 +209,14 @@ impl Device for LslDevice {
                         if consecutive_errors == 1 {
                             tracing::warn!(
                                 "LSL pull_sample error on '{}': {:?}",
-                                device_id_for_thread,
+                                stream_id_for_thread,
                                 e
                             );
                         } else if consecutive_errors.is_multiple_of(50) {
                             tracing::warn!(
                                 "LSL pull_sample: {} consecutive errors on '{}' (latest: {:?})",
                                 consecutive_errors,
-                                device_id_for_thread,
+                                stream_id_for_thread,
                                 e
                             );
                         }
@@ -227,7 +227,7 @@ impl Device for LslDevice {
 
             tracing::info!(
                 "LSL pull thread exiting for '{}' (pulled {} samples)",
-                device_id_for_thread,
+                stream_id_for_thread,
                 sequence
             );
         });
@@ -271,3 +271,6 @@ impl Drop for LslDevice {
         self.streaming.store(false, Ordering::SeqCst);
     }
 }
+
+/// Stream-native alias for [`LslDevice`].
+pub type LslInletClient = LslDevice;

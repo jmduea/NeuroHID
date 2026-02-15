@@ -20,6 +20,15 @@
 //! - [`DeviceProvider`]: Handles discovery and connection establishment
 //! - [`Device`]: Represents a connected device and handles streaming
 //!
+//! For the LSL backend specifically, these framework traits map to stream-native
+//! semantics:
+//! - `DeviceProvider::discover/connect` == resolve stream/open inlet
+//! - `Device::start_streaming` == pull samples from that inlet
+//!
+//! The crate exposes stream-native aliases for clarity:
+//! - [`LslStreamResolver`] (alias of [`LslProvider`])
+//! - [`LslInletClient`] (alias of [`LslDevice`])
+//!
 //! Consumers of this crate work with them uniformly through the trait interface.
 
 #[cfg(feature = "brainflow")]
@@ -33,7 +42,7 @@ pub mod traits;
 #[cfg(feature = "brainflow")]
 pub use brainflow::{BrainFlowDevice, BrainFlowProvider};
 #[cfg(feature = "lsl")]
-pub use lsl::{LslDevice, LslProvider};
+pub use lsl::{LslDevice, LslInletClient, LslProvider, LslStreamResolver};
 pub use mock::MockDeviceConfig;
 pub use serial::{SerialDevice, SerialProvider};
 pub use traits::{Device, DeviceExt, DeviceProvider, SampleStream};

@@ -1,4 +1,4 @@
-//! LSL device provider — discovers and connects to LSL streams.
+//! LSL stream resolver — resolves streams and opens inlets.
 
 use async_trait::async_trait;
 
@@ -11,7 +11,7 @@ use neurohid_types::{
 
 use crate::traits::{Device, DeviceProvider};
 
-/// A device provider that discovers LSL streams on the local network.
+/// A device provider that resolves LSL streams on the local network.
 pub struct LslProvider {
     config: LslConfig,
 }
@@ -20,7 +20,7 @@ impl LslProvider {
     pub fn new(config: LslConfig) -> Self {
         super::configure_lsl();
         tracing::info!(
-            "LSL provider initialized (liblsl v{}.{}, predicate: {})",
+            "LSL stream resolver initialized (liblsl v{}.{}, predicate: {})",
             lsl::library_version() / 100,
             lsl::library_version() % 100,
             if config.predicate.is_empty() {
@@ -56,7 +56,7 @@ fn resolve_lsl(
 
 /// Data extracted from an LSL `StreamInfo` (Send-safe, no C pointers).
 #[derive(Clone)]
-struct ResolvedStream {
+struct ResolvedLslStream {
     name: String,
     stream_type: String,
     channel_count: i32,
@@ -64,7 +64,7 @@ struct ResolvedStream {
     source_id: String,
 }
 
-impl ResolvedStream {
+impl ResolvedLslStream {
     fn device_id(&self) -> DeviceId {
         DeviceId::new(Self::make_id(&self.source_id, &self.name))
     }
@@ -139,6 +139,7 @@ impl DeviceProvider for LslProvider {
     }
 
     async fn discover(&self) -> Result<Vec<DeviceInfo>> {
+        // Framework note: `discover()` maps to LSL stream resolution.
         let predicate = self.config.predicate.clone();
         let timeout = self.config.resolve_timeout_secs;
 
@@ -149,7 +150,7 @@ impl DeviceProvider for LslProvider {
             Ok::<_, DeviceError>(
                 streams
                     .iter()
-                    .map(|s| ResolvedStream {
+                    .map(|s| ResolvedLslStream {
                         name: s.stream_name(),
                         stream_type: s.stream_type(),
                         channel_count: s.channel_count(),
@@ -183,6 +184,8 @@ impl DeviceProvider for LslProvider {
         device_id: &DeviceId,
         _settings: Option<ConnectionSettings>,
     ) -> Result<Box<dyn Device>> {
+        // Framework note: `connect()` maps to opening an LSL inlet for
+        // a previously resolved stream.
         let timeout = self.config.resolve_timeout_secs;
         let target_id = device_id.0.clone();
         let buffer_size = self.config.buffer_size as i32;
@@ -210,12 +213,12 @@ impl DeviceProvider for LslProvider {
             let stream_info = streams
                 .into_iter()
                 .find(|s| {
-                    let id = ResolvedStream::make_id(&s.source_id(), &s.stream_name());
+                    let id = ResolvedLslStream::make_id(&s.source_id(), &s.stream_name());
                     id == target_id
                 })
                 .ok_or(DeviceError::NoDeviceFound)?;
 
-            let resolved = ResolvedStream {
+            let resolved = ResolvedLslStream {
                 name: stream_info.stream_name(),
                 stream_type: stream_info.stream_type(),
                 channel_count: stream_info.channel_count(),
@@ -230,7 +233,7 @@ impl DeviceProvider for LslProvider {
                 }
             })?;
 
-            Ok::<_, DeviceError>((super::device::SendInlet(inlet), resolved))
+            Ok::<_, DeviceError>((super::device::ThreadSafeInlet(inlet), resolved))
         })
         .await
         .map_err(|e| {
@@ -239,7 +242,7 @@ impl DeviceProvider for LslProvider {
 
         let device_info = resolved.to_device_info();
         tracing::info!(
-            "LSL: connected to stream '{}' ({} ch @ {} Hz)",
+            "LSL: opened inlet for stream '{}' ({} ch @ {} Hz)",
             device_info.name.as_deref().unwrap_or("?"),
             resolved.channel_count,
             resolved.nominal_srate
@@ -249,3 +252,6 @@ impl DeviceProvider for LslProvider {
         Ok(Box::new(device))
     }
 }
+
+/// Stream-native alias for [`LslProvider`].
+pub type LslStreamResolver = LslProvider;

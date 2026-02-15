@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Device discovery→connection lifecycle design reference at `docs/plans/2026-02-15-device-discovery-connection-design.md`, including interactive/headless flow mapping and troubleshooting guidance
 - BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
 - Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
 - Coverage quality gates in CI for both Rust (`cargo llvm-cov`) and Python (`pytest-cov`) with enforced minimum line-coverage thresholds and uploaded coverage artifacts

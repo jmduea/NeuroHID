@@ -17,6 +17,13 @@
 //! defined here. The traits use `async_trait` because all I/O operations
 //! (Bluetooth, USB, WebSocket) are inherently asynchronous.
 //!
+//! For the LSL backend, these generic trait names map to stream-native
+//! semantics:
+//! - `DeviceProvider::discover/connect` ≈ resolve stream/open inlet
+//! - `Device::start_streaming` ≈ pull samples from an inlet
+//!
+//! See README "LSL Terminology" for details and alias names.
+//!
 //! ## Example Usage
 //!
 //! ```ignore
