@@ -357,7 +357,7 @@ Areas where help is especially appreciated:
 
 ## License
 
-This project is dual-licensed under MIT and Apache 2.0. The Emotiv crate-specific license files now live in the external `emotiv-cortex-rs` repository.
+This project is dual-licensed under MIT or Apache 2.0, your choice.
 
 ## Acknowledgments
 
