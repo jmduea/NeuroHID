@@ -11,7 +11,7 @@ on:
 
 jobs:
     boundaries-doc-sync:
-        runs-on: ubuntu-latest
+        runs-on: [self-hosted, linux, neurohid-ci]
         steps:
             - uses: actions/checkout@v4
               with:

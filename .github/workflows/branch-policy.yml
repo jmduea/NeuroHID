@@ -11,11 +11,57 @@ permissions:
 jobs:
   pr-only-main:
     name: Enforce PR-only main updates
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - name: Validate main update came from PR
         shell: pwsh
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: ./.github/scripts/enforce-pr-only-main.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $repo = "${{ github.repository }}"
+          $sha = "${{ github.sha }}"
+          $ref = "${{ github.ref }}"
+          $eventName = "${{ github.event_name }}"
+
+          if ([string]::IsNullOrWhiteSpace($env:GITHUB_TOKEN)) {
+            throw 'GITHUB_TOKEN is not set; cannot validate PR association.'
+          }
+
+          $headers = @{
+            Authorization = "Bearer $($env:GITHUB_TOKEN)"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+
+          $url = "https://api.github.com/repos/$repo/commits/$sha/pulls"
+          Write-Host "Checking PR association for commit $sha in $repo"
+          $pulls = @()
+          $maxAttempts = 5
+
+          for ($attempt = 1; $attempt -le $maxAttempts; $attempt++) {
+            $response = Invoke-RestMethod -Uri $url -Headers $headers -Method Get
+            if ($response) {
+              $pulls = @($response)
+              break
+            }
+
+            Write-Host "No PR association found yet (attempt $attempt/$maxAttempts)."
+            if ($attempt -lt $maxAttempts) {
+              Start-Sleep -Seconds 3
+            }
+          }
+
+          if (-not $pulls -or $pulls.Count -lt 1) {
+            $hint = @(
+              "Push to main is not associated with a pull request (commit: $sha).",
+              "Context: event=$eventName ref=$ref repo=$repo.",
+              "If this was a force-push or history rewrite, the commit may not map to a PR.",
+              "Use PR merge flow to update main, or revert this push and re-merge via PR."
+            ) -join ' '
+            throw $hint
+          }
+
+          Write-Host "Found associated PR(s): $($pulls.Count). Policy check passed."

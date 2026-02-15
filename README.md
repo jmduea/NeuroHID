@@ -1,7 +1,7 @@
 # NeuroHID
 
-[![CI](https://github.com/jmduea/neurohid/actions/workflows/ci.yml/badge.svg)](https://github.com/jmduea/neurohid/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/jmduea/neurohid/branch/main/graph/badge.svg)](https://codecov.io/gh/jmduea/neurohid)
+[![CI](https://github.com/jmduea/NeuroHID/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jmduea/NeuroHID/actions/workflows/ci.yml?query=branch%3Amain)
+[![codecov](https://codecov.io/gh/jmduea/NeuroHID/branch/main/graph/badge.svg)](https://codecov.io/gh/jmduea/NeuroHID)
 
 **Transform consumer EEG devices into standard PC peripherals using deep reinforcement learning.**
 

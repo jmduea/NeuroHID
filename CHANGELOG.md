@@ -15,7 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
 - Coverage quality gates in CI for both Rust (`cargo llvm-cov`) and Python (`pytest-cov`) with enforced minimum line-coverage thresholds and uploaded coverage artifacts
 - Coverage reporting integration via Codecov uploads (Rust `lcov.info`, Python `coverage.xml`) and top-level README coverage badge
-- Branch policy enforcement workflow (`.github/workflows/branch-policy.yml`) and validator script (`.github/scripts/enforce-pr-only-main.ps1`) to require PR-based updates to `main`
+- Branch policy enforcement workflow (`.github/workflows/branch-policy.yml`) with inline GitHub API validation to require PR-based updates to `main`
 - Architecture index automation via `.github/scripts/generate-architecture-index.ps1` with tracked output at `docs/architecture/index.md`
 - CI enhancements for impact-aware job routing, focused gate execution, unsafe compliance, protocol contract validation, and harness smoke report artifact publishing
 - Executable protocol-documentation contract test in `neurohid-types` (`ipc_v2` tests)
@@ -45,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Private-phase CI/workflow runner policy now targets dedicated self-hosted labels (`self-hosted` + OS + `neurohid-ci`) across branch policy, CI, architecture, crate-boundaries, Python quality, release, and publish workflows, with a `ci.yml` macOS lane toggle (`ENABLE_MACOS`) to allow pragmatic macOS de-scope when needed
+- Pre-merge validation and coverage enforcement behavior is unchanged under self-hosted execution (Rust/Python quality gates plus `PYTHON_COVERAGE_MIN` and `RUST_COVERAGE_MIN` thresholds remain active)
 - Workspace `lsl-sys` patch source now uses a shared git-pinned upstream (`[patch.crates-io]` with fixed `rev`) for reproducible Linux behavior across multiple applications without repo-local vendoring
 - Reorganized project into Rust workspace with separate published and internal crates
 - Coverage policy now enforces a 90% Codecov patch-coverage target for pull requests, gating newly added/changed code independently from overall project coverage baseline

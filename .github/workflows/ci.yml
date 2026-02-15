@@ -15,7 +15,7 @@ env:
 jobs:
   determine-impact:
     name: Determine Impact
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     outputs:
       rust: ${{ steps.impact.outputs.rust }}
       python: ${{ steps.impact.outputs.python }}
@@ -39,7 +39,7 @@ jobs:
 
   focused-gates:
     name: Focused Gates
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     needs: determine-impact
     steps:
       - uses: actions/checkout@v4
@@ -60,18 +60,38 @@ jobs:
     name: Test
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        include:
+          - platform: linux
+            runner_os: Linux
+            runner: [self-hosted, linux, neurohid-ci]
+          - platform: windows
+            runner_os: Windows
+            runner: [self-hosted, windows, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL (Linux)
-        if: runner.os == 'Linux'
+        if: matrix.runner_os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+      - name: Build
+        run: cargo build --workspace
+      - name: Test
+        run: cargo test --workspace
+
+  test-macos:
+    name: Test (macOS)
+    needs: determine-impact
+    if: (needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push') && vars.ENABLE_MACOS != 'false'
+    runs-on: [self-hosted, macos, neurohid-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
       - name: Build
         run: cargo build --workspace
       - name: Test
@@ -81,7 +101,7 @@ jobs:
     name: Clippy
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -97,7 +117,7 @@ jobs:
     name: Format
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -110,7 +130,7 @@ jobs:
     name: Documentation
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -126,7 +146,7 @@ jobs:
     name: Python Tests
     needs: determine-impact
     if: needs.determine-impact.outputs.python == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -157,7 +177,7 @@ jobs:
     name: Rust Coverage
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -188,7 +208,7 @@ jobs:
     name: Unsafe Compliance
     needs: determine-impact
     if: needs.determine-impact.outputs.unsafe == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - name: Validate unsafe compliance
@@ -199,7 +219,7 @@ jobs:
     name: Protocol Contracts
     needs: determine-impact
     if: needs.determine-impact.outputs.protocol == 'true'
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
