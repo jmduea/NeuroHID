@@ -3,7 +3,12 @@
 debug
 target
 .rust-skills
-third_party/
+third_party/*
+!third_party/lsl-sys-0.1.1/
+!third_party/lsl-sys-0.1.1/**
+third_party/lsl-sys-0.1.1/.cargo-ok
+third_party/lsl-sys-0.1.1/.cargo_vcs_info.json
+third_party/lsl-sys-0.1.1/Cargo.toml.orig
 _bmad
 _bmad-output
 _bmad/*
