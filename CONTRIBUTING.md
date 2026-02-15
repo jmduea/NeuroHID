@@ -121,6 +121,8 @@ The workspace is organized into internal library crates and two published crates
 - **External Emotiv crates** — `emotiv-cortex-v2` and `emotiv-cortex-cli` are maintained in `https://github.com/jmduea/emotiv-cortex-rs`
 
 See the root [README.md](./README.md) for the full architecture overview.
+Use [docs/crate-boundaries.md](./docs/crate-boundaries.md) as the canonical
+"where should this code live?" reference.
 
 ## Pull Requests
 

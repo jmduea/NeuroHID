@@ -388,7 +388,6 @@ impl VisualizationScreen {
             theme::status_chip(ui, "Offline", theme::Intent::Danger);
         } else if !has_buffered_samples {
             theme::status_chip(ui, "Connecting...", theme::Intent::Warning);
-            ui.ctx().request_repaint();
         } else {
             let pulse = ((current_time * 2.4).sin() * 0.5 + 0.5) as f32;
             let live_color =
@@ -426,7 +425,6 @@ impl VisualizationScreen {
             };
             let _ = live_color;
             theme::status_chip(ui, &label, theme::Intent::Success);
-            ui.ctx().request_repaint();
         }
     }
 

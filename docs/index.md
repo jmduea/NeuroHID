@@ -24,6 +24,7 @@
 
 - [Project Overview](./project-overview.md)
 - [Source Tree Analysis](./source-tree-analysis.md)
+- [Crate Boundaries and Placement Guide](./crate-boundaries.md)
 - [Architecture - Rust Core](./architecture-rust-core.md)
 - [Architecture - Python ML](./architecture-python-ml.md)
 - [Integration Architecture](./integration-architecture.md)

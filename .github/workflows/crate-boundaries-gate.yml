@@ -1,0 +1,47 @@
+name: Crate Boundaries Gate
+
+on:
+    pull_request:
+        branches: [main]
+        paths:
+            - "Cargo.toml"
+            - "crates/**/Cargo.toml"
+            - "docs/crate-boundaries.md"
+            - ".github/workflows/crate-boundaries-gate.yml"
+
+jobs:
+    boundaries-doc-sync:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0
+
+            - name: Require crate boundaries doc update for manifest changes
+              shell: bash
+              env:
+                  BASE_SHA: ${{ github.event.pull_request.base.sha }}
+                  HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+              run: |
+                  set -euo pipefail
+
+                  changed_files="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")"
+
+                  manifest_changes="$(git diff --name-only "$BASE_SHA" "$HEAD_SHA" -- Cargo.toml 'crates/*/Cargo.toml')"
+
+                  if [[ -z "$manifest_changes" ]]; then
+                    echo "No Cargo manifest changes detected; crate-boundary doc sync not required."
+                    exit 0
+                  fi
+
+                  echo "Detected manifest changes:"
+                  echo "$manifest_changes"
+
+                  if echo "$changed_files" | grep -qx 'docs/crate-boundaries.md'; then
+                    echo "docs/crate-boundaries.md updated alongside manifest changes."
+                    exit 0
+                  fi
+
+                  echo "Cargo manifests changed but docs/crate-boundaries.md was not updated."
+                  echo "Update docs/crate-boundaries.md (or include a rationale section) in this PR."
+                  exit 1

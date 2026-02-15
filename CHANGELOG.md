@@ -85,6 +85,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stream Console header/footer now uses explicit live/paused + buffer/match status chips and clearer action emphasis, improving readability during high-throughput monitoring
 - Calibration panel signal-check/welcome phases now include explicit progress visuals and clearer textual quality states (good/fair/low) to improve pre-game calibration guidance
 - Visualization toolbar now uses explicit status chips for rate/buffer/connection/staleness/elapsed context with reduced separator clutter, improving live situational scanability without changing pane/layout behavior
+- Hub visualization repaint scheduling now uses throttled `request_repaint_after` cadence (instead of continuous immediate repaint), reducing idle/high-load UI CPU usage while preserving live responsiveness
+- Settings now includes `Visualization FPS` (persisted in `ui.visualization_target_fps`, default 30, range 5-60) so users can tune smoothness vs CPU usage
 - Dashboard now replaces remaining color-only warning/error/outcome lines with explicit status chips for runtime constraints, training state, bridge/trainer alerts, and candidate outcomes
 - Visualization layout manager now includes explicit docking guidance/status chips and warning-chip fallbacks for missing pane widget instances, improving pane-level affordance clarity
 - Final hub consistency sweep converted remaining high-visibility color-only statuses (Python Lab cell/bridge state, Devices quality labels, app init error banner) to shared status-chip semantics

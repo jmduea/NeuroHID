@@ -42,9 +42,12 @@ NeuroHID is a hybrid Rust/Python monorepo that transforms EEG signals into stand
 
 ```mermaid
 flowchart LR
-  E[EEG Device Streams] --> R[Rust Runtime\nDevice + Signal + Action]
-  R --> H[HID Output\nMouse / Keyboard]
-  R -->|Runtime Events| P[Python ML\nBridge + Decoder + Trainer]
+  E[EEG Device Streams] --> R[Rust Runtime
+  Device + Signal + Action]
+  R --> H[HID Output
+  Mouse / Keyboard]
+  R -->|Runtime Events| P[Python ML
+  Bridge + Decoder + Trainer]
   P -->|ErrP/Trainer Feedback| R
 ```
 

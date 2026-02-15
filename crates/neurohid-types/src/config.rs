@@ -524,6 +524,9 @@ pub struct UiConfig {
     /// Persisted visualization widget assignments by pane slot.
     #[serde(default = "default_visualization_pane_widgets")]
     pub visualization_pane_widgets: Vec<String>,
+    /// Target refresh rate for visualization rendering.
+    #[serde(default = "default_visualization_target_fps")]
+    pub visualization_target_fps: u8,
     /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
     ///
     /// Deprecated: retained for backward compatibility with older configs.
@@ -564,6 +567,10 @@ fn default_visualization_pane_widgets() -> Vec<String> {
     ]
 }
 
+fn default_visualization_target_fps() -> u8 {
+    30
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -578,6 +585,7 @@ impl Default for UiConfig {
             jupyter_url: default_jupyter_url(),
             visualization_layout_preset: default_visualization_layout_preset(),
             visualization_pane_widgets: default_visualization_pane_widgets(),
+            visualization_target_fps: default_visualization_target_fps(),
             lab_kernel_command: default_lab_kernel_command(),
         }
     }
@@ -974,6 +982,27 @@ mod tests {
         assert_eq!(
             decoded.visualization_layout_preset,
             UiConfig::default().visualization_layout_preset
+        );
+        assert_eq!(
+            decoded.visualization_target_fps,
+            UiConfig::default().visualization_target_fps
+        );
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_without_visualization_target_fps() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.remove("visualization_target_fps");
+
+        let decoded: UiConfig =
+            serde_json::from_value(json).expect("deserialize ui config without visualization fps");
+
+        assert_eq!(
+            decoded.visualization_target_fps,
+            UiConfig::default().visualization_target_fps
         );
     }
 }

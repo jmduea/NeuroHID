@@ -934,6 +934,24 @@ impl SettingsScreen {
                     });
 
                     ui.horizontal(|ui| {
+                        ui.label("Visualization FPS:");
+                        if theme::drag_value(
+                            ui,
+                            &mut cfg.visualization_target_fps,
+                            5..=60,
+                            1.0,
+                            Some(" fps"),
+                        ) {
+                            changed = true;
+                        }
+                    });
+                    theme::status_chip(
+                        ui,
+                        "Higher FPS improves smoothness but uses more CPU",
+                        theme::Intent::Muted,
+                    );
+
+                    ui.horizontal(|ui| {
                         ui.label("Tray mode:");
                         if theme::toggle_switch(
                             ui,

@@ -11,12 +11,14 @@
 ## Governance Checks
 
 - [ ] I updated documentation impacted by this change.
+- [ ] I confirmed no generated/local artifacts are committed (`target/`, coverage outputs, local logs).
 - [ ] I updated `CHANGELOG.md` when behavior or public surface changed.
 - [ ] I reviewed impact classification outputs (rust/python/docs/protocol/unsafe/architecture) and covered required gates.
 - [ ] I evaluated whether an ADR is required.
 - [ ] If required, I linked an ADR in `docs/adr/`.
 - [ ] I ran a docs-freshness pass and resolved blockers.
 - [ ] I refreshed `docs/architecture/index.md` when architecture-gated surfaces changed.
+- [ ] I updated `docs/crate-boundaries.md` when crate ownership or dependency direction changed.
 
 ## Testing / TDD
 

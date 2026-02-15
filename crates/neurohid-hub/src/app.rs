@@ -5,6 +5,7 @@
 
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use armas::components::{CollapsibleMode, Sidebar, SidebarState, SidebarVariant};
 use eframe::egui;
@@ -475,8 +476,6 @@ impl HubApp {
                         if snap.calibration_mode {
                             theme::status_chip(ui, "Calibrating", theme::Intent::Warning);
                         }
-
-                        ctx.request_repaint();
                     } else if let Some((task, _)) = &snap.task_error {
                         theme::status_chip(
                             ui,
@@ -645,7 +644,7 @@ impl eframe::App for HubApp {
                 &self.runtime,
                 ctx,
             );
-            ctx.request_repaint();
+            ctx.request_repaint_after(Duration::from_millis(16));
             return;
         }
 
@@ -720,8 +719,20 @@ impl eframe::App for HubApp {
                 }
             });
 
-        // Request continuous repainting for live updates
-        ctx.request_repaint();
+        let frame_interval = if self.current_screen == Screen::Visualization {
+            if self.state.service_snapshot.running {
+                let fps = u64::from(self.state.config.ui.visualization_target_fps.clamp(5, 60));
+                Duration::from_millis((1000 / fps).max(1))
+            } else {
+                Duration::from_millis(100)
+            }
+        } else if self.state.service_snapshot.running {
+            Duration::from_millis(50)
+        } else {
+            Duration::from_millis(200)
+        };
+
+        ctx.request_repaint_after(frame_interval);
     }
 }
 
