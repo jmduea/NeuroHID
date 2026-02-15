@@ -125,13 +125,6 @@ neurohid/
         └── bridge/            # IPC client
 ```
 
-## Emotiv Crates
-
-The Emotiv publisher crates are maintained in a dedicated repository:
-
-- <https://github.com/jmduea/emotiv-cortex-rs>
-- crates.io: `emotiv-cortex-v2`, `emotiv-cortex-cli`
-
 ## Key Innovations
 
 ### Error-Related Potentials as Reward
