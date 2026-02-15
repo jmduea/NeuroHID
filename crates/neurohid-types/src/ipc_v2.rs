@@ -4,13 +4,14 @@
 //! process. Messages use a shared envelope with a typed payload serialized
 //! as JSON.
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use crate::{
+    Timestamp,
     action::Action,
     learning::{CandidateModelMetrics, TrainingEpisode},
     model::ModelManifest,
-    now_micros, Timestamp,
+    now_micros,
 };
 
 /// Fixed protocol version for runtime ML v2 envelopes.
@@ -260,7 +261,8 @@ mod tests {
     use serde_json::to_string;
 
     use super::{
-        DecisionEventV2, HelloV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2, RUNTIME_ML_PROTOCOL_V2,
+        DecisionEventV2, HelloV2, RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2, RuntimeMlKindV2,
+        RuntimeMlRoleV2,
     };
 
     #[test]

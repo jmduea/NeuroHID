@@ -61,11 +61,12 @@ impl SettingsScreen {
                 };
                 theme::status_chip(ui, runtime_mode_label, theme::Intent::Info);
 
-                let ui_mode_label = if state.config.ui.mode == neurohid_types::config::UiMode::Advanced {
-                    "UI advanced"
-                } else {
-                    "UI standard"
-                };
+                let ui_mode_label =
+                    if state.config.ui.mode == neurohid_types::config::UiMode::Advanced {
+                        "UI advanced"
+                    } else {
+                        "UI standard"
+                    };
                 theme::status_chip(ui, ui_mode_label, theme::Intent::Info);
 
                 let backend_label = match state.config.device.backend {
@@ -104,33 +105,37 @@ impl SettingsScreen {
         // Save / Reset buttons
         theme::card_frame(ui).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-            let save_clicked = theme::action_button(
-                ui,
-                "Save",
-                self.unsaved_changes,
-                theme::ButtonTone::Primary,
-            );
-            if save_clicked {
-                match runtime.block_on(state.config_store.save(&state.config)) {
-                    Ok(()) => {
-                        tracing::info!("Configuration saved");
-                        self.unsaved_changes = false;
+                let save_clicked = theme::action_button(
+                    ui,
+                    "Save",
+                    self.unsaved_changes,
+                    theme::ButtonTone::Primary,
+                );
+                if save_clicked {
+                    match runtime.block_on(state.config_store.save(&state.config)) {
+                        Ok(()) => {
+                            tracing::info!("Configuration saved");
+                            self.unsaved_changes = false;
+                        }
+                        Err(e) => tracing::error!("Failed to save config: {}", e),
                     }
-                    Err(e) => tracing::error!("Failed to save config: {}", e),
                 }
-            }
 
-            let reset_clicked =
-                theme::action_button(ui, "Reset to Defaults", true, theme::ButtonTone::Secondary);
-            if reset_clicked {
-                state.config = neurohid_types::config::SystemConfig::default();
-                self.unsaved_changes = true;
-            }
-            if self.unsaved_changes {
-                theme::status_chip(ui, "Unsaved changes", theme::Intent::Warning);
-            }
-        });
+                let reset_clicked = theme::action_button(
+                    ui,
+                    "Reset to Defaults",
+                    true,
+                    theme::ButtonTone::Secondary,
+                );
+                if reset_clicked {
+                    state.config = neurohid_types::config::SystemConfig::default();
+                    self.unsaved_changes = true;
+                }
+                if self.unsaved_changes {
+                    theme::status_chip(ui, "Unsaved changes", theme::Intent::Warning);
+                }
             });
+        });
 
         ui.add_space(16.0);
 
@@ -157,7 +162,13 @@ impl SettingsScreen {
                             neurohid_types::config::DeviceBackend::Serial => 3,
                             neurohid_types::config::DeviceBackend::BrainFlow => 4,
                         };
-                        if theme::select_index(ui, "settings_device_backend", &mut selected, &options, 180.0) {
+                        if theme::select_index(
+                            ui,
+                            "settings_device_backend",
+                            &mut selected,
+                            &options,
+                            180.0,
+                        ) {
                             cfg.backend = match selected {
                                 0 => neurohid_types::config::DeviceBackend::Auto,
                                 1 => neurohid_types::config::DeviceBackend::Lsl,
@@ -241,7 +252,13 @@ impl SettingsScreen {
                                 neurohid_types::config::SerialFraming::CsvLine => 0,
                                 neurohid_types::config::SerialFraming::BinaryI16Le => 1,
                             };
-                            if theme::select_index(ui, "settings_serial_framing", &mut selected, &options, 180.0) {
+                            if theme::select_index(
+                                ui,
+                                "settings_serial_framing",
+                                &mut selected,
+                                &options,
+                                180.0,
+                            ) {
                                 serial_cfg.framing = if selected == 0 {
                                     neurohid_types::config::SerialFraming::CsvLine
                                 } else {
@@ -335,7 +352,11 @@ impl SettingsScreen {
             }
             ui.add_space(8.0);
 
-            ui.label(egui::RichText::new("Signal & action pipeline").small().weak());
+            ui.label(
+                egui::RichText::new("Signal & action pipeline")
+                    .small()
+                    .weak(),
+            );
             // Signal settings
             let changed = egui::CollapsingHeader::new("Signal Processing")
                 .default_open(false)
@@ -353,8 +374,7 @@ impl SettingsScreen {
                             changed = true;
                         }
                         ui.label("Hz:");
-                        if theme::drag_value(ui, &mut cfg.notch_filter_hz, 45.0..=65.0, 1.0, None)
-                        {
+                        if theme::drag_value(ui, &mut cfg.notch_filter_hz, 45.0..=65.0, 1.0, None) {
                             changed = true;
                         }
                     });
@@ -372,13 +392,7 @@ impl SettingsScreen {
 
                     ui.horizontal(|ui| {
                         ui.label("Low Hz:");
-                        if theme::drag_value(
-                            ui,
-                            &mut cfg.bandpass_low_hz,
-                            0.1..=10.0,
-                            0.1,
-                            None,
-                        ) {
+                        if theme::drag_value(ui, &mut cfg.bandpass_low_hz, 0.1..=10.0, 0.1, None) {
                             changed = true;
                         }
                         ui.label("High Hz:");
@@ -468,8 +482,7 @@ impl SettingsScreen {
 
                     ui.horizontal(|ui| {
                         ui.label("Debounce (ms):");
-                        if theme::drag_value(ui, &mut cfg.action_debounce_ms, 0..=1000, 1.0, None)
-                        {
+                        if theme::drag_value(ui, &mut cfg.action_debounce_ms, 0..=1000, 1.0, None) {
                             changed = true;
                         }
                     });
@@ -497,13 +510,7 @@ impl SettingsScreen {
 
                     ui.horizontal(|ui| {
                         ui.label("Learning rate:");
-                        if theme::drag_value(
-                            ui,
-                            &mut cfg.learning_rate,
-                            1e-5..=1e-2,
-                            1e-5,
-                            None,
-                        ) {
+                        if theme::drag_value(ui, &mut cfg.learning_rate, 1e-5..=1e-2, 1e-5, None) {
                             changed = true;
                         }
                     });
@@ -556,7 +563,13 @@ impl SettingsScreen {
                             neurohid_types::config::ServiceRuntimeMode::Embedded => 0,
                             neurohid_types::config::ServiceRuntimeMode::External => 1,
                         };
-                        if theme::select_index(ui, "settings_service_runtime_mode", &mut selected, &options, 180.0) {
+                        if theme::select_index(
+                            ui,
+                            "settings_service_runtime_mode",
+                            &mut selected,
+                            &options,
+                            180.0,
+                        ) {
                             cfg.runtime_mode = if selected == 0 {
                                 neurohid_types::config::ServiceRuntimeMode::Embedded
                             } else {
@@ -584,13 +597,7 @@ impl SettingsScreen {
 
                         ui.horizontal(|ui| {
                             ui.label("Control port:");
-                            if theme::drag_value(
-                                ui,
-                                &mut cfg.control_port,
-                                1..=65_535,
-                                1.0,
-                                None,
-                            ) {
+                            if theme::drag_value(ui, &mut cfg.control_port, 1..=65_535, 1.0, None) {
                                 changed = true;
                             }
                         });
@@ -718,8 +725,7 @@ impl SettingsScreen {
 
                     ui.horizontal(|ui| {
                         ui.label("Enable outlets:");
-                        if theme::toggle_switch(ui, "settings_outlets_enabled", &mut cfg.enabled)
-                        {
+                        if theme::toggle_switch(ui, "settings_outlets_enabled", &mut cfg.enabled) {
                             changed = true;
                         }
                     });
@@ -865,7 +871,13 @@ impl SettingsScreen {
                         } else {
                             1
                         };
-                        if theme::select_index(ui, "settings_ui_mode", &mut selected, &options, 160.0) {
+                        if theme::select_index(
+                            ui,
+                            "settings_ui_mode",
+                            &mut selected,
+                            &options,
+                            160.0,
+                        ) {
                             cfg.mode = if selected == 0 {
                                 neurohid_types::config::UiMode::Standard
                             } else {
@@ -886,7 +898,13 @@ impl SettingsScreen {
                             neurohid_types::config::ThemeMode::Light => 1,
                             neurohid_types::config::ThemeMode::Dark => 2,
                         };
-                        if theme::select_index(ui, "settings_ui_theme_mode", &mut selected, &options, 160.0) {
+                        if theme::select_index(
+                            ui,
+                            "settings_ui_theme_mode",
+                            &mut selected,
+                            &options,
+                            160.0,
+                        ) {
                             cfg.theme_mode = match selected {
                                 0 => neurohid_types::config::ThemeMode::System,
                                 1 => neurohid_types::config::ThemeMode::Light,
@@ -1062,7 +1080,11 @@ impl SettingsScreen {
             }
             ui.add_space(8.0);
 
-            ui.label(egui::RichText::new("Persistence & retention").small().weak());
+            ui.label(
+                egui::RichText::new("Persistence & retention")
+                    .small()
+                    .weak(),
+            );
             // Storage settings
             let changed = egui::CollapsingHeader::new("Storage")
                 .default_open(false)
@@ -1117,4 +1139,3 @@ impl SettingsScreen {
         }
     }
 }
-

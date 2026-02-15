@@ -136,9 +136,10 @@ impl<'a> WidgetContext<'a> {
             if stream_types
                 .iter()
                 .any(|st| ds_type_prefix.eq_ignore_ascii_case(st))
-                && ds.channel_count > 0 {
-                    return Some(ds.channel_count as usize);
-                }
+                && ds.channel_count > 0
+            {
+                return Some(ds.channel_count as usize);
+            }
         }
         None
     }
@@ -175,9 +176,10 @@ impl<'a> WidgetContext<'a> {
         source_id: Option<&str>,
     ) -> &'a VecDeque<Sample> {
         if let Some(id) = source_id
-            && let Some(samples) = self.samples_for_source(id) {
-                return samples;
-            }
+            && let Some(samples) = self.samples_for_source(id)
+        {
+            return samples;
+        }
         self.samples_for(widget_id)
     }
 

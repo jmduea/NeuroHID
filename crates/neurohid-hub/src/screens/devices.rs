@@ -32,24 +32,24 @@ impl DevicesScreen {
         state: &HubState,
         service_manager: &mut ServiceManager,
     ) {
-        theme::page_header(ui, "Devices", "Discover, connect, and monitor available streams");
+        theme::page_header(
+            ui,
+            "Devices",
+            "Discover, connect, and monitor available streams",
+        );
 
         let snap = &state.service_snapshot;
 
         if !snap.running {
             theme::card_frame(ui).show(ui, |ui| {
-                    theme::status_chip(ui, "Service stopped", theme::Intent::Warning);
-                    theme::status_chip(
-                        ui,
-                        "Start service to discover/connect LSL streams",
-                        theme::Intent::Info,
-                    );
-                    theme::status_chip(
-                        ui,
-                        "Use Dashboard to start service",
-                        theme::Intent::Muted,
-                    );
-                });
+                theme::status_chip(ui, "Service stopped", theme::Intent::Warning);
+                theme::status_chip(
+                    ui,
+                    "Start service to discover/connect LSL streams",
+                    theme::Intent::Info,
+                );
+                theme::status_chip(ui, "Use Dashboard to start service", theme::Intent::Muted);
+            });
             return;
         }
 
@@ -123,7 +123,7 @@ impl DevicesScreen {
                     "Auto-rescan runs when none are connected",
                     theme::Intent::Muted,
                 );
-                });
+            });
         } else {
             // Group streams by source_id. Streams sharing a source_id come
             // from the same physical device and are rendered under a single
@@ -163,28 +163,32 @@ impl DevicesScreen {
                 ui.heading("Signal Quality");
                 ui.add_space(8.0);
 
-            // Overall quality bar
-            let quality = snap.signal_quality;
-            let quality_intent = if quality > 0.7 {
-                theme::Intent::Success
-            } else if quality > 0.5 {
-                theme::Intent::Warning
-            } else {
-                theme::Intent::Danger
-            };
+                // Overall quality bar
+                let quality = snap.signal_quality;
+                let quality_intent = if quality > 0.7 {
+                    theme::Intent::Success
+                } else if quality > 0.5 {
+                    theme::Intent::Warning
+                } else {
+                    theme::Intent::Danger
+                };
 
-            ui.horizontal(|ui| {
-                theme::status_chip(ui, &format!("Overall {:.0}%", quality * 100.0), quality_intent);
-                let _ = theme::progress_bar(ui, quality, ui.available_width().min(260.0));
-            });
-
-            ui.add_space(4.0);
-            ui.label(
-                egui::RichText::new(format!("Aggregate across {} streams", connected_count))
-                    .small()
-                    .color(egui::Color32::GRAY),
-            );
+                ui.horizontal(|ui| {
+                    theme::status_chip(
+                        ui,
+                        &format!("Overall {:.0}%", quality * 100.0),
+                        quality_intent,
+                    );
+                    let _ = theme::progress_bar(ui, quality, ui.available_width().min(260.0));
                 });
+
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new(format!("Aggregate across {} streams", connected_count))
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
+            });
         }
     }
 
@@ -267,14 +271,20 @@ impl DevicesScreen {
                         service_manager.connect_streams(&ids);
                     }
                     if any_connected
-                        && theme::action_button(ui, "Disconnect All", true, theme::ButtonTone::Ghost) {
-                            let ids: Vec<&str> = streams
-                                .iter()
-                                .filter(|s| s.connected)
-                                .map(|s| s.id.as_str())
-                                .collect();
-                            service_manager.disconnect_streams(&ids);
-                        }
+                        && theme::action_button(
+                            ui,
+                            "Disconnect All",
+                            true,
+                            theme::ButtonTone::Ghost,
+                        )
+                    {
+                        let ids: Vec<&str> = streams
+                            .iter()
+                            .filter(|s| s.connected)
+                            .map(|s| s.id.as_str())
+                            .collect();
+                        service_manager.disconnect_streams(&ids);
+                    }
                 }
             });
 
@@ -298,7 +308,7 @@ impl DevicesScreen {
                     ui.add_space(2.0);
                 }
             });
-            });
+        });
         ui.add_space(4.0);
     }
 
@@ -348,29 +358,30 @@ impl DevicesScreen {
 
         // Per-channel quality bars for connected streams
         if stream.connected
-            && let Some(qualities) = &stream.channel_quality {
-                ui.horizontal(|ui| {
-                    ui.add_space(32.0); // indent quality bars
-                    ui.vertical(|ui| {
-                        ui.label(
-                            egui::RichText::new("Channel Quality")
-                                .small()
-                                .color(egui::Color32::GRAY),
-                        );
-                        for (i, &q) in qualities.iter().enumerate() {
-                            let q_intent = if q > 0.7 {
-                                theme::Intent::Success
-                            } else if q > 0.4 {
-                                theme::Intent::Warning
-                            } else {
-                                theme::Intent::Danger
-                            };
-                            let _ = theme::progress_bar(ui, q, ui.available_width());
-                            theme::status_chip(ui, &format!("Ch{} {:.0}%", i, q * 100.0), q_intent);
-                        }
-                    });
+            && let Some(qualities) = &stream.channel_quality
+        {
+            ui.horizontal(|ui| {
+                ui.add_space(32.0); // indent quality bars
+                ui.vertical(|ui| {
+                    ui.label(
+                        egui::RichText::new("Channel Quality")
+                            .small()
+                            .color(egui::Color32::GRAY),
+                    );
+                    for (i, &q) in qualities.iter().enumerate() {
+                        let q_intent = if q > 0.7 {
+                            theme::Intent::Success
+                        } else if q > 0.4 {
+                            theme::Intent::Warning
+                        } else {
+                            theme::Intent::Danger
+                        };
+                        let _ = theme::progress_bar(ui, q, ui.available_width());
+                        theme::status_chip(ui, &format!("Ch{} {:.0}%", i, q * 100.0), q_intent);
+                    }
                 });
-            }
+            });
+        }
     }
 
     /// Render a standalone stream as an independent card (no device grouping).
@@ -428,26 +439,27 @@ impl DevicesScreen {
 
             // Per-channel quality bars for connected streams
             if stream.connected
-                && let Some(qualities) = &stream.channel_quality {
-                    ui.add_space(4.0);
-                    ui.label(
-                        egui::RichText::new("Channel Quality")
-                            .small()
-                            .color(egui::Color32::GRAY),
-                    );
-                    for (i, &q) in qualities.iter().enumerate() {
-                        let q_intent = if q > 0.7 {
-                            theme::Intent::Success
-                        } else if q > 0.4 {
-                            theme::Intent::Warning
-                        } else {
-                            theme::Intent::Danger
-                        };
-                        let _ = theme::progress_bar(ui, q, ui.available_width());
-                        theme::status_chip(ui, &format!("Ch{} {:.0}%", i, q * 100.0), q_intent);
-                    }
+                && let Some(qualities) = &stream.channel_quality
+            {
+                ui.add_space(4.0);
+                ui.label(
+                    egui::RichText::new("Channel Quality")
+                        .small()
+                        .color(egui::Color32::GRAY),
+                );
+                for (i, &q) in qualities.iter().enumerate() {
+                    let q_intent = if q > 0.7 {
+                        theme::Intent::Success
+                    } else if q > 0.4 {
+                        theme::Intent::Warning
+                    } else {
+                        theme::Intent::Danger
+                    };
+                    let _ = theme::progress_bar(ui, q, ui.available_width());
+                    theme::status_chip(ui, &format!("Ch{} {:.0}%", i, q * 100.0), q_intent);
                 }
-            });
+            }
+        });
     }
 }
 

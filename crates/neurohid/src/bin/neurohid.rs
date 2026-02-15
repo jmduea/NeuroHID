@@ -37,7 +37,9 @@ impl log::Log for CombinedLogger {
 
 fn init_hub_logger() -> anyhow::Result<()> {
     let logger = CombinedLogger {
-        egui_logger: egui_logger::builder().max_level(log::LevelFilter::Info).build(),
+        egui_logger: egui_logger::builder()
+            .max_level(log::LevelFilter::Info)
+            .build(),
         tracing_logger: tracing_log::LogTracer::new(),
     };
 
@@ -56,8 +58,8 @@ fn main() {
     // return EPIPE errors instead of killing the process.
     #[cfg(unix)]
     {
-        use std::sync::atomic::AtomicBool;
         use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
         let _ = signal_hook::flag::register(
             signal_hook::consts::SIGPIPE,
             Arc::new(AtomicBool::new(false)),

@@ -3,8 +3,8 @@
 use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use tokio::sync::{mpsc, watch};
 
 use neurohid_types::{

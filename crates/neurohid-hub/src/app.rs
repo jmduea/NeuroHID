@@ -11,15 +11,15 @@ use eframe::egui;
 use neurohid_types::control::RuntimeModeState;
 
 use crate::data_bus::DataBus;
+use crate::screens::Screen;
 use crate::screens::calibration::CalibrationScreen;
 use crate::screens::dashboard::DashboardScreen;
-use crate::screens::devices::{derive_device_label, DevicesScreen};
+use crate::screens::devices::{DevicesScreen, derive_device_label};
 use crate::screens::jupyter_ide::JupyterIdeScreen;
 use crate::screens::profiles::ProfilesScreen;
 use crate::screens::python_lab::PythonLabScreen;
 use crate::screens::settings::SettingsScreen;
 use crate::screens::visualization::VisualizationScreen;
-use crate::screens::Screen;
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 use crate::stream_console::StreamConsole;
@@ -257,16 +257,16 @@ impl HubApp {
             .resizable(false)
             .show(ctx, |ui| {
                 ui.label(egui::RichText::new("NeuroHID").heading().strong());
-                ui.label(egui::RichText::new("Neural Interaction Console").small().weak());
+                ui.label(
+                    egui::RichText::new("Neural Interaction Console")
+                        .small()
+                        .weak(),
+                );
                 ui.add_space(8.0);
 
                 let screens = Screen::all_for_mode(&self.state.config.ui.mode);
                 let snap = &self.state.service_snapshot;
-                let service_text = if snap.running {
-                    "Running"
-                } else {
-                    "Stopped"
-                };
+                let service_text = if snap.running { "Running" } else { "Stopped" };
 
                 let ipc_text = if snap.ipc_connected {
                     if snap.ipc_simulated {
@@ -331,22 +331,27 @@ impl HubApp {
                                             .unwrap_or_default(),
                                     };
 
-                                    let connected = streams.iter().filter(|stream| stream.connected).count();
+                                    let connected =
+                                        streams.iter().filter(|stream| stream.connected).count();
                                     let total = streams.len();
-                                    group.group("◍", &format!("{} ({}/{})", device_label, connected, total), |stream_group| {
-                                        for stream in streams {
-                                            stream_group.item(
-                                                "•",
-                                                &format!(
-                                                    "{} · {} · {}ch · {:.0}Hz",
-                                                    stream.name,
-                                                    stream.stream_type,
-                                                    stream.channel_count,
-                                                    stream.sample_rate
-                                                ),
-                                            );
-                                        }
-                                    });
+                                    group.group(
+                                        "◍",
+                                        &format!("{} ({}/{})", device_label, connected, total),
+                                        |stream_group| {
+                                            for stream in streams {
+                                                stream_group.item(
+                                                    "•",
+                                                    &format!(
+                                                        "{} · {} · {}ch · {:.0}Hz",
+                                                        stream.name,
+                                                        stream.stream_type,
+                                                        stream.channel_count,
+                                                        stream.sample_rate
+                                                    ),
+                                                );
+                                            }
+                                        },
+                                    );
                                 }
                             });
                         } else if snap.running {
@@ -652,55 +657,67 @@ impl eframe::App for HubApp {
                     .inner_margin(egui::Margin::symmetric(8, 8)),
             )
             .show(ctx, |ui| {
-            // Show init error if any
-            if let Some(err) = &self.state.init_error {
-                theme::status_chip(ui, &format!("Init error: {}", err), theme::Intent::Danger);
-                ui.separator();
-            }
+                // Show init error if any
+                if let Some(err) = &self.state.init_error {
+                    theme::status_chip(ui, &format!("Init error: {}", err), theme::Intent::Danger);
+                    ui.separator();
+                }
 
-            match self.current_screen {
-                Screen::Dashboard => {
-                    self.dashboard
-                        .show(ui, &self.state, &mut self.service_manager, &self.runtime);
+                match self.current_screen {
+                    Screen::Dashboard => {
+                        self.dashboard.show(
+                            ui,
+                            &self.state,
+                            &mut self.service_manager,
+                            &self.runtime,
+                        );
+                    }
+                    Screen::Visualization => {
+                        let snapshot = self.state.service_snapshot.clone();
+                        self.visualization.show(
+                            ui,
+                            &self.data_bus,
+                            &snapshot,
+                            &mut self.state,
+                            &self.runtime,
+                        );
+                    }
+                    Screen::Devices => {
+                        self.devices
+                            .show(ui, &self.state, &mut self.service_manager);
+                    }
+                    Screen::Profiles => {
+                        self.profiles.show(
+                            ui,
+                            &mut self.state,
+                            &self.runtime,
+                            &self.service_manager,
+                        );
+                    }
+                    Screen::Calibration => {
+                        self.calibration
+                            .show_entry(ui, &mut self.state, &mut self.service_manager);
+                    }
+                    Screen::JupyterIde => {
+                        self.jupyter_ide.show(ui, &self.state.config.ui);
+                    }
+                    Screen::PythonLab => {
+                        self.python_lab.show(
+                            ui,
+                            &self.state.config.ui.jupyter_command,
+                            &self.data_bus,
+                            &self.state.service_snapshot,
+                        );
+                    }
+                    Screen::Settings => {
+                        self.settings.show(
+                            ui,
+                            &mut self.state,
+                            &self.service_manager,
+                            &self.runtime,
+                        );
+                    }
                 }
-                Screen::Visualization => {
-                    let snapshot = self.state.service_snapshot.clone();
-                    self.visualization.show(
-                        ui,
-                        &self.data_bus,
-                        &snapshot,
-                        &mut self.state,
-                        &self.runtime,
-                    );
-                }
-                Screen::Devices => {
-                    self.devices
-                        .show(ui, &self.state, &mut self.service_manager);
-                }
-                Screen::Profiles => {
-                    self.profiles
-                        .show(ui, &mut self.state, &self.runtime, &self.service_manager);
-                }
-                Screen::Calibration => {
-                    self.calibration
-                        .show_entry(ui, &mut self.state, &mut self.service_manager);
-                }
-                Screen::JupyterIde => {
-                    self.jupyter_ide.show(ui, &self.state.config.ui);
-                }
-                Screen::PythonLab => {
-                    self.python_lab.show(
-                        ui,
-                        &self.state.config.ui.jupyter_command,
-                        &self.data_bus,
-                        &self.state.service_snapshot,
-                    );
-                }
-                Screen::Settings => {
-                    self.settings
-                        .show(ui, &mut self.state, &self.service_manager, &self.runtime);
-                }
-            }
             });
 
         // Request continuous repainting for live updates

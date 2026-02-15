@@ -5,8 +5,8 @@
 //! that contains configs for each subsystem.
 
 use crate::{
-    action::ActionSpace, device::ConnectionSettings, observation::ObservationConfig,
-    observability::ObservabilityConfig, reward::ErrPConfig,
+    action::ActionSpace, device::ConnectionSettings, observability::ObservabilityConfig,
+    observation::ObservationConfig, reward::ErrPConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -195,8 +195,7 @@ impl Default for BrainFlowConfig {
 }
 
 /// Configuration for device connection.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct DeviceConfig {
     /// Which backend to use for device communication.
     #[serde(default)]
@@ -223,7 +222,6 @@ pub struct DeviceConfig {
     #[serde(default)]
     pub brainflow: Option<BrainFlowConfig>,
 }
-
 
 /// Configuration for signal processing.
 #[derive(Debug, Clone, Serialize, Deserialize)]

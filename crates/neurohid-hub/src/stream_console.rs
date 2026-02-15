@@ -185,7 +185,7 @@ impl StreamConsole {
             .default_height(200.0)
             .min_height(100.0)
             .max_height(400.0)
-                .frame(egui::Frame::NONE.fill(TERMINAL_BG))
+            .frame(egui::Frame::NONE.fill(TERMINAL_BG))
             .show(ctx, |ui| {
                 // Header bar
                 self.show_header(ui);
@@ -208,7 +208,7 @@ impl StreamConsole {
     /// Render the header bar with title and controls.
     fn show_header(&mut self, ui: &mut egui::Ui) {
         let header_frame = egui::Frame::NONE
-              .fill(Color32::from_gray(25))
+            .fill(Color32::from_gray(25))
             .inner_margin(egui::Margin::symmetric(8, 4));
 
         header_frame.show(ui, |ui| {
@@ -328,7 +328,11 @@ impl StreamConsole {
 
                 // Show filtered count
                 let filtered_count = self.get_filtered_lines().count();
-                theme::status_chip(ui, &format!("{} matches", filtered_count), theme::Intent::Info);
+                theme::status_chip(
+                    ui,
+                    &format!("{} matches", filtered_count),
+                    theme::Intent::Info,
+                );
             }
         });
     }
@@ -355,7 +359,7 @@ impl StreamConsole {
     /// Render the scrolling content area.
     fn show_content(&mut self, ui: &mut egui::Ui) {
         let content_frame = egui::Frame::NONE
-              .fill(TERMINAL_BG)
+            .fill(TERMINAL_BG)
             .inner_margin(egui::Margin::symmetric(4, 4));
 
         content_frame.show(ui, |ui| {
@@ -523,7 +527,7 @@ impl StreamConsole {
     /// Render the stats line at the bottom.
     fn show_stats(&self, ui: &mut egui::Ui, bus: &DataBus, snapshot: &ServiceSnapshot) {
         let stats_frame = egui::Frame::NONE
-              .fill(Color32::from_gray(20))
+            .fill(Color32::from_gray(20))
             .inner_margin(egui::Margin::symmetric(8, 4));
 
         stats_frame.show(ui, |ui| {

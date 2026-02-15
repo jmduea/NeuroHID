@@ -213,11 +213,13 @@ impl ActionPreviewWidget {
     ) {
         // Check if we can group with the last entry
         if let Some(last) = self.log.back_mut()
-            && last.action_type == action_type && last.timestamp.elapsed().as_millis() < 500 {
-                last.count += 1;
-                last.confidence = (last.confidence + confidence) / 2.0; // Average confidence
-                return;
-            }
+            && last.action_type == action_type
+            && last.timestamp.elapsed().as_millis() < 500
+        {
+            last.count += 1;
+            last.confidence = (last.confidence + confidence) / 2.0; // Average confidence
+            return;
+        }
         self.add_log(description, confidence, color, action_type);
     }
 
@@ -514,7 +516,11 @@ impl ActionPreviewWidget {
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Time format toggle
-                let toggle_label = if self.show_relative_time { "Abs" } else { "Rel" };
+                let toggle_label = if self.show_relative_time {
+                    "Abs"
+                } else {
+                    "Rel"
+                };
                 if theme::action_button(ui, toggle_label, true, theme::ButtonTone::Ghost) {
                     self.show_relative_time = !self.show_relative_time;
                 }

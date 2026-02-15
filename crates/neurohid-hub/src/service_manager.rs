@@ -11,6 +11,7 @@ use tokio::sync::broadcast;
 
 use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
 use neurohid_storage::ProfileStore;
+use neurohid_types::observability::{self as obs, EmitGate, ObservabilityComponent};
 use neurohid_types::{
     config::{
         ControlTransport, FallbackPolicy, ServiceConfig, ServiceRuntimeMode, SignalConfig,
@@ -21,9 +22,6 @@ use neurohid_types::{
         TrainerSnapshot,
     },
     profile::ProfileId,
-};
-use neurohid_types::observability::{
-    self as obs, EmitGate, ObservabilityComponent,
 };
 
 use crate::data_bus::DataBus;
@@ -700,9 +698,10 @@ impl ServiceManager {
     fn snapshot_external(&mut self) -> ServiceSnapshot {
         let now = Instant::now();
         if let Some(last_poll) = self.last_external_poll
-            && now.duration_since(last_poll) < EXTERNAL_SNAPSHOT_POLL_INTERVAL {
-                return self.cached_snapshot.clone();
-            }
+            && now.duration_since(last_poll) < EXTERNAL_SNAPSHOT_POLL_INTERVAL
+        {
+            return self.cached_snapshot.clone();
+        }
         self.last_external_poll = Some(now);
 
         let endpoint = self.control_endpoint_label();

@@ -922,18 +922,19 @@ impl Widget for TimeSeriesWidget {
 
         // Draw crosshair if hovering
         if let Some(hover_pos) = response.hover_pos()
-            && plot_rect.contains(hover_pos) {
-                self.draw_crosshair(
-                    ui,
-                    &painter,
-                    plot_rect,
-                    hover_pos,
-                    &visible_samples,
-                    &channel_rects,
-                    &channel_means,
-                    effective_scale,
-                    self.window_secs,
-                );
-            }
+            && plot_rect.contains(hover_pos)
+        {
+            self.draw_crosshair(
+                ui,
+                &painter,
+                plot_rect,
+                hover_pos,
+                &visible_samples,
+                &channel_rects,
+                &channel_means,
+                effective_scale,
+                self.window_secs,
+            );
+        }
     }
 }

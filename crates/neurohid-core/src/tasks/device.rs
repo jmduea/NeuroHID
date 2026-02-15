@@ -28,19 +28,19 @@
 //!   `cargo run -p neurohid-core`.
 
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures::StreamExt;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::time::{self, Duration};
 use tokio_util::sync::CancellationToken;
 
-use neurohid_device::mock::MockProvider;
 #[cfg(feature = "brainflow")]
 use neurohid_device::BrainFlowProvider;
 #[cfg(feature = "device-lsl")]
 use neurohid_device::LslProvider;
+use neurohid_device::mock::MockProvider;
 use neurohid_device::{Device, DeviceProvider, MockDeviceConfig, SerialProvider};
 use neurohid_types::{
     config::{DeviceBackend, DeviceConfig},

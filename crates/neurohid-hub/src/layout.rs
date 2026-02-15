@@ -4,11 +4,11 @@
 //! Users choose a layout configuration (e.g., 2x2, 1+2), assign
 //! a widget to each pane, and drag/resize panes via `egui_dock`.
 
-use crate::widgets::{create_widget, Widget, WidgetContext, WidgetId};
+use crate::theme;
+use crate::widgets::{Widget, WidgetContext, WidgetId, create_widget};
 use eframe::egui;
 use egui_dock::{DockArea, DockState, NodeIndex, Style, TabViewer};
 use neurohid_types::config::UiConfig;
-use crate::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LayoutConfig {
@@ -129,11 +129,7 @@ impl LayoutManager {
             }
         }
 
-        let widget_instances = pane_widget_ids
-            .iter()
-            .copied()
-            .map(create_widget)
-            .collect();
+        let widget_instances = pane_widget_ids.iter().copied().map(create_widget).collect();
 
         let dock_state = Self::build_dock_state(config, &pane_widget_ids);
 
@@ -169,8 +165,7 @@ impl LayoutManager {
                 surface.split_below(NodeIndex::root(), 0.5, vec![make_tab(1)]);
             }
             LayoutConfig::Grid2x2 => {
-                let [left, right] =
-                    surface.split_right(NodeIndex::root(), 0.5, vec![make_tab(1)]);
+                let [left, right] = surface.split_right(NodeIndex::root(), 0.5, vec![make_tab(1)]);
                 surface.split_below(left, 0.5, vec![make_tab(2)]);
                 surface.split_below(right, 0.5, vec![make_tab(3)]);
             }

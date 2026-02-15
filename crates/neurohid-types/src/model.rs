@@ -103,8 +103,8 @@ impl ModelManifest {
 #[cfg(test)]
 mod tests {
     use super::{
-        ModelManifest, NormalizationStats, CURRENT_ACTION_SCHEMA_VERSION,
-        CURRENT_FEATURE_SCHEMA_VERSION,
+        CURRENT_ACTION_SCHEMA_VERSION, CURRENT_FEATURE_SCHEMA_VERSION, ModelManifest,
+        NormalizationStats,
     };
 
     fn base_manifest() -> ModelManifest {

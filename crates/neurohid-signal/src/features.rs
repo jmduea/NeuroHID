@@ -22,7 +22,7 @@ use std::f32::consts::PI;
 
 use neurohid_types::error::SignalError;
 use neurohid_types::signal::{FeatureVector, FrequencyBand};
-use rustfft::{num_complex::Complex, FftPlanner};
+use rustfft::{FftPlanner, num_complex::Complex};
 
 use crate::buffer::SignalWindow;
 
@@ -620,11 +620,7 @@ fn pearson_correlation(x: &[f32], y: &[f32]) -> f32 {
     }
 
     let denom = (var_x * var_y).sqrt();
-    if denom > 1e-10 {
-        cov / denom
-    } else {
-        0.0
-    }
+    if denom > 1e-10 { cov / denom } else { 0.0 }
 }
 
 /// log-safe: returns ln(x) but clamps x to a small positive value to avoid -inf.
@@ -650,11 +646,7 @@ fn simple_slope(values: &[f32]) -> f32 {
         den += dx * dx;
     }
 
-    if den.abs() > 1e-10 {
-        num / den
-    } else {
-        0.0
-    }
+    if den.abs() > 1e-10 { num / den } else { 0.0 }
 }
 
 #[cfg(test)]

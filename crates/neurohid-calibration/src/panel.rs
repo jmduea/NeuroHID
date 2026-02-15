@@ -5,9 +5,9 @@
 //! tokio runtime — it receives signal quality and sample data from the
 //! host application (the hub).
 
-use eframe::egui;
 use armas::components::Progress;
 use armas::prelude::{ArmasContextExt, Button, ButtonSize, ButtonVariant};
+use eframe::egui;
 
 use neurohid_types::profile::CalibrationStep;
 

@@ -8,10 +8,8 @@ pub fn init_tracing(default_level: &str) -> anyhow::Result<()> {
     let directive: tracing_subscriber::filter::Directive =
         format!("neurohid={default_level}").parse()?;
 
-    let make_filter = || {
-        tracing_subscriber::EnvFilter::from_default_env()
-            .add_directive(directive.clone())
-    };
+    let make_filter =
+        || tracing_subscriber::EnvFilter::from_default_env().add_directive(directive.clone());
 
     match format.as_str() {
         "text" | "pretty" => tracing::subscriber::set_global_default(

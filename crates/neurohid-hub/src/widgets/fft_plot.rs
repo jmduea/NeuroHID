@@ -341,18 +341,19 @@ impl FftPlotWidget {
 
             // Show tooltip if hovering over this band
             if let Some(pos) = hover_pos
-                && band_rect.contains(pos) {
-                    let _ = egui::Tooltip::always_open(
-                        ui.ctx().clone(),
-                        ui.layer_id(),
-                        egui::Id::new(format!("fft_band_{}_{}", pane_index, name)),
-                        egui::PopupAnchor::Pointer,
-                    )
-                    .gap(12.0)
-                    .show(|ui| {
-                        ui.label(tooltip);
-                    });
-                }
+                && band_rect.contains(pos)
+            {
+                let _ = egui::Tooltip::always_open(
+                    ui.ctx().clone(),
+                    ui.layer_id(),
+                    egui::Id::new(format!("fft_band_{}_{}", pane_index, name)),
+                    egui::PopupAnchor::Pointer,
+                )
+                .gap(12.0)
+                .show(|ui| {
+                    ui.label(tooltip);
+                });
+            }
         }
     }
 
@@ -404,34 +405,35 @@ impl FftPlotWidget {
             }
 
             if let Some(fft) = self.cached_fft.get(ch)
-                && let Some(&power) = fft.get(bin_idx) {
-                    let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
-                    let name = CHANNEL_NAMES.get(ch).unwrap_or(&"?");
-                    let power_str = if power < 0.001 {
-                        format!("{}: {:.2e} uV", name, power)
-                    } else {
-                        format!("{}: {:.4} uV", name, power)
-                    };
-                    tooltip_lines.push((power_str, color));
+                && let Some(&power) = fft.get(bin_idx)
+            {
+                let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
+                let name = CHANNEL_NAMES.get(ch).unwrap_or(&"?");
+                let power_str = if power < 0.001 {
+                    format!("{}: {:.2e} uV", name, power)
+                } else {
+                    format!("{}: {:.4} uV", name, power)
+                };
+                tooltip_lines.push((power_str, color));
 
-                    // Draw marker on the line at this frequency
-                    let y_norm = if self.log_scale {
-                        let log_val = power.max(1e-10).log10();
-                        let log_max = y_max.log10();
-                        let log_min = log_max - 4.0;
-                        ((log_val - log_min) / (log_max - log_min)).clamp(0.0, 1.0)
-                    } else {
-                        (power / y_max).clamp(0.0, 1.0)
-                    };
-                    let y = rect.bottom() - y_norm * rect.height();
+                // Draw marker on the line at this frequency
+                let y_norm = if self.log_scale {
+                    let log_val = power.max(1e-10).log10();
+                    let log_max = y_max.log10();
+                    let log_min = log_max - 4.0;
+                    ((log_val - log_min) / (log_max - log_min)).clamp(0.0, 1.0)
+                } else {
+                    (power / y_max).clamp(0.0, 1.0)
+                };
+                let y = rect.bottom() - y_norm * rect.height();
 
-                    painter.circle_filled(egui::pos2(hover_pos.x, y), 3.0, color);
-                    painter.circle_stroke(
-                        egui::pos2(hover_pos.x, y),
-                        3.0,
-                        egui::Stroke::new(1.0, egui::Color32::WHITE),
-                    );
-                }
+                painter.circle_filled(egui::pos2(hover_pos.x, y), 3.0, color);
+                painter.circle_stroke(
+                    egui::pos2(hover_pos.x, y),
+                    3.0,
+                    egui::Stroke::new(1.0, egui::Color32::WHITE),
+                );
+            }
         }
 
         // Draw tooltip near cursor
@@ -504,58 +506,55 @@ impl FftPlotWidget {
 
             if let Some(fft) = self.cached_fft.get(ch)
                 && let Some((_, freq, mag)) = Self::find_peak(fft, bins_to_show, nyquist, half_bins)
-                {
-                    let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
+            {
+                let color = CHANNEL_COLORS[ch % CHANNEL_COLORS.len()];
 
-                    // Calculate position
-                    let x = rect.left() + (freq / freq_range) * rect.width();
+                // Calculate position
+                let x = rect.left() + (freq / freq_range) * rect.width();
 
-                    let y_norm = if self.log_scale {
-                        let log_val = mag.max(1e-10).log10();
-                        let log_max = y_max.log10();
-                        let log_min = log_max - 4.0;
-                        ((log_val - log_min) / (log_max - log_min)).clamp(0.0, 1.0)
-                    } else {
-                        (mag / y_max).clamp(0.0, 1.0)
-                    };
-                    let y = rect.bottom() - y_norm * rect.height();
+                let y_norm = if self.log_scale {
+                    let log_val = mag.max(1e-10).log10();
+                    let log_max = y_max.log10();
+                    let log_min = log_max - 4.0;
+                    ((log_val - log_min) / (log_max - log_min)).clamp(0.0, 1.0)
+                } else {
+                    (mag / y_max).clamp(0.0, 1.0)
+                };
+                let y = rect.bottom() - y_norm * rect.height();
 
-                    // Draw peak marker (filled circle)
-                    painter.circle_filled(egui::pos2(x, y), 4.0, color);
-                    painter.circle_stroke(
-                        egui::pos2(x, y),
-                        4.0,
-                        egui::Stroke::new(1.0, egui::Color32::WHITE),
-                    );
+                // Draw peak marker (filled circle)
+                painter.circle_filled(egui::pos2(x, y), 4.0, color);
+                painter.circle_stroke(
+                    egui::pos2(x, y),
+                    4.0,
+                    egui::Stroke::new(1.0, egui::Color32::WHITE),
+                );
 
-                    // Draw peak label
-                    let label = format!("{:.1} Hz", freq);
-                    let label_y = (y - 12.0).max(rect.top() + 20.0);
+                // Draw peak label
+                let label = format!("{:.1} Hz", freq);
+                let label_y = (y - 12.0).max(rect.top() + 20.0);
 
-                    // Background for label
-                    let galley = painter.layout_no_wrap(
-                        label.clone(),
-                        egui::FontId::proportional(9.0),
-                        color,
-                    );
-                    let label_rect = egui::Rect::from_min_size(
-                        egui::pos2(x - galley.size().x / 2.0 - 3.0, label_y - 1.0),
-                        galley.size() + egui::vec2(6.0, 2.0),
-                    );
-                    painter.rect_filled(
-                        label_rect,
-                        2.0,
-                        egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
-                    );
+                // Background for label
+                let galley =
+                    painter.layout_no_wrap(label.clone(), egui::FontId::proportional(9.0), color);
+                let label_rect = egui::Rect::from_min_size(
+                    egui::pos2(x - galley.size().x / 2.0 - 3.0, label_y - 1.0),
+                    galley.size() + egui::vec2(6.0, 2.0),
+                );
+                painter.rect_filled(
+                    label_rect,
+                    2.0,
+                    egui::Color32::from_rgba_unmultiplied(0, 0, 0, 180),
+                );
 
-                    painter.text(
-                        egui::pos2(x, label_y),
-                        egui::Align2::CENTER_TOP,
-                        label,
-                        egui::FontId::proportional(9.0),
-                        color,
-                    );
-                }
+                painter.text(
+                    egui::pos2(x, label_y),
+                    egui::Align2::CENTER_TOP,
+                    label,
+                    egui::FontId::proportional(9.0),
+                    color,
+                );
+            }
         }
     }
 }
@@ -697,25 +696,22 @@ impl Widget for FftPlotWidget {
                 if let Some(fft) = self.cached_fft.get(ch)
                     && let Some((_, freq, _)) =
                         Self::find_peak(fft, bins_to_show, nyquist, half_bins)
-                    {
-                        let band = Self::get_band_name(freq);
-                        let band_display = match band {
-                            "delta" => "Delta",
-                            "theta" => "Theta",
-                            "alpha" => "Alpha",
-                            "beta" => "Beta",
-                            "gamma" => "Gamma",
-                            _ => "Other",
-                        };
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "Dominant: {:.1} Hz ({})",
-                                freq, band_display
-                            ))
+                {
+                    let band = Self::get_band_name(freq);
+                    let band_display = match band {
+                        "delta" => "Delta",
+                        "theta" => "Theta",
+                        "alpha" => "Alpha",
+                        "beta" => "Beta",
+                        "gamma" => "Gamma",
+                        _ => "Other",
+                    };
+                    ui.label(
+                        egui::RichText::new(format!("Dominant: {:.1} Hz ({})", freq, band_display))
                             .weak()
                             .small(),
-                        );
-                    }
+                    );
+                }
             }
         });
 

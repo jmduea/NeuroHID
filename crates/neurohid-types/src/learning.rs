@@ -4,7 +4,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::{action::Action, now_micros, Timestamp};
+use crate::{Timestamp, action::Action, now_micros};
 
 /// One training episode captured from the live runtime loop.
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -8,7 +8,7 @@ use std::io::Cursor;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tract_onnx::prelude::*;
 
 use neurohid_storage::ProfileStore;
@@ -25,9 +25,9 @@ use neurohid_types::{
 };
 
 use crate::service::{DecoderCommand, ServiceState};
+use crate::tasks::DecisionEventRecord;
 use crate::tasks::latency::RollingLatency;
 use crate::tasks::session_logger::EpisodeLogRecord;
-use crate::tasks::DecisionEventRecord;
 
 const LATENCY_WINDOW_SIZE: usize = 512;
 const DECODER_SUMMARY_EVERY_DECISIONS: u64 = 256;
@@ -911,17 +911,17 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
-    use tokio::sync::{mpsc, RwLock};
+    use tokio::sync::{RwLock, mpsc};
 
     use neurohid_types::action::MouseButton;
     use neurohid_types::model::{
-        ModelManifest, NormalizationStats, CURRENT_ACTION_SCHEMA_VERSION,
-        CURRENT_FEATURE_SCHEMA_VERSION,
+        CURRENT_ACTION_SCHEMA_VERSION, CURRENT_FEATURE_SCHEMA_VERSION, ModelManifest,
+        NormalizationStats,
     };
 
     use super::{
-        action_from_output, to_probability, ArtifactLoader, DecoderTask, InferenceModel,
-        LoadedModel,
+        ArtifactLoader, DecoderTask, InferenceModel, LoadedModel, action_from_output,
+        to_probability,
     };
     use crate::service::ServiceState;
 

@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use tokio::sync::{broadcast, RwLock};
+use tokio::sync::{RwLock, broadcast};
 use tokio::time::MissedTickBehavior;
 
 use neurohid_types::{config::LatencyAlertConfig, error::Result};

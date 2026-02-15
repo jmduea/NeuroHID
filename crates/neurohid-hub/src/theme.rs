@@ -1,5 +1,10 @@
-use armas::components::{CardVariant, Input, Progress, Select, SelectOption, Slider, Textarea, Toggle, ToggleSize, ToggleVariant};
-use armas::prelude::{ArmasContextExt, Button, ButtonSize, ButtonVariant, Card, Theme as ArmasTheme};
+use armas::components::{
+    CardVariant, Input, Progress, Select, SelectOption, Slider, Textarea, Toggle, ToggleSize,
+    ToggleVariant,
+};
+use armas::prelude::{
+    ArmasContextExt, Button, ButtonSize, ButtonVariant, Card, Theme as ArmasTheme,
+};
 use eframe::egui::{self, Color32, RichText};
 use neurohid_types::config::ThemeMode;
 
@@ -280,11 +285,7 @@ pub fn textarea_readonly(
     .changed()
 }
 
-pub fn toggle_switch(
-    ui: &mut egui::Ui,
-    id: impl Into<egui::Id>,
-    value: &mut bool,
-) -> bool {
+pub fn toggle_switch(ui: &mut egui::Ui, id: impl Into<egui::Id>, value: &mut bool) -> bool {
     let theme = ui.ctx().armas_theme();
     Toggle::new()
         .id(id)
@@ -377,16 +378,9 @@ pub fn progress_bar(ui: &mut egui::Ui, value_0_to_1: f32, width: f32) -> egui::R
 
 #[cfg(test)]
 mod tests {
-    use egui_kittest::{
-        kittest::Queryable,
-        Harness,
-    };
+    use egui_kittest::{Harness, kittest::Queryable};
 
-    use super::{
-        action_button,
-        nav_button,
-        ButtonTone,
-    };
+    use super::{ButtonTone, action_button, nav_button};
 
     #[test]
     fn armas_button_wrappers_expose_accessible_labels() {

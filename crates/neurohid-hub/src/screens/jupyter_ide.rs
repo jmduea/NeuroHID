@@ -6,11 +6,11 @@ use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, Receiver, TryRecvError};
 
+use crate::theme;
 use eframe::egui;
 use egui_async::Bind;
 use egui_console::{ConsoleBuilder, ConsoleEvent, ConsoleWindow};
 use neurohid_types::config::UiConfig;
-use crate::theme;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum BootstrapState {
@@ -84,7 +84,11 @@ impl JupyterIdeScreen {
             self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
         }
 
-        theme::page_header(ui, "Jupyter IDE", "Managed JupyterLab for RL/ML experimentation");
+        theme::page_header(
+            ui,
+            "Jupyter IDE",
+            "Managed JupyterLab for RL/ML experimentation",
+        );
 
         let jupyter_running = self
             .jupyter_process
@@ -124,7 +128,11 @@ impl JupyterIdeScreen {
                 theme::status_chip(ui, env_text, env_intent);
                 theme::status_chip(ui, jupyter_text, jupyter_intent);
                 if let Some(session_url) = &self.jupyter_session_url {
-                    theme::status_chip(ui, &format!("Session {}", session_url), theme::Intent::Info);
+                    theme::status_chip(
+                        ui,
+                        &format!("Session {}", session_url),
+                        theme::Intent::Info,
+                    );
                 }
             });
         });
@@ -134,7 +142,12 @@ impl JupyterIdeScreen {
         let bootstrap_running = self.bootstrap_task.is_pending();
 
         ui.horizontal(|ui| {
-            if theme::action_button(ui, "Prepare Environment", !bootstrap_running, theme::ButtonTone::Primary) {
+            if theme::action_button(
+                ui,
+                "Prepare Environment",
+                !bootstrap_running,
+                theme::ButtonTone::Primary,
+            ) {
                 self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
             }
 
@@ -144,15 +157,30 @@ impl JupyterIdeScreen {
                     self.bootstrap_state,
                     BootstrapState::Ready | BootstrapState::Idle
                 );
-            if theme::action_button(ui, "Start Jupyter", can_start_jupyter, theme::ButtonTone::Primary) {
+            if theme::action_button(
+                ui,
+                "Start Jupyter",
+                can_start_jupyter,
+                theme::ButtonTone::Primary,
+            ) {
                 self.start_jupyter(&ui_cfg.jupyter_command);
             }
 
-            if theme::action_button(ui, "Stop Jupyter", jupyter_running, theme::ButtonTone::Ghost) {
+            if theme::action_button(
+                ui,
+                "Stop Jupyter",
+                jupyter_running,
+                theme::ButtonTone::Ghost,
+            ) {
                 self.stop_jupyter();
             }
 
-            if theme::action_button(ui, "Open in Browser", jupyter_running, theme::ButtonTone::Secondary) {
+            if theme::action_button(
+                ui,
+                "Open in Browser",
+                jupyter_running,
+                theme::ButtonTone::Secondary,
+            ) {
                 let browser_url = self
                     .jupyter_session_url
                     .as_deref()
@@ -188,29 +216,29 @@ impl JupyterIdeScreen {
 
         ui.separator();
         theme::card_frame(ui).show(ui, |ui| {
-                ui.label(egui::RichText::new("IDE Log").strong());
-                egui::ScrollArea::vertical()
-                    .id_salt("jupyter_ide_log_scroll")
-                    .max_height(260.0)
-                    .show(ui, |ui| {
-                        let _ = theme::textarea_readonly(
-                            ui,
-                            "jupyter_ide_log_output",
-                            &mut self.log_output,
-                            12,
-                            f32::INFINITY,
-                        );
-                    });
-            });
+            ui.label(egui::RichText::new("IDE Log").strong());
+            egui::ScrollArea::vertical()
+                .id_salt("jupyter_ide_log_scroll")
+                .max_height(260.0)
+                .show(ui, |ui| {
+                    let _ = theme::textarea_readonly(
+                        ui,
+                        "jupyter_ide_log_output",
+                        &mut self.log_output,
+                        12,
+                        f32::INFINITY,
+                    );
+                });
+        });
 
         ui.add_space(8.0);
         theme::card_frame(ui).show(ui, |ui| {
-                ui.label(egui::RichText::new("IDE Console").strong());
-                let console_response = self.console.draw(ui);
-                if let ConsoleEvent::Command(command) = console_response {
-                    self.handle_console_command(command, ui_cfg);
-                }
-            });
+            ui.label(egui::RichText::new("IDE Console").strong());
+            let console_response = self.console.draw(ui);
+            if let ConsoleEvent::Command(command) = console_response {
+                self.handle_console_command(command, ui_cfg);
+            }
+        });
     }
 
     fn start_bootstrap(&mut self, command_line: &str) {
@@ -564,10 +592,7 @@ fn open_url(url: &str) -> std::io::Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use egui_kittest::{
-        kittest::Queryable,
-        Harness,
-    };
+    use egui_kittest::{Harness, kittest::Queryable};
 
     use super::JupyterIdeScreen;
 

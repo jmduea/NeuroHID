@@ -6,8 +6,8 @@ use prost::Message;
 
 use neurohid_types::action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement};
 use neurohid_types::ipc_v2::{
-    DecisionEventV2, ErrpWindowV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, TrainerStatusV2,
-    RUNTIME_ML_PROTOCOL_V2,
+    DecisionEventV2, ErrpWindowV2, RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2, RuntimeMlKindV2,
+    TrainerStatusV2,
 };
 use neurohid_types::now_micros;
 

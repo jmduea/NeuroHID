@@ -142,11 +142,7 @@ impl SignalQualityWidget {
 
         let mut avg_quality = vec![0.0f32; num_eeg_channels];
         for sample in quality_samples.range(start..) {
-            for (ch, quality_sum) in avg_quality
-                .iter_mut()
-                .enumerate()
-                .take(num_eeg_channels)
-            {
+            for (ch, quality_sum) in avg_quality.iter_mut().enumerate().take(num_eeg_channels) {
                 if let Some(&v) = sample.values.get(ch) {
                     *quality_sum += v;
                 }
@@ -159,8 +155,8 @@ impl SignalQualityWidget {
         let metrics = (0..num_eeg_channels)
             .map(|ch| {
                 let q = avg_quality[ch]; // 0.0–1.0 (pre-normalized)
-                                         // Map 0.0–1.0 quality to Quality enum:
-                                         //   >= 0.75 → Good, >= 0.50 → Warning, <0.50 → Bad
+                // Map 0.0–1.0 quality to Quality enum:
+                //   >= 0.75 → Good, >= 0.50 → Warning, <0.50 → Bad
                 let quality = if q >= 0.75 {
                     Quality::Good
                 } else if q >= 0.50 {

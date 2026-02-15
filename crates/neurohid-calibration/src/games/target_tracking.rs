@@ -8,9 +8,9 @@
 //! control rather than discrete actions, which more closely resembles actual
 //! mouse control use cases.
 
-use eframe::egui;
 use armas::components::Progress;
 use armas::prelude::{ArmasContextExt, Button, ButtonSize, ButtonVariant};
+use eframe::egui;
 
 /// Target tracking game state.
 pub struct TargetTrackingGame {

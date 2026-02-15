@@ -277,8 +277,12 @@ impl PythonLabScreen {
                 }
 
                 let uv_sync_running = self.uv_sync_task.is_pending();
-                if action_button_tone(ui, "uv sync", !uv_sync_running, theme::ButtonTone::Secondary)
-                {
+                if action_button_tone(
+                    ui,
+                    "uv sync",
+                    !uv_sync_running,
+                    theme::ButtonTone::Secondary,
+                ) {
                     self.run_uv_sync();
                 }
 
@@ -302,12 +306,8 @@ impl PythonLabScreen {
                         theme::card_frame(ui).show(ui, |ui| {
                             ui.horizontal(|ui| {
                                 let selected = self.selected_cell == index;
-                                if theme::nav_button(
-                                    ui,
-                                    &format!("Cell {}", index + 1),
-                                    selected,
-                                )
-                                .clicked()
+                                if theme::nav_button(ui, &format!("Cell {}", index + 1), selected)
+                                    .clicked()
                                 {
                                     self.selected_cell = index;
                                 }
@@ -811,10 +811,11 @@ impl PythonLabScreen {
                 ));
 
                 if let Some(pending) = self.pending_execution.take()
-                    && let Some(cell) = self.cells.get_mut(pending.cell_index) {
-                        cell.status = CellStatus::Error;
-                        cell.output = format!("Kernel error: {}", message);
-                    }
+                    && let Some(cell) = self.cells.get_mut(pending.cell_index)
+                {
+                    cell.status = CellStatus::Error;
+                    cell.output = format!("Kernel error: {}", message);
+                }
             }
         }
     }
@@ -1040,7 +1041,10 @@ fn run_uv_sync_blocking() -> String {
             if !out.status.success() {
                 text.push_str(&format!("Command exited with status {}\n", out.status));
             }
-            text.push_str(&format!("[completed in {}]\n", format_duration(start.elapsed())));
+            text.push_str(&format!(
+                "[completed in {}]\n",
+                format_duration(start.elapsed())
+            ));
             text
         }
         Err(error) => format!("Failed to run uv sync: {}\n", error),
@@ -1058,16 +1062,10 @@ fn action_button_tone(
 
 #[cfg(test)]
 mod tests {
-    use egui_kittest::{
-        kittest::Queryable,
-        Harness,
-    };
+    use egui_kittest::{Harness, kittest::Queryable};
 
     use super::PythonLabScreen;
-    use crate::{
-        data_bus::DataBus,
-        state::ServiceSnapshot,
-    };
+    use crate::{data_bus::DataBus, state::ServiceSnapshot};
 
     struct PythonLabHarnessState {
         screen: PythonLabScreen,

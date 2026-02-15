@@ -112,11 +112,7 @@ impl DecoderMonitorWidget {
 
         // Trim old timestamps
         let cutoff = now - ACTION_HISTORY_SECS;
-        while self
-            .action_timestamps
-            .front()
-            .is_some_and(|&t| t < cutoff)
-        {
+        while self.action_timestamps.front().is_some_and(|&t| t < cutoff) {
             self.action_timestamps.pop_front();
         }
 
@@ -448,9 +444,10 @@ impl DecoderMonitorWidget {
 
                     // Check hover
                     if let Some(hover_pos) = bar_response.hover_pos()
-                        && seg.contains(hover_pos) {
-                            hovered_segment = Some((i, frac));
-                        }
+                        && seg.contains(hover_pos)
+                    {
+                        hovered_segment = Some((i, frac));
+                    }
                 }
                 x += w;
             }
@@ -586,16 +583,17 @@ impl DecoderMonitorWidget {
 
                             // Check hover
                             if let Some(hover_pos) = response.hover_pos()
-                                && cell_rect.contains(hover_pos) {
-                                    hovered_cell = Some((ch, b, val));
-                                    // Highlight hovered cell
-                                    painter.rect_stroke(
-                                        cell_rect,
-                                        3.0,
-                                        egui::Stroke::new(2.0, egui::Color32::WHITE),
-                                        egui::StrokeKind::Outside,
-                                    );
-                                }
+                                && cell_rect.contains(hover_pos)
+                            {
+                                hovered_cell = Some((ch, b, val));
+                                // Highlight hovered cell
+                                painter.rect_stroke(
+                                    cell_rect,
+                                    3.0,
+                                    egui::Stroke::new(2.0, egui::Color32::WHITE),
+                                    egui::StrokeKind::Outside,
+                                );
+                            }
                         }
                     }
                 }
@@ -641,7 +639,10 @@ impl DecoderMonitorWidget {
                     )
                     .gap(12.0)
                     .show(|ui| {
-                        ui.label(format!("{} {} : {:.4}", CHANNEL_NAMES[ch], BAND_NAMES[band], val));
+                        ui.label(format!(
+                            "{} {} : {:.4}",
+                            CHANNEL_NAMES[ch], BAND_NAMES[band], val
+                        ));
                     });
                 }
             }

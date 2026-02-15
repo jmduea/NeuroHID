@@ -112,9 +112,8 @@ impl Widget for FocusWidget {
             if self.channel >= num_channels {
                 self.channel = 0;
             }
-            let channel_labels: Vec<String> = (0..num_channels)
-                .map(|ch| format!("{}", ch + 1))
-                .collect();
+            let channel_labels: Vec<String> =
+                (0..num_channels).map(|ch| format!("{}", ch + 1)).collect();
             let channel_refs: Vec<&str> = channel_labels.iter().map(String::as_str).collect();
             let _ = theme::select_index(
                 ui,

@@ -3,10 +3,10 @@
 //! Displays power in standard EEG frequency bands as bar charts.
 //! Bands: Delta (0.5-4), Theta (4-8), Alpha (8-13), Beta (13-30), Gamma (30-45).
 
+use crate::theme;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use std::collections::VecDeque;
-use crate::theme;
 
 const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
@@ -694,7 +694,10 @@ impl Widget for BandPowerWidget {
                             egui::RichText::new(format!("{} ({:.1}-{:.1} Hz)", name, f_lo, f_hi))
                                 .strong(),
                         );
-                        ui.label(format!("Channel: {}", CHANNEL_NAMES.get(ch).unwrap_or(&"?")));
+                        ui.label(format!(
+                            "Channel: {}",
+                            CHANNEL_NAMES.get(ch).unwrap_or(&"?")
+                        ));
                         if self.relative {
                             ui.label(format!("Relative Power: {:.1}%", val));
                         } else {

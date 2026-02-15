@@ -721,7 +721,7 @@ impl ProfileStore {
 mod tests {
     use std::path::PathBuf;
 
-    use super::{parse_session_log_id, ProfileStore};
+    use super::{ProfileStore, parse_session_log_id};
     use crate::{DataPaths, SecureStorage};
 
     fn unique_test_root(test_name: &str) -> PathBuf {

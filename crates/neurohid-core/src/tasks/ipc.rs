@@ -7,13 +7,13 @@ use std::time::{Duration, Instant};
 
 use neurohid_storage::ProfileStore;
 use tokio::fs;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 
 use neurohid_ipc::{
     AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2, IpcConfig,
-    IpcServer, IpcTransport, ProtocolErrorV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2,
-    RuntimeMlRoleV2, RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2,
-    TrainerStatusV2, RUNTIME_ML_PROTOCOL_V2,
+    IpcServer, IpcTransport, ProtocolErrorV2, RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2,
+    RuntimeMlKindV2, RuntimeMlRoleV2, RuntimeTelemetryV2, SessionBoundaryEventV2,
+    SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
 };
 use neurohid_types::{
     control::RuntimeModeState,
@@ -415,7 +415,9 @@ impl IpcTask {
         connection.send(msg).await?;
 
         self.telemetry_frames_sent = self.telemetry_frames_sent.saturating_add(1);
-        if self.telemetry_frames_sent.is_multiple_of(IPC_TELEMETRY_SUMMARY_EVERY)
+        if self
+            .telemetry_frames_sent
+            .is_multiple_of(IPC_TELEMETRY_SUMMARY_EVERY)
             && self.emit_gate.allow_info()
         {
             tracing::info!(
@@ -877,13 +879,15 @@ impl IpcTask {
             roots.push(temp);
         }
         if let Ok(cwd) = std::env::current_dir()
-            && let Ok(canonical_cwd) = fs::canonicalize(cwd).await {
-                roots.push(canonical_cwd);
-            }
+            && let Ok(canonical_cwd) = fs::canonicalize(cwd).await
+        {
+            roots.push(canonical_cwd);
+        }
         if let Some(store) = &self.profile_store
-            && let Ok(store_root) = fs::canonicalize(store.data_root()).await {
-                roots.push(store_root);
-            }
+            && let Ok(store_root) = fs::canonicalize(store.data_root()).await
+        {
+            roots.push(store_root);
+        }
 
         roots.sort();
         roots.dedup();

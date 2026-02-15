@@ -14,12 +14,12 @@
 //!    accidental clicks or key presses
 
 use std::collections::VecDeque;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 
-use neurohid_platform::{create_platform, MouseMovement, Platform};
+use neurohid_platform::{MouseMovement, Platform, create_platform};
 use neurohid_types::{
     action::{Action, MouseButton},
     config::ActionConfig,
@@ -193,16 +193,17 @@ impl ActionTask {
         // Check that we have the necessary permissions for input simulation.
         // On macOS, this might prompt the user to grant accessibility access.
         if let Some(ref p) = platform
-            && let Err(e) = p.check_input_permissions() {
-                tracing::warn!("Input permission check failed (HID output disabled): {}", e);
-                tracing::warn!("Please grant the necessary permissions and restart.");
-                let mut state = self.state.write().await;
-                state.task_error = Some((
-                    "action".into(),
-                    format!("Permission denied: {} \u{2014} HID output disabled", e),
-                ));
-                platform = None;
-            }
+            && let Err(e) = p.check_input_permissions()
+        {
+            tracing::warn!("Input permission check failed (HID output disabled): {}", e);
+            tracing::warn!("Please grant the necessary permissions and restart.");
+            let mut state = self.state.write().await;
+            state.task_error = Some((
+                "action".into(),
+                format!("Permission denied: {} \u{2014} HID output disabled", e),
+            ));
+            platform = None;
+        }
 
         if let Some(ref p) = platform {
             tracing::info!("Platform initialized: {}", p.platform_name());

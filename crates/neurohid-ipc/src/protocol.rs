@@ -5,9 +5,9 @@
 
 pub use neurohid_types::ipc_v2::{
     AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2, PingV2,
-    PongV2, ProtocolErrorV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2,
-    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
-    RUNTIME_ML_PROTOCOL_V2,
+    PongV2, ProtocolErrorV2, RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2, RuntimeMlKindV2,
+    RuntimeMlRoleV2, RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2,
+    TrainerStatusV2,
 };
 use serde::{Deserialize, Serialize};
 

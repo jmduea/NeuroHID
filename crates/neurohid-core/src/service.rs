@@ -5,9 +5,9 @@
 //! play any instruments itself, but it makes sure everyone starts at the right
 //! time, stays in sync, and stops together gracefully.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use std::sync::atomic::AtomicBool;
+use tokio::sync::{RwLock, broadcast, mpsc};
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
@@ -603,7 +603,8 @@ impl NeuroHidService {
         let storage_config = self.config.storage.clone();
         let profile_store_for_session_logger = self.profile_store.clone();
         let shutdown_session_logger = self.shutdown_rx.resubscribe();
-        let mut session_logger_handle = episode_log_rx.map(|episode_log_rx| tokio::spawn(async move {
+        let mut session_logger_handle = episode_log_rx.map(|episode_log_rx| {
+            tokio::spawn(async move {
                 tracing::info!("Session logger task starting");
                 let task = SessionLoggerTask::new(
                     storage_config,
@@ -611,7 +612,8 @@ impl NeuroHidService {
                     episode_log_rx,
                 );
                 task.run(shutdown_session_logger).await
-            }));
+            })
+        });
 
         // Spawn the device task. This connects to the EEG device and streams
         // samples into the sample channel.
@@ -983,14 +985,12 @@ impl NeuroHidService {
         if !action_done {
             action_handle.abort();
         }
-        if !latency_monitor_done
-            && let Some(handle) = &mut latency_monitor_handle {
-                handle.abort();
-            }
-        if !session_logger_done
-            && let Some(handle) = &mut session_logger_handle {
-                handle.abort();
-            }
+        if !latency_monitor_done && let Some(handle) = &mut latency_monitor_handle {
+            handle.abort();
+        }
+        if !session_logger_done && let Some(handle) = &mut session_logger_handle {
+            handle.abort();
+        }
         if let Some(handle) = &mut outlet_handle {
             handle.abort();
         }

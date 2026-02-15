@@ -8,7 +8,7 @@ use std::process::{Child, Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 
 use neurohid_types::config::{
@@ -252,9 +252,10 @@ impl ServiceProcess {
         let start = Instant::now();
         while start.elapsed() < timeout {
             if let Ok(snapshot) = request_snapshot(self.control_port)
-                && snapshot.running {
-                    return Ok(());
-                }
+                && snapshot.running
+            {
+                return Ok(());
+            }
             if let Some(status) = self.child.try_wait()? {
                 bail!("service exited early with status {}", status);
             }

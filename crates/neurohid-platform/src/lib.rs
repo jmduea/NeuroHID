@@ -60,7 +60,7 @@ pub mod windows;
 pub mod macos;
 
 // Re-export the main types
-pub use traits::{create_platform, PermissionHint, Platform, PlatformConfig, PlatformExt};
+pub use traits::{PermissionHint, Platform, PlatformConfig, PlatformExt, create_platform};
 
 // Re-export commonly used types from neurohid-types
 pub use neurohid_types::action::{Key, MouseButton, MouseMovement};

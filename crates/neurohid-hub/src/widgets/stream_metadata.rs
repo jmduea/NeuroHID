@@ -38,7 +38,11 @@ impl Widget for StreamMetadataWidget {
 
         let connected_count = streams.iter().filter(|stream| stream.connected).count();
         ui.horizontal_wrapped(|ui| {
-            theme::status_chip(ui, &format!("Discovered {}", streams.len()), theme::Intent::Info);
+            theme::status_chip(
+                ui,
+                &format!("Discovered {}", streams.len()),
+                theme::Intent::Info,
+            );
             theme::status_chip(
                 ui,
                 &format!("Connected {}", connected_count),

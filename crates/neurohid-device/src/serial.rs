@@ -6,8 +6,8 @@ use serialport::{SerialPortInfo, SerialPortType};
 use std::io::{ErrorKind, Read};
 use std::pin::Pin;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use tokio::sync::{mpsc, watch};
 
@@ -385,7 +385,8 @@ impl Device for SerialDevice {
                                 }
                                 Err(e) => {
                                     malformed_frames += 1;
-                                    if malformed_frames == 1 || malformed_frames.is_multiple_of(100) {
+                                    if malformed_frames == 1 || malformed_frames.is_multiple_of(100)
+                                    {
                                         tracing::warn!(
                                             "Serial decoder dropped malformed frame (count={}): {}",
                                             malformed_frames,

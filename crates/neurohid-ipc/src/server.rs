@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::{Mutex, mpsc};
 
 use crate::protocol::{IpcConfig, IpcTransport, RuntimeMlEnvelopeV2};
 use neurohid_types::error::{IpcError, Result};
@@ -266,19 +266,17 @@ mod tests {
         });
 
         let mut client = IpcClient::new(config);
-        client.connect().await.expect("client connect should succeed");
+        client
+            .connect()
+            .await
+            .expect("client connect should succeed");
 
         let ping = PingV2 {
             ping_id: "test-ping".to_string(),
             timestamp_us: 123,
         };
-        let envelope = RuntimeMlEnvelopeV2::new(
-            RuntimeMlKindV2::Ping,
-            1,
-            "test-session",
-            &ping,
-        )
-        .expect("envelope should encode");
+        let envelope = RuntimeMlEnvelopeV2::new(RuntimeMlKindV2::Ping, 1, "test-session", &ping)
+            .expect("envelope should encode");
 
         client
             .send(envelope.clone())

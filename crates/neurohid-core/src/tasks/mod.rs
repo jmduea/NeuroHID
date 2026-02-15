@@ -19,7 +19,7 @@ mod outlet;
 mod session_logger;
 mod signal;
 
-use neurohid_types::{action::Action, Timestamp};
+use neurohid_types::{Timestamp, action::Action};
 
 /// Decoder-emitted event forwarded to the runtime ML bridge.
 #[derive(Debug, Clone)]

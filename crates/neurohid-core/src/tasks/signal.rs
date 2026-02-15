@@ -17,7 +17,7 @@ use neurohid_signal::{
 };
 use std::collections::{HashMap, VecDeque};
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 
 use neurohid_types::{
     config::SignalConfig,
@@ -183,7 +183,8 @@ impl SignalTask {
         sample: &Sample,
     ) -> StreamRoute {
         let stream_name = discovered.map_or_else(String::new, |s| s.name.to_ascii_lowercase());
-        let stream_type = discovered.map_or_else(String::new, |s| s.stream_type.to_ascii_lowercase());
+        let stream_type =
+            discovered.map_or_else(String::new, |s| s.stream_type.to_ascii_lowercase());
         let stream_key_lower = stream_key.to_ascii_lowercase();
         let combined = format!("{stream_type} {stream_name} {stream_key_lower}");
 
@@ -504,11 +505,12 @@ impl SignalTask {
         for buf in self.stream_buffers.values() {
             if let Some(last) = buf.samples.back()
                 && let Some(quality) = &last.quality
-                    && !quality.is_empty() {
-                        let avg = quality.iter().sum::<f32>() / quality.len() as f32;
-                        total_quality += avg;
-                        stream_count += 1;
-                    }
+                && !quality.is_empty()
+            {
+                let avg = quality.iter().sum::<f32>() / quality.len() as f32;
+                total_quality += avg;
+                stream_count += 1;
+            }
         }
 
         if stream_count > 0 {

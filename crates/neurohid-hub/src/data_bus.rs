@@ -216,9 +216,10 @@ impl DataBus {
                 .iter()
                 .any(|st| ds_type_prefix.eq_ignore_ascii_case(st))
                 && let Some(buf) = self.samples_by_source.get(&ds.id)
-                    && !buf.is_empty() {
-                        return buf;
-                    }
+                && !buf.is_empty()
+            {
+                return buf;
+            }
         }
         // Fallback: return the flat buffer (backward compat / single-stream).
         &self.samples

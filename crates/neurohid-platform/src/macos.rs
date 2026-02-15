@@ -148,7 +148,7 @@ impl Platform for MacOSPlatform {
                     "Extra mouse button {} not supported (only 0=Back, 1=Forward)",
                     n
                 ))
-                .into())
+                .into());
             }
         };
 
@@ -173,7 +173,7 @@ impl Platform for MacOSPlatform {
                     "Extra mouse button {} not supported (only 0=Back, 1=Forward)",
                     n
                 ))
-                .into())
+                .into());
             }
         };
 
@@ -320,11 +320,11 @@ fn key_to_enigo(key: Key) -> Result<enigo::Key> {
                     "Function key F{} not supported",
                     n
                 ))
-                .into())
+                .into());
             }
         },
         _ => {
-            return Err(PlatformError::NotSupported(format!("Key {:?} not supported", key)).into())
+            return Err(PlatformError::NotSupported(format!("Key {:?} not supported", key)).into());
         }
     };
 

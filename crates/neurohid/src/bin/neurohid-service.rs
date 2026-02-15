@@ -13,9 +13,7 @@ use neurohid_storage::ProfileStore;
 use neurohid_types::{
     config::{ControlTransport, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse},
-    observability::{
-        self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent,
-    },
+    observability::{self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent},
     profile::ProfileId,
 };
 
@@ -353,7 +351,9 @@ async fn run_managed_runtime(
         }
         #[cfg(not(windows))]
         {
-            tracing::warn!("Named pipe control transport requested on non-Windows host; falling back to runtime-only mode.");
+            tracing::warn!(
+                "Named pipe control transport requested on non-Windows host; falling back to runtime-only mode."
+            );
             tokio::select! {
                 _ = tokio::signal::ctrl_c() => {
                     tracing::info!("Shutdown signal received");
@@ -717,7 +717,7 @@ mod windows_service_host {
     use windows_service::service_control_handler::{self, ServiceControlHandlerResult};
     use windows_service::service_dispatcher;
 
-    use super::{load_runtime_context, run_core_service, SERVICE_LAUNCH_CONFIG};
+    use super::{SERVICE_LAUNCH_CONFIG, load_runtime_context, run_core_service};
 
     define_windows_service!(ffi_service_main, service_main);
 

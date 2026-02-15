@@ -114,33 +114,32 @@ impl ProfilesScreen {
                 });
                 ui.horizontal(|ui| {
                     let name_valid = !self.new_profile_name.trim().is_empty();
-                    if theme::action_button(ui, "Create", name_valid, theme::ButtonTone::Primary)
-                    {
-                            let name = self.new_profile_name.trim().to_string();
-                            match runtime.block_on(state.profile_store.create_profile(name)) {
-                                Ok(metadata) => {
-                                    tracing::info!("Created profile: {}", metadata.id);
-                                    if state.active_profile_id.is_none() {
-                                        state.active_profile_id = Some(metadata.id.clone());
-                                        service_manager.set_active_profile(
-                                            Some(metadata.id),
-                                            metadata.name,
-                                            false,
-                                        );
-                                    }
-                                    state.refresh_profiles(runtime);
+                    if theme::action_button(ui, "Create", name_valid, theme::ButtonTone::Primary) {
+                        let name = self.new_profile_name.trim().to_string();
+                        match runtime.block_on(state.profile_store.create_profile(name)) {
+                            Ok(metadata) => {
+                                tracing::info!("Created profile: {}", metadata.id);
+                                if state.active_profile_id.is_none() {
+                                    state.active_profile_id = Some(metadata.id.clone());
+                                    service_manager.set_active_profile(
+                                        Some(metadata.id),
+                                        metadata.name,
+                                        false,
+                                    );
                                 }
-                                Err(e) => {
-                                    tracing::error!("Failed to create profile: {}", e);
-                                }
+                                state.refresh_profiles(runtime);
                             }
-                            self.show_create_dialog = false;
+                            Err(e) => {
+                                tracing::error!("Failed to create profile: {}", e);
+                            }
+                        }
+                        self.show_create_dialog = false;
                     }
                     if theme::action_button(ui, "Cancel", true, theme::ButtonTone::Ghost) {
                         self.show_create_dialog = false;
                     }
                 });
-                });
+            });
         }
 
         ui.add_space(16.0);
@@ -159,20 +158,20 @@ impl ProfilesScreen {
             theme::card_frame(ui)
                 .fill(egui::Color32::from_rgb(40, 20, 24))
                 .show(ui, |ui| {
-                theme::status_chip(
-                    ui,
-                    &format!("Delete profile \"{}\"?", id_str),
-                    theme::Intent::Danger,
-                );
-                ui.horizontal(|ui| {
-                    if theme::action_button(ui, "Yes, Delete", true, theme::ButtonTone::Ghost) {
-                        delete_id = Some(id_str.clone());
-                        self.delete_confirm = None;
-                    }
-                    if theme::action_button(ui, "Cancel", true, theme::ButtonTone::Secondary) {
-                        self.delete_confirm = None;
-                    }
-                });
+                    theme::status_chip(
+                        ui,
+                        &format!("Delete profile \"{}\"?", id_str),
+                        theme::Intent::Danger,
+                    );
+                    ui.horizontal(|ui| {
+                        if theme::action_button(ui, "Yes, Delete", true, theme::ButtonTone::Ghost) {
+                            delete_id = Some(id_str.clone());
+                            self.delete_confirm = None;
+                        }
+                        if theme::action_button(ui, "Cancel", true, theme::ButtonTone::Secondary) {
+                            self.delete_confirm = None;
+                        }
+                    });
                 });
             ui.add_space(8.0);
         }
@@ -264,7 +263,7 @@ impl ProfilesScreen {
                         }
                     });
                 });
-                });
+            });
         }
     }
 }

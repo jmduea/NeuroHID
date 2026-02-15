@@ -10,7 +10,7 @@ use tokio::net::TcpStream;
 use tokio::sync::broadcast;
 
 #[cfg(feature = "device-lsl")]
-use lsl::{ChannelFormat, Pushable, StreamInfo, StreamOutlet, IRREGULAR_RATE};
+use lsl::{ChannelFormat, IRREGULAR_RATE, Pushable, StreamInfo, StreamOutlet};
 
 use neurohid_types::{
     action::Action,
@@ -215,16 +215,17 @@ impl LslTargetState {
         };
 
         if let Some(existing) = slot.as_ref()
-            && existing.channel_count != channel_count {
-                tracing::warn!(
-                    target = %target.name,
-                    kind = %kind.stream_suffix(),
-                    expected = existing.channel_count,
-                    got = channel_count,
-                    "LSL outlet channel count changed; dropping payload"
-                );
-                return None;
-            }
+            && existing.channel_count != channel_count
+        {
+            tracing::warn!(
+                target = %target.name,
+                kind = %kind.stream_suffix(),
+                expected = existing.channel_count,
+                got = channel_count,
+                "LSL outlet channel count changed; dropping payload"
+            );
+            return None;
+        }
 
         if slot.is_none() {
             match Self::create_numeric_outlet(&target, kind, channel_count) {

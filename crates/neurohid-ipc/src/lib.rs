@@ -63,11 +63,11 @@ pub mod protocol;
 pub mod server;
 
 pub use protocol::{
-    default_address, AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2,
-    HelloV2, IpcConfig, IpcTransport, PingV2, PongV2, ProtocolErrorV2, RuntimeMlEnvelopeV2,
-    RuntimeMlKindV2, RuntimeMlRoleV2, RuntimeTelemetryV2, SessionBoundaryEventV2,
-    SessionBoundaryV2, ShutdownV2, TrainerStatusV2, DEFAULT_IPC_PORT, DEFAULT_ML_PIPE_NAME,
-    RUNTIME_ML_PROTOCOL_V2,
+    AckV2, CandidateModelReadyV2, DEFAULT_IPC_PORT, DEFAULT_ML_PIPE_NAME, DecisionEventV2,
+    ErrpResultV2, ErrpWindowV2, HelloV2, IpcConfig, IpcTransport, PingV2, PongV2, ProtocolErrorV2,
+    RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2,
+    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
+    default_address,
 };
 
 // Server is used by Rust core

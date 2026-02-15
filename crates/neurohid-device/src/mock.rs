@@ -16,12 +16,12 @@ use async_trait::async_trait;
 use futures::Stream;
 use std::pin::Pin;
 use std::sync::{
-    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc,
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 use std::task::{Context, Poll};
 use tokio::sync::watch;
-use tokio::time::{interval, Duration, Interval};
+use tokio::time::{Duration, Interval, interval};
 
 use neurohid_types::{
     device::{ConnectionSettings, ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DeviceType},

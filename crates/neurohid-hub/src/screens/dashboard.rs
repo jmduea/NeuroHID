@@ -215,11 +215,12 @@ impl DashboardScreen {
             ui.add_space(8.0);
 
             if snap.running {
-                let stop_label = if state.config.service.runtime_mode == ServiceRuntimeMode::External {
-                    "Request Shutdown"
-                } else {
-                    "Stop Service"
-                };
+                let stop_label =
+                    if state.config.service.runtime_mode == ServiceRuntimeMode::External {
+                        "Request Shutdown"
+                    } else {
+                        "Stop Service"
+                    };
                 let stop_clicked =
                     theme::action_button(ui, stop_label, true, theme::ButtonTone::Secondary);
                 if stop_clicked {
@@ -250,9 +251,11 @@ impl DashboardScreen {
                 });
                 if !snap.profile_ready {
                     ui.label(
-                        egui::RichText::new("Candidate promotion requires a calibrated active profile")
-                            .small()
-                            .color(egui::Color32::GRAY),
+                        egui::RichText::new(
+                            "Candidate promotion requires a calibrated active profile",
+                        )
+                        .small()
+                        .color(egui::Color32::GRAY),
                     );
                 }
 
@@ -278,11 +281,12 @@ impl DashboardScreen {
                     }
                 }
             } else {
-                let start_label = if state.config.service.runtime_mode == ServiceRuntimeMode::External {
-                    "Probe External Service"
-                } else {
-                    "Start Service"
-                };
+                let start_label =
+                    if state.config.service.runtime_mode == ServiceRuntimeMode::External {
+                        "Probe External Service"
+                    } else {
+                        "Start Service"
+                    };
                 let start_clicked =
                     theme::action_button(ui, start_label, true, theme::ButtonTone::Primary);
                 if start_clicked {
@@ -322,15 +326,17 @@ impl DashboardScreen {
             if !self.train_stage_output.is_empty() {
                 ui.add_space(4.0);
                 ui.collapsing("Train + Stage Output", |ui| {
-                    egui::ScrollArea::vertical().max_height(140.0).show(ui, |ui| {
-                        let _ = theme::textarea_readonly(
-                            ui,
-                            "dashboard_train_stage_output",
-                            &mut self.train_stage_output,
-                            6,
-                            f32::INFINITY,
-                        );
-                    });
+                    egui::ScrollArea::vertical()
+                        .max_height(140.0)
+                        .show(ui, |ui| {
+                            let _ = theme::textarea_readonly(
+                                ui,
+                                "dashboard_train_stage_output",
+                                &mut self.train_stage_output,
+                                6,
+                                f32::INFINITY,
+                            );
+                        });
                 });
             }
 
@@ -338,257 +344,257 @@ impl DashboardScreen {
                 ui.add_space(6.0);
                 theme::status_chip(ui, err, theme::Intent::Danger);
             }
-            });
+        });
 
         ui.add_space(12.0);
 
         theme::card_frame(ui).show(ui, |ui| {
             ui.collapsing("Diagnostics", |ui| {
-            ui.horizontal_wrapped(|ui| {
-                theme::status_chip(
-                    ui,
-                    &format!("Runtime {}", state.config.service.runtime_mode),
-                    if snap.running {
-                        theme::Intent::Info
-                    } else {
-                        theme::Intent::Muted
-                    },
-                );
-
-                if routed_total > 0 {
-                    theme::status_chip(
-                        ui,
-                        &format!("Routes {}", routed_total),
-                        theme::Intent::Info,
-                    );
-                }
-
-                if snap.latency_degraded {
-                    theme::status_chip(ui, "Latency degraded", theme::Intent::Danger);
-                } else if snap.running {
-                    theme::status_chip(ui, "Latency nominal", theme::Intent::Success);
-                }
-            });
-            ui.add_space(6.0);
-
-            ui.horizontal_wrapped(|ui| {
-                theme::status_chip(
-                    ui,
-                    &format!("Runtime {}", state.config.service.runtime_mode),
-                    theme::Intent::Muted,
-                );
-                if let Some(version) = &snap.decoder_model_version {
-                    theme::status_chip(ui, &format!("Model {}", version), theme::Intent::Info);
-                }
-                if let Some(model_kind) = &snap.fallback_model_kind {
-                    theme::status_chip(
-                        ui,
-                        &format!("Path {}", model_kind),
-                        theme::Intent::Muted,
-                    );
-                }
-            });
-
-            let capability_text = if snap.enabled_capabilities.is_empty() {
-                "Capabilities none".to_string()
-            } else {
-                format!("Capabilities {}", snap.enabled_capabilities.join(", "))
-            };
-            theme::status_chip(ui, &capability_text, theme::Intent::Muted);
-            if routed_total > 0 {
-                theme::status_chip(
-                    ui,
-                    &format!(
-                        "Routes EEG {} | Motion {} | Auxiliary {} | Unknown {}",
-                        snap.routed_eeg_streams,
-                        snap.routed_motion_streams,
-                        snap.routed_auxiliary_streams,
-                        snap.routed_unknown_streams
-                    ),
-                    theme::Intent::Info,
-                );
-            }
-            if let Some(message) = &snap.limited_capabilities_message {
-                let intent = if snap.runtime_mode_state == RuntimeModeState::Degraded {
-                    theme::Intent::Danger
-                } else {
-                    theme::Intent::Warning
-                };
-                theme::status_chip(ui, message, intent);
-            }
-
-            ui.label(
-                egui::RichText::new(format!(
-                    "Signal latency: last {} us | p95 {} us",
-                    snap.signal_latency_last_us, snap.signal_latency_p95_us
-                ))
-                .small()
-                .color(egui::Color32::GRAY),
-            );
-            ui.label(
-                egui::RichText::new(format!(
-                    "Decode latency: last {} us | p95 {} us",
-                    snap.decode_latency_last_us, snap.decode_latency_p95_us
-                ))
-                .small()
-                .color(egui::Color32::GRAY),
-            );
-            ui.label(
-                egui::RichText::new(format!(
-                    "Action latency: last {} us | p95 {} us",
-                    snap.action_latency_last_us, snap.action_latency_p95_us
-                ))
-                .small()
-                .color(egui::Color32::GRAY),
-            );
-
-            if snap.latency_degraded {
-                let message = snap
-                    .latency_alert_message
-                    .clone()
-                    .unwrap_or_else(|| "Latency thresholds exceeded".to_string());
-                theme::status_chip(ui, &message, theme::Intent::Danger);
-            }
-
-            ui.add_space(8.0);
-            ui.collapsing("ML Bridge & Trainer", |ui| {
-                let mut learning_enabled = snap.learning_enabled;
-                ui.horizontal(|ui| {
-                    ui.label("Learning enabled");
-                    if theme::toggle_switch(
-                        ui,
-                        "dashboard_learning_enabled",
-                        &mut learning_enabled,
-                    ) {
-                        service_manager.set_learning_enabled(learning_enabled);
-                    }
-                });
-
                 ui.horizontal_wrapped(|ui| {
-                    let bridge_text = if snap.ml_bridge_connected {
-                        if snap.ml_bridge_stalled {
-                            "Bridge stalled"
-                        } else {
-                            "Bridge connected"
-                        }
-                    } else {
-                        "Bridge disconnected"
-                    };
-
-                    let bridge_intent = if snap.ml_bridge_connected {
-                        if snap.ml_bridge_stalled {
-                            theme::Intent::Warning
-                        } else {
-                            theme::Intent::Success
-                        }
-                    } else {
-                        theme::Intent::Muted
-                    };
-                    theme::status_chip(ui, bridge_text, bridge_intent);
-
-                    if let Some(trainer) = &self.trainer_snapshot {
-                        let trainer_intent = if trainer.trainer_connected {
+                    theme::status_chip(
+                        ui,
+                        &format!("Runtime {}", state.config.service.runtime_mode),
+                        if snap.running {
                             theme::Intent::Info
                         } else {
-                            theme::Intent::Warning
-                        };
+                            theme::Intent::Muted
+                        },
+                    );
+
+                    if routed_total > 0 {
                         theme::status_chip(
                             ui,
-                            &format!("Trainer {}", trainer.trainer_state),
-                            trainer_intent,
+                            &format!("Routes {}", routed_total),
+                            theme::Intent::Info,
                         );
                     }
+
+                    if snap.latency_degraded {
+                        theme::status_chip(ui, "Latency degraded", theme::Intent::Danger);
+                    } else if snap.running {
+                        theme::status_chip(ui, "Latency nominal", theme::Intent::Success);
+                    }
                 });
+                ui.add_space(6.0);
 
                 ui.horizontal_wrapped(|ui| {
-                    let reconnect_clicked = theme::action_button(
-                        ui,
-                        "Reconnect Bridge",
-                        true,
-                        theme::ButtonTone::Secondary,
-                    );
-                    if reconnect_clicked {
-                        service_manager.ml_bridge_reconnect();
-                    }
-                    let apply_fallback_clicked = theme::action_button(
-                        ui,
-                        "Apply Fallback Policy",
-                        true,
-                        theme::ButtonTone::Secondary,
-                    );
-                    if apply_fallback_clicked {
-                        service_manager
-                            .set_fallback_policy(state.config.service.fallback_policy.clone());
-                    }
-                    let refresh_snapshot_clicked = theme::action_button(
-                        ui,
-                        "Refresh Trainer Snapshot",
-                        true,
-                        theme::ButtonTone::Ghost,
-                    );
-                    if refresh_snapshot_clicked {
-                        self.trainer_snapshot = service_manager.trainer_snapshot();
-                        self.last_trainer_snapshot_poll = Some(Instant::now());
-                    }
-                });
-
-                if let Some(trainer) = &self.trainer_snapshot {
                     theme::status_chip(
                         ui,
-                        &format!(
-                            "Trainer {} | replay {} | step {}",
-                            trainer.trainer_state, trainer.replay_size, trainer.training_step
-                        ),
-                        theme::Intent::Info,
+                        &format!("Runtime {}", state.config.service.runtime_mode),
+                        theme::Intent::Muted,
                     );
-                    if let Some(protocol) = trainer.protocol_version {
+                    if let Some(version) = &snap.decoder_model_version {
+                        theme::status_chip(ui, &format!("Model {}", version), theme::Intent::Info);
+                    }
+                    if let Some(model_kind) = &snap.fallback_model_kind {
                         theme::status_chip(
                             ui,
-                            &format!(
-                                "Protocol v{} | connected {}",
-                                protocol, trainer.trainer_connected
-                            ),
+                            &format!("Path {}", model_kind),
                             theme::Intent::Muted,
                         );
                     }
-                    if let Some(last_error) = &trainer.last_error {
-                        theme::status_chip(ui, last_error, theme::Intent::Warning);
-                    }
+                });
+
+                let capability_text = if snap.enabled_capabilities.is_empty() {
+                    "Capabilities none".to_string()
                 } else {
+                    format!("Capabilities {}", snap.enabled_capabilities.join(", "))
+                };
+                theme::status_chip(ui, &capability_text, theme::Intent::Muted);
+                if routed_total > 0 {
                     theme::status_chip(
                         ui,
-                        "Trainer snapshot unavailable",
-                        theme::Intent::Muted,
-                    );
-                    theme::status_chip(
-                        ui,
-                        "Bridge disconnected / no trainer response",
-                        theme::Intent::Muted,
+                        &format!(
+                            "Routes EEG {} | Motion {} | Auxiliary {} | Unknown {}",
+                            snap.routed_eeg_streams,
+                            snap.routed_motion_streams,
+                            snap.routed_auxiliary_streams,
+                            snap.routed_unknown_streams
+                        ),
+                        theme::Intent::Info,
                     );
                 }
+                if let Some(message) = &snap.limited_capabilities_message {
+                    let intent = if snap.runtime_mode_state == RuntimeModeState::Degraded {
+                        theme::Intent::Danger
+                    } else {
+                        theme::Intent::Warning
+                    };
+                    theme::status_chip(ui, message, intent);
+                }
 
-                self.show_trainer_observability(ui, snap);
-            });
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Signal latency: last {} us | p95 {} us",
+                        snap.signal_latency_last_us, snap.signal_latency_p95_us
+                    ))
+                    .small()
+                    .color(egui::Color32::GRAY),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Decode latency: last {} us | p95 {} us",
+                        snap.decode_latency_last_us, snap.decode_latency_p95_us
+                    ))
+                    .small()
+                    .color(egui::Color32::GRAY),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "Action latency: last {} us | p95 {} us",
+                        snap.action_latency_last_us, snap.action_latency_p95_us
+                    ))
+                    .small()
+                    .color(egui::Color32::GRAY),
+                );
 
-            if let Some((task, error)) = &snap.task_error {
+                if snap.latency_degraded {
+                    let message = snap
+                        .latency_alert_message
+                        .clone()
+                        .unwrap_or_else(|| "Latency thresholds exceeded".to_string());
+                    theme::status_chip(ui, &message, theme::Intent::Danger);
+                }
+
                 ui.add_space(8.0);
-                theme::card_frame(ui)
-                    .fill(egui::Color32::from_rgb(60, 20, 20))
-                    .show(ui, |ui| {
-                        theme::status_chip(
+                ui.collapsing("ML Bridge & Trainer", |ui| {
+                    let mut learning_enabled = snap.learning_enabled;
+                    ui.horizontal(|ui| {
+                        ui.label("Learning enabled");
+                        if theme::toggle_switch(
                             ui,
-                            &format!("Service stopped: {} task failed", task),
-                            theme::Intent::Danger,
-                        );
-                        theme::status_chip(ui, error, theme::Intent::Danger);
-                        if let Some(hint) = task_error_hint(error) {
-                            ui.add_space(4.0);
-                            theme::status_chip(ui, hint, theme::Intent::Warning);
+                            "dashboard_learning_enabled",
+                            &mut learning_enabled,
+                        ) {
+                            service_manager.set_learning_enabled(learning_enabled);
                         }
                     });
-            }
-        });
+
+                    ui.horizontal_wrapped(|ui| {
+                        let bridge_text = if snap.ml_bridge_connected {
+                            if snap.ml_bridge_stalled {
+                                "Bridge stalled"
+                            } else {
+                                "Bridge connected"
+                            }
+                        } else {
+                            "Bridge disconnected"
+                        };
+
+                        let bridge_intent = if snap.ml_bridge_connected {
+                            if snap.ml_bridge_stalled {
+                                theme::Intent::Warning
+                            } else {
+                                theme::Intent::Success
+                            }
+                        } else {
+                            theme::Intent::Muted
+                        };
+                        theme::status_chip(ui, bridge_text, bridge_intent);
+
+                        if let Some(trainer) = &self.trainer_snapshot {
+                            let trainer_intent = if trainer.trainer_connected {
+                                theme::Intent::Info
+                            } else {
+                                theme::Intent::Warning
+                            };
+                            theme::status_chip(
+                                ui,
+                                &format!("Trainer {}", trainer.trainer_state),
+                                trainer_intent,
+                            );
+                        }
                     });
+
+                    ui.horizontal_wrapped(|ui| {
+                        let reconnect_clicked = theme::action_button(
+                            ui,
+                            "Reconnect Bridge",
+                            true,
+                            theme::ButtonTone::Secondary,
+                        );
+                        if reconnect_clicked {
+                            service_manager.ml_bridge_reconnect();
+                        }
+                        let apply_fallback_clicked = theme::action_button(
+                            ui,
+                            "Apply Fallback Policy",
+                            true,
+                            theme::ButtonTone::Secondary,
+                        );
+                        if apply_fallback_clicked {
+                            service_manager
+                                .set_fallback_policy(state.config.service.fallback_policy.clone());
+                        }
+                        let refresh_snapshot_clicked = theme::action_button(
+                            ui,
+                            "Refresh Trainer Snapshot",
+                            true,
+                            theme::ButtonTone::Ghost,
+                        );
+                        if refresh_snapshot_clicked {
+                            self.trainer_snapshot = service_manager.trainer_snapshot();
+                            self.last_trainer_snapshot_poll = Some(Instant::now());
+                        }
+                    });
+
+                    if let Some(trainer) = &self.trainer_snapshot {
+                        theme::status_chip(
+                            ui,
+                            &format!(
+                                "Trainer {} | replay {} | step {}",
+                                trainer.trainer_state, trainer.replay_size, trainer.training_step
+                            ),
+                            theme::Intent::Info,
+                        );
+                        if let Some(protocol) = trainer.protocol_version {
+                            theme::status_chip(
+                                ui,
+                                &format!(
+                                    "Protocol v{} | connected {}",
+                                    protocol, trainer.trainer_connected
+                                ),
+                                theme::Intent::Muted,
+                            );
+                        }
+                        if let Some(last_error) = &trainer.last_error {
+                            theme::status_chip(ui, last_error, theme::Intent::Warning);
+                        }
+                    } else {
+                        theme::status_chip(
+                            ui,
+                            "Trainer snapshot unavailable",
+                            theme::Intent::Muted,
+                        );
+                        theme::status_chip(
+                            ui,
+                            "Bridge disconnected / no trainer response",
+                            theme::Intent::Muted,
+                        );
+                    }
+
+                    self.show_trainer_observability(ui, snap);
+                });
+
+                if let Some((task, error)) = &snap.task_error {
+                    ui.add_space(8.0);
+                    theme::card_frame(ui)
+                        .fill(egui::Color32::from_rgb(60, 20, 20))
+                        .show(ui, |ui| {
+                            theme::status_chip(
+                                ui,
+                                &format!("Service stopped: {} task failed", task),
+                                theme::Intent::Danger,
+                            );
+                            theme::status_chip(ui, error, theme::Intent::Danger);
+                            if let Some(hint) = task_error_hint(error) {
+                                ui.add_space(4.0);
+                                theme::status_chip(ui, hint, theme::Intent::Warning);
+                            }
+                        });
+                }
+            });
+        });
     }
 
     fn start_train_stage_job(&mut self, state: &HubState) {
@@ -627,9 +633,10 @@ impl DashboardScreen {
                     self.train_stage_output = result.output;
                 }
                 Err(error) => {
-                self.train_stage_status = Some(TrainStageStatus::Error(
-                    format!("Training job disconnected unexpectedly: {}", error),
-                ));
+                    self.train_stage_status = Some(TrainStageStatus::Error(format!(
+                        "Training job disconnected unexpectedly: {}",
+                        error
+                    )));
                 }
             }
         }
@@ -1096,9 +1103,13 @@ fn task_error_hint(error: &str) -> Option<&'static str> {
 
     if lower.contains("permission denied") || lower.contains("access denied") {
         if cfg!(target_os = "linux") {
-            return Some("Hint: Create a udev rule for /dev/uinput access, then add your user to the 'input' group. See the service log for full instructions.");
+            return Some(
+                "Hint: Create a udev rule for /dev/uinput access, then add your user to the 'input' group. See the service log for full instructions.",
+            );
         } else if cfg!(target_os = "macos") {
-            return Some("Hint: Grant Accessibility access in System Settings > Privacy & Security > Accessibility");
+            return Some(
+                "Hint: Grant Accessibility access in System Settings > Privacy & Security > Accessibility",
+            );
         } else {
             return Some("Hint: Try running with elevated permissions");
         }
@@ -1119,4 +1130,3 @@ fn task_error_hint(error: &str) -> Option<&'static str> {
 
     None
 }
-

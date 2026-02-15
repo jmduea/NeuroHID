@@ -97,8 +97,8 @@ impl VisualizationScreen {
             let pane_height = (available.y - footer_height).max(0.0);
             ui.allocate_ui(egui::vec2(available.x, pane_height), |ui| {
                 theme::panel_frame(ui).show(ui, |ui| {
-                        self.layout.show_panes(ui, &ctx);
-                    });
+                    self.layout.show_panes(ui, &ctx);
+                });
             });
 
             // Footer status strip
@@ -379,7 +379,10 @@ impl VisualizationScreen {
         current_time: f64,
     ) {
         let has_buffered_samples = !bus.samples.is_empty()
-            || bus.samples_by_source.values().any(|buffer| !buffer.is_empty());
+            || bus
+                .samples_by_source
+                .values()
+                .any(|buffer| !buffer.is_empty());
 
         if !snapshot.running {
             theme::status_chip(ui, "Offline", theme::Intent::Danger);
@@ -388,12 +391,8 @@ impl VisualizationScreen {
             ui.ctx().request_repaint();
         } else {
             let pulse = ((current_time * 2.4).sin() * 0.5 + 0.5) as f32;
-            let live_color = Color32::from_rgba_unmultiplied(
-                106,
-                227,
-                130,
-                (180.0 + pulse * 75.0) as u8,
-            );
+            let live_color =
+                Color32::from_rgba_unmultiplied(106, 227, 130, (180.0 + pulse * 75.0) as u8);
 
             // Show stream count and active stream types
             let connected: Vec<&str> = snapshot
@@ -440,25 +439,17 @@ impl VisualizationScreen {
                 ui.add_space(available.y * 0.3);
 
                 theme::card_frame(ui).show(ui, |ui| {
-                        ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
-                        ui.add_space(12.0);
+                    ui.heading(RichText::new("NeuroHID Visualization").size(24.0));
+                    ui.add_space(12.0);
 
                     theme::status_chip(ui, "Service stopped", theme::Intent::Warning);
                     theme::status_chip(ui, "No live stream data", theme::Intent::Muted);
 
-                    theme::status_chip(
-                        ui,
-                        "Start service to begin streaming",
-                        theme::Intent::Info,
-                    );
-                    theme::status_chip(
-                        ui,
-                        "Use Dashboard to start service",
-                        theme::Intent::Muted,
-                    );
+                    theme::status_chip(ui, "Start service to begin streaming", theme::Intent::Info);
+                    theme::status_chip(ui, "Use Dashboard to start service", theme::Intent::Muted);
 
                     ui.add_space(10.0);
-                    });
+                });
             });
         });
     }
