@@ -2634,6 +2634,7 @@ dependencies = [
 [[package]]
 name = "lsl-sys"
 version = "0.1.1"
+source = "git+https://github.com/labstreaminglayer/liblsl-rust.git?rev=afa1d251674591c11ebc06070de60914b6dafccf#afa1d251674591c11ebc06070de60914b6dafccf"
 dependencies = [
  "cmake",
 ]

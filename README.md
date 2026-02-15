@@ -174,6 +174,9 @@ Applications don't know NeuroHID exists. They receive standard HID events—mous
 git clone https://github.com/jmduea/neurohid
 cd neurohid
 
+# Note: workspace builds currently patch `lsl-sys` to a shared git source
+# pinned by commit (`[patch.crates-io]`) for reproducible cross-app behavior.
+
 # Build the Rust components
 cargo build --release
 

@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Repository root dual-license texts (`LICENSE-MIT`, `LICENSE-APACHE`) to match declared workspace licensing policy
 - Device discovery→connection lifecycle design reference at `docs/plans/2026-02-15-device-discovery-connection-design.md`, including interactive/headless flow mapping and troubleshooting guidance
 - BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
 - Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
@@ -44,6 +45,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Workspace `lsl-sys` patch source now uses a shared git-pinned upstream (`[patch.crates-io]` with fixed `rev`) for reproducible Linux behavior across multiple applications without repo-local vendoring
 - Reorganized project into Rust workspace with separate published and internal crates
 - Coverage policy now enforces a 90% Codecov patch-coverage target for pull requests, gating newly added/changed code independently from overall project coverage baseline
 - Release automation now separates tag-based pre-release verification (`.github/workflows/release.yml`) from manual crates.io publishing (`.github/workflows/publish-crates.yml`)

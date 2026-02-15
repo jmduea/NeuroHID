@@ -71,7 +71,7 @@ license = "MIT OR Apache-2.0"
 repository = "https://github.com/jmduea/neurohid"
 
 [patch.crates-io]
-lsl-sys = { path = "third_party/lsl-sys-0.1.1"}
+lsl-sys = { git = "https://github.com/labstreaminglayer/liblsl-rust.git", rev = "afa1d251674591c11ebc06070de60914b6dafccf", package = "lsl-sys" }
 
 [workspace.lints.rust]
 unsafe_code = "warn"

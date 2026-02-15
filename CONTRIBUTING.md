@@ -31,6 +31,10 @@ If you're working with `neurohid-device` or real hardware:
 - **macOS**: `brew install labstreaminglayer/tap/lsl`
 - **Windows**: Download from [LSL releases](https://github.com/sccn/liblsl/releases)
 
+Workspace builds currently pin `lsl-sys` via `[patch.crates-io]` to a shared
+git source (pinned `rev`) so Linux-compatible behavior is reproducible across
+multiple applications and clean clones without local vendoring.
+
 To build without LSL: `cargo build -p neurohid-device --no-default-features`
 
 ## Building
