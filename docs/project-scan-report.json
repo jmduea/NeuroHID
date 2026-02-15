@@ -1,0 +1,131 @@
+{
+    "workflow_version": "1.2.0",
+    "timestamps": {
+        "started": "2026-02-14T00:00:00Z",
+        "last_updated": "2026-02-14T00:00:00Z"
+    },
+    "mode": "initial_scan",
+    "scan_level": "exhaustive",
+    "project_root": "c:/dev/neurohid",
+    "output_folder": "c:/dev/neurohid/docs",
+    "completed_steps": [
+        {
+            "step": "step_1",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:00:00Z",
+            "summary": "Classified repository as monorepo with Rust core and Python ML parts"
+        },
+        {
+            "step": "step_2",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:01:00Z",
+            "summary": "Inventoried existing docs across root, crates, and python"
+        },
+        {
+            "step": "step_3",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:02:00Z",
+            "summary": "Identified Rust 2024 workspace, egui desktop app/service binaries, and Python ML package"
+        },
+        {
+            "step": "step_4",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:03:00Z",
+            "summary": "Documented control protocol, IPC v2 envelopes, storage models, and component inventory"
+        },
+        {
+            "step": "step_5",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:04:00Z",
+            "summary": "Generated annotated source-tree analysis"
+        },
+        {
+            "step": "step_6",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:05:00Z",
+            "summary": "Compiled development, test, and deployment workflows from manifests and CI files"
+        },
+        {
+            "step": "step_7",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:06:00Z",
+            "summary": "Captured Rust-Python integration architecture and transport boundaries"
+        },
+        {
+            "step": "step_8",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:07:00Z",
+            "summary": "Generated per-part architecture documentation"
+        },
+        {
+            "step": "step_9",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:08:00Z",
+            "summary": "Generated supporting docs (overview, API contracts, data models, component inventory, dev/deploy guides)"
+        },
+        {
+            "step": "step_10",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:09:00Z",
+            "summary": "Generated master documentation index"
+        },
+        {
+            "step": "step_11",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:10:00Z",
+            "summary": "Validated docs set and confirmed no incomplete markers in index"
+        },
+        {
+            "step": "step_12",
+            "status": "completed",
+            "timestamp": "2026-02-14T00:11:00Z",
+            "summary": "Workflow finalized with generated documentation index"
+        }
+    ],
+    "current_step": "completed",
+    "project_types": [
+        {
+            "part_id": "rust-core",
+            "project_type_id": "backend",
+            "display_name": "Rust Core Service and Libraries"
+        },
+        {
+            "part_id": "python-ml",
+            "project_type_id": "data",
+            "display_name": "Python ML Bridge and Trainer"
+        }
+    ],
+    "findings": {
+        "project_classification": {
+            "repository_type": "monorepo",
+            "parts_count": 2,
+            "primary_stack": "Rust + Python"
+        },
+        "technology_stack": {
+            "rust-core": "Rust 2024 workspace (tokio, serde, egui, tracing)",
+            "python-ml": "Python 3.12+ package (torch, numpy, scipy, sklearn, jupyterlab)"
+        }
+    },
+    "outputs_generated": [
+        "project-scan-report.json",
+        "project-overview.md",
+        "source-tree-analysis.md",
+        "architecture-rust-core.md",
+        "architecture-python-ml.md",
+        "integration-architecture.md",
+        "api-contracts-rust-core.md",
+        "data-models-rust-core.md",
+        "component-inventory.md",
+        "development-guide.md",
+        "deployment-guide.md",
+        "contribution-guide.md",
+        "index.md"
+    ],
+    "verification": {
+        "tests_executed": "none run",
+        "doc_marker_scan": "completed (no incomplete markers found in docs/index.md)",
+        "open_risks": "Documentation synthesized from repository scan; verify protocol fields against latest source before external publication",
+        "recommended_next_checks": "Run runtime binaries and validate control/bridge examples against current build"
+    },
+    "resume_instructions": "Workflow completed"
+}

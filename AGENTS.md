@@ -19,45 +19,6 @@ pedantic = "warn"
 
 ## Core Capabilities
 
-### 0. Automation Ownership Model
-
-- Shared, reusable Rust intelligence lives in `.github/skills/*`.
-- NeuroHID-specific process automation is BMAD-first in `_bmad/neurohid/*` and `_bmad/*/workflows/*`.
-- Prompt/runtime hook wiring for NeuroHID-specific behavior lives in `.github/hooks/*`.
-
-### 0.1 Agent Success Defaults
-
-- Use the autonomy harness semantics first for execution tasks with BMAD-native role `deep-executor`.
-- Continue implementation loops without pausing for permission between normal sub-steps.
-- Stop only for clarification, approval-gated risky/destructive actions, or true no-work-left state.
-- Validate incrementally (smallest relevant checks first), then broader checks before handoff.
-- Default workflow phases are defined in `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md`.
-- Classify changed-file impact with `.github/scripts/classify-impact.ps1` before selecting gates.
-- Use `.github/automation/scope-map.json` as the source of truth for path-to-check/docs routing.
-- Prefer canonical local/CI runner `.github/scripts/run-agent-ready-tasks.ps1`.
-- Keep architecture index current via `.github/scripts/generate-architecture-index.ps1`.
-- Use `.github/scripts/check-docs-freshness.ps1`, `.github/scripts/check-unsafe-compliance.ps1`, and `.github/scripts/verify-protocol-contracts.ps1` as required policy gates.
-
-### 0.2 BMAD ↔ GitHub Boundary
-
-- Replaceable `.github` components MUST be moved to BMAD-owned paths first:
-    - Prompt/task logic → `_bmad/*/workflows/*` or `_bmad/*/agents/*`
-    - Module-specific process documentation → `docs/automation/*` plus `_bmad/neurohid/*`
-- Keep these `.github` components as platform/shared boundaries:
-    - `.github/workflows/*` (GitHub Actions platform integration)
-    - `.github/hooks/*` (runtime prompt/hook wiring contract)
-    - `.github/skills/*` (shared Rust intelligence used by routing)
-    - `.github/PULL_REQUEST_TEMPLATE.md` (GitHub UI artifact)
-- Keep `.github/automation/scope-map.json` as CI/local routing source of truth unless CI is explicitly migrated to BMAD-native manifest loading.
-- For migration details, follow `docs/automation/github-to-bmad-replacement-matrix.md`.
-
-Preferred validation order in this repo:
-
-1. Focused crate checks (for touched Rust crates), e.g. `cargo check -p neurohid-hub`.
-2. Cross-crate checks for affected surfaces, e.g. `cargo check -p neurohid-hub -p neurohid-calibration`.
-3. Workspace check when changes are broad: `cargo check`.
-4. Python quality gates (when Python code changes), using `uv` only.
-
 ### 1. Question Routing
 
 Route Rust questions to appropriate skills:
@@ -67,27 +28,6 @@ Route Rust questions to appropriate skills:
 - Error handling → m06-error-handling
 - Concurrency → m07-concurrency
 - Unsafe code → unsafe-checker
-
-Route NeuroHID workflow questions to repo-local assets:
-
-- Documentation freshness + docs updates → BMAD agent `writer`
-- Architecture decisions/ADRs → BMAD agents `architect`, `api-reviewer`
-- Feature planning → BMAD agents `pm`, `sm`
-- TDD/test strategy → BMAD agents `qa`, `tea`, `verifier`
-- UX/UI review (app + docs + notebooks) → BMAD agents `ux-designer`, `designer`
-- Python/ML & deep learning workflows → BMAD agent `scientist`
-- End-of-task hygiene (commit grouping + readiness) → BMAD agent `completion-finisher`
-- Continuous execution defaults (no unnecessary waiting) → BMAD agent `deep-executor` + autonomy harness semantics
-
-### Completion Protocol (Required)
-
-For coding tasks, agents must complete this protocol before handoff:
-
-0. Run autonomy execution harness loop and continue until scope is complete or truly blocked.
-1. Run writer documentation freshness review and resolve blockers.
-2. Confirm README/spec/changelog updates required by the change.
-3. Prepare grouped commits by concern (e.g., code, tests, docs, CI).
-4. Prepare clear commit messages for each commit group.
 
 ### Rust Grounding Policy
 
@@ -142,13 +82,13 @@ fn read_config() -> Config {
 - Always prefix each command in chains as well (e.g., `rtk git add . && rtk git commit -m "msg"`).
 - RTK passthrough is safe when no dedicated filter exists.
 - Before relying on RTK in a new environment, verify with:
-    - `rtk --version`
-    - `rtk gain`
+  - `rtk --version`
+  - `rtk gain`
 - Prefer RTK wrappers for common high-volume output commands:
-    - `git` (`status`, `log`, `diff`, `show`, `add`, `commit`, `push`, `pull`)
-    - `cargo` (`check`, `build`, `clippy`, `test`)
-    - file/search (`ls`, `read`, `grep`, `find`)
-    - `gh` (`pr`, `issue`, `run`), `docker`, `kubectl`
+  - `git` (`status`, `log`, `diff`, `show`, `add`, `commit`, `push`, `pull`)
+  - `cargo` (`check`, `build`, `clippy`, `test`)
+  - file/search (`ls`, `read`, `grep`, `find`)
+  - `gh` (`pr`, `issue`, `run`), `docker`, `kubectl`
 - In Copilot/VS Code workflows, prefer hook-routed enforcement where available.
 - On Windows + VS Code agent workflows, if command rewrite hooks are not active, use explicit `rtk ...` command prefixes by default.
 
@@ -215,7 +155,3 @@ For detailed guidance, see:
 - `.github/skills/m01-ownership/SKILL.md` - Ownership concepts
 - `.github/skills/m06-error-handling/SKILL.md` - Error patterns
 - `.github/skills/m07-concurrency/SKILL.md` - Concurrency patterns
-
-For NeuroHID custom agent/skill invocation prompts and workflows, see:
-
-- `docs/automation/agent-skill-invocation-playbook.md`
