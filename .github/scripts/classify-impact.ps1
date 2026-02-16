@@ -5,11 +5,38 @@ param(
 $ErrorActionPreference = 'Stop'
 
 function Get-ChangedFiles {
-    $fallback = git diff --name-only HEAD~1 HEAD 2>$null
-    if ($LASTEXITCODE -ne 0 -or -not $fallback) {
-        return @()
+    $eventName = $env:GITHUB_EVENT_NAME
+
+    if ($eventName -like 'pull_request*' -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_BASE_REF)) {
+        $baseRef = $env:GITHUB_BASE_REF
+        git fetch --no-tags --depth=1 origin $baseRef 2>$null | Out-Null
+        $prDiff = git diff --name-only "origin/$baseRef...HEAD" 2>$null
+        if ($LASTEXITCODE -eq 0 -and $prDiff) {
+            return @($prDiff | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+        }
     }
-    return @($fallback | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+
+    if ($eventName -eq 'push' -and -not [string]::IsNullOrWhiteSpace($env:GITHUB_EVENT_BEFORE) -and $env:GITHUB_EVENT_BEFORE -notmatch '^0+$') {
+        $pushDiff = git diff --name-only $env:GITHUB_EVENT_BEFORE HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $pushDiff) {
+            return @($pushDiff | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+        }
+    }
+
+    git rev-parse --verify HEAD~1 2>$null | Out-Null
+    if ($LASTEXITCODE -eq 0) {
+        $fallback = git diff --name-only HEAD~1 HEAD 2>$null
+        if ($LASTEXITCODE -eq 0 -and $fallback) {
+            return @($fallback | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+        }
+    }
+
+    $singleCommit = git show --pretty='' --name-only HEAD 2>$null
+    if ($LASTEXITCODE -eq 0 -and $singleCommit) {
+        return @($singleCommit | Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
+    }
+
+    return @()
 }
 
 function Has-PathPrefix {
@@ -38,38 +65,53 @@ function Has-RegexMatch {
 }
 
 $changedFiles = Get-ChangedFiles
+$impactUnknown = $changedFiles.Count -eq 0
 
-$rust = Has-PathPrefix -Files $changedFiles -Prefixes @('crates/', 'Cargo.toml')
+if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') {
+    Write-Warning 'Could not determine changed files in CI; defaulting impact categories to true.'
+}
+
+$rust = if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') { $true } else { Has-PathPrefix -Files $changedFiles -Prefixes @('crates/', 'Cargo.toml') }
 if (-not $rust) {
     $rust = Has-RegexMatch -Files $changedFiles -Pattern '\.rs$'
 }
 
-$python = Has-PathPrefix -Files $changedFiles -Prefixes @('python/')
+$python = if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') { $true } else { Has-PathPrefix -Files $changedFiles -Prefixes @('python/') }
 
-$docs = Has-PathPrefix -Files $changedFiles -Prefixes @('docs/')
+$docs = if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') { $true } else { Has-PathPrefix -Files $changedFiles -Prefixes @('docs/') }
 if (-not $docs) {
     $docs = [bool]($changedFiles | Where-Object {
             $_ -in @('README.md', 'CHANGELOG.md', 'CONTRIBUTING.md')
         } | Select-Object -First 1)
 }
 
-$protocol = [bool]($changedFiles | Where-Object {
-        $_ -like 'docs/runtime-ml-protocol-v2.md' -or
-        $_ -like 'crates/neurohid-types/*' -or
-        $_ -like 'crates/neurohid-ipc/*'
-    } | Select-Object -First 1)
+$protocol = if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') {
+    $true
+}
+else {
+    [bool]($changedFiles | Where-Object {
+            $_ -like 'docs/runtime-ml-protocol-v2.md' -or
+            $_ -like 'crates/neurohid-types/*' -or
+            $_ -like 'crates/neurohid-ipc/*'
+        } | Select-Object -First 1)
+}
 
-$architecture = [bool]($changedFiles | Where-Object {
-        $_ -like 'docs/architecture/*' -or
-        $_ -like 'crates/neurohid-core/*' -or
-        $_ -like 'crates/neurohid-ipc/*' -or
-        $_ -like 'crates/neurohid-storage/*' -or
-        $_ -like '.github/workflows/architecture-gate.yml'
-    } | Select-Object -First 1)
+$architecture = if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') {
+    $true
+}
+else {
+    [bool]($changedFiles | Where-Object {
+            $_ -like 'docs/architecture/*' -or
+            $_ -like 'crates/neurohid-core/*' -or
+            $_ -like 'crates/neurohid-ipc/*' -or
+            $_ -like 'crates/neurohid-storage/*' -or
+            $_ -like '.github/workflows/architecture-gate.yml'
+        } | Select-Object -First 1)
+}
 
-$automation = Has-PathPrefix -Files $changedFiles -Prefixes @('.github/')
+$automation = if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') { $true } else { Has-PathPrefix -Files $changedFiles -Prefixes @('.github/') }
 
-$unsafe = $false
+$unsafe = if ($impactUnknown -and $env:GITHUB_ACTIONS -eq 'true') { $true } else { $false }
 $changedRustFiles = $changedFiles | Where-Object {
     $_ -like 'crates/*' -and $_ -match '\.rs$' -and (Test-Path $_)
 }
@@ -89,7 +131,9 @@ $requiredChecks = @(
     'Format',
     'Documentation',
     'Python Tests',
-    'Rust Coverage'
+    'Rust Coverage',
+    'Governance Integrity',
+    'TDD Evidence'
 )
 
 $result = [ordered]@{
@@ -100,6 +144,7 @@ $result = [ordered]@{
     architecture    = $architecture
     unsafe          = $unsafe
     automation      = $automation
+    impact_unknown  = $impactUnknown
     required_checks = ($requiredChecks -join ',')
     changed_files   = $changedFiles
 }
@@ -120,6 +165,7 @@ if ($env:GITHUB_OUTPUT) {
         "architecture=$($architecture.ToString().ToLowerInvariant())"
         "unsafe=$($unsafe.ToString().ToLowerInvariant())"
         "automation=$($automation.ToString().ToLowerInvariant())"
+        "impact_unknown=$($impactUnknown.ToString().ToLowerInvariant())"
         "required_checks=$($requiredChecks -join ',')"
     ) | Add-Content -Path $env:GITHUB_OUTPUT
 }

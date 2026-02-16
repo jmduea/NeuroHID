@@ -16,8 +16,6 @@ For the ML module in `python/`:
 - uv
 - Always use `uv` to run Python commands. Do not use bare `python` commands.
 
-The repository enforces this with the `UV Command Policy` CI workflow.
-
 ```bash
 cd python
 uv sync
@@ -143,7 +141,16 @@ Use [docs/crate-boundaries.md](./docs/crate-boundaries.md) as the canonical
 - Do not push directly to `main`.
 - All `main` updates must come from a pull request merge.
 - CI enforces this via `.github/workflows/branch-policy.yml`.
+- CI also enforces governance consistency (`.github/workflows/governance-integrity.yml`) and PR TDD evidence (`.github/workflows/tdd-governance.yml`).
 - Repository admin setup checklist: `docs/automation/branch-protection-checklist.md`.
+- Canonical policy source of truth: `.github/automation/policy-manifest.json`.
+
+Local guardrails before push:
+
+```bash
+pwsh -File ./.github/scripts/verify-governance-setup.ps1
+pwsh -File ./.github/scripts/pre-push-governance-checks.ps1 -RustScope focused
+```
 
 ### Release Policy
 

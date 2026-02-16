@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Governance policy manifest at `.github/automation/policy-manifest.json` as canonical source for branch/TDD enforcement configuration
+- Governance integrity workflow `.github/workflows/governance-integrity.yml` and validator script `.github/scripts/validate-policy-integrity.ps1` to prevent policy/workflow/doc drift
+- Governance integrity validator now checks `CHANGELOG.md` `[Unreleased]` local file/workflow references and fails on missing paths
+- Governance integrity workflow now runs fixture-based validator regression checks via `.github/scripts/test-validate-policy-integrity.ps1`
+- Fixture coverage now includes both missing-path and forbidden-claim regression cases for governance policy validation
+- PR TDD governance workflow `.github/workflows/tdd-governance.yml` and validator script `.github/scripts/validate-pr-governance.ps1` to require structured RED/GREEN evidence and test-impact rationale
+- Branch protection checklist document at `docs/automation/branch-protection-checklist.md` aligned with required status checks
+- Local governance helper scripts `.github/scripts/verify-governance-setup.ps1` and `.github/scripts/pre-push-governance-checks.ps1` for branch/setup verification and pre-push fast gates
 - Repository root dual-license texts (`LICENSE-MIT`, `LICENSE-APACHE`) to match declared workspace licensing policy
 - Device discovery→connection lifecycle design reference at `docs/plans/2026-02-15-device-discovery-connection-design.md`, including interactive/headless flow mapping and troubleshooting guidance
 - BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
@@ -28,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real IPC integration tests for connect/disconnect/reconnect transitions in `neurohid-core` and `neurohid-hub`
 - Repository-level governance templates: ADR, planning DoR/DoD, UX checklist, and PR checklist
 - Repo-local automation assets for docs freshness, architecture validation, feature planning, TDD enforcement, UX review, and Python ML review
-- CI policy workflows: docs freshness gate, architecture ADR gate, Python quality gate, and UV command policy gate
+- CI policy workflows: docs freshness gate, architecture ADR gate, and Python quality gate
 - Structured JSON tracing support for `neurohid` and `neurohid-service` with configurable output via `NEUROHID_LOG_FORMAT`
 - Hot-path data-flow tracing across runtime stages with correlation fields (`decision_id`, `stream_id`) and bounded periodic summaries
 - Control-plane tracing for service/hub request boundaries (command, request id, response kind, duration)
@@ -45,6 +53,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pull request template now requires explicit TDD evidence sections (`Failing Test Intent`, `RED Evidence (Before)`, `GREEN Evidence (After)`) and a constrained `No-Test-Impact Rationale` override path
+- Development and contributor governance docs now reference policy-manifest-driven branch/TDD enforcement and updated required status checks
+- Impact classification required-check output now includes `Governance Integrity` and `TDD Evidence`
 - Private-phase CI/workflow runner policy now targets dedicated self-hosted labels (`self-hosted` + OS + `neurohid-ci`) across branch policy, CI, architecture, crate-boundaries, Python quality, release, and publish workflows, with a `ci.yml` macOS lane toggle (`ENABLE_MACOS`) to allow pragmatic macOS de-scope when needed
 - Pre-merge validation and coverage enforcement behavior is unchanged under self-hosted execution (Rust/Python quality gates plus `PYTHON_COVERAGE_MIN` and `RUST_COVERAGE_MIN` thresholds remain active)
 - Workspace `lsl-sys` patch source now uses a shared git-pinned upstream (`[patch.crates-io]` with fixed `rev`) for reproducible Linux behavior across multiple applications without repo-local vendoring

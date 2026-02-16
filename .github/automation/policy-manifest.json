@@ -1,0 +1,143 @@
+{
+  "version": 1,
+  "updated": "2026-02-15",
+  "owners": {
+    "review_required_paths": [
+      ".github/automation/policy-manifest.json",
+      ".github/workflows/branch-policy.yml",
+      ".github/workflows/ci.yml",
+      ".github/workflows/governance-integrity.yml",
+      ".github/workflows/tdd-governance.yml",
+      ".github/hooks/rtk-rewrite.ps1",
+      ".github/scripts/validate-policy-integrity.ps1",
+      ".github/scripts/test-validate-policy-integrity.ps1",
+      ".github/scripts/validate-pr-governance.ps1",
+      ".github/scripts/verify-governance-setup.ps1",
+      ".github/scripts/pre-push-governance-checks.ps1",
+      ".github/PULL_REQUEST_TEMPLATE.md",
+      "AGENTS.md",
+      "CONTRIBUTING.md",
+      "docs/development-guide.md",
+      "docs/automation/branch-protection-checklist.md"
+    ]
+  },
+  "branch_policy": {
+    "protected_branch": "main",
+    "require_pull_request": true,
+    "allow_direct_push": false,
+    "required_status_checks": {
+      "baseline": [
+        {
+          "name": "Enforce PR-only main updates",
+          "workflow": ".github/workflows/branch-policy.yml",
+          "job": "pr-only-main"
+        },
+        {
+          "name": "Determine Impact",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "determine-impact"
+        },
+        {
+          "name": "Focused Gates",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "focused-gates"
+        },
+        {
+          "name": "Test",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "test"
+        },
+        {
+          "name": "Clippy",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "clippy"
+        },
+        {
+          "name": "Format",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "fmt"
+        },
+        {
+          "name": "Documentation",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "docs"
+        },
+        {
+          "name": "Python Tests",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "python-tests"
+        },
+        {
+          "name": "Rust Coverage",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "rust-coverage"
+        },
+        {
+          "name": "Governance Integrity",
+          "workflow": ".github/workflows/governance-integrity.yml",
+          "job": "policy-integrity"
+        },
+        {
+          "name": "TDD Evidence",
+          "workflow": ".github/workflows/tdd-governance.yml",
+          "job": "tdd-evidence"
+        }
+      ],
+      "conditional": [
+        {
+          "name": "Test (macOS)",
+          "workflow": ".github/workflows/ci.yml",
+          "job": "test-macos",
+          "enabled_when": "ENABLE_MACOS != false"
+        }
+      ]
+    }
+  },
+  "required_workflows": [
+    ".github/workflows/branch-policy.yml",
+    ".github/workflows/ci.yml",
+    ".github/workflows/architecture-gate.yml",
+    ".github/workflows/crate-boundaries-gate.yml",
+    ".github/workflows/governance-integrity.yml",
+    ".github/workflows/tdd-governance.yml"
+  ],
+  "tdd_policy": {
+    "required_pr_sections": [
+      "Failing Test Intent",
+      "RED Evidence (Before)",
+      "GREEN Evidence (After)"
+    ],
+    "minimum_section_characters": 24,
+    "no_test_impact": {
+      "label": "no-test-impact",
+      "section": "No-Test-Impact Rationale",
+      "minimum_characters": 24
+    },
+    "production_path_patterns": [
+      "^crates/[^/]+/src/.+\\.rs$",
+      "^python/src/.+\\.py$"
+    ],
+    "test_path_patterns": [
+      "^crates/[^/]+/tests/.+\\.rs$",
+      "^python/tests/.+\\.py$"
+    ]
+  },
+  "doc_path_assertions": [
+    {
+      "source": "CONTRIBUTING.md",
+      "reference": "docs/automation/branch-protection-checklist.md"
+    }
+  ],
+  "forbidden_doc_claims": [
+    {
+      "source": "CONTRIBUTING.md",
+      "pattern": "UV Command Policy",
+      "description": "Stale workflow name removed; uv policy is now enforced via current governance scripts and docs."
+    },
+    {
+      "source": "CHANGELOG.md",
+      "pattern": "UV command policy gate",
+      "description": "Stale CI workflow claim must not be reintroduced."
+    }
+  ]
+}
