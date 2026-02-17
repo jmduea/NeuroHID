@@ -108,7 +108,7 @@ jobs:
   test-macos:
     name: Test (macOS)
     needs: determine-impact
-    if: (needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push') && vars.ENABLE_MACOS != 'false'
+    if: (needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push') && vars.ENABLE_MACOS == 'true'
     runs-on: [self-hosted, macos, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
