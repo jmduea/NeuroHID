@@ -86,6 +86,11 @@ jobs:
       - name: Install LSL (Linux)
         if: matrix.runner_os == 'Linux'
         run: |
+          if dpkg-query -W -f='${Status}' liblsl-dev 2>/dev/null | grep -q 'install ok installed'; then
+            echo "liblsl-dev already installed; skipping install."
+            exit 0
+          fi
+
           if command -v apt-get >/dev/null 2>&1; then
             if [ "$(id -u)" -eq 0 ]; then
               apt-get update && apt-get install -y liblsl-dev
@@ -127,6 +132,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
         run: |
+          if dpkg-query -W -f='${Status}' liblsl-dev 2>/dev/null | grep -q 'install ok installed'; then
+            echo "liblsl-dev already installed; skipping install."
+            exit 0
+          fi
+
           if command -v apt-get >/dev/null 2>&1; then
             if [ "$(id -u)" -eq 0 ]; then
               apt-get update && apt-get install -y liblsl-dev
@@ -163,6 +173,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
         run: |
+          if dpkg-query -W -f='${Status}' liblsl-dev 2>/dev/null | grep -q 'install ok installed'; then
+            echo "liblsl-dev already installed; skipping install."
+            exit 0
+          fi
+
           if command -v apt-get >/dev/null 2>&1; then
             if [ "$(id -u)" -eq 0 ]; then
               apt-get update && apt-get install -y liblsl-dev
@@ -219,6 +234,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
         run: |
+          if dpkg-query -W -f='${Status}' liblsl-dev 2>/dev/null | grep -q 'install ok installed'; then
+            echo "liblsl-dev already installed; skipping install."
+            exit 0
+          fi
+
           if command -v apt-get >/dev/null 2>&1; then
             if [ "$(id -u)" -eq 0 ]; then
               apt-get update && apt-get install -y liblsl-dev
