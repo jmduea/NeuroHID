@@ -21,7 +21,6 @@
 //! - All signal amplitudes are in microvolts (f32)
 //! - Coordinates are normalized to [0.0, 1.0] where possible
 //! - Errors use `thiserror` for clean error hierarchies
-//! - Shared schemas favor explicit versioning for forward compatibility
 
 pub mod action;
 pub mod config;
