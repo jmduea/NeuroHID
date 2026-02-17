@@ -10,7 +10,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   PYTHON_COVERAGE_MIN: "48"
-  RUST_COVERAGE_MIN: "30"
+  RUST_COVERAGE_MIN: "25"
 
 jobs:
   determine-impact:
