@@ -1,5 +1,7 @@
 name: Architecture Gate
 
+# Trigger refresh when ADR references are updated in PR metadata.
+
 on:
   pull_request:
     branches: [main]
