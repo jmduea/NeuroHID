@@ -274,3 +274,5 @@ foreach ($claim in $manifest.forbidden_doc_claims) {
 Assert-ChangelogUnreleasedReferencesExist -ChangelogPath 'CHANGELOG.md'
 
 Write-Host "Policy integrity validation passed for $ManifestPath"
+$global:LASTEXITCODE = 0
+exit 0
