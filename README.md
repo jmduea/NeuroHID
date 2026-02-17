@@ -109,6 +109,8 @@ To make this explicit in code, the device crate also exports aliases:
 neurohid/
 ├── Cargo.toml                 # Workspace root
 ├── crates/
+│   ├── neurohid/              # Published binary crate (hub/service/validate bins)
+│   ├── neurohid-sdk/          # Feature-gated Rust facade/re-export crate
 │   ├── neurohid-types/        # Shared type definitions
 │   ├── neurohid-device/       # Device backends (LSL, Serial, BrainFlow, Mock, Auto)
 │   ├── neurohid-signal/       # Signal processing pipeline
@@ -117,13 +119,20 @@ neurohid/
 │   ├── neurohid-ipc/          # Rust↔Python communication
 │   ├── neurohid-calibration/  # Calibration games (egui)
 │   ├── neurohid-hub/          # Hub application (egui)
-│   └── neurohid-core/         # Main service binary
+│   └── neurohid-core/         # Runtime orchestration library
 └── python/
-    └── neurohid_ml/           # Python ML components
-        ├── decoder/           # RL policy (PPO)
-        ├── errp/              # Error-related potential detection
-        └── bridge/            # IPC client
+    ├── src/neurohid_ml/       # Python ML package
+    ├── tests/                 # Python tests
+    └── notebooks/             # Notebook workflows
 ```
+
+## Documentation Map
+
+- `docs/index.md` - generated entrypoint for project docs
+- `docs/project-overview.md` - architecture and runtime summary
+- `docs/development-guide.md` - local setup, quality gates, and CI policy
+- `docs/deployment-guide.md` - runtime operations and release/publish workflows
+- `docs/crate-boundaries.md` - crate ownership and dependency direction
 
 ## Emotiv Crates
 
@@ -156,15 +165,17 @@ Applications don't know NeuroHID exists. They receive standard HID events—mous
 
 ### Prerequisites
 
-**Hardware:**
+**Hardware (optional, for real signal input):**
 
-- Emotiv Insight (5-channel EEG headset)
-- Emotiv Cortex service installed and running
+- Any supported backend source (LSL stream, BrainFlow-supported board, serial adapter)
+- Emotiv setups are supported through the separate `emotiv-cortex-rs` ecosystem
+- No hardware is required for local development (mock/simulation paths are available)
 
 **Software:**
 
 - Rust 1.85+
 - Python 3.12+
+- `uv` (Python environment + command runner)
 - PyTorch 2.10+
 
 ### Building
@@ -177,22 +188,24 @@ cd neurohid
 # Note: workspace builds currently patch `lsl-sys` to a shared git source
 # pinned by commit (`[patch.crates-io]`) for reproducible cross-app behavior.
 
-# Build the Rust components
-cargo build --release
+# Build Rust workspace crates
+cargo build --workspace
 
 # Set up Python environment
-cd python
-uv sync
+uv sync --directory python
 ```
 
 ### Running
 
 ```bash
-# Run the full neurohid hub
-cargo run --release -p neurohid
+# Run the full hub app
+cargo run -p neurohid --bin neurohid
 
 # Start the background service
-cargo run --release -p neurohid --bin neurohid-service
+cargo run -p neurohid --bin neurohid-service
+
+# Run validation harness
+cargo run -p neurohid --bin neurohid-validate
 
 # (Windows) install and manage as a real Windows service
 cargo run --release -p neurohid --bin neurohid-service -- --service-command install
@@ -202,7 +215,7 @@ cargo run --release -p neurohid --bin neurohid-service -- --service-command stop
 cargo run --release -p neurohid --bin neurohid-service -- --service-command uninstall
 
 # Optional: expose a localhost JSON control endpoint
-cargo run --release -p neurohid --bin neurohid-service -- --control-port 47801
+cargo run -p neurohid --bin neurohid-service -- --control-port 47801
 ```
 
 On Linux/macOS, named-pipe transports are unavailable. Use TCP loopback for both control and
@@ -277,7 +290,8 @@ Persisted visualization UI state is stored in `UiConfig` via:
 
 Hub UI shell and primary controls now follow an always-on Armas-first component layer
 (`Sidebar`, shared theme wrappers for input/select/toggle/slider/textarea/progress).
-For migration and maintenance guidance, see `docs/ux/egui-visual-migration-cookbook.md`.
+For current UI/runtime architecture references, see `docs/architecture-rust-core.md`
+and `docs/component-inventory.md`.
 
 ### Python ML Workflows (uv-first)
 
@@ -335,35 +349,13 @@ Impact-aware routing inputs for automation are defined in:
 - `main` is PR-only: direct pushes are blocked by `.github/workflows/branch-policy.yml`.
 - Tag workflow `.github/workflows/release.yml` verifies pre-release quality on `v*` tags.
 - crates.io publishing is intentionally separated into manual workflow `.github/workflows/publish-crates.yml`.
-- Repository-admin setup checklist: `docs/automation/branch-protection-checklist.md`.
+- Branch protection required checks are documented in `docs/development-guide.md`.
 
-## Development Roadmap
+## Project Status and Planning
 
-The current implementation roadmap is tracked in repository issues and milestones.
-
-### Phase 1 (Weeks 1-3): Foundation
-
-- Emotiv Cortex adapter
-- Cross-platform HID emission
-- Signal processing pipeline
-
-### Phase 2 (Weeks 4-7): Core Infrastructure
-
-- ErrP detection and calibration
-- IPC layer
-- Profile storage
-
-### Phase 3 (Weeks 8-10): ML Integration
-
-- Decoder (PPO policy network)
-- Online training loop
-- Reward integration
-
-### Phase 4 (Weeks 11-14): Calibration & Polish
-
-- Calibration games (Grid Maze, Target Tracking)
-- First-run wizard
-- System tray app
+- Active changes are tracked in `CHANGELOG.md` (`[Unreleased]`)
+- Design and implementation plans are tracked under `docs/plans/`
+- Detailed architecture and boundary docs are indexed in `docs/index.md`
 
 ## Contributing
 

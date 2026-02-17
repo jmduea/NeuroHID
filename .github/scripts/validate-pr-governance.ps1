@@ -89,8 +89,8 @@ function Get-PullRequestChangedFiles {
     )
 
     $headers = @{
-        Authorization = "Bearer $AccessToken"
-        Accept = 'application/vnd.github+json'
+        Authorization          = "Bearer $AccessToken"
+        Accept                 = 'application/vnd.github+json'
         'X-GitHub-Api-Version' = '2022-11-28'
     }
 

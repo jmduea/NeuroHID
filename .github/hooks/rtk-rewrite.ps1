@@ -70,10 +70,10 @@ $updatedInput.command = $rewritten
 
 $result = @{
     hookSpecificOutput = @{
-        hookEventName = 'PreToolUse'
-        permissionDecision = 'allow'
+        hookEventName            = 'PreToolUse'
+        permissionDecision       = 'allow'
         permissionDecisionReason = 'RTK auto-rewrite'
-        updatedInput = $updatedInput
+        updatedInput             = $updatedInput
     }
 }
 
