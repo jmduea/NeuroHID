@@ -27,6 +27,8 @@ jobs:
       required_checks: ${{ steps.impact.outputs.required_checks }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Classify change impact
         id: impact
         shell: pwsh
@@ -73,6 +75,12 @@ jobs:
             runner: [self-hosted, windows, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
+      - name: Prefer Git Bash (Windows)
+        if: matrix.runner_os == 'Windows'
+        shell: pwsh
+        run: |
+          'C:\Program Files\Git\usr\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          'C:\Program Files\Git\bin' | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL (Linux)
