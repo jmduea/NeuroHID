@@ -767,7 +767,7 @@ fn desktop_notify(title: &str, body: &str) -> std::io::Result<()> {
     }
     #[cfg(unix)]
     {
-        return desktop_notify_unix(title, body);
+        desktop_notify_unix(title, body)
     }
     #[cfg(not(any(target_os = "windows", unix)))]
     {

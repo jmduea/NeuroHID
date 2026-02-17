@@ -109,7 +109,7 @@ function Invoke-Validator {
         $output = & pwsh -File './.github/scripts/validate-policy-integrity.ps1' -ManifestPath './.github/automation/policy-manifest.json' 2>&1
         return @{
             ExitCode = $LASTEXITCODE
-            Output = ($output | Out-String)
+            Output   = ($output | Out-String)
         }
     }
     finally {
@@ -156,8 +156,8 @@ try {
         throw "Failing fixture did not produce expected missing-reference error.`n$($failResult.Output)"
     }
 
-        Initialize-Fixture -Root $forbiddenClaimRoot -ValidatorSourcePath $validatorSource
-        Write-File -Path (Join-Path $forbiddenClaimRoot '.github/automation/policy-manifest.json') -Content @"
+    Initialize-Fixture -Root $forbiddenClaimRoot -ValidatorSourcePath $validatorSource
+    Write-File -Path (Join-Path $forbiddenClaimRoot '.github/automation/policy-manifest.json') -Content @"
 {
     "version": 1,
     "required_workflows": [
@@ -191,7 +191,7 @@ try {
 }
 "@
 
-        Write-File -Path (Join-Path $forbiddenClaimRoot 'CHANGELOG.md') -Content @'
+    Write-File -Path (Join-Path $forbiddenClaimRoot 'CHANGELOG.md') -Content @'
 # Changelog
 
 ## [Unreleased]
@@ -202,16 +202,18 @@ try {
 ## [0.1.0]
 '@
 
-        $forbiddenResult = Invoke-Validator -Root $forbiddenClaimRoot
-        if ($forbiddenResult.ExitCode -eq 0) {
-                throw 'Expected forbidden-claim fixture to fail, but it passed.'
-        }
+    $forbiddenResult = Invoke-Validator -Root $forbiddenClaimRoot
+    if ($forbiddenResult.ExitCode -eq 0) {
+        throw 'Expected forbidden-claim fixture to fail, but it passed.'
+    }
 
-        if ($forbiddenResult.Output -notmatch 'Forbidden stale claim detected') {
-                throw "Forbidden-claim fixture did not produce expected stale-claim error.`n$($forbiddenResult.Output)"
-        }
+    if ($forbiddenResult.Output -notmatch 'Forbidden stale claim detected') {
+        throw "Forbidden-claim fixture did not produce expected stale-claim error.`n$($forbiddenResult.Output)"
+    }
 
     Write-Host 'validate-policy-integrity fixture tests passed.'
+    $global:LASTEXITCODE = 0
+    exit 0
 }
 finally {
     if (Test-Path $passRoot) {

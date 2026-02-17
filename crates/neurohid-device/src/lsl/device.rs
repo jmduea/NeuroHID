@@ -25,6 +25,8 @@ pub(crate) struct ThreadSafeInlet(pub lsl::StreamInlet);
 // SAFETY: liblsl inlets are thread-safe. The underlying C library handles
 // synchronization for pull operations.
 unsafe impl Send for ThreadSafeInlet {}
+// SAFETY: Same invariant as above; sharing references across threads is safe
+// because liblsl synchronizes concurrent inlet access internally.
 unsafe impl Sync for ThreadSafeInlet {}
 
 /// An LSL stream consumer that implements the [`Device`] trait.
