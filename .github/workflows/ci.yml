@@ -85,7 +85,16 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL (Linux)
         if: matrix.runner_os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update && apt-get install -y liblsl-dev
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo -n apt-get update && sudo -n apt-get install -y liblsl-dev
+            else
+              echo "Skipping liblsl-dev install: non-interactive sudo is unavailable on this runner."
+            fi
+          fi
       - name: Build
         run: cargo build --workspace
       - name: Test
@@ -117,7 +126,16 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update && apt-get install -y liblsl-dev
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo -n apt-get update && sudo -n apt-get install -y liblsl-dev
+            else
+              echo "Skipping liblsl-dev install: non-interactive sudo is unavailable on this runner."
+            fi
+          fi
       - name: Clippy
         run: cargo clippy --workspace -- -D warnings -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
 
@@ -144,7 +162,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update && apt-get install -y liblsl-dev
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo -n apt-get update && sudo -n apt-get install -y liblsl-dev
+            else
+              echo "Skipping liblsl-dev install: non-interactive sudo is unavailable on this runner."
+            fi
+          fi
       - name: Build docs
         run: cargo doc --workspace --no-deps
         env:
@@ -191,7 +218,16 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: |
+          if command -v apt-get >/dev/null 2>&1; then
+            if [ "$(id -u)" -eq 0 ]; then
+              apt-get update && apt-get install -y liblsl-dev
+            elif command -v sudo >/dev/null 2>&1 && sudo -n true 2>/dev/null; then
+              sudo -n apt-get update && sudo -n apt-get install -y liblsl-dev
+            else
+              echo "Skipping liblsl-dev install: non-interactive sudo is unavailable on this runner."
+            fi
+          fi
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run Rust coverage gate
