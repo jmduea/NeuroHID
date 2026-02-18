@@ -187,26 +187,34 @@ impl StreamConsole {
             .max_height(400.0)
             .frame(egui::Frame::NONE.fill(TERMINAL_BG))
             .show(ctx, |ui| {
-                // Header bar
-                self.show_header(ui);
-
-                ui.add_space(2.0);
-
-                // Filter input
-                self.show_filter(ui, snapshot);
-
-                ui.add_space(4.0);
-
-                // Scrolling content area
-                self.show_content(ui);
-
-                // Stats line at bottom
-                self.show_stats(ui, bus, snapshot);
+                self.render_body(ui, bus, snapshot, true);
             });
     }
 
+    /// Render the console as embedded panel content.
+    pub fn show_embedded(&mut self, ui: &mut egui::Ui, bus: &DataBus, snapshot: &ServiceSnapshot) {
+        let current_time = ui.input(|i| i.time);
+        self.update_rate(current_time);
+        self.render_body(ui, bus, snapshot, false);
+    }
+
+    fn render_body(
+        &mut self,
+        ui: &mut egui::Ui,
+        bus: &DataBus,
+        snapshot: &ServiceSnapshot,
+        show_close_button: bool,
+    ) {
+        self.show_header(ui, show_close_button);
+        ui.add_space(2.0);
+        self.show_filter(ui, snapshot);
+        ui.add_space(4.0);
+        self.show_content(ui);
+        self.show_stats(ui, bus, snapshot);
+    }
+
     /// Render the header bar with title and controls.
-    fn show_header(&mut self, ui: &mut egui::Ui) {
+    fn show_header(&mut self, ui: &mut egui::Ui, show_close_button: bool) {
         let header_frame = egui::Frame::NONE
             .fill(Color32::from_gray(25))
             .inner_margin(egui::Margin::symmetric(8, 4));
@@ -240,8 +248,10 @@ impl StreamConsole {
                 );
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Close button
-                    if theme::action_button(ui, "Close", true, theme::ButtonTone::Ghost) {
+                    // Close button (only for detached panel mode)
+                    if show_close_button
+                        && theme::action_button(ui, "Close", true, theme::ButtonTone::Ghost)
+                    {
                         self.visible = false;
                     }
 

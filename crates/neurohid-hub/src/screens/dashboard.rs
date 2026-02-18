@@ -37,6 +37,8 @@ pub struct DashboardScreen {
     candidate_rejected_history: MetricHistory,
     recent_candidate_outcomes: VecDeque<String>,
     last_candidate_outcome: Option<String>,
+    open_runtime_panel_requested: bool,
+    open_problems_panel_requested: bool,
 }
 
 enum TrainStageStatus {
@@ -126,6 +128,23 @@ impl DashboardScreen {
             candidate_rejected_history: MetricHistory::default(),
             recent_candidate_outcomes: VecDeque::new(),
             last_candidate_outcome: None,
+            open_runtime_panel_requested: false,
+            open_problems_panel_requested: false,
+        }
+    }
+
+    pub fn take_open_runtime_panel_request(&mut self) -> bool {
+        std::mem::take(&mut self.open_runtime_panel_requested)
+    }
+
+    pub fn take_open_problems_panel_request(&mut self) -> bool {
+        std::mem::take(&mut self.open_problems_panel_requested)
+    }
+
+    pub fn active_train_stage_error(&self) -> Option<&str> {
+        match self.train_stage_status.as_ref()? {
+            TrainStageStatus::Error(message) => Some(message.as_str()),
+            TrainStageStatus::Running(_) | TrainStageStatus::Success(_) => None,
         }
     }
 
@@ -454,6 +473,14 @@ impl DashboardScreen {
                         .clone()
                         .unwrap_or_else(|| "Latency thresholds exceeded".to_string());
                     theme::status_chip(ui, &message, theme::Intent::Danger);
+                    if theme::action_button(
+                        ui,
+                        "Open Runtime Panel",
+                        true,
+                        theme::ButtonTone::Ghost,
+                    ) {
+                        self.open_runtime_panel_requested = true;
+                    }
                 }
 
                 ui.add_space(8.0);
@@ -507,25 +534,6 @@ impl DashboardScreen {
                     });
 
                     ui.horizontal_wrapped(|ui| {
-                        let reconnect_clicked = theme::action_button(
-                            ui,
-                            "Reconnect Bridge",
-                            true,
-                            theme::ButtonTone::Secondary,
-                        );
-                        if reconnect_clicked {
-                            service_manager.ml_bridge_reconnect();
-                        }
-                        let apply_fallback_clicked = theme::action_button(
-                            ui,
-                            "Apply Fallback Policy",
-                            true,
-                            theme::ButtonTone::Secondary,
-                        );
-                        if apply_fallback_clicked {
-                            service_manager
-                                .set_fallback_policy(state.config.service.fallback_policy.clone());
-                        }
                         let refresh_snapshot_clicked = theme::action_button(
                             ui,
                             "Refresh Trainer Snapshot",
@@ -535,6 +543,14 @@ impl DashboardScreen {
                         if refresh_snapshot_clicked {
                             self.trainer_snapshot = service_manager.trainer_snapshot();
                             self.last_trainer_snapshot_poll = Some(Instant::now());
+                        }
+                        if theme::action_button(
+                            ui,
+                            "Open Runtime Panel",
+                            true,
+                            theme::ButtonTone::Secondary,
+                        ) {
+                            self.open_runtime_panel_requested = true;
                         }
                     });
 
@@ -590,6 +606,14 @@ impl DashboardScreen {
                             if let Some(hint) = task_error_hint(error) {
                                 ui.add_space(4.0);
                                 theme::status_chip(ui, hint, theme::Intent::Warning);
+                            }
+                            if theme::action_button(
+                                ui,
+                                "Open Problems Panel",
+                                true,
+                                theme::ButtonTone::Ghost,
+                            ) {
+                                self.open_problems_panel_requested = true;
                             }
                         });
                 }

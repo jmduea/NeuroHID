@@ -8,7 +8,7 @@ use armas::prelude::{
 use eframe::egui::{self, Color32, RichText};
 use neurohid_types::config::ThemeMode;
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Intent {
     Info,
     Success,
@@ -23,6 +23,21 @@ pub enum ButtonTone {
     Secondary,
     Ghost,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OperationState {
+    Idle,
+    Running,
+    Ready,
+    Failed,
+}
+
+pub const WORKBENCH_STATUS_BAR_HEIGHT: f32 = 30.0;
+pub const WORKBENCH_ACTIVITY_RAIL_WIDTH: f32 = 44.0;
+pub const WORKBENCH_BOTTOM_MIN_HEIGHT: f32 = 150.0;
+pub const WORKBENCH_BOTTOM_MAX_HEIGHT: f32 = 460.0;
+pub const WORKBENCH_STATUS_DIVIDER_GAP: f32 = 12.0;
+pub const WORKBENCH_STATUS_ITEM_HEIGHT: f32 = 22.0;
 
 pub struct ArmasFrame {
     variant: CardVariant,
@@ -167,6 +182,28 @@ pub fn status_chip(ui: &mut egui::Ui, label: &str, intent: Intent) {
         .show(ui, |ui| {
             ui.label(RichText::new(label).small().color(fg).strong());
         });
+}
+
+pub fn operation_state_chip(ui: &mut egui::Ui, subject: &str, state: OperationState) {
+    let (suffix, intent) = match state {
+        OperationState::Idle => ("idle", Intent::Muted),
+        OperationState::Running => ("running", Intent::Warning),
+        OperationState::Ready => ("ready", Intent::Success),
+        OperationState::Failed => ("failed", Intent::Danger),
+    };
+    status_chip(ui, &format!("{subject} {suffix}"), intent);
+}
+
+pub fn workbench_surface_fill_ctx(ctx: &egui::Context) -> Color32 {
+    ctx.style().visuals.window_fill.gamma_multiply(0.97)
+}
+
+pub fn workbench_rail_fill_ctx(ctx: &egui::Context) -> Color32 {
+    ctx.style().visuals.panel_fill.gamma_multiply(0.95)
+}
+
+pub fn workbench_divider_color(ui: &egui::Ui) -> Color32 {
+    ui.style().visuals.widgets.noninteractive.bg_stroke.color
 }
 
 pub fn card_frame(_ui: &egui::Ui) -> ArmasFrame {

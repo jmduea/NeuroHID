@@ -186,13 +186,7 @@ impl PythonLabScreen {
 
         theme::card_frame(ui).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                let kernel_status = self.kernel_status();
-                let (kernel_label, kernel_intent) = match kernel_status.as_str() {
-                    "running" => ("Kernel running", theme::Intent::Success),
-                    "starting" => ("Kernel starting", theme::Intent::Warning),
-                    _ => ("Kernel stopped", theme::Intent::Muted),
-                };
-                theme::status_chip(ui, kernel_label, kernel_intent);
+                theme::operation_state_chip(ui, "Kernel", self.kernel_status());
 
                 theme::status_chip(
                     ui,
@@ -642,14 +636,14 @@ impl PythonLabScreen {
         }
     }
 
-    fn kernel_status(&self) -> String {
+    fn kernel_status(&self) -> theme::OperationState {
         let Some(kernel) = &self.kernel else {
-            return "stopped".to_string();
+            return theme::OperationState::Idle;
         };
         if kernel.ready {
-            "running".to_string()
+            theme::OperationState::Ready
         } else {
-            "starting".to_string()
+            theme::OperationState::Running
         }
     }
 

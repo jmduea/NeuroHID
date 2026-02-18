@@ -95,38 +95,25 @@ impl JupyterIdeScreen {
             .as_mut()
             .is_some_and(|child| child.try_wait().ok().flatten().is_none());
 
-        let env_text = match self.bootstrap_state {
-            BootstrapState::Idle => "Environment idle",
-            BootstrapState::Running => "Environment preparing",
-            BootstrapState::Ready => "Environment ready",
-            BootstrapState::Failed => "Environment failed",
-        };
-        let env_intent = match self.bootstrap_state {
-            BootstrapState::Ready => theme::Intent::Success,
-            BootstrapState::Running => theme::Intent::Warning,
-            BootstrapState::Failed => theme::Intent::Danger,
-            BootstrapState::Idle => theme::Intent::Muted,
+        let env_state = match self.bootstrap_state {
+            BootstrapState::Idle => theme::OperationState::Idle,
+            BootstrapState::Running => theme::OperationState::Running,
+            BootstrapState::Ready => theme::OperationState::Ready,
+            BootstrapState::Failed => theme::OperationState::Failed,
         };
 
-        let jupyter_text = if jupyter_running && self.jupyter_ready {
-            "Jupyter ready"
+        let jupyter_state = if jupyter_running && self.jupyter_ready {
+            theme::OperationState::Ready
         } else if jupyter_running {
-            "Jupyter starting"
+            theme::OperationState::Running
         } else {
-            "Jupyter stopped"
-        };
-        let jupyter_intent = if jupyter_running && self.jupyter_ready {
-            theme::Intent::Success
-        } else if jupyter_running {
-            theme::Intent::Warning
-        } else {
-            theme::Intent::Muted
+            theme::OperationState::Idle
         };
 
         theme::card_frame(ui).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                theme::status_chip(ui, env_text, env_intent);
-                theme::status_chip(ui, jupyter_text, jupyter_intent);
+                theme::operation_state_chip(ui, "Environment", env_state);
+                theme::operation_state_chip(ui, "Jupyter", jupyter_state);
                 if let Some(session_url) = &self.jupyter_session_url {
                     theme::status_chip(
                         ui,
@@ -239,6 +226,26 @@ impl JupyterIdeScreen {
                 self.handle_console_command(command, ui_cfg);
             }
         });
+    }
+
+    pub fn command_prepare_environment(&mut self, ui_cfg: &UiConfig) {
+        self.start_bootstrap(&ui_cfg.jupyter_bootstrap_command);
+    }
+
+    pub fn command_start_jupyter(&mut self, ui_cfg: &UiConfig) {
+        self.start_jupyter(&ui_cfg.jupyter_command);
+    }
+
+    pub fn command_stop_jupyter(&mut self) {
+        self.stop_jupyter();
+    }
+
+    pub fn command_open_in_browser(&mut self, ui_cfg: &UiConfig) -> Result<(), String> {
+        let browser_url = self
+            .jupyter_session_url
+            .as_deref()
+            .unwrap_or(&ui_cfg.jupyter_url);
+        open_url(browser_url).map_err(|error| error.to_string())
     }
 
     fn start_bootstrap(&mut self, command_line: &str) {

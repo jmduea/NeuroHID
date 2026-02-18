@@ -12,5 +12,6 @@ pub mod state;
 pub mod stream_console;
 pub mod theme;
 pub mod widgets;
+pub mod workbench;
 
 pub use app::HubApp;
