@@ -532,6 +532,9 @@ pub struct UiConfig {
     /// Deprecated: retained for backward compatibility with older configs.
     #[serde(default = "default_lab_kernel_command")]
     pub lab_kernel_command: String,
+    /// Thresholds used by Advanced-mode Problems panel device-health diagnostics.
+    #[serde(default)]
+    pub device_health_problems: DeviceHealthProblemConfig,
 }
 
 fn default_font_scale() -> f32 {
@@ -571,6 +574,50 @@ fn default_visualization_target_fps() -> u8 {
     30
 }
 
+/// UI-side thresholds for synthesizing device-health problems in the workbench.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeviceHealthProblemConfig {
+    /// Battery percentage at or below which a warning is reported.
+    #[serde(default = "default_device_health_battery_low_threshold_pct")]
+    pub battery_low_threshold_pct: u8,
+    /// Battery percentage at or below which severity escalates to danger.
+    #[serde(default = "default_device_health_battery_critical_threshold_pct")]
+    pub battery_critical_threshold_pct: u8,
+    /// Average channel quality at or below which a warning is reported.
+    #[serde(default = "default_device_health_quality_warning_threshold")]
+    pub quality_warning_threshold: f32,
+    /// Average channel quality at or below which severity escalates to danger.
+    #[serde(default = "default_device_health_quality_critical_threshold")]
+    pub quality_critical_threshold: f32,
+}
+
+fn default_device_health_battery_low_threshold_pct() -> u8 {
+    20
+}
+
+fn default_device_health_battery_critical_threshold_pct() -> u8 {
+    10
+}
+
+fn default_device_health_quality_warning_threshold() -> f32 {
+    0.5
+}
+
+fn default_device_health_quality_critical_threshold() -> f32 {
+    0.35
+}
+
+impl Default for DeviceHealthProblemConfig {
+    fn default() -> Self {
+        Self {
+            battery_low_threshold_pct: default_device_health_battery_low_threshold_pct(),
+            battery_critical_threshold_pct: default_device_health_battery_critical_threshold_pct(),
+            quality_warning_threshold: default_device_health_quality_warning_threshold(),
+            quality_critical_threshold: default_device_health_quality_critical_threshold(),
+        }
+    }
+}
+
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
@@ -587,6 +634,7 @@ impl Default for UiConfig {
             visualization_pane_widgets: default_visualization_pane_widgets(),
             visualization_target_fps: default_visualization_target_fps(),
             lab_kernel_command: default_lab_kernel_command(),
+            device_health_problems: DeviceHealthProblemConfig::default(),
         }
     }
 }
@@ -1003,6 +1051,31 @@ mod tests {
         assert_eq!(
             decoded.visualization_target_fps,
             UiConfig::default().visualization_target_fps
+        );
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_without_device_health_problems() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.remove("device_health_problems");
+
+        let decoded: UiConfig =
+            serde_json::from_value(json).expect("deserialize ui config without device health");
+
+        assert_eq!(
+            decoded.device_health_problems.battery_low_threshold_pct,
+            UiConfig::default()
+                .device_health_problems
+                .battery_low_threshold_pct
+        );
+        assert_eq!(
+            decoded.device_health_problems.quality_critical_threshold,
+            UiConfig::default()
+                .device_health_problems
+                .quality_critical_threshold
         );
     }
 }
