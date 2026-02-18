@@ -7,7 +7,7 @@ use tokio::sync::broadcast;
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    config::SystemConfig,
+    config::{SignalConfig, SystemConfig},
     control::{
         ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, RuntimeModeState,
         TrainerSnapshot,
@@ -17,7 +17,7 @@ use neurohid_types::{
     profile::ProfileId,
 };
 
-use crate::service::{DeviceCommand, NeuroHidService, ServiceHandle};
+use crate::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
 
 /// Builder for a managed runtime instance.
 pub struct RuntimeBuilder {
@@ -85,6 +85,8 @@ pub enum RuntimeCommand {
     ReloadModel,
     /// Promote a validated candidate model and hot-swap runtime inference.
     PromoteCandidateModel,
+    /// Replace signal processing configuration at runtime.
+    SetSignalConfig { signal: SignalConfig },
 }
 
 /// Snapshot of runtime state for host applications.
@@ -120,6 +122,9 @@ pub struct RuntimeSnapshot {
     pub routed_motion_streams: u64,
     pub routed_auxiliary_streams: u64,
     pub routed_unknown_streams: u64,
+    pub pipeline_integrity_degraded: bool,
+    pub integrity_issue_count: u64,
+    pub stage_health_summary: Option<String>,
     pub learning_enabled: bool,
     pub ml_bridge_connected: bool,
     pub ml_bridge_stalled: bool,
@@ -172,6 +177,9 @@ impl Default for RuntimeSnapshot {
             routed_motion_streams: 0,
             routed_auxiliary_streams: 0,
             routed_unknown_streams: 0,
+            pipeline_integrity_degraded: false,
+            integrity_issue_count: 0,
+            stage_health_summary: None,
             learning_enabled: true,
             ml_bridge_connected: false,
             ml_bridge_stalled: false,
@@ -246,6 +254,15 @@ impl RuntimeHandle {
                 self.handle.promote_candidate_model();
                 Ok(())
             }
+            RuntimeCommand::SetSignalConfig { signal } => {
+                self.handle
+                    .signal_command_tx
+                    .try_send(SignalCommand::UpdateConfig(signal))
+                    .map_err(|e| {
+                        Error::Internal(format!("failed to send signal config command: {e}"))
+                    })?;
+                Ok(())
+            }
         }
     }
 
@@ -287,6 +304,9 @@ impl RuntimeHandle {
             routed_motion_streams: state.routed_motion_streams,
             routed_auxiliary_streams: state.routed_auxiliary_streams,
             routed_unknown_streams: state.routed_unknown_streams,
+            pipeline_integrity_degraded: state.pipeline_integrity_degraded,
+            integrity_issue_count: state.integrity_issue_count,
+            stage_health_summary: state.stage_health_summary.clone(),
             learning_enabled: state.learning_enabled,
             ml_bridge_connected: state.ml_bridge_connected,
             ml_bridge_stalled: state.ml_bridge_stalled,
@@ -390,6 +410,12 @@ impl RuntimeHandle {
                 self.handle.set_fallback_policy(policy);
                 ControlResponse::ack(request_id)
             }
+            ControlCommand::SetSignalConfig { signal } => {
+                match self.command(RuntimeCommand::SetSignalConfig { signal }) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
+                }
+            }
         }
     }
 
@@ -452,6 +478,9 @@ impl From<RuntimeSnapshot> for ControlSnapshot {
             routed_motion_streams: value.routed_motion_streams,
             routed_auxiliary_streams: value.routed_auxiliary_streams,
             routed_unknown_streams: value.routed_unknown_streams,
+            pipeline_integrity_degraded: value.pipeline_integrity_degraded,
+            integrity_issue_count: value.integrity_issue_count,
+            stage_health_summary: value.stage_health_summary,
         }
     }
 }
@@ -533,6 +562,8 @@ mod tests {
         config.device.backend = DeviceBackend::Mock;
         config.service.ipc_simulation_enabled = true;
         config.action.enabled = false;
+        let mut updated_signal = config.signal.clone();
+        updated_signal.notch_filter_enabled = !updated_signal.notch_filter_enabled;
 
         let runtime = RuntimeBuilder::new(config)
             .start()
@@ -560,6 +591,15 @@ mod tests {
             !runtime.snapshot().output_enabled
         })
         .await;
+
+        let signal_response = runtime.dispatch_control_request(ControlRequest {
+            request_id: Some("set-signal".to_string()),
+            command: ControlCommand::SetSignalConfig {
+                signal: updated_signal,
+            },
+        });
+        assert_eq!(signal_response.request_id.as_deref(), Some("set-signal"));
+        assert_eq!(signal_response.payload, ControlResponsePayload::Ack);
 
         let stop_response = runtime.dispatch_control_request(ControlRequest {
             request_id: Some("shutdown".to_string()),

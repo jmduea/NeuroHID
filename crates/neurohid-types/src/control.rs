@@ -3,7 +3,10 @@
 //! Serializable request/response contracts for local service control channels
 //! (for example Windows named pipes or localhost loopback sockets).
 
-use crate::{config::FallbackPolicy, device::DiscoveredStream};
+use crate::{
+    config::{FallbackPolicy, SignalConfig},
+    device::DiscoveredStream,
+};
 use serde::{Deserialize, Serialize};
 
 /// Request sent from control clients to a running service instance.
@@ -55,6 +58,8 @@ pub enum ControlCommand {
     TrainerSnapshot,
     /// Replace runtime fallback policy.
     SetFallbackPolicy { policy: FallbackPolicy },
+    /// Replace runtime signal configuration.
+    SetSignalConfig { signal: SignalConfig },
 }
 
 /// Runtime mode classification derived from model/bridge health.
@@ -132,6 +137,12 @@ pub struct ControlSnapshot {
     pub routed_auxiliary_streams: u64,
     #[serde(default)]
     pub routed_unknown_streams: u64,
+    #[serde(default)]
+    pub pipeline_integrity_degraded: bool,
+    #[serde(default)]
+    pub integrity_issue_count: u64,
+    #[serde(default)]
+    pub stage_health_summary: Option<String>,
 }
 
 /// Response emitted by control servers.
@@ -262,6 +273,9 @@ mod tests {
             routed_motion_streams: 0,
             routed_auxiliary_streams: 0,
             routed_unknown_streams: 0,
+            pipeline_integrity_degraded: false,
+            integrity_issue_count: 0,
+            stage_health_summary: Some("signal:ok".to_string()),
         };
 
         let response = ControlResponse::snapshot(Some("id-1".to_string()), snapshot.clone());

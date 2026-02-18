@@ -224,7 +224,7 @@ pub struct DeviceConfig {
 }
 
 /// Configuration for signal processing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SignalConfig {
     /// Size of the ring buffer in samples
     pub buffer_size_samples: usize,

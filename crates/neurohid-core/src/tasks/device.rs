@@ -483,6 +483,27 @@ async fn scan(
                     if ds.channel_quality.is_none() {
                         ds.channel_quality = prev.channel_quality.clone();
                     }
+                    if ds.effective_sample_rate_hz.is_none() {
+                        ds.effective_sample_rate_hz = prev.effective_sample_rate_hz;
+                    }
+                    if ds.samples_received.is_none() {
+                        ds.samples_received = prev.samples_received;
+                    }
+                    if ds.samples_dropped.is_none() {
+                        ds.samples_dropped = prev.samples_dropped;
+                    }
+                    if ds.drop_rate_pct.is_none() {
+                        ds.drop_rate_pct = prev.drop_rate_pct;
+                    }
+                    if ds.last_sample_age_ms.is_none() {
+                        ds.last_sample_age_ms = prev.last_sample_age_ms;
+                    }
+                    if ds.preprocessing_summary.is_none() {
+                        ds.preprocessing_summary = prev.preprocessing_summary.clone();
+                    }
+                    if ds.integrity_state.is_none() {
+                        ds.integrity_state = prev.integrity_state.clone();
+                    }
                 }
             }
             drop(st);
@@ -537,6 +558,13 @@ fn device_info_to_discovered(
         battery_percent: info.battery_percent,
         channel_quality: None,
         source_id: info.source_id.clone(),
+        effective_sample_rate_hz: None,
+        samples_received: None,
+        samples_dropped: None,
+        drop_rate_pct: None,
+        last_sample_age_ms: None,
+        preprocessing_summary: None,
+        integrity_state: None,
     }
 }
 

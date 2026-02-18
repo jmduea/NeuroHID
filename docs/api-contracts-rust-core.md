@@ -21,6 +21,7 @@ The runtime supports a local control request model with command types including:
 - `ml_bridge_reconnect`
 - `trainer_snapshot`
 - `set_fallback_policy`
+- `set_signal_config`
 
 Representative control request shape:
 
@@ -34,6 +35,50 @@ Representative control request shape:
 ```
 
 Representative response surface includes runtime snapshot and trainer snapshot structures.
+The `set_signal_config` command is additive and accepts the same `SignalConfig`
+shape used in `SystemConfig.signal`.
+
+Representative `set_signal_config` request:
+
+```json
+{
+  "request_id": "42",
+  "command": {
+    "type": "set_signal_config",
+    "signal": {
+      "buffer_size_samples": 1024,
+      "notch_filter_enabled": true,
+      "notch_filter_hz": 60.0,
+      "bandpass_filter_enabled": true,
+      "bandpass_low_hz": 1.0,
+      "bandpass_high_hz": 40.0,
+      "feature_window_ms": 500,
+      "feature_step_ms": 50,
+      "artifact_rejection_enabled": true,
+      "artifact_threshold_uv": 100.0
+    }
+  }
+}
+```
+
+## Snapshot Additive Fields
+
+The runtime snapshot contract remains backward-compatible and now includes
+additional optional/additive telemetry fields:
+
+- `ControlSnapshot`:
+  - `pipeline_integrity_degraded` (default `false`)
+  - `integrity_issue_count` (default `0`)
+  - `stage_health_summary` (`null` when unavailable)
+
+- `DiscoveredStream` optional runtime telemetry:
+  - `effective_sample_rate_hz`
+  - `samples_received`
+  - `samples_dropped`
+  - `drop_rate_pct`
+  - `last_sample_age_ms`
+  - `preprocessing_summary`
+  - `integrity_state`
 
 ## Bridge Protocol Surface
 

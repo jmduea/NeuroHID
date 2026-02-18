@@ -242,6 +242,15 @@ pub struct ServiceState {
 
     /// Number of streams currently classified as unknown-routed.
     pub routed_unknown_streams: u64,
+
+    /// Whether the runtime has entered a degraded integrity state.
+    pub pipeline_integrity_degraded: bool,
+
+    /// Count of integrity issues observed across pipeline stages.
+    pub integrity_issue_count: u64,
+
+    /// Human-readable stage health summary.
+    pub stage_health_summary: Option<String>,
 }
 
 impl Default for ServiceState {
@@ -298,6 +307,9 @@ impl Default for ServiceState {
             routed_motion_streams: 0,
             routed_auxiliary_streams: 0,
             routed_unknown_streams: 0,
+            pipeline_integrity_degraded: false,
+            integrity_issue_count: 0,
+            stage_health_summary: None,
         }
     }
 }
@@ -770,6 +782,9 @@ impl NeuroHidService {
             state.rolling_success_score = 1.0;
             state.fallback_policy = self.config.service.fallback_policy.clone();
             state.task_error = None;
+            state.pipeline_integrity_degraded = false;
+            state.integrity_issue_count = 0;
+            state.stage_health_summary = Some("signal:starting".to_string());
         }
 
         tracing::info!("All tasks started, service is active");

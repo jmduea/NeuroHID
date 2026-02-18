@@ -557,10 +557,7 @@ impl ServiceManager {
                 }
             }
             ServiceRuntimeMode::External => {
-                let _ = cfg;
-                tracing::debug!(
-                    "Signal config hot-update is not available in external runtime mode"
-                );
+                self.send_external_command(ControlCommand::SetSignalConfig { signal: cfg });
             }
         }
     }
@@ -690,6 +687,9 @@ impl ServiceManager {
             routed_motion_streams: state_guard.routed_motion_streams,
             routed_auxiliary_streams: state_guard.routed_auxiliary_streams,
             routed_unknown_streams: state_guard.routed_unknown_streams,
+            pipeline_integrity_degraded: state_guard.pipeline_integrity_degraded,
+            integrity_issue_count: state_guard.integrity_issue_count,
+            stage_health_summary: state_guard.stage_health_summary.clone(),
         };
         self.cached_snapshot = snap.clone();
         snap
@@ -1006,6 +1006,7 @@ impl ServiceManager {
             ControlCommand::MlBridgeReconnect => "ml_bridge_reconnect",
             ControlCommand::TrainerSnapshot => "trainer_snapshot",
             ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
+            ControlCommand::SetSignalConfig { .. } => "set_signal_config",
         }
     }
 
@@ -1058,6 +1059,9 @@ impl ServiceManager {
             routed_motion_streams: snapshot.routed_motion_streams,
             routed_auxiliary_streams: snapshot.routed_auxiliary_streams,
             routed_unknown_streams: snapshot.routed_unknown_streams,
+            pipeline_integrity_degraded: snapshot.pipeline_integrity_degraded,
+            integrity_issue_count: snapshot.integrity_issue_count,
+            stage_health_summary: snapshot.stage_health_summary,
         }
     }
 
@@ -1186,6 +1190,8 @@ mod tests {
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             !snap.output_enabled
         });
+
+        manager.update_signal_config(SystemConfig::default().signal);
 
         manager.stop();
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| !snap.running);
@@ -1473,6 +1479,9 @@ mod tests {
                             routed_motion_streams: 1,
                             routed_auxiliary_streams: 2,
                             routed_unknown_streams: 0,
+                            pipeline_integrity_degraded: false,
+                            integrity_issue_count: 0,
+                            stage_health_summary: Some("signal:ok".to_string()),
                         },
                     ),
                     ControlCommand::SetCalibrationMode { enabled } => {
@@ -1501,7 +1510,8 @@ mod tests {
                     ),
                     ControlCommand::SetLearningEnabled { .. }
                     | ControlCommand::MlBridgeReconnect
-                    | ControlCommand::SetFallbackPolicy { .. } => {
+                    | ControlCommand::SetFallbackPolicy { .. }
+                    | ControlCommand::SetSignalConfig { .. } => {
                         ControlResponse::ack(request.request_id)
                     }
                     _ => ControlResponse {
@@ -1612,6 +1622,9 @@ mod tests {
                                         routed_motion_streams: 1,
                                         routed_auxiliary_streams: 2,
                                         routed_unknown_streams: 0,
+                                        pipeline_integrity_degraded: false,
+                                        integrity_issue_count: 0,
+                                        stage_health_summary: Some("signal:ok".to_string()),
                                     },
                                 ),
                                 ControlCommand::SetCalibrationMode { enabled } => {
@@ -1628,7 +1641,8 @@ mod tests {
                                 }
                                 ControlCommand::SetLearningEnabled { .. }
                                 | ControlCommand::MlBridgeReconnect
-                                | ControlCommand::SetFallbackPolicy { .. } => {
+                                | ControlCommand::SetFallbackPolicy { .. }
+                                | ControlCommand::SetSignalConfig { .. } => {
                                     ControlResponse::ack(request.request_id)
                                 }
                                 ControlCommand::TrainerSnapshot => {

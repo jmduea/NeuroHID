@@ -2429,6 +2429,13 @@ mod tests {
                 battery_percent: Some(18),
                 channel_quality: Some(vec![0.42, 0.41, 0.44]),
                 source_id: Some("mock-source".to_string()),
+                effective_sample_rate_hz: None,
+                samples_received: None,
+                samples_dropped: None,
+                drop_rate_pct: None,
+                last_sample_age_ms: None,
+                preprocessing_summary: None,
+                integrity_state: None,
             });
 
         let row = build_device_health_problem_row(
@@ -2466,6 +2473,13 @@ mod tests {
                 battery_percent: Some(9),
                 channel_quality: Some(vec![0.8, 0.82, 0.79]),
                 source_id: Some("critical-source".to_string()),
+                effective_sample_rate_hz: None,
+                samples_received: None,
+                samples_dropped: None,
+                drop_rate_pct: None,
+                last_sample_age_ms: None,
+                preprocessing_summary: None,
+                integrity_state: None,
             });
 
         let row = build_device_health_problem_row(
@@ -2502,6 +2516,13 @@ mod tests {
                 battery_percent: Some(75),
                 channel_quality: Some(vec![0.32, 0.31, 0.34]),
                 source_id: Some("quality-source".to_string()),
+                effective_sample_rate_hz: None,
+                samples_received: None,
+                samples_dropped: None,
+                drop_rate_pct: None,
+                last_sample_age_ms: None,
+                preprocessing_summary: None,
+                integrity_state: None,
             });
 
         let row = build_device_health_problem_row(

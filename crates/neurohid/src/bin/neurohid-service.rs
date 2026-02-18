@@ -593,6 +593,7 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
         ControlCommand::MlBridgeReconnect => "ml_bridge_reconnect",
         ControlCommand::TrainerSnapshot => "trainer_snapshot",
         ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
+        ControlCommand::SetSignalConfig { .. } => "set_signal_config",
     }
 }
 

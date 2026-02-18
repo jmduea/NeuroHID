@@ -13,9 +13,10 @@
 //! merged into a single output channel.
 
 use neurohid_signal::{
-    FeatureConfig as DspFeatureConfig, FeatureExtractor as DspFeatureExtractor, SignalWindow,
+    BufferConfig as PipelineBufferConfig, FeatureConfig as PipelineFeatureConfig,
+    FilterConfig as PipelineFilterConfig, FilterType, PipelineConfig, SignalPipeline,
 };
-use std::collections::{HashMap, VecDeque};
+use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
 
@@ -47,20 +48,169 @@ enum StreamRoute {
 
 /// Per-stream processing state.
 struct StreamBuffer {
-    samples: VecDeque<Sample>,
-    samples_since_extraction: usize,
+    pipeline: Option<SignalPipeline>,
+    channel_count: usize,
     estimated_sample_rate_hz: f32,
     last_sample_timestamp_micros: Option<i64>,
+    last_sequence_number: Option<u64>,
+    samples_received: u64,
+    samples_dropped: u64,
+    integrity_issues: u64,
+    preprocessing_summary: String,
+    last_quality: Option<Vec<f32>>,
 }
 
 impl StreamBuffer {
-    fn new(buffer_capacity: usize) -> Self {
+    fn new(config: &SignalConfig, channel_count: usize, nominal_sample_rate_hz: f32) -> Self {
+        let sample_rate_hz = Self::sanitize_sample_rate_hz(nominal_sample_rate_hz);
         Self {
-            samples: VecDeque::with_capacity(buffer_capacity.max(1)),
-            samples_since_extraction: 0,
-            estimated_sample_rate_hz: 128.0,
+            pipeline: Self::build_pipeline(config, channel_count, sample_rate_hz),
+            channel_count: channel_count.max(1),
+            estimated_sample_rate_hz: sample_rate_hz,
             last_sample_timestamp_micros: None,
+            last_sequence_number: None,
+            samples_received: 0,
+            samples_dropped: 0,
+            integrity_issues: 0,
+            preprocessing_summary: Self::preprocessing_summary(config),
+            last_quality: None,
         }
+    }
+
+    fn sanitize_sample_rate_hz(sample_rate_hz: f32) -> f32 {
+        if sample_rate_hz.is_finite() {
+            sample_rate_hz.clamp(8.0, 2048.0)
+        } else {
+            128.0
+        }
+    }
+
+    fn build_pipeline(
+        config: &SignalConfig,
+        channel_count: usize,
+        nominal_sample_rate_hz: f32,
+    ) -> Option<SignalPipeline> {
+        let sample_rate_hz = Self::sanitize_sample_rate_hz(nominal_sample_rate_hz);
+        let nyquist = sample_rate_hz / 2.0;
+
+        let mut filters = Vec::new();
+        if config.notch_filter_enabled
+            && config.notch_filter_hz > 0.0
+            && config.notch_filter_hz < nyquist
+        {
+            filters.push(FilterType::Notch {
+                center_hz: config.notch_filter_hz,
+                q_factor: 30.0,
+            });
+        }
+
+        if config.bandpass_filter_enabled {
+            let low_hz = config.bandpass_low_hz.max(0.1);
+            let high_hz = config.bandpass_high_hz.min(nyquist - 0.1);
+            if high_hz > low_hz + 0.05 {
+                filters.push(FilterType::Bandpass { low_hz, high_hz });
+            }
+        }
+
+        let window_samples =
+            SignalTask::samples_for_duration_ms(config.feature_window_ms, sample_rate_hz);
+        let step_samples =
+            SignalTask::samples_for_duration_ms(config.feature_step_ms, sample_rate_hz);
+        let pipeline_config = PipelineConfig {
+            filter: PipelineFilterConfig {
+                filters,
+                sample_rate_hz,
+            },
+            buffer: PipelineBufferConfig {
+                capacity_samples: config
+                    .buffer_size_samples
+                    .max(window_samples)
+                    .max(step_samples),
+                channel_count: channel_count.max(1),
+            },
+            features: PipelineFeatureConfig {
+                sample_rate_hz,
+                channel_count: channel_count.max(1),
+                welch_segment_len: SignalTask::welch_segment_len_for_window(window_samples),
+                ..PipelineFeatureConfig::default()
+            },
+            artifact_threshold_uv: if config.artifact_rejection_enabled {
+                config.artifact_threshold_uv.max(0.0)
+            } else {
+                f32::MAX
+            },
+            window_samples,
+            step_samples,
+            zscore_window_secs: 60.0,
+        };
+
+        match SignalPipeline::new(pipeline_config) {
+            Ok(pipeline) => Some(pipeline),
+            Err(error) => {
+                tracing::warn!(
+                    "Signal pipeline initialization failed; using unfiltered fallback: {}",
+                    error
+                );
+                let fallback = PipelineConfig {
+                    filter: PipelineFilterConfig {
+                        filters: Vec::new(),
+                        sample_rate_hz,
+                    },
+                    buffer: PipelineBufferConfig {
+                        capacity_samples: 1024,
+                        channel_count: channel_count.max(1),
+                    },
+                    features: PipelineFeatureConfig {
+                        sample_rate_hz,
+                        channel_count: channel_count.max(1),
+                        welch_segment_len: 32,
+                        ..PipelineFeatureConfig::default()
+                    },
+                    artifact_threshold_uv: f32::MAX,
+                    window_samples: SignalTask::samples_for_duration_ms(500, sample_rate_hz),
+                    step_samples: SignalTask::samples_for_duration_ms(50, sample_rate_hz),
+                    zscore_window_secs: 60.0,
+                };
+                match SignalPipeline::new(fallback) {
+                    Ok(pipeline) => Some(pipeline),
+                    Err(fallback_error) => {
+                        tracing::error!(
+                            "Fallback signal pipeline initialization failed: {}",
+                            fallback_error
+                        );
+                        None
+                    }
+                }
+            }
+        }
+    }
+
+    fn preprocessing_summary(config: &SignalConfig) -> String {
+        let notch = if config.notch_filter_enabled {
+            format!("notch {:.1}Hz", config.notch_filter_hz)
+        } else {
+            "notch off".to_string()
+        };
+        let bandpass = if config.bandpass_filter_enabled {
+            format!(
+                "bandpass {:.1}-{:.1}Hz",
+                config.bandpass_low_hz, config.bandpass_high_hz
+            )
+        } else {
+            "bandpass off".to_string()
+        };
+        let artifact = if config.artifact_rejection_enabled {
+            format!("artifact {:.1}uV", config.artifact_threshold_uv)
+        } else {
+            "artifact off".to_string()
+        };
+        format!("{notch}; {bandpass}; {artifact}")
+    }
+
+    fn rebuild_pipeline(&mut self, config: &SignalConfig) {
+        self.pipeline =
+            Self::build_pipeline(config, self.channel_count, self.estimated_sample_rate_hz);
+        self.preprocessing_summary = Self::preprocessing_summary(config);
     }
 
     fn update_sample_rate_estimate(&mut self, sample: &Sample) {
@@ -81,6 +231,54 @@ impl StreamBuffer {
 
         self.last_sample_timestamp_micros = Some(timestamp);
     }
+
+    fn record_sequence(&mut self, sequence_number: Option<u64>) {
+        let Some(sequence_number) = sequence_number else {
+            return;
+        };
+
+        if let Some(previous) = self.last_sequence_number {
+            let expected = previous.saturating_add(1);
+            if sequence_number > expected {
+                self.samples_dropped = self
+                    .samples_dropped
+                    .saturating_add(sequence_number.saturating_sub(expected));
+                self.integrity_issues = self.integrity_issues.saturating_add(1);
+            } else if sequence_number <= previous {
+                self.integrity_issues = self.integrity_issues.saturating_add(1);
+            }
+        }
+
+        self.last_sequence_number = Some(sequence_number);
+    }
+
+    fn drop_rate_pct(&self) -> Option<f32> {
+        let total = self.samples_received.saturating_add(self.samples_dropped);
+        if total == 0 {
+            None
+        } else {
+            Some((self.samples_dropped as f32 / total as f32) * 100.0)
+        }
+    }
+
+    fn integrity_state(&self) -> &'static str {
+        if self.integrity_issues == 0 {
+            "ok"
+        } else {
+            "degraded"
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct StreamRuntimeMetrics {
+    effective_sample_rate_hz: Option<f64>,
+    samples_received: Option<u64>,
+    samples_dropped: Option<u64>,
+    drop_rate_pct: Option<f32>,
+    last_sample_age_ms: Option<u64>,
+    preprocessing_summary: Option<String>,
+    integrity_state: Option<String>,
 }
 
 /// The signal processing task.
@@ -249,6 +447,54 @@ impl SignalTask {
         state.routed_unknown_streams = unknown;
     }
 
+    fn rebuild_stream_pipelines(&mut self) {
+        for stream in self.stream_buffers.values_mut() {
+            stream.rebuild_pipeline(&self.config);
+        }
+    }
+
+    async fn publish_stream_runtime_metrics(
+        &self,
+        stream_key: &str,
+        metrics: &StreamRuntimeMetrics,
+    ) {
+        let total_integrity_issues = self.stream_buffers.values().fold(0u64, |total, stream| {
+            total.saturating_add(stream.integrity_issues)
+        });
+
+        let degraded_eeg_streams = self
+            .stream_buffers
+            .iter()
+            .filter(|(id, stream)| {
+                self.stream_routes.get(*id).copied() == Some(StreamRoute::Eeg)
+                    && stream.integrity_state() != "ok"
+            })
+            .count() as u64;
+
+        let mut state = self.state.write().await;
+        if let Some(discovered) = state.discovered_streams.iter_mut().find(|stream| {
+            stream.id == stream_key || stream.source_id.as_deref() == Some(stream_key)
+        }) {
+            discovered.effective_sample_rate_hz = metrics.effective_sample_rate_hz;
+            discovered.samples_received = metrics.samples_received;
+            discovered.samples_dropped = metrics.samples_dropped;
+            discovered.drop_rate_pct = metrics.drop_rate_pct;
+            discovered.last_sample_age_ms = metrics.last_sample_age_ms;
+            discovered.preprocessing_summary = metrics.preprocessing_summary.clone();
+            discovered.integrity_state = metrics.integrity_state.clone();
+        }
+
+        state.integrity_issue_count = total_integrity_issues;
+        state.pipeline_integrity_degraded = degraded_eeg_streams > 0;
+        state.stage_health_summary = Some(if state.pipeline_integrity_degraded {
+            format!(
+                "signal:degraded ({degraded_eeg_streams} EEG stream(s), {total_integrity_issues} issues)"
+            )
+        } else {
+            "signal:ok".to_string()
+        });
+    }
+
     /// Runs the signal task until shutdown is signaled.
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
         tracing::info!(
@@ -263,15 +509,20 @@ impl SignalTask {
 
         loop {
             // Apply all pending runtime config updates without blocking the stream.
+            let mut pending_config: Option<SignalConfig> = None;
             if let Some(rx) = &mut self.signal_command_rx {
                 while let Ok(cmd) = rx.try_recv() {
                     match cmd {
                         SignalCommand::UpdateConfig(cfg) => {
-                            self.config = cfg;
-                            tracing::info!("SignalTask config updated at runtime");
+                            pending_config = Some(cfg);
                         }
                     }
                 }
+            }
+            if let Some(cfg) = pending_config {
+                self.config = cfg;
+                self.rebuild_stream_pipelines();
+                tracing::info!("SignalTask config updated at runtime");
             }
 
             tokio::select! {
@@ -310,7 +561,10 @@ impl SignalTask {
                                     state
                                         .discovered_streams
                                         .iter()
-                                        .find(|stream| stream.id == stream_key)
+                                        .find(|stream| {
+                                            stream.id == stream_key
+                                                || stream.source_id.as_deref() == Some(&stream_key)
+                                        })
                                         .cloned()
                                 });
                             let route = Self::classify_stream_route(
@@ -336,115 +590,138 @@ impl SignalTask {
                                 self.publish_stream_route_counts().await;
                             }
 
-                            let buf = self.stream_buffers
-                                .entry(stream_key.clone())
-                                .or_insert_with(|| StreamBuffer::new(self.config.buffer_size_samples));
+                            let nominal_sample_rate_hz = discovered_stream
+                                .as_ref()
+                                .map(|stream| stream.sample_rate as f32)
+                                .filter(|rate| rate.is_finite() && *rate > 0.0)
+                                .unwrap_or(128.0);
+                            let sample_timestamp =
+                                sample.device_timestamp.unwrap_or(sample.system_timestamp);
 
-                            buf.update_sample_rate_estimate(&sample);
+                            let (maybe_features, runtime_metrics) = {
+                                let buffer = self.stream_buffers.entry(stream_key.clone()).or_insert_with(|| {
+                                    StreamBuffer::new(
+                                        &self.config,
+                                        sample.values.len(),
+                                        nominal_sample_rate_hz,
+                                    )
+                                });
 
-                            let samples_per_window = Self::samples_for_duration_ms(
-                                self.config.feature_window_ms,
-                                buf.estimated_sample_rate_hz,
-                            );
-                            let samples_per_step = Self::samples_for_duration_ms(
-                                self.config.feature_step_ms,
-                                buf.estimated_sample_rate_hz,
-                            );
-
-                            buf.samples.push_back(sample);
-                            buf.samples_since_extraction += 1;
-
-                            // Keep buffer from growing unbounded
-                            while buf.samples.len() > self.config.buffer_size_samples {
-                                let _ = buf.samples.pop_front();
-                            }
-
-                            // Check if it's time to extract features for this stream
-                            if buf.samples_since_extraction >= samples_per_step
-                                && buf.samples.len() >= samples_per_window
-                            {
-                                buf.samples_since_extraction = 0;
-
-                                // Capture newest sample timestamp so we can track
-                                // signal-stage latency regardless of stream route.
-                                let (features, newest_sample_timestamp) = {
-                                    let samples = buf.samples.make_contiguous();
-                                    let window_start = samples.len() - samples_per_window;
-                                    let window = &samples[window_start..];
-                                    let window_start_timestamp = window
-                                        .first()
-                                        .map(|sample| {
-                                            sample.device_timestamp.unwrap_or(sample.system_timestamp)
-                                        })
-                                        .unwrap_or(0);
-                                    let newest_sample_timestamp = window
-                                        .last()
-                                        .map(|sample| {
-                                            sample.device_timestamp.unwrap_or(sample.system_timestamp)
-                                        })
-                                        .unwrap_or(0);
-                                    let maybe_features = if Self::route_allows_feature_extraction(route)
-                                    {
-                                        Some(Self::extract_features(
-                                            window,
-                                            buf.estimated_sample_rate_hz,
-                                        ))
-                                    } else {
-                                        None
-                                    };
-                                    let mut features = maybe_features.unwrap_or_else(|| FeatureVector {
-                                        timestamp: newest_sample_timestamp,
-                                        values: Vec::new(),
-                                        labels: None,
-                                        stream_id: None,
-                                        window_start_us: None,
-                                        window_end_us: None,
-                                    });
-                                    features.timestamp = newest_sample_timestamp;
-                                    features.stream_id =
-                                        (stream_key != DEFAULT_STREAM_KEY).then(|| stream_key.clone());
-                                    features.window_start_us = Some(window_start_timestamp);
-                                    features.window_end_us = Some(newest_sample_timestamp);
-                                    (features, newest_sample_timestamp)
-                                };
-
-                                self.record_signal_latency(newest_sample_timestamp).await;
-
-                                if Self::route_allows_feature_extraction(route) {
-                                    // Broadcast features to hub visualization widgets
-                                    if let Some(tx) = &self.feature_broadcast_tx {
-                                        let _ = tx.send(features.clone());
-                                    }
-
-                                    // Send features to decoder pipeline
-                                    if tracing::enabled!(tracing::Level::DEBUG)
-                                        && self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
-                                        && self.emit_gate.allow_debug()
-                                    {
-                                        tracing::debug!(
-                                            event = obs::event::FEATURE_WINDOW_EMITTED,
-                                            decision_id = obs::field::UNKNOWN,
-                                            stream_id = features.stream_id.as_deref().unwrap_or(DEFAULT_STREAM_KEY),
-                                            feature_dim = features.dim(),
-                                            window_start_us = features.window_start_us.unwrap_or_default(),
-                                            window_end_us = features.window_end_us.unwrap_or_default(),
-                                            "Signal feature window emitted"
-                                        );
-                                    }
-
-                                    if self.feature_tx.send(features).await.is_err() {
-                                        tracing::warn!(stream_id = %stream_key, "Feature receiver dropped");
-                                        break;
-                                    }
-                                } else if self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
-                                    && self.emit_gate.allow_info()
-                                {
-                                    tracing::info!(
-                                        stream_id = %stream_key,
-                                        route = ?route,
-                                        "Skipping decoder feature extraction for non-EEG stream"
+                                let sample_channel_count = sample.values.len().max(1);
+                                if buffer.channel_count != sample_channel_count {
+                                    *buffer = StreamBuffer::new(
+                                        &self.config,
+                                        sample_channel_count,
+                                        nominal_sample_rate_hz,
                                     );
                                 }
+
+                                buffer.update_sample_rate_estimate(&sample);
+                                buffer.record_sequence(sample.sequence_number);
+                                buffer.samples_received = buffer.samples_received.saturating_add(1);
+                                buffer.last_quality = sample.quality.clone();
+
+                                let mut maybe_features = None;
+                                if Self::route_allows_feature_extraction(route) {
+                                    if let Some(pipeline) = &mut buffer.pipeline {
+                                        match pipeline.push_sample(&sample.values, sample_timestamp) {
+                                            Ok(()) => match pipeline.try_extract() {
+                                                Ok(Some(mut features)) => {
+                                                    features.stream_id = (stream_key != DEFAULT_STREAM_KEY)
+                                                        .then(|| stream_key.clone());
+                                                    features.window_end_us = Some(features.timestamp);
+                                                    let window_us =
+                                                        i64::from(self.config.feature_window_ms.max(1))
+                                                            .saturating_mul(1000);
+                                                    features.window_start_us = Some(
+                                                        features.timestamp.saturating_sub(window_us),
+                                                    );
+                                                    maybe_features = Some(features);
+                                                }
+                                                Ok(None) => {}
+                                                Err(error) => {
+                                                    buffer.integrity_issues = buffer
+                                                        .integrity_issues
+                                                        .saturating_add(1);
+                                                    tracing::warn!(
+                                                        stream_id = %stream_key,
+                                                        "Signal feature extraction failed: {}",
+                                                        error
+                                                    );
+                                                }
+                                            },
+                                            Err(error) => {
+                                                buffer.integrity_issues =
+                                                    buffer.integrity_issues.saturating_add(1);
+                                                tracing::warn!(
+                                                    stream_id = %stream_key,
+                                                    "Signal pipeline rejected sample: {}",
+                                                    error
+                                                );
+                                            }
+                                        }
+                                    } else {
+                                        buffer.integrity_issues =
+                                            buffer.integrity_issues.saturating_add(1);
+                                    }
+                                }
+
+                                let now_micros = neurohid_types::now_micros();
+                                let runtime_metrics = StreamRuntimeMetrics {
+                                    effective_sample_rate_hz: Some(buffer.estimated_sample_rate_hz as f64),
+                                    samples_received: Some(buffer.samples_received),
+                                    samples_dropped: Some(buffer.samples_dropped),
+                                    drop_rate_pct: buffer.drop_rate_pct(),
+                                    last_sample_age_ms: buffer
+                                        .last_sample_timestamp_micros
+                                        .map(|ts| now_micros.saturating_sub(ts) as u64 / 1000),
+                                    preprocessing_summary: Some(buffer.preprocessing_summary.clone()),
+                                    integrity_state: Some(buffer.integrity_state().to_string()),
+                                };
+
+                                (maybe_features, runtime_metrics)
+                            };
+
+                            self.record_signal_latency(sample_timestamp).await;
+                            self.publish_stream_runtime_metrics(&stream_key, &runtime_metrics)
+                                .await;
+
+                            if let Some(features) = maybe_features {
+                                if let Some(tx) = &self.feature_broadcast_tx {
+                                    let _ = tx.send(features.clone());
+                                }
+
+                                if tracing::enabled!(tracing::Level::DEBUG)
+                                    && self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
+                                    && self.emit_gate.allow_debug()
+                                {
+                                    tracing::debug!(
+                                        event = obs::event::FEATURE_WINDOW_EMITTED,
+                                        decision_id = obs::field::UNKNOWN,
+                                        stream_id = features
+                                            .stream_id
+                                            .as_deref()
+                                            .unwrap_or(DEFAULT_STREAM_KEY),
+                                        feature_dim = features.dim(),
+                                        window_start_us = features.window_start_us.unwrap_or_default(),
+                                        window_end_us = features.window_end_us.unwrap_or_default(),
+                                        "Signal feature window emitted"
+                                    );
+                                }
+
+                                if self.feature_tx.send(features).await.is_err() {
+                                    tracing::warn!(stream_id = %stream_key, "Feature receiver dropped");
+                                    break;
+                                }
+                            } else if !Self::route_allows_feature_extraction(route)
+                                && self.sample_count.is_multiple_of(SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES)
+                                && self.emit_gate.allow_info()
+                            {
+                                tracing::info!(
+                                    stream_id = %stream_key,
+                                    route = ?route,
+                                    "Skipping decoder feature extraction for non-EEG stream"
+                                );
                             }
 
                             if self.sample_count.is_multiple_of(SIGNAL_SUMMARY_EVERY_SAMPLES)
@@ -498,13 +775,12 @@ impl SignalTask {
 
     /// Update the aggregate signal quality across all active stream buffers.
     async fn update_signal_quality(&self) {
-        // Compute per-stream quality from the most recent samples, then average
+        // Compute per-stream quality from the most recent quality vectors, then average.
         let mut total_quality = 0.0f32;
         let mut stream_count = 0u32;
 
         for buf in self.stream_buffers.values() {
-            if let Some(last) = buf.samples.back()
-                && let Some(quality) = &last.quality
+            if let Some(quality) = &buf.last_quality
                 && !quality.is_empty()
             {
                 let avg = quality.iter().sum::<f32>() / quality.len() as f32;
@@ -517,102 +793,6 @@ impl SignalTask {
             let mut state = self.state.write().await;
             state.signal_quality = total_quality / stream_count as f32;
         }
-    }
-
-    /// Extracts features from a window of samples.
-    ///
-    /// This is where the signal processing magic happens. We compute various
-    /// features that help the decoder understand what's happening in the brain:
-    /// - Band power (how much energy in different frequency ranges)
-    /// - Statistical measures (mean, variance)
-    /// - Temporal features (changes over time)
-    fn extract_features(window: &[Sample], sample_rate_hz: f32) -> FeatureVector {
-        let Some(first) = window.first() else {
-            return FeatureVector::new(Vec::new());
-        };
-
-        let channel_count = first.channel_count();
-        if channel_count == 0 {
-            return FeatureVector::new(Vec::new());
-        }
-
-        let mut channel_data = vec![Vec::with_capacity(window.len()); channel_count];
-        let mut timestamps = Vec::with_capacity(window.len());
-
-        for sample in window {
-            timestamps.push(sample.device_timestamp.unwrap_or(sample.system_timestamp));
-            for (idx, value) in sample.values.iter().enumerate().take(channel_count) {
-                channel_data[idx].push(*value);
-            }
-            if sample.values.len() < channel_count {
-                for channel in channel_data
-                    .iter_mut()
-                    .take(channel_count)
-                    .skip(sample.values.len())
-                {
-                    channel.push(0.0);
-                }
-            }
-        }
-
-        let signal_window = SignalWindow {
-            channel_data,
-            timestamps,
-            channel_count,
-            sample_count: window.len(),
-        };
-
-        let mut extractor = DspFeatureExtractor::new(DspFeatureConfig {
-            sample_rate_hz: if sample_rate_hz.is_finite() {
-                sample_rate_hz.clamp(8.0, 2048.0)
-            } else {
-                128.0
-            },
-            channel_count,
-            welch_segment_len: Self::welch_segment_len_for_window(window.len()),
-            ..DspFeatureConfig::default()
-        });
-
-        match extractor.extract(&signal_window) {
-            Ok(features) => features,
-            Err(err) => {
-                tracing::warn!("DSP feature extraction failed, using fallback: {}", err);
-                Self::extract_features_fallback(window)
-            }
-        }
-    }
-
-    fn extract_features_fallback(window: &[Sample]) -> FeatureVector {
-        let num_channels = window.first().map(|s| s.channel_count()).unwrap_or(5);
-        let mut features = Vec::with_capacity(num_channels * 4);
-
-        for ch in 0..num_channels {
-            let values: Vec<f32> = window.iter().filter_map(|s| s.get(ch)).collect();
-            if values.is_empty() {
-                features.extend_from_slice(&[0.0, 0.0, 0.0, 0.0]);
-                continue;
-            }
-
-            let mean = values.iter().sum::<f32>() / values.len() as f32;
-            let variance =
-                values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
-            let std_dev = variance.sqrt();
-            let power = values.iter().map(|v| v.powi(2)).sum::<f32>() / values.len() as f32;
-            let min = values.iter().cloned().fold(f32::INFINITY, f32::min);
-            let max = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
-            let range = max - min;
-
-            features.push(mean);
-            features.push(std_dev);
-            features.push(power);
-            features.push(range);
-        }
-
-        for value in &mut features {
-            *value = value.clamp(-500.0, 500.0) / 100.0;
-        }
-
-        FeatureVector::new(features)
     }
 
     async fn record_signal_latency(&mut self, sample_timestamp: i64) {
@@ -713,6 +893,13 @@ mod tests {
             battery_percent: None,
             channel_quality: None,
             source_id: Some("src".to_string()),
+            effective_sample_rate_hz: None,
+            samples_received: None,
+            samples_dropped: None,
+            drop_rate_pct: None,
+            last_sample_age_ms: None,
+            preprocessing_summary: None,
+            integrity_state: None,
         };
         let sample = Sample::new(vec![0.0; 5]);
 
@@ -732,6 +919,13 @@ mod tests {
             battery_percent: None,
             channel_quality: None,
             source_id: Some("src".to_string()),
+            effective_sample_rate_hz: None,
+            samples_received: None,
+            samples_dropped: None,
+            drop_rate_pct: None,
+            last_sample_age_ms: None,
+            preprocessing_summary: None,
+            integrity_state: None,
         };
         let sample = Sample::new(vec![0.5]);
 

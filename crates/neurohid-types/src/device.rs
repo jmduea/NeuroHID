@@ -131,6 +131,20 @@ pub struct DiscoveredStream {
     /// Source identifier for grouping streams from the same physical device.
     /// `None` for standalone streams or mock devices.
     pub source_id: Option<String>,
+    /// Effective sample rate computed from runtime timestamps.
+    pub effective_sample_rate_hz: Option<f64>,
+    /// Samples received by the runtime for this stream.
+    pub samples_received: Option<u64>,
+    /// Samples inferred as dropped (for example by sequence gaps).
+    pub samples_dropped: Option<u64>,
+    /// Percentage of dropped samples.
+    pub drop_rate_pct: Option<f32>,
+    /// Age of the most recent sample in milliseconds.
+    pub last_sample_age_ms: Option<u64>,
+    /// Human-readable summary of active preprocessing for this stream.
+    pub preprocessing_summary: Option<String>,
+    /// Human-readable integrity state (`ok`, `degraded`, etc.).
+    pub integrity_state: Option<String>,
 }
 
 /// The current connection state of a device.
