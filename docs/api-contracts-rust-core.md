@@ -38,6 +38,11 @@ Representative response surface includes runtime snapshot and trainer snapshot s
 The `set_signal_config` command is additive and accepts the same `SignalConfig`
 shape used in `SystemConfig.signal`.
 
+`set_signal_config` is supported in both embedded and external runtime modes:
+
+- Embedded mode: forwarded to the in-process signal task
+- External mode: forwarded through control transport and applied without service restart
+
 Representative `set_signal_config` request:
 
 ```json
@@ -70,6 +75,9 @@ additional optional/additive telemetry fields:
   - `pipeline_integrity_degraded` (default `false`)
   - `integrity_issue_count` (default `0`)
   - `stage_health_summary` (`null` when unavailable)
+    - Human-readable rollup string (for example:
+      `pipeline:ok[normal] device:ok(0) signal:degraded(2) decoder:ok(0) action:ok(0) ipc:ok(0)`)
+    - Intended for UI/operator diagnostics, not strict machine parsing
 
 - `DiscoveredStream` optional runtime telemetry:
   - `effective_sample_rate_hz`
@@ -79,6 +87,22 @@ additional optional/additive telemetry fields:
   - `last_sample_age_ms`
   - `preprocessing_summary`
   - `integrity_state`
+  - All listed fields are additive and optional (`Option<T>`), preserving
+    wire compatibility with older clients.
+
+## Observability Policy Surface
+
+`SystemConfig.service.observability` defines global + per-component rate controls
+for structured tracing.
+
+- Global policy: baseline defaults merged into component policy
+- Per-component policy keys:
+  - `device`
+  - `signal`
+  - `decoder`
+  - `action`
+  - `ipc`
+  - `control`
 
 ## Bridge Protocol Surface
 

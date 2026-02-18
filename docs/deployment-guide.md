@@ -81,11 +81,47 @@ Hot-path traces include correlation identifiers such as `decision_id` and `strea
 boundaries (signal -> decoder -> action -> IPC).
 
 Observability sampling/rate limits are configurable via `service.observability` in `SystemConfig`
-(global + per-component: `signal`, `decoder`, `action`, `ipc`, `control`).
+(global + per-component: `device`, `signal`, `decoder`, `action`, `ipc`, `control`).
 
 - `sample_ratio` controls deterministic sampling for hot-path debug events
 - `info_max_per_minute` bounds gated info summaries
 - `debug_max_per_second` bounds gated debug emissions
+
+## Detached Visualization Window
+
+The Hub supports rendering visualization in a detached OS-level secondary window.
+
+- Runtime toggle: command palette or runtime status controls
+- Persisted UI config fields:
+  - `ui.visualization_detached`
+  - `ui.visualization_detached_pos`
+  - `ui.visualization_detached_size`
+- Fallback behavior: if native secondary viewport is unavailable, visualization
+  remains embedded and Hub surfaces a non-fatal warning indicator.
+
+## Integrity Degradation Operations
+
+Pipeline integrity operates with a warn+degrade policy by default.
+
+- Structured issue event key: `event="pipeline.integrity_issue"`
+- Stage coverage: `device`, `signal`, `decoder`, `action`, `ipc`
+- Stream-level integrity is degraded first where possible
+- Pipeline-level degradation is raised when:
+  - all EEG streams are impacted, or
+  - repeated critical violations exceed threshold
+
+Control snapshot indicators for operators:
+
+- `pipeline_integrity_degraded` (`bool`)
+- `integrity_issue_count` (`u64`)
+- `stage_health_summary` (`Option<String>`)
+
+Operational triage path:
+
+1. Check Runtime panel integrity chips/counters in Hub.
+2. Inspect `stage_health_summary` for stage-local issue concentration.
+3. Correlate with structured logs filtered by `pipeline.integrity_issue`.
+4. Adjust signal/device settings or restart bridge/task paths if issue rate persists.
 
 ## Validation Harness (V1 Matrix)
 

@@ -24,6 +24,10 @@ NeuroHID uses a local-process integration model between:
 - Rust service can remain operational when Python bridge is unavailable
 - Simulation/fallback behaviors are available for non-bridge or degraded scenarios
 - Reconnect and control commands support runtime recovery workflows
+- Integrity handling is warn+degrade by default:
+  - Stream/stage issues are surfaced first without immediate hard shutdown
+  - Pipeline-wide degraded state is raised when all EEG streams are impacted
+    or repeated critical violations cross threshold
 
 ## Data Flow (Logical)
 
@@ -32,6 +36,17 @@ NeuroHID uses a local-process integration model between:
 3. Runtime generates action/decision context and bridge events
 4. Python bridge consumes events, applies model logic, emits status/results
 5. Runtime applies outputs and updates control/telemetry state
+
+## Runtime Observability and Integrity
+
+- Observability is stage-scoped: `device -> signal -> decoder -> action -> ipc`
+- Structured issue events are emitted as `pipeline.integrity_issue` with
+  stage context and correlation keys (`decision_id`, `stream_id` when available)
+- Control snapshot mirrors aggregate integrity state:
+  - `pipeline_integrity_degraded`
+  - `integrity_issue_count`
+  - `stage_health_summary`
+- Hub advanced runtime panels consume these fields for operator triage
 
 ## Device Discovery and Connection Lifecycle
 
@@ -57,6 +72,12 @@ flowchart LR
 
  C[Control Client] -->|ControlRequest| R
  R -->|ControlSnapshot / TrainerSnapshot| C
+
+ N[Observability + Integrity Rollup] --- D
+ N --- S
+ N --- R
+ N --- O
+ N --- B
 ```
 
 ## Transport Matrix
