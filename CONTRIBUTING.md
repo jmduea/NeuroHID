@@ -1,163 +1,85 @@
 # Contributing to NeuroHID
 
-Thank you for your interest in contributing to NeuroHID! This guide will help you get set up for development.
+Thanks for your interest in contributing to NeuroHID.
+
+## Start Here
+
+- Project introduction and scope: [`README.md`](./README.md)
+- Developer setup/build/test workflows: [`docs/development-guide.md`](./docs/development-guide.md)
+- Deployment and runtime operations: [`docs/deployment-guide.md`](./docs/deployment-guide.md)
+- Documentation index: [`docs/index.md`](./docs/index.md)
 
 ## Prerequisites
 
 ### Rust Toolchain
 
-- Rust 1.85 or later (install via [rustup](https://rustup.rs/))
-- The project uses the 2024 edition
+- Rust `1.85+` (install via [rustup](https://rustup.rs/))
+- Workspace edition: 2024
 
 ### Python Environment
 
-For the ML module in `python/`:
+For `python/` workflows:
 
-- uv
-- Always use `uv` to run Python commands. Do not use bare `python` commands.
-
-The repository enforces this with the `UV Command Policy` CI workflow.
+- `uv`
+- Always use `uv` to run Python commands (no bare `python` invocations)
 
 ```bash
-cd python
-uv sync
+uv sync --directory python
 ```
 
 ### LSL (Lab Streaming Layer)
 
-If you're working with `neurohid-device` or real hardware:
+If you are working with `neurohid-device` or real hardware:
 
-- **Linux**: `sudo apt install liblsl-dev`
-- **macOS**: `brew install labstreaminglayer/tap/lsl`
-- **Windows**: Download from [LSL releases](https://github.com/sccn/liblsl/releases)
+- Linux: `sudo apt install liblsl-dev`
+- macOS: `brew install labstreaminglayer/tap/lsl`
+- Windows: Download from [LSL releases](https://github.com/sccn/liblsl/releases)
 
-Workspace builds currently pin `lsl-sys` via `[patch.crates-io]` to a shared
-git source (pinned `rev`) so Linux-compatible behavior is reproducible across
-multiple applications and clean clones without local vendoring.
+Workspace builds pin `lsl-sys` via `[patch.crates-io]` to a shared git source (`rev`) for
+reproducible behavior.
 
-To build without LSL: `cargo build -p neurohid-device --no-default-features`
+## Typical Contributor Workflow
 
-## Building
+1. Create a feature branch from `main`.
+2. Implement scoped changes in the relevant crate/package/doc area.
+3. Run local checks from [`docs/development-guide.md`](./docs/development-guide.md).
+4. Update affected docs when behavior, contracts, or workflows change.
+5. Open a pull request targeting `main`.
 
-```bash
-# Build the entire workspace
-cargo build --workspace
+## Pull Request Requirements
 
-# Build a specific crate
-cargo build -p neurohid-device
-
-# Build in release mode
-cargo build --release
-```
-
-## Running
+At minimum, ensure these pass locally for changed scope:
 
 ```bash
-# Run the GUI application
-cargo run -p neurohid --bin neurohid
-
-# Run the headless service
-cargo run -p neurohid --bin neurohid-service
-
-# Run with verbose logging
-RUST_LOG=neurohid=debug cargo run -p neurohid --bin neurohid
-```
-
-### IPC Mode
-
-The core supports both simulated IPC and the real Python bridge.
-
-- Default behavior: `service.ipc_simulation_enabled = true`
-- To require a real Python bridge: set `service.ipc_simulation_enabled = false`
-- Start the Python bridge with: `uv run --directory python neurohid-ml bridge`
-
-On Linux/macOS, set control and ML transports to `tcp_loopback` because named pipes are
-Windows-only.
-
-## Testing
-
-```bash
-# Run all tests
 cargo test --workspace
-
-# Run tests for a specific crate
-cargo test -p neurohid-signal
-
-# Run with output
-cargo test --workspace -- --nocapture
-```
-
-For Python ML tests and quality checks:
-
-```bash
-# Install Python dev tools (pytest, black, ruff, mypy)
-uv sync --directory python --extra dev
-
-# Canonical Python test command
-uv run --project python pytest python/tests -q
-
-# Canonical Python quality commands
-uv run --project python ruff check python/src python/tests
-uv run --project python black --check python/src python/tests
-uv run --project python mypy python/src
-```
-
-## Code Quality
-
-```bash
-# Lint
 cargo clippy --workspace -- -D warnings
-
-# Format
 cargo fmt --check
-
-# Generate docs
-cargo doc --workspace --no-deps --open
+uv run --project python pytest python/tests -q
 ```
 
-## Project Structure
+## Project Structure Pointers
 
-The workspace is organized into internal library crates and two published crates:
+- Workspace crate placement rules: [`docs/crate-boundaries.md`](./docs/crate-boundaries.md)
+- Rust + Python architecture docs: [`docs/index.md`](./docs/index.md)
+- Python package usage: [`python/README.md`](./python/README.md)
 
-- **`neurohid`** — published binary crate (`cargo install neurohid`)
-- **`neurohid-sdk`** — published facade library for Rust BCI developers
-- **Internal crates** — `neurohid-types`, `neurohid-signal`, `neurohid-device`, etc.
-- **External Emotiv crates** — `emotiv-cortex-v2` and `emotiv-cortex-cli` are maintained in `https://github.com/jmduea/emotiv-cortex-rs`
+## Branch and Release Policy
 
-See the root [README.md](./README.md) for the full architecture overview.
-Use [docs/crate-boundaries.md](./docs/crate-boundaries.md) as the canonical
-"where should this code live?" reference.
-
-## Pull Requests
-
-1. Fork and create a feature branch
-2. Make your changes
-3. Ensure `cargo test --workspace` passes
-4. Ensure `cargo clippy --workspace -- -D warnings` is clean
-5. Run `cargo fmt`
-6. For Python changes, run `uv run --project python pytest python/tests -q`
-7. Open a PR with a clear description
-
-### Branch Policy (Required)
-
-- Do not push directly to `main`.
-- All `main` updates must come from a pull request merge.
-- CI enforces this via `.github/workflows/branch-policy.yml`.
-- Repository admin setup checklist: `docs/automation/branch-protection-checklist.md`.
-
-### Release Policy
-
-- Tag pushes (`v*`) run pre-release verification only (`.github/workflows/release.yml`).
-- crates.io publishing is manual-only through `.github/workflows/publish-crates.yml` and requires explicit operator confirmation.
+- Do not push directly to `main`; all updates land via PR merge.
+- CI enforces branch policy via `.github/workflows/branch-policy.yml`.
+- Tag pushes (`v*`) run pre-release verification in `.github/workflows/release.yml`.
+- crates.io publishing is manual via `.github/workflows/publish-crates.yml`.
+- Required checks and branch-protection guidance live in
+  [`docs/development-guide.md`](./docs/development-guide.md).
 
 ## Areas Where Help Is Appreciated
 
 - Platform-specific testing (especially macOS)
-- ErrP detection algorithm improvements
+- ErrP detection and decoder improvements
 - Alternative device support (OpenBCI, Muse)
 - Documentation and tutorials
-- User experience design
+- UX refinement for hub and calibration workflows
 
 ## License
 
-By contributing, you agree that your contributions will be dual-licensed under MIT and Apache-2.0.
+By contributing, you agree that contributions are dual-licensed under MIT and Apache-2.0.

@@ -12,7 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository root dual-license texts (`LICENSE-MIT`, `LICENSE-APACHE`) to match declared workspace licensing policy
 - Device discovery→connection lifecycle design reference at `docs/plans/2026-02-15-device-discovery-connection-design.md`, including interactive/headless flow mapping and troubleshooting guidance
 - BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
-- Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
+- Canonical automation backbone: impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
 - Coverage quality gates in CI for both Rust (`cargo llvm-cov`) and Python (`pytest-cov`) with enforced minimum line-coverage thresholds and uploaded coverage artifacts
 - Coverage reporting integration via Codecov uploads (Rust `lcov.info`, Python `coverage.xml`) and top-level README coverage badge
 - Branch policy enforcement workflow (`.github/workflows/branch-policy.yml`) with inline GitHub API validation to require PR-based updates to `main`
@@ -38,7 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard candidate training/staging jobs now run through `egui-async` bindings instead of manual thread/channel plumbing, improving frame-safe async task handling consistency across Hub screens
 - Hub now integrates `egui_logger` with a toggleable in-app Runtime Logs window, and Hub binary startup now uses a combined logger bridge so log events are visible in UI while still flowing through tracing subscribers
 - Hub now includes initial `egui_kittest` smoke tests for Python Lab and Jupyter IDE controls to lock in baseline UI behavior for the new async/editor/console flows
-- Visualization migration cookbook with phased `armas` and constrained `egui_dock` adoption guidance (`docs/ux/egui-visual-migration-cookbook.md`)
+- Visualization migration guidance with phased `armas` and constrained `egui_dock` adoption
 - Default multi-agent phase workflow contract at `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md` with routing precedence and completion-phase artifacts
 - Agent routing integrity workflow `.github/workflows/agent-routing-integrity.yml` with hook schema checks, route integrity checks, and fixture-based regression checks
 - Hook policy validators: `.github/hooks/validate-routing.ps1`, `.github/hooks/test-validate-routing.ps1`, and `.github/hooks/validate-doc-contracts.ps1`

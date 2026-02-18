@@ -2,25 +2,19 @@
 
 ## Project Overview
 
-- **Type:** monorepo with 2 primary parts
-- **Primary Languages:** Rust, Python
-- **Architecture:** hybrid local runtime + ML bridge
+- Type: monorepo with Rust runtime + Python ML package
+- Primary languages: Rust, Python
+- Architecture model: local runtime with ML bridge boundary
 
-## Quick Reference by Part
+## Canonical Entry Points
 
-### Rust Core (`rust-core`)
+- Product introduction only: [`../README.md`](../README.md)
+- Contribution process: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
+- Development workflows and CI/automation gates: [`./development-guide.md`](./development-guide.md)
+- Deployment and operations workflows: [`./deployment-guide.md`](./deployment-guide.md)
+- Python package and ML commands: [`../python/README.md`](../python/README.md)
 
-- **Type:** backend/service + desktop control surface
-- **Root:** `crates/`
-- **Key binaries:** `neurohid`, `neurohid-service`, `neurohid-validate`
-
-### Python ML (`python-ml`)
-
-- **Type:** data/ML bridge and trainer package
-- **Root:** `python/`
-- **Key entrypoint:** `neurohid-ml` CLI
-
-## Generated Documentation
+## Architecture and System Docs
 
 - [Project Overview](./project-overview.md)
 - [Source Tree Analysis](./source-tree-analysis.md)
@@ -31,22 +25,27 @@
 - [API Contracts - Rust Core](./api-contracts-rust-core.md)
 - [Data Models - Rust Core](./data-models-rust-core.md)
 - [Component Inventory](./component-inventory.md)
-- [Development Guide](./development-guide.md)
-- [Deployment Guide](./deployment-guide.md)
-- [Contribution Guide](./contribution-guide.md)
 
-## Existing Documentation in Repository
+## Agent Onboarding Hierarchy
 
-- [Root README](../README.md)
-- [Contributing Guide](../CONTRIBUTING.md)
-- [Changelog](../CHANGELOG.md)
-- [Root Agent Instructions](../AGENTS.md)
-- Crate README files under `../crates/*/README.md`
-- Python package README at `../python/README.md`
+- Root baseline rules: [`../AGENTS.md`](../AGENTS.md)
+- Rust workspace guidance: [`../crates/AGENTS.md`](../crates/AGENTS.md)
+- Python package guidance: [`../python/AGENTS.md`](../python/AGENTS.md)
+- Documentation-specific guidance: [`./AGENTS.md`](./AGENTS.md)
 
-## Getting Started
+Rule of precedence: root `AGENTS.md` is the baseline; nearest subtree `AGENTS.md` may add or
+explicitly override for that subtree.
 
-1. Read [Project Overview](./project-overview.md)
-2. Review [Architecture - Rust Core](./architecture-rust-core.md) and [Integration Architecture](./integration-architecture.md)
-3. Use [Development Guide](./development-guide.md) for local build/test/run workflows
-4. Use this index as the primary context file for brownfield planning workflows
+## Existing References
+
+- Changelog: [`../CHANGELOG.md`](../CHANGELOG.md)
+- Crate README files: `../crates/*/README.md`
+- Runtime/ML protocol contract: [`./runtime-ml-protocol-v2.md`](./runtime-ml-protocol-v2.md)
+
+## Suggested Reading Order
+
+1. Read [`../README.md`](../README.md) for project purpose and scope.
+2. Read [`./project-overview.md`](./project-overview.md) and architecture docs.
+3. Use [`./development-guide.md`](./development-guide.md) for local work.
+4. Use [`./deployment-guide.md`](./deployment-guide.md) for runtime/ops workflows.
+5. Follow the relevant `AGENTS.md` chain for the directory you are changing.

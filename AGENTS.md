@@ -1,8 +1,39 @@
-# Project Agents
+# NeuroHID Agent Onboarding
 
-## Default Project Settings
+This file defines project-wide baseline guidance for agents working in this repository.
 
-When creating Rust projects or Cargo.toml files, ALWAYS use:
+## Scope and Precedence
+
+- This root file applies to the entire repository.
+- Additional `AGENTS.md` files inside subdirectories may add or explicitly override guidance for
+  their subtree.
+- Precedence rule: root baseline + nearest local `AGENTS.md` override/add.
+
+## Repository Mission and Lanes
+
+NeuroHID is a hybrid Rust/Python monorepo for translating EEG signals into standard HID actions.
+
+Primary work lanes:
+
+- `crates/`: Rust runtime, device/signal/action stack, IPC, GUI, SDK
+- `python/`: ML bridge, decoder/ErrP/trainer flows, notebooks
+- `docs/`: architecture, contracts, development/deployment/contribution guidance
+- `.github/`: CI workflows and automation scripts
+
+## Agent Startup Checklist
+
+1. Identify the target lane (`crates/`, `python/`, `docs/`, `.github/`).
+2. Read this root `AGENTS.md`.
+3. Read the nearest lane-specific `AGENTS.md` (if present).
+4. Follow lane-specific verification gates before completion.
+5. Update affected documentation when behavior/contracts/workflows change.
+6. Commit completed changes with a message that explains what changed and why.
+
+## Global Baseline Policies
+
+### Rust Project Defaults
+
+When creating Rust projects or `Cargo.toml` package stanzas, use:
 
 ```toml
 [package]
@@ -17,141 +48,39 @@ all = "warn"
 pedantic = "warn"
 ```
 
-## Core Capabilities
-
-### 1. Question Routing
-
-Route Rust questions to appropriate skills:
-
-- Ownership/borrowing → m01-ownership
-- Smart pointers → m02-resource
-- Error handling → m06-error-handling
-- Concurrency → m07-concurrency
-- Unsafe code → unsafe-checker
-
-### Rust Grounding Policy
-
-When handling Rust design, semantics, unsafe/FFI, and Cargo behavior, use a tiered source strategy:
-
-1. Repo-local skills and existing codebase patterns first.
-2. Canonical references for disputed or safety-critical guidance:
-    - Rust Book: <https://doc.rust-lang.org/book/>
-    - Rust Reference: <https://doc.rust-lang.org/stable/reference/>
-    - Cargo Book: <https://doc.rust-lang.org/stable/cargo/>
-    - Effective Rust: <https://effective-rust.com/>
-
-Agent outputs should name the source and relevant section when tier-2 escalation is used.
-
-### 2. Code Style
-
-Follow Rust coding guidelines:
-
-- Use snake_case for variables and functions
-- Use PascalCase for types and traits
-- Use SCREAMING_SNAKE_CASE for constants
-- Max line length: 100 characters
-- Use `?` operator instead of `unwrap()` in library code
-
-### 3. Error Handling
-
-```rust
-// Good: Use Result with context
-fn read_config() -> Result<Config, ConfigError> {
-    let content = std::fs::read_to_string("config.toml")
-        .map_err(|e| ConfigError::Io(e))?;
-    toml::from_str(&content)
-        .map_err(|e| ConfigError::Parse(e))
-}
-
-// Avoid: unwrap() in library code
-fn read_config() -> Config {
-    let content = std::fs::read_to_string("config.toml").unwrap(); // Bad
-    toml::from_str(&content).unwrap() // Bad
-}
-```
-
 ### Python Command Policy
 
-- Use `uv` for all Python execution and tooling commands.
+- Use `uv` for Python execution and tooling commands.
 - Do not use bare `python` commands in docs, scripts, or automation.
-- Prefer forms such as `uv run --project python ...` (or `uv python --command ...` when needed).
+- Prefer forms such as `uv run --project python ...` or `uv run --directory python ...`.
 
 ### RTK Command Policy
 
-- Prefer `rtk` as the default proxy for verbose shell commands.
-- Always prefix each command in chains as well (e.g., `rtk git add . && rtk git commit -m "msg"`).
-- RTK passthrough is safe when no dedicated filter exists.
-- Before relying on RTK in a new environment, verify with:
+- Prefer `rtk` wrappers for high-volume output commands where supported (`ls`, `read`, `grep`,
+  `find`, `git`, `cargo`, etc.).
+- Verify availability in a new environment with:
   - `rtk --version`
   - `rtk gain`
-- Prefer RTK wrappers for common high-volume output commands:
-  - `git` (`status`, `log`, `diff`, `show`, `add`, `commit`, `push`, `pull`)
-  - `cargo` (`check`, `build`, `clippy`, `test`)
-  - file/search (`ls`, `read`, `grep`, `find`)
-  - `gh` (`pr`, `issue`, `run`), `docker`, `kubectl`
-- In Copilot/VS Code workflows, prefer hook-routed enforcement where available.
-- On Windows + VS Code agent workflows, if command rewrite hooks are not active, use explicit `rtk ...` command prefixes by default.
+- If a command is not supported as an RTK subcommand, use the native command directly.
 
-### 4. Unsafe Code
+### Error Handling and Unsafe Guardrails
 
-Every `unsafe` block MUST have a `// SAFETY:` comment:
+- Prefer recoverable errors (`Result`/`?`) over `unwrap()` in library paths.
+- Every `unsafe` block must include a `// SAFETY:` rationale comment.
+- Keep unsafe usage minimal and encapsulate it behind safe abstractions when possible.
 
-```rust
-// SAFETY: We checked that index < len above, so this is in bounds
-unsafe { slice.get_unchecked(index) }
-```
+### Git Safety
 
-### 5. Common Error Fixes
+- Do not revert unrelated user changes.
+- Avoid destructive commands unless explicitly requested.
+- Prefer non-interactive git commands.
+- Commit completed work unless the user explicitly asks not to commit.
+- Use clear commit messages that summarize scope and intent, not vague messages.
 
-| Error | Cause | Fix |
-| ----- | ----- | --- |
-| E0382 | Use of moved value | Clone, borrow, or use reference |
-| E0597 | Lifetime too short | Extend lifetime or restructure |
-| E0502 | Borrow conflict | Split borrows or use RefCell |
-| E0499 | Multiple mut borrows | Restructure to single mut borrow |
-| E0277 | Missing trait impl | Add trait bound or implement trait |
+## Lane-Specific Agent Guides
 
-## Quick Reference
+- Rust lane: [`crates/AGENTS.md`](./crates/AGENTS.md)
+- Python lane: [`python/AGENTS.md`](./python/AGENTS.md)
+- Documentation lane: [`docs/AGENTS.md`](./docs/AGENTS.md)
 
-### Ownership
-
-- Each value has one owner
-- Borrowing: `&T` (shared) or `&mut T` (exclusive)
-- Lifetimes: `'a` annotations for references
-
-### Smart Pointers
-
-- `Box<T>`: Heap allocation
-- `Rc<T>`: Reference counting (single-threaded)
-- `Arc<T>`: Atomic reference counting (thread-safe)
-- `RefCell<T>`: Interior mutability
-
-### Concurrency
-
-- `Send`: Safe to transfer between threads
-- `Sync`: Safe to share references between threads
-- `Mutex<T>`: Mutual exclusion
-- `RwLock<T>`: Reader-writer lock
-
-### Async
-
-```rust
-#[tokio::main]
-async fn main() {
-    let handle = tokio::spawn(async {
-        // async work
-    });
-    handle.await.unwrap();
-}
-```
-
-## Skill Files
-
-For detailed guidance, see:
-
-- `.github/skills/rust-router/SKILL.md` - Question routing
-- `.github/skills/coding-guidelines/SKILL.md` - Code style rules
-- `.github/skills/unsafe-checker/SKILL.md` - Unsafe code review
-- `.github/skills/m01-ownership/SKILL.md` - Ownership concepts
-- `.github/skills/m06-error-handling/SKILL.md` - Error patterns
-- `.github/skills/m07-concurrency/SKILL.md` - Concurrency patterns
+For architecture and operational context, use [`docs/index.md`](./docs/index.md).
