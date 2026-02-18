@@ -29,6 +29,7 @@ dependencies = [
     "scipy>=1.17.0",
     "scikit-learn>=1.8.0",
     "jupyterlab>=4.4.0",
+    "ipckit>=0.1.6",
 ]
 
 [project.optional-dependencies]
