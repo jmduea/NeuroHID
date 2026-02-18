@@ -44,6 +44,10 @@ pub struct HubApp {
     sidebar_state: SidebarState,
     workbench: WorkbenchState,
     show_log_window: bool,
+    visualization_detached_native_active: bool,
+    visualization_detached_fallback_warning: bool,
+    visualization_detached_geometry_dirty: bool,
+    visualization_detached_last_persist_secs: f64,
     // Screen instances
     dashboard: DashboardScreen,
     visualization: VisualizationScreen,
@@ -56,6 +60,17 @@ pub struct HubApp {
 }
 
 impl HubApp {
+    const DETACHED_VISUALIZATION_VIEWPORT_ID_SEED: &'static str =
+        "neurohid_visualization_detached_viewport";
+    const DETACHED_VISUALIZATION_DEFAULT_WIDTH: f32 = 1280.0;
+    const DETACHED_VISUALIZATION_DEFAULT_HEIGHT: f32 = 760.0;
+    const DETACHED_VISUALIZATION_MIN_WIDTH: f32 = 720.0;
+    const DETACHED_VISUALIZATION_MIN_HEIGHT: f32 = 420.0;
+
+    fn detached_visualization_viewport_id() -> egui::ViewportId {
+        egui::ViewportId::from_hash_of(Self::DETACHED_VISUALIZATION_VIEWPORT_ID_SEED)
+    }
+
     pub fn new(_cc: &eframe::CreationContext<'_>, runtime: tokio::runtime::Runtime) -> Self {
         // Initialize storage (blocking on the runtime since we're in the main thread)
         let (state, init_error) = match runtime.block_on(Self::init_state()) {
@@ -96,6 +111,10 @@ impl HubApp {
             sidebar_state: SidebarState::new(true),
             workbench: WorkbenchState::default(),
             show_log_window: false,
+            visualization_detached_native_active: false,
+            visualization_detached_fallback_warning: false,
+            visualization_detached_geometry_dirty: false,
+            visualization_detached_last_persist_secs: f64::NEG_INFINITY,
             dashboard: DashboardScreen::new(),
             visualization,
             devices: DevicesScreen::new(),
@@ -256,6 +275,198 @@ impl HubApp {
         )
     }
 
+    fn persist_config(&mut self, reason: &str) -> bool {
+        match self
+            .runtime
+            .block_on(self.state.config_store.save(&self.state.config))
+        {
+            Ok(()) => true,
+            Err(error) => {
+                tracing::warn!("Failed to persist {}: {}", reason, error);
+                false
+            }
+        }
+    }
+
+    fn set_visualization_detached(&mut self, ctx: &egui::Context, detached: bool) {
+        if self.state.config.ui.visualization_detached == detached {
+            return;
+        }
+
+        self.state.config.ui.visualization_detached = detached;
+        if detached {
+            self.current_screen = Screen::Visualization;
+            self.workbench
+                .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+        } else {
+            ctx.send_viewport_cmd_to(
+                Self::detached_visualization_viewport_id(),
+                egui::ViewportCommand::Close,
+            );
+            self.visualization_detached_native_active = false;
+            self.visualization_detached_fallback_warning = false;
+        }
+
+        if self.persist_config("detached visualization preference") {
+            self.visualization_detached_geometry_dirty = false;
+            self.visualization_detached_last_persist_secs = ctx.input(|input| input.time);
+        }
+    }
+
+    fn toggle_visualization_detached(&mut self, ctx: &egui::Context) {
+        self.set_visualization_detached(ctx, !self.state.config.ui.visualization_detached);
+    }
+
+    fn detached_visualization_viewport_builder(&self) -> egui::ViewportBuilder {
+        let mut builder = egui::ViewportBuilder::default()
+            .with_title("NeuroHID Visualization")
+            .with_min_inner_size(egui::vec2(
+                Self::DETACHED_VISUALIZATION_MIN_WIDTH,
+                Self::DETACHED_VISUALIZATION_MIN_HEIGHT,
+            ));
+
+        let (width, height) = self.state.config.ui.visualization_detached_size.unwrap_or((
+            Self::DETACHED_VISUALIZATION_DEFAULT_WIDTH,
+            Self::DETACHED_VISUALIZATION_DEFAULT_HEIGHT,
+        ));
+        builder = builder.with_inner_size(egui::vec2(
+            width.max(Self::DETACHED_VISUALIZATION_MIN_WIDTH),
+            height.max(Self::DETACHED_VISUALIZATION_MIN_HEIGHT),
+        ));
+
+        if let Some((x, y)) = self.state.config.ui.visualization_detached_pos
+            && x.is_finite()
+            && y.is_finite()
+        {
+            builder = builder.with_position(egui::pos2(x, y));
+        }
+
+        builder
+    }
+
+    fn quantize_window_metric(value: f32) -> Option<f32> {
+        if value.is_finite() {
+            Some((value * 2.0).round() * 0.5)
+        } else {
+            None
+        }
+    }
+
+    fn update_detached_visualization_geometry(&mut self, pos: egui::Pos2, size: egui::Vec2) {
+        let Some(pos_x) = Self::quantize_window_metric(pos.x) else {
+            return;
+        };
+        let Some(pos_y) = Self::quantize_window_metric(pos.y) else {
+            return;
+        };
+        let Some(size_x) = Self::quantize_window_metric(size.x) else {
+            return;
+        };
+        let Some(size_y) = Self::quantize_window_metric(size.y) else {
+            return;
+        };
+
+        let next_pos = Some((pos_x, pos_y));
+        let next_size = Some((
+            size_x.max(Self::DETACHED_VISUALIZATION_MIN_WIDTH),
+            size_y.max(Self::DETACHED_VISUALIZATION_MIN_HEIGHT),
+        ));
+        if self.state.config.ui.visualization_detached_pos != next_pos
+            || self.state.config.ui.visualization_detached_size != next_size
+        {
+            self.state.config.ui.visualization_detached_pos = next_pos;
+            self.state.config.ui.visualization_detached_size = next_size;
+            self.visualization_detached_geometry_dirty = true;
+        }
+    }
+
+    fn maybe_persist_detached_visualization_geometry(&mut self, ctx: &egui::Context) {
+        if !self.state.config.ui.visualization_detached
+            || !self.visualization_detached_geometry_dirty
+        {
+            return;
+        }
+
+        let now = ctx.input(|input| input.time);
+        if now - self.visualization_detached_last_persist_secs < 1.0 {
+            return;
+        }
+
+        if self.persist_config("detached visualization geometry") {
+            self.visualization_detached_geometry_dirty = false;
+            self.visualization_detached_last_persist_secs = now;
+        }
+    }
+
+    fn show_detached_visualization_viewport(&mut self, ctx: &egui::Context) {
+        self.visualization_detached_native_active = false;
+        self.visualization_detached_fallback_warning = false;
+
+        if !self.state.config.ui.visualization_detached {
+            return;
+        }
+
+        let mut close_requested = false;
+        let mut geometry_update: Option<(egui::Pos2, egui::Vec2)> = None;
+        let mut native_viewport = false;
+        let mut fallback_embedded = false;
+
+        ctx.show_viewport_immediate(
+            Self::detached_visualization_viewport_id(),
+            self.detached_visualization_viewport_builder(),
+            |viewport_ctx, class| {
+                if class == egui::ViewportClass::Embedded {
+                    fallback_embedded = true;
+                    return;
+                }
+
+                native_viewport = true;
+                let (close_now, outer_rect, inner_rect) = viewport_ctx.input(|input| {
+                    let viewport = input.viewport();
+                    (
+                        viewport.close_requested(),
+                        viewport.outer_rect,
+                        viewport.inner_rect,
+                    )
+                });
+                close_requested |= close_now;
+                if let Some(rect) = outer_rect.or(inner_rect) {
+                    geometry_update = Some((rect.min, rect.size()));
+                }
+
+                egui::CentralPanel::default()
+                    .frame(
+                        egui::Frame::new()
+                            .fill(viewport_ctx.style().visuals.panel_fill)
+                            .inner_margin(egui::Margin::symmetric(8, 8)),
+                    )
+                    .show(viewport_ctx, |ui| {
+                        let snapshot = self.state.service_snapshot.clone();
+                        self.visualization.show(
+                            ui,
+                            &self.data_bus,
+                            &snapshot,
+                            &mut self.state,
+                            &self.runtime,
+                        );
+                    });
+            },
+        );
+
+        self.visualization_detached_fallback_warning = fallback_embedded;
+        self.visualization_detached_native_active = native_viewport && !close_requested;
+
+        if let Some((pos, size)) = geometry_update {
+            self.update_detached_visualization_geometry(pos, size);
+        }
+
+        if close_requested {
+            self.set_visualization_detached(ctx, false);
+        }
+
+        self.maybe_persist_detached_visualization_geometry(ctx);
+    }
+
     fn show_sidebar(&mut self, ctx: &egui::Context) {
         let panel_width = self.sidebar_state.width().clamp(52.0, 280.0);
         let screens = self.workbench.visible_screens(&self.state.config.ui.mode);
@@ -378,6 +589,14 @@ impl HubApp {
                             ui,
                             &format!("{} task error", task),
                             theme::Intent::Danger,
+                        );
+                    }
+
+                    if self.visualization_detached_fallback_warning {
+                        theme::status_chip(
+                            ui,
+                            "Detached visualization unavailable; using embedded view",
+                            theme::Intent::Warning,
                         );
                     }
 
@@ -508,6 +727,24 @@ impl HubApp {
                     };
 
                 right_ui.add_space(4.0);
+                let show_visualization_toggle = self.current_screen == Screen::Visualization
+                    || self.state.config.ui.visualization_detached;
+                if show_visualization_toggle {
+                    let detach_label = if self.state.config.ui.visualization_detached {
+                        "Attach Viz"
+                    } else {
+                        "Detach Viz"
+                    };
+                    if theme::action_button(
+                        &mut right_ui,
+                        detach_label,
+                        true,
+                        theme::ButtonTone::Ghost,
+                    ) {
+                        self.toggle_visualization_detached(ctx);
+                    }
+                    right_ui.add_space(4.0);
+                }
                 if advanced_mode {
                     for tab in advanced_status_bar_tabs() {
                         let selected = self.workbench.bottom_panel.visible
@@ -1080,7 +1317,10 @@ impl HubApp {
                 ui.separator();
 
                 let query = self.workbench.command_query.to_ascii_lowercase();
-                let actions = command_palette_items(self.state.service_snapshot.running);
+                let actions = command_palette_items(
+                    self.state.service_snapshot.running,
+                    self.state.config.ui.visualization_detached,
+                );
                 let mut filtered: Vec<_> = actions
                     .into_iter()
                     .filter(|item| {
@@ -1167,14 +1407,18 @@ impl HubApp {
         }
 
         if let Some(action) = selected_action {
-            self.execute_command_palette_action(action);
+            self.execute_command_palette_action(ctx, action);
             self.workbench.command_palette_open = false;
             self.workbench.command_query.clear();
             self.workbench.command_palette_focus_index = 0;
         }
     }
 
-    fn execute_command_palette_action(&mut self, action: CommandPaletteAction) {
+    fn execute_command_palette_action(
+        &mut self,
+        ctx: &egui::Context,
+        action: CommandPaletteAction,
+    ) {
         match action {
             CommandPaletteAction::OpenScreen(screen) => {
                 self.current_screen = screen;
@@ -1241,6 +1485,9 @@ impl HubApp {
                         error
                     );
                 }
+            }
+            CommandPaletteAction::ToggleVisualizationDetached => {
+                self.toggle_visualization_detached(ctx);
             }
         }
     }
@@ -1621,6 +1868,8 @@ impl eframe::App for HubApp {
         self.stream_console
             .update(&self.data_bus, &self.state.service_snapshot);
 
+        self.show_detached_visualization_viewport(ctx);
+
         // Panel ordering matters in egui: top/bottom panels should be shown
         // before side panels so side content does not get clipped at the bottom.
         self.show_status_bar(ctx);
@@ -1703,14 +1952,47 @@ impl eframe::App for HubApp {
                         }
                     }
                     Screen::Visualization => {
-                        let snapshot = self.state.service_snapshot.clone();
-                        self.visualization.show(
-                            ui,
-                            &self.data_bus,
-                            &snapshot,
-                            &mut self.state,
-                            &self.runtime,
-                        );
+                        if self.state.config.ui.visualization_detached
+                            && self.visualization_detached_native_active
+                        {
+                            theme::page_header(
+                                ui,
+                                "Visualization",
+                                "Live telemetry is rendering in the detached window",
+                            );
+                            theme::status_chip(
+                                ui,
+                                "Visualization detached to secondary viewport",
+                                theme::Intent::Info,
+                            );
+                            ui.add_space(8.0);
+                            if theme::action_button(
+                                ui,
+                                "Attach Visualization",
+                                true,
+                                theme::ButtonTone::Secondary,
+                            ) {
+                                self.set_visualization_detached(ctx, false);
+                            }
+                        } else {
+                            if self.visualization_detached_fallback_warning {
+                                theme::status_chip(
+                                    ui,
+                                    "Detached viewport unsupported in this environment; \
+                                     showing embedded visualization",
+                                    theme::Intent::Warning,
+                                );
+                                ui.separator();
+                            }
+                            let snapshot = self.state.service_snapshot.clone();
+                            self.visualization.show(
+                                ui,
+                                &self.data_bus,
+                                &snapshot,
+                                &mut self.state,
+                                &self.runtime,
+                            );
+                        }
                     }
                     Screen::Devices => {
                         self.devices
@@ -1752,7 +2034,11 @@ impl eframe::App for HubApp {
 
         self.show_command_palette(ctx);
 
-        let frame_interval = if self.current_screen == Screen::Visualization {
+        let visualization_animating = (self.current_screen == Screen::Visualization
+            && !self.state.config.ui.visualization_detached)
+            || self.visualization_detached_native_active;
+
+        let frame_interval = if visualization_animating {
             if self.state.service_snapshot.running {
                 let fps = u64::from(self.state.config.ui.visualization_target_fps.clamp(5, 60));
                 Duration::from_millis((1000 / fps).max(1))
@@ -2052,6 +2338,7 @@ fn build_device_health_problem_row(
 #[derive(Debug, Clone, Copy)]
 enum CommandPaletteAction {
     OpenScreen(Screen),
+    ToggleVisualizationDetached,
     ToggleBottomPanel,
     OpenBottomTab(BottomTab),
     ReconnectBridge,
@@ -2072,7 +2359,10 @@ struct CommandPaletteItem {
     action: CommandPaletteAction,
 }
 
-fn command_palette_items(service_running: bool) -> Vec<CommandPaletteItem> {
+fn command_palette_items(
+    service_running: bool,
+    visualization_detached: bool,
+) -> Vec<CommandPaletteItem> {
     let mut items = vec![
         CommandPaletteItem {
             label: "Open Dashboard",
@@ -2093,6 +2383,15 @@ fn command_palette_items(service_running: bool) -> Vec<CommandPaletteItem> {
             label: "Open Visualization",
             keywords: "screen analysis visualization telemetry",
             action: CommandPaletteAction::OpenScreen(Screen::Visualization),
+        },
+        CommandPaletteItem {
+            label: if visualization_detached {
+                "Attach Visualization"
+            } else {
+                "Detach Visualization"
+            },
+            keywords: "visualization window detach attach viewport",
+            action: CommandPaletteAction::ToggleVisualizationDetached,
         },
         CommandPaletteItem {
             label: "Open Python Lab",
@@ -2605,7 +2904,7 @@ mod tests {
 
     #[test]
     fn command_palette_exposes_runtime_quick_actions() {
-        let labels: Vec<&str> = command_palette_items(true)
+        let labels: Vec<&str> = command_palette_items(true, false)
             .into_iter()
             .map(|item| item.label)
             .collect();
@@ -2613,6 +2912,21 @@ mod tests {
         assert!(labels.contains(&"Reconnect Bridge"));
         assert!(labels.contains(&"Refresh Runtime Snapshot"));
         assert!(labels.contains(&"Apply Fallback Policy"));
+    }
+
+    #[test]
+    fn command_palette_detach_entry_reflects_detached_state() {
+        let attached_labels: Vec<&str> = command_palette_items(true, false)
+            .into_iter()
+            .map(|item| item.label)
+            .collect();
+        let detached_labels: Vec<&str> = command_palette_items(true, true)
+            .into_iter()
+            .map(|item| item.label)
+            .collect();
+
+        assert!(attached_labels.contains(&"Detach Visualization"));
+        assert!(detached_labels.contains(&"Attach Visualization"));
     }
 
     #[test]

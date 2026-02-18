@@ -527,6 +527,15 @@ pub struct UiConfig {
     /// Target refresh rate for visualization rendering.
     #[serde(default = "default_visualization_target_fps")]
     pub visualization_target_fps: u8,
+    /// Whether the visualization screen should render in a detached OS window.
+    #[serde(default)]
+    pub visualization_detached: bool,
+    /// Last known detached visualization window top-left position in points.
+    #[serde(default)]
+    pub visualization_detached_pos: Option<(f32, f32)>,
+    /// Last known detached visualization window inner size in points.
+    #[serde(default)]
+    pub visualization_detached_size: Option<(f32, f32)>,
     /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
     ///
     /// Deprecated: retained for backward compatibility with older configs.
@@ -633,6 +642,9 @@ impl Default for UiConfig {
             visualization_layout_preset: default_visualization_layout_preset(),
             visualization_pane_widgets: default_visualization_pane_widgets(),
             visualization_target_fps: default_visualization_target_fps(),
+            visualization_detached: false,
+            visualization_detached_pos: None,
+            visualization_detached_size: None,
             lab_kernel_command: default_lab_kernel_command(),
             device_health_problems: DeviceHealthProblemConfig::default(),
         }
@@ -1051,6 +1063,33 @@ mod tests {
         assert_eq!(
             decoded.visualization_target_fps,
             UiConfig::default().visualization_target_fps
+        );
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_without_detached_visualization_fields() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.remove("visualization_detached");
+        object.remove("visualization_detached_pos");
+        object.remove("visualization_detached_size");
+
+        let decoded: UiConfig = serde_json::from_value(json)
+            .expect("deserialize ui config without detached visualization fields");
+
+        assert_eq!(
+            decoded.visualization_detached,
+            UiConfig::default().visualization_detached
+        );
+        assert_eq!(
+            decoded.visualization_detached_pos,
+            UiConfig::default().visualization_detached_pos
+        );
+        assert_eq!(
+            decoded.visualization_detached_size,
+            UiConfig::default().visualization_detached_size
         );
     }
 
