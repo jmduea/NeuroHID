@@ -25,7 +25,7 @@ use neurohid_types::{
     signal::Sample,
 };
 
-use crate::service::{DecoderCommand, ServiceState};
+use crate::service::{DecoderCommand, IntegrityStage, ServiceState};
 use crate::tasks::DecisionEventRecord;
 
 const REAL_MESSAGE_POLL_MS: u64 = 25;
@@ -92,6 +92,8 @@ pub struct IpcTask {
     session_id: String,
     dropped_messages: u64,
     telemetry_frames_sent: u64,
+    integrity_issues: u64,
+    last_recv_sequence: Option<u64>,
     pending_errp_windows: VecDeque<PendingErrpWindow>,
     sample_buffers: HashMap<String, StreamSampleBuffer>,
     emit_gate: EmitGate,
@@ -128,6 +130,8 @@ impl IpcTask {
             session_id: neurohid_types::now_micros().to_string(),
             dropped_messages: 0,
             telemetry_frames_sent: 0,
+            integrity_issues: 0,
+            last_recv_sequence: None,
             pending_errp_windows: VecDeque::new(),
             sample_buffers: HashMap::new(),
             emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Ipc)),
@@ -141,6 +145,10 @@ impl IpcTask {
             stage = obs::stage::IPC,
             "IPC task started"
         );
+        {
+            let mut state = self.state.write().await;
+            state.set_stage_integrity_snapshot(IntegrityStage::Ipc, 0, false);
+        }
 
         let result = if self.config.ipc_simulation_enabled {
             self.run_simulated(&mut shutdown).await
@@ -151,6 +159,28 @@ impl IpcTask {
         self.set_connection_state(false, false, false).await;
         tracing::info!(event = obs::event::TASK_STOPPED, "IPC task completed");
         result
+    }
+
+    async fn record_integrity_issue(
+        &mut self,
+        issue: &str,
+        details: &str,
+        stream_id: Option<&str>,
+    ) {
+        self.integrity_issues = self.integrity_issues.saturating_add(1);
+        let mut state = self.state.write().await;
+        state.set_stage_integrity_snapshot(IntegrityStage::Ipc, self.integrity_issues, true);
+        drop(state);
+
+        tracing::warn!(
+            event = obs::event::INTEGRITY_ISSUE,
+            stage = obs::stage::IPC,
+            decision_id = obs::field::UNKNOWN,
+            stream_id = stream_id.unwrap_or(obs::field::UNKNOWN),
+            issue,
+            details,
+            "IPC integrity check failed"
+        );
     }
 
     async fn run_real_bridge(&mut self, shutdown: &mut broadcast::Receiver<()>) -> Result<()> {
@@ -178,6 +208,7 @@ impl IpcTask {
             };
 
             self.set_connection_state(true, false, false).await;
+            self.last_recv_sequence = None;
             self.note_heartbeat().await;
             self.send_hello(&connection).await?;
             self.send_session_boundary_start(&connection).await?;
@@ -222,6 +253,19 @@ impl IpcTask {
                     self.drain_trainer_messages(&connection).await?;
                     let since_last = last_msg_at.elapsed().as_millis() as u64;
                     if since_last > self.config.ml_stall_timeout_ms {
+                        let was_stalled = self
+                            .state
+                            .read()
+                            .await
+                            .ml_bridge_stalled;
+                        if !was_stalled {
+                            self.record_integrity_issue(
+                                "bridge_stalled",
+                                "trainer heartbeat exceeded stall timeout",
+                                None,
+                            )
+                            .await;
+                        }
                         self.set_stalled(true).await;
                     }
                     self.emit_due_errp_windows(&connection, None).await?;
@@ -446,6 +490,26 @@ impl IpcTask {
             return Ok(());
         }
 
+        let recv_seq = message.seq;
+        if let Some(previous_seq) = self.last_recv_sequence {
+            if recv_seq <= previous_seq {
+                self.record_integrity_issue(
+                    "sequence_regression",
+                    "trainer envelope sequence regressed or repeated",
+                    None,
+                )
+                .await;
+            } else if recv_seq > previous_seq.saturating_add(1) {
+                self.record_integrity_issue(
+                    "sequence_gap",
+                    "trainer envelope sequence gap detected",
+                    None,
+                )
+                .await;
+            }
+        }
+        self.last_recv_sequence = Some(recv_seq);
+
         match message.kind {
             RuntimeMlKindV2::Hello => {
                 let hello: HelloV2 = message.decode_payload().map_err(IpcError::InvalidMessage)?;
@@ -457,8 +521,30 @@ impl IpcTask {
                 }
             }
             RuntimeMlKindV2::ErrpResult => {
-                let payload: ErrpResultV2 =
+                let mut payload: ErrpResultV2 =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
+                if !payload.error_probability.is_finite() {
+                    self.record_integrity_issue(
+                        "errp_non_finite_probability",
+                        "ErrP payload error_probability contains NaN/Inf",
+                        None,
+                    )
+                    .await;
+                    return Ok(());
+                }
+                if !payload.classification_confidence.is_finite() {
+                    self.record_integrity_issue(
+                        "errp_non_finite_confidence",
+                        "ErrP payload classification_confidence contains NaN/Inf",
+                        None,
+                    )
+                    .await;
+                    return Ok(());
+                }
+                payload.error_probability = payload.error_probability.clamp(0.0, 1.0);
+                payload.classification_confidence =
+                    payload.classification_confidence.clamp(0.0, 1.0);
+
                 if let Some(tx) = &self.marker_broadcast_tx {
                     let marker = StreamMarker::now(MarkerType::ErrpWindowResult).with_payload(
                         MarkerPayload::ErrpResult {

@@ -1018,6 +1018,7 @@ mod tests {
             .and_then(Value::as_object)
             .expect("observability object exists");
         assert!(observability.contains_key("global"));
+        assert!(observability.contains_key("device"));
         assert!(observability.contains_key("signal"));
         assert!(observability.contains_key("decoder"));
         assert!(observability.contains_key("action"));

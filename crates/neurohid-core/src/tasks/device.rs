@@ -46,15 +46,112 @@ use neurohid_types::{
     config::{DeviceBackend, DeviceConfig},
     device::{DeviceId, DeviceInfo, DiscoveredStream},
     error::{DeviceError, Result},
+    observability::{
+        self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig,
+    },
     signal::Sample,
 };
 
-use crate::service::{DeviceCommand, ServiceState};
+use crate::service::{DeviceCommand, IntegrityStage, ServiceState};
 
 /// An active stream connection managed by the device task.
 struct ActiveStream {
     cancel: CancellationToken,
     join_handle: tokio::task::JoinHandle<()>,
+}
+
+const DEVICE_SUMMARY_EVERY_SAMPLES: u64 = 2_048;
+
+#[derive(Debug, Clone, Copy)]
+enum DeviceIntegrityIssue {
+    TimestampRegression {
+        previous_us: i64,
+        current_us: i64,
+    },
+    SequenceGap {
+        previous: u64,
+        current: u64,
+        missing: u64,
+    },
+    SequenceRegression {
+        previous: u64,
+        current: u64,
+    },
+    ChannelCountChanged {
+        expected: usize,
+        got: usize,
+    },
+}
+
+struct DeviceSampleIntegrityTracker {
+    expected_channels: Option<usize>,
+    last_timestamp_us: Option<i64>,
+    last_sequence_number: Option<u64>,
+    samples_seen: u64,
+}
+
+impl DeviceSampleIntegrityTracker {
+    fn new() -> Self {
+        Self {
+            expected_channels: None,
+            last_timestamp_us: None,
+            last_sequence_number: None,
+            samples_seen: 0,
+        }
+    }
+
+    fn observe_sample(&mut self, sample: &Sample) -> Option<DeviceIntegrityIssue> {
+        self.samples_seen = self.samples_seen.saturating_add(1);
+
+        if let Some(expected_channels) = self.expected_channels {
+            let got = sample.values.len();
+            if got != expected_channels {
+                self.expected_channels = Some(got);
+                return Some(DeviceIntegrityIssue::ChannelCountChanged {
+                    expected: expected_channels,
+                    got,
+                });
+            }
+        } else {
+            self.expected_channels = Some(sample.values.len());
+        }
+
+        let timestamp_us = sample.device_timestamp.unwrap_or(sample.system_timestamp);
+        if let Some(previous_us) = self.last_timestamp_us
+            && timestamp_us <= previous_us
+        {
+            self.last_timestamp_us = Some(timestamp_us);
+            return Some(DeviceIntegrityIssue::TimestampRegression {
+                previous_us,
+                current_us: timestamp_us,
+            });
+        }
+        self.last_timestamp_us = Some(timestamp_us);
+
+        let sequence_number = sample.sequence_number?;
+        if let Some(previous) = self.last_sequence_number {
+            let expected = previous.saturating_add(1);
+            if sequence_number > expected {
+                let missing = sequence_number.saturating_sub(expected);
+                self.last_sequence_number = Some(sequence_number);
+                return Some(DeviceIntegrityIssue::SequenceGap {
+                    previous,
+                    current: sequence_number,
+                    missing,
+                });
+            }
+            if sequence_number <= previous {
+                self.last_sequence_number = Some(sequence_number);
+                return Some(DeviceIntegrityIssue::SequenceRegression {
+                    previous,
+                    current: sequence_number,
+                });
+            }
+        }
+
+        self.last_sequence_number = Some(sequence_number);
+        None
+    }
 }
 
 /// The device task connects to EEG devices and streams samples.
@@ -68,6 +165,8 @@ pub struct DeviceTask {
     calibration_mode: Option<Arc<AtomicBool>>,
     /// Optional channel for receiving stream management commands from the hub
     device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
+    emit_gate: EmitGate,
+    stream_emit_policy: EmitPolicyConfig,
 }
 
 impl DeviceTask {
@@ -79,7 +178,9 @@ impl DeviceTask {
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
         calibration_mode: Option<Arc<AtomicBool>>,
         device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
+        observability: ObservabilityConfig,
     ) -> Self {
+        let policy = observability.policy_for(ObservabilityComponent::Device);
         Self {
             config,
             sample_tx,
@@ -87,27 +188,51 @@ impl DeviceTask {
             calibration_sample_tx,
             calibration_mode,
             device_command_rx,
+            emit_gate: EmitGate::new(policy.clone()),
+            stream_emit_policy: policy,
         }
     }
 
     /// Runs the device task until shutdown is signaled.
-    pub async fn run(self, shutdown: broadcast::Receiver<()>) -> Result<()> {
+    pub async fn run(mut self, shutdown: broadcast::Receiver<()>) -> Result<()> {
+        tracing::info!(
+            event = obs::event::TASK_STARTED,
+            span = obs::span::DEVICE_RUN,
+            stage = obs::stage::DEVICE,
+            backend = ?self.config.backend,
+            "Device task started"
+        );
+        {
+            let mut state = self.state.write().await;
+            state.set_stage_integrity_snapshot(IntegrityStage::Device, 0, false);
+        }
+
         let provider = create_provider(&self.config).await?;
 
-        if self.device_command_rx.is_some() {
+        let result = if self.device_command_rx.is_some() {
             self.run_interactive(provider, shutdown).await
         } else {
             self.run_headless(provider, shutdown).await
+        };
+
+        if self.emit_gate.allow_info() {
+            tracing::info!(
+                event = obs::event::TASK_STOPPED,
+                decision_id = obs::field::UNKNOWN,
+                stream_id = obs::field::UNKNOWN,
+                "Device task stopped"
+            );
         }
+        result
     }
 
     /// Interactive mode: scan+command loop with multi-stream management.
     async fn run_interactive(
-        self,
+        &mut self,
         provider: Box<dyn DeviceProvider>,
         mut shutdown: broadcast::Receiver<()>,
     ) -> Result<()> {
-        let Some(mut command_rx) = self.device_command_rx else {
+        let Some(mut command_rx) = self.device_command_rx.take() else {
             tracing::warn!("Interactive device mode requested without command receiver");
             return Ok(());
         };
@@ -153,6 +278,7 @@ impl DeviceTask {
                                         self.calibration_mode.as_ref().map(Arc::clone),
                                         self.state.clone(),
                                         cancel.clone(),
+                                        self.stream_emit_policy.clone(),
                                     );
 
                                     active_streams.insert(
@@ -223,6 +349,21 @@ impl DeviceTask {
                     }
                 }
             }
+
+            if self.emit_gate.allow_info() {
+                tracing::info!(
+                    event = obs::event::TASK_SUMMARY,
+                    decision_id = obs::field::UNKNOWN,
+                    stream_id = obs::field::UNKNOWN,
+                    connected_streams = active_streams.len(),
+                    discovered_streams = self
+                        .state
+                        .try_read()
+                        .map(|state| state.discovered_streams.len())
+                        .unwrap_or(0),
+                    "Device task periodic summary"
+                );
+            }
         }
 
         // Clean up all active streams
@@ -243,7 +384,7 @@ impl DeviceTask {
 
     /// Headless mode: auto-connect to first discovered stream (legacy behavior).
     async fn run_headless(
-        self,
+        &mut self,
         provider: Box<dyn DeviceProvider>,
         mut shutdown: broadcast::Receiver<()>,
     ) -> Result<()> {
@@ -262,6 +403,7 @@ impl DeviceTask {
         let mut device = provider.connect(&devices[0].id, None).await?;
 
         tracing::info!("Connected to device: {}", device.id());
+        let stream_label = device.id().to_string();
 
         // Update shared state with device info
         {
@@ -272,6 +414,7 @@ impl DeviceTask {
 
         // Start streaming
         let mut stream = device.start_streaming().await?;
+        let mut integrity = DeviceSampleIntegrityTracker::new();
 
         tracing::info!("Streaming started");
 
@@ -286,6 +429,16 @@ impl DeviceTask {
                 sample_result = stream.next() => {
                     match sample_result {
                         Some(Ok(sample)) => {
+                            if let Some(issue) = integrity.observe_sample(&sample) {
+                                report_device_integrity_issue(
+                                    &self.state,
+                                    &stream_label,
+                                    issue,
+                                    &mut self.emit_gate,
+                                )
+                                .await;
+                            }
+
                             // Update signal quality in shared state
                             if let Some(quality) = &sample.quality {
                                 let avg_quality = quality.iter().sum::<f32>() / quality.len() as f32;
@@ -303,6 +456,18 @@ impl DeviceTask {
                             if self.sample_tx.send(sample).await.is_err() {
                                 tracing::warn!("Sample receiver dropped, stopping device task");
                                 break;
+                            }
+
+                            if integrity.samples_seen.is_multiple_of(DEVICE_SUMMARY_EVERY_SAMPLES)
+                                && self.emit_gate.allow_info()
+                            {
+                                tracing::info!(
+                                    event = obs::event::TASK_SUMMARY,
+                                    decision_id = obs::field::UNKNOWN,
+                                    stream_id = stream_label.as_str(),
+                                    samples_seen = integrity.samples_seen,
+                                    "Device stream periodic summary"
+                                );
                             }
                         }
                         Some(Err(e)) => {
@@ -344,8 +509,12 @@ fn spawn_stream_task(
     calibration_mode: Option<Arc<AtomicBool>>,
     state: Arc<RwLock<ServiceState>>,
     cancel: CancellationToken,
+    observability_policy: EmitPolicyConfig,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let mut emit_gate = EmitGate::new(observability_policy);
+        let mut integrity = DeviceSampleIntegrityTracker::new();
+
         let stream_result = device.start_streaming().await;
         let mut sample_stream = match stream_result {
             Ok(s) => s,
@@ -372,6 +541,16 @@ fn spawn_stream_task(
                 sample_result = sample_stream.next() => {
                     match sample_result {
                         Some(Ok(sample)) => {
+                            if let Some(issue) = integrity.observe_sample(&sample) {
+                                report_device_integrity_issue(
+                                    &state,
+                                    &stream_id,
+                                    issue,
+                                    &mut emit_gate,
+                                )
+                                .await;
+                            }
+
                             // Update signal quality in shared state
                             if let Some(quality) = &sample.quality {
                                 let avg_quality =
@@ -394,6 +573,18 @@ fn spawn_stream_task(
                                     stream_id
                                 );
                                 break;
+                            }
+
+                            if integrity.samples_seen.is_multiple_of(DEVICE_SUMMARY_EVERY_SAMPLES)
+                                && emit_gate.allow_info()
+                            {
+                                tracing::info!(
+                                    event = obs::event::TASK_SUMMARY,
+                                    decision_id = obs::field::UNKNOWN,
+                                    stream_id = %stream_id,
+                                    samples_seen = integrity.samples_seen,
+                                    "Device stream periodic summary"
+                                );
                             }
                         }
                         Some(Err(e)) => {
@@ -449,6 +640,87 @@ async fn update_stream_status(
         .iter()
         .filter(|s| s.connected)
         .find_map(|s| s.battery_percent);
+}
+
+async fn report_device_integrity_issue(
+    state: &Arc<RwLock<ServiceState>>,
+    stream_id: &str,
+    issue: DeviceIntegrityIssue,
+    emit_gate: &mut EmitGate,
+) {
+    let mut st = state.write().await;
+    st.register_integrity_issue(IntegrityStage::Device, true);
+    if let Some(stream) = st
+        .discovered_streams
+        .iter_mut()
+        .find(|stream| stream.id == stream_id || stream.source_id.as_deref() == Some(stream_id))
+    {
+        stream.integrity_state = Some("degraded".to_string());
+    }
+    drop(st);
+
+    if !emit_gate.allow_info() {
+        return;
+    }
+
+    match issue {
+        DeviceIntegrityIssue::TimestampRegression {
+            previous_us,
+            current_us,
+        } => {
+            tracing::warn!(
+                event = obs::event::INTEGRITY_ISSUE,
+                stage = obs::stage::DEVICE,
+                decision_id = obs::field::UNKNOWN,
+                stream_id = stream_id,
+                issue = "timestamp_regression",
+                previous_us,
+                current_us,
+                "Device ingest timestamp regression detected"
+            );
+        }
+        DeviceIntegrityIssue::SequenceGap {
+            previous,
+            current,
+            missing,
+        } => {
+            tracing::warn!(
+                event = obs::event::INTEGRITY_ISSUE,
+                stage = obs::stage::DEVICE,
+                decision_id = obs::field::UNKNOWN,
+                stream_id = stream_id,
+                issue = "sequence_gap",
+                previous,
+                current,
+                missing,
+                "Device ingest sequence gap detected"
+            );
+        }
+        DeviceIntegrityIssue::SequenceRegression { previous, current } => {
+            tracing::warn!(
+                event = obs::event::INTEGRITY_ISSUE,
+                stage = obs::stage::DEVICE,
+                decision_id = obs::field::UNKNOWN,
+                stream_id = stream_id,
+                issue = "sequence_regression",
+                previous,
+                current,
+                "Device ingest sequence regression detected"
+            );
+        }
+        DeviceIntegrityIssue::ChannelCountChanged { expected, got } => {
+            tracing::warn!(
+                event = obs::event::INTEGRITY_ISSUE,
+                stage = obs::stage::DEVICE,
+                decision_id = obs::field::UNKNOWN,
+                stream_id = stream_id,
+                issue = "channel_count_changed",
+                expected,
+                got,
+                "Device ingest channel-count mismatch detected"
+            );
+        }
+    }
 }
 
 /// Scan for available streams and update `ServiceState::discovered_streams`.

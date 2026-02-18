@@ -531,7 +531,10 @@ impl SettingsScreen {
                             },
                         );
                         let bandpass_label = if cfg.bandpass_filter_enabled {
-                            format!("Bandpass {:.1}-{:.1}Hz", cfg.bandpass_low_hz, cfg.bandpass_high_hz)
+                            format!(
+                                "Bandpass {:.1}-{:.1}Hz",
+                                cfg.bandpass_low_hz, cfg.bandpass_high_hz
+                            )
                         } else {
                             "Bandpass off".to_string()
                         };

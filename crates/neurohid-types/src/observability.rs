@@ -6,6 +6,7 @@ const DEBUG_WINDOW_SECS: u64 = 1;
 
 /// Shared stage identifiers for runtime/control observability.
 pub mod stage {
+    pub const DEVICE: &str = "device";
     pub const SIGNAL: &str = "signal";
     pub const DECODER: &str = "decoder";
     pub const ACTION: &str = "action";
@@ -15,6 +16,7 @@ pub mod stage {
 
 /// Shared span names used across runtime/control pipeline tasks.
 pub mod span {
+    pub const DEVICE_RUN: &str = "runtime.device.run";
     pub const SIGNAL_RUN: &str = "runtime.signal.run";
     pub const DECODER_RUN: &str = "runtime.decoder.run";
     pub const ACTION_RUN: &str = "runtime.action.run";
@@ -27,6 +29,7 @@ pub mod event {
     pub const TASK_STARTED: &str = "task.started";
     pub const TASK_STOPPED: &str = "task.stopped";
     pub const TASK_SUMMARY: &str = "task.summary";
+    pub const INTEGRITY_ISSUE: &str = "pipeline.integrity_issue";
     pub const FEATURE_WINDOW_EMITTED: &str = "signal.feature_window_emitted";
     pub const DECISION_EMITTED: &str = "decoder.decision_emitted";
     pub const ACTION_EMITTED: &str = "action.emitted";
@@ -46,6 +49,7 @@ pub mod field {
 /// Runtime observability components that can be tuned independently.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ObservabilityComponent {
+    Device,
     Signal,
     Decoder,
     Action,
@@ -120,6 +124,9 @@ pub struct ObservabilityConfig {
     /// Global baseline policy applied to all components.
     #[serde(default)]
     pub global: EmitPolicyConfig,
+    /// Device ingest task policy.
+    #[serde(default = "default_device_policy")]
+    pub device: EmitPolicyConfig,
     /// Signal task policy.
     #[serde(default = "default_signal_policy")]
     pub signal: EmitPolicyConfig,
@@ -138,6 +145,14 @@ pub struct ObservabilityConfig {
 }
 
 fn default_signal_policy() -> EmitPolicyConfig {
+    EmitPolicyConfig {
+        sample_ratio: 0.25,
+        info_max_per_minute: 60,
+        debug_max_per_second: 3,
+    }
+}
+
+fn default_device_policy() -> EmitPolicyConfig {
     EmitPolicyConfig {
         sample_ratio: 0.25,
         info_max_per_minute: 60,
@@ -181,6 +196,7 @@ impl Default for ObservabilityConfig {
     fn default() -> Self {
         Self {
             global: EmitPolicyConfig::default(),
+            device: default_device_policy(),
             signal: default_signal_policy(),
             decoder: default_decoder_policy(),
             action: default_action_policy(),
@@ -194,6 +210,7 @@ impl ObservabilityConfig {
     /// Resolve effective policy for a component by combining global+component limits.
     pub fn policy_for(&self, component: ObservabilityComponent) -> EmitPolicyConfig {
         let component_cfg = match component {
+            ObservabilityComponent::Device => &self.device,
             ObservabilityComponent::Signal => &self.signal,
             ObservabilityComponent::Decoder => &self.decoder,
             ObservabilityComponent::Action => &self.action,

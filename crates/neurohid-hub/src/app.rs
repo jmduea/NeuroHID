@@ -869,6 +869,9 @@ impl HubApp {
         let signal_quality = self.state.service_snapshot.signal_quality;
         let uptime_secs = self.state.service_snapshot.uptime_secs;
         let task_error = self.state.service_snapshot.task_error.clone();
+        let pipeline_integrity_degraded = self.state.service_snapshot.pipeline_integrity_degraded;
+        let integrity_issue_count = self.state.service_snapshot.integrity_issue_count;
+        let stage_health_summary = self.state.service_snapshot.stage_health_summary.clone();
         let routed_total = self.state.service_snapshot.routed_eeg_streams
             + self.state.service_snapshot.routed_motion_streams
             + self.state.service_snapshot.routed_auxiliary_streams
@@ -943,11 +946,41 @@ impl HubApp {
                     theme::Intent::Danger
                 },
             );
+            theme::status_chip(
+                ui,
+                &format!("Integrity issues {}", integrity_issue_count),
+                if integrity_issue_count == 0 {
+                    theme::Intent::Muted
+                } else if pipeline_integrity_degraded {
+                    theme::Intent::Danger
+                } else {
+                    theme::Intent::Warning
+                },
+            );
+            theme::status_chip(
+                ui,
+                if pipeline_integrity_degraded {
+                    "Pipeline integrity degraded"
+                } else {
+                    "Pipeline integrity stable"
+                },
+                if pipeline_integrity_degraded {
+                    theme::Intent::Danger
+                } else {
+                    theme::Intent::Success
+                },
+            );
 
             if let Some((task, _)) = task_error {
                 theme::status_chip(ui, &format!("{task} task error"), theme::Intent::Danger);
             }
         });
+
+        if let Some(summary) = stage_health_summary {
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new("Stage health").small().weak());
+            ui.label(egui::RichText::new(summary).small().monospace());
+        }
 
         ui.add_space(6.0);
 
@@ -1118,6 +1151,33 @@ impl HubApp {
                     .clone()
                     .unwrap_or_else(|| "Runtime latency degraded".to_string()),
                 intent: theme::Intent::Warning,
+                screen_target: Some(Screen::Visualization),
+                tab_target: Some(BottomTab::Runtime),
+            });
+        }
+
+        if snap.running && snap.integrity_issue_count > 0 {
+            rows.push(ProblemRow {
+                message: if snap.pipeline_integrity_degraded {
+                    snap.stage_health_summary.clone().unwrap_or_else(|| {
+                        format!(
+                            "Pipeline integrity degraded ({} issues)",
+                            snap.integrity_issue_count
+                        )
+                    })
+                } else {
+                    snap.stage_health_summary.clone().unwrap_or_else(|| {
+                        format!(
+                            "Pipeline integrity warning ({} issues)",
+                            snap.integrity_issue_count
+                        )
+                    })
+                },
+                intent: if snap.pipeline_integrity_degraded {
+                    theme::Intent::Danger
+                } else {
+                    theme::Intent::Warning
+                },
                 screen_target: Some(Screen::Visualization),
                 tab_target: Some(BottomTab::Runtime),
             });

@@ -30,7 +30,7 @@ use neurohid_types::{
     signal::{FeatureVector, Sample},
 };
 
-use crate::service::{ServiceState, SignalCommand};
+use crate::service::{IntegrityStage, ServiceState, SignalCommand};
 use crate::tasks::latency::RollingLatency;
 
 /// Default key for samples without a source_id (e.g., mock device).
@@ -44,6 +44,19 @@ enum StreamRoute {
     Motion,
     Auxiliary,
     Unknown,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SignalSequenceIssue {
+    Gap {
+        previous: u64,
+        current: u64,
+        missing: u64,
+    },
+    Regression {
+        previous: u64,
+        current: u64,
+    },
 }
 
 /// Per-stream processing state.
@@ -213,7 +226,7 @@ impl StreamBuffer {
         self.preprocessing_summary = Self::preprocessing_summary(config);
     }
 
-    fn update_sample_rate_estimate(&mut self, sample: &Sample) {
+    fn update_sample_rate_estimate(&mut self, sample: &Sample) -> Option<(i64, i64)> {
         let timestamp = sample.device_timestamp.unwrap_or(sample.system_timestamp);
 
         if let Some(previous_timestamp) = self.last_sample_timestamp_micros {
@@ -226,30 +239,46 @@ impl StreamBuffer {
                     self.estimated_sample_rate_hz =
                         self.estimated_sample_rate_hz * 0.9 + instantaneous_rate_hz * 0.1;
                 }
+            } else {
+                self.integrity_issues = self.integrity_issues.saturating_add(1);
+                self.last_sample_timestamp_micros = Some(timestamp);
+                return Some((previous_timestamp, timestamp));
             }
         }
 
         self.last_sample_timestamp_micros = Some(timestamp);
+        None
     }
 
-    fn record_sequence(&mut self, sequence_number: Option<u64>) {
+    fn record_sequence(&mut self, sequence_number: Option<u64>) -> Option<SignalSequenceIssue> {
         let Some(sequence_number) = sequence_number else {
-            return;
+            return None;
         };
 
         if let Some(previous) = self.last_sequence_number {
             let expected = previous.saturating_add(1);
             if sequence_number > expected {
-                self.samples_dropped = self
-                    .samples_dropped
-                    .saturating_add(sequence_number.saturating_sub(expected));
+                let missing = sequence_number.saturating_sub(expected);
+                self.samples_dropped = self.samples_dropped.saturating_add(missing);
                 self.integrity_issues = self.integrity_issues.saturating_add(1);
+                self.last_sequence_number = Some(sequence_number);
+                return Some(SignalSequenceIssue::Gap {
+                    previous,
+                    current: sequence_number,
+                    missing,
+                });
             } else if sequence_number <= previous {
                 self.integrity_issues = self.integrity_issues.saturating_add(1);
+                self.last_sequence_number = Some(sequence_number);
+                return Some(SignalSequenceIssue::Regression {
+                    previous,
+                    current: sequence_number,
+                });
             }
         }
 
         self.last_sequence_number = Some(sequence_number);
+        None
     }
 
     fn drop_rate_pct(&self) -> Option<f32> {
@@ -470,6 +499,11 @@ impl SignalTask {
                     && stream.integrity_state() != "ok"
             })
             .count() as u64;
+        let total_eeg_streams = self
+            .stream_buffers
+            .keys()
+            .filter(|id| self.stream_routes.get(*id).copied() == Some(StreamRoute::Eeg))
+            .count() as u64;
 
         let mut state = self.state.write().await;
         if let Some(discovered) = state.discovered_streams.iter_mut().find(|stream| {
@@ -484,15 +518,11 @@ impl SignalTask {
             discovered.integrity_state = metrics.integrity_state.clone();
         }
 
-        state.integrity_issue_count = total_integrity_issues;
-        state.pipeline_integrity_degraded = degraded_eeg_streams > 0;
-        state.stage_health_summary = Some(if state.pipeline_integrity_degraded {
-            format!(
-                "signal:degraded ({degraded_eeg_streams} EEG stream(s), {total_integrity_issues} issues)"
-            )
-        } else {
-            "signal:ok".to_string()
-        });
+        state.set_signal_integrity_snapshot(
+            total_integrity_issues,
+            total_eeg_streams,
+            degraded_eeg_streams,
+        );
     }
 
     /// Runs the signal task until shutdown is signaled.
@@ -506,6 +536,10 @@ impl SignalTask {
             buffer_size_samples = self.config.buffer_size_samples,
             "Signal processing task started"
         );
+        {
+            let mut state = self.state.write().await;
+            state.set_stage_integrity_snapshot(IntegrityStage::Signal, 0, false);
+        }
 
         loop {
             // Apply all pending runtime config updates without blocking the stream.
@@ -609,15 +643,78 @@ impl SignalTask {
 
                                 let sample_channel_count = sample.values.len().max(1);
                                 if buffer.channel_count != sample_channel_count {
-                                    *buffer = StreamBuffer::new(
+                                    let expected_channel_count = buffer.channel_count;
+                                    buffer.channel_count = sample_channel_count;
+                                    buffer.pipeline = StreamBuffer::build_pipeline(
                                         &self.config,
                                         sample_channel_count,
                                         nominal_sample_rate_hz,
                                     );
+                                    buffer.preprocessing_summary =
+                                        StreamBuffer::preprocessing_summary(&self.config);
+                                    buffer.integrity_issues =
+                                        buffer.integrity_issues.saturating_add(1);
+                                    tracing::warn!(
+                                        event = obs::event::INTEGRITY_ISSUE,
+                                        stage = obs::stage::SIGNAL,
+                                        decision_id = obs::field::UNKNOWN,
+                                        stream_id = %stream_key,
+                                        issue = "channel_count_changed",
+                                        expected = expected_channel_count,
+                                        got = sample_channel_count,
+                                        "Signal stage channel-count mismatch detected"
+                                    );
                                 }
 
-                                buffer.update_sample_rate_estimate(&sample);
-                                buffer.record_sequence(sample.sequence_number);
+                                if let Some((previous_us, current_us)) =
+                                    buffer.update_sample_rate_estimate(&sample)
+                                {
+                                    tracing::warn!(
+                                        event = obs::event::INTEGRITY_ISSUE,
+                                        stage = obs::stage::SIGNAL,
+                                        decision_id = obs::field::UNKNOWN,
+                                        stream_id = %stream_key,
+                                        issue = "timestamp_regression",
+                                        previous_us,
+                                        current_us,
+                                        "Signal stage timestamp regression detected"
+                                    );
+                                }
+                                if let Some(sequence_issue) =
+                                    buffer.record_sequence(sample.sequence_number)
+                                {
+                                    match sequence_issue {
+                                        SignalSequenceIssue::Gap {
+                                            previous,
+                                            current,
+                                            missing,
+                                        } => {
+                                            tracing::warn!(
+                                                event = obs::event::INTEGRITY_ISSUE,
+                                                stage = obs::stage::SIGNAL,
+                                                decision_id = obs::field::UNKNOWN,
+                                                stream_id = %stream_key,
+                                                issue = "sequence_gap",
+                                                previous,
+                                                current,
+                                                missing,
+                                                "Signal stage sequence gap detected"
+                                            );
+                                        }
+                                        SignalSequenceIssue::Regression { previous, current } => {
+                                            tracing::warn!(
+                                                event = obs::event::INTEGRITY_ISSUE,
+                                                stage = obs::stage::SIGNAL,
+                                                decision_id = obs::field::UNKNOWN,
+                                                stream_id = %stream_key,
+                                                issue = "sequence_regression",
+                                                previous,
+                                                current,
+                                                "Signal stage sequence regression detected"
+                                            );
+                                        }
+                                    }
+                                }
                                 buffer.samples_received = buffer.samples_received.saturating_add(1);
                                 buffer.last_quality = sample.quality.clone();
 
@@ -644,7 +741,11 @@ impl SignalTask {
                                                         .integrity_issues
                                                         .saturating_add(1);
                                                     tracing::warn!(
+                                                        event = obs::event::INTEGRITY_ISSUE,
+                                                        stage = obs::stage::SIGNAL,
+                                                        decision_id = obs::field::UNKNOWN,
                                                         stream_id = %stream_key,
+                                                        issue = "feature_extraction_failed",
                                                         "Signal feature extraction failed: {}",
                                                         error
                                                     );
@@ -654,7 +755,11 @@ impl SignalTask {
                                                 buffer.integrity_issues =
                                                     buffer.integrity_issues.saturating_add(1);
                                                 tracing::warn!(
+                                                    event = obs::event::INTEGRITY_ISSUE,
+                                                    stage = obs::stage::SIGNAL,
+                                                    decision_id = obs::field::UNKNOWN,
                                                     stream_id = %stream_key,
+                                                    issue = "pipeline_rejected_sample",
                                                     "Signal pipeline rejected sample: {}",
                                                     error
                                                 );
@@ -663,6 +768,14 @@ impl SignalTask {
                                     } else {
                                         buffer.integrity_issues =
                                             buffer.integrity_issues.saturating_add(1);
+                                        tracing::warn!(
+                                            event = obs::event::INTEGRITY_ISSUE,
+                                            stage = obs::stage::SIGNAL,
+                                            decision_id = obs::field::UNKNOWN,
+                                            stream_id = %stream_key,
+                                            issue = "pipeline_unavailable",
+                                            "Signal pipeline unavailable for stream"
+                                        );
                                     }
                                 }
 

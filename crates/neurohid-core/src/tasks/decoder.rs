@@ -4,6 +4,7 @@
 //! training pipeline. This keeps the signal->action control loop local to Rust
 //! so HID output is not gated on Python IPC availability.
 
+use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 
@@ -24,7 +25,7 @@ use neurohid_types::{
     signal::FeatureVector,
 };
 
-use crate::service::{DecoderCommand, ServiceState};
+use crate::service::{DecoderCommand, IntegrityStage, ServiceState};
 use crate::tasks::DecisionEventRecord;
 use crate::tasks::latency::RollingLatency;
 use crate::tasks::session_logger::EpisodeLogRecord;
@@ -125,6 +126,8 @@ pub struct DecoderTask {
     decode_latency: RollingLatency,
     fallback_enabled: bool,
     decision_sequence: u64,
+    integrity_issues: u64,
+    last_window_end_by_stream: HashMap<String, i64>,
     emit_gate: EmitGate,
 }
 
@@ -221,8 +224,80 @@ impl DecoderTask {
             decode_latency: RollingLatency::new(LATENCY_WINDOW_SIZE),
             fallback_enabled,
             decision_sequence: 0,
+            integrity_issues: 0,
+            last_window_end_by_stream: HashMap::new(),
             emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Decoder)),
         }
+    }
+
+    async fn record_integrity_issue(
+        &mut self,
+        stream_id: Option<&str>,
+        issue: &str,
+        details: &str,
+    ) {
+        self.integrity_issues = self.integrity_issues.saturating_add(1);
+        let mut state = self.state.write().await;
+        state.set_stage_integrity_snapshot(IntegrityStage::Decoder, self.integrity_issues, true);
+        drop(state);
+
+        tracing::warn!(
+            event = obs::event::INTEGRITY_ISSUE,
+            stage = obs::stage::DECODER,
+            decision_id = obs::field::UNKNOWN,
+            stream_id = stream_id.unwrap_or("__default__"),
+            issue,
+            details,
+            "Decoder integrity check failed"
+        );
+    }
+
+    async fn validate_feature_integrity(&mut self, feature: &FeatureVector) -> bool {
+        let stream_key = feature.stream_id.as_deref().unwrap_or("__default__");
+
+        if feature.values.is_empty() {
+            self.record_integrity_issue(Some(stream_key), "feature_empty", "empty feature vector")
+                .await;
+            return false;
+        }
+        if feature.values.iter().any(|value| !value.is_finite()) {
+            self.record_integrity_issue(
+                Some(stream_key),
+                "feature_non_finite",
+                "feature vector contains NaN/Inf",
+            )
+            .await;
+            return false;
+        }
+        if let (Some(start), Some(end)) = (feature.window_start_us, feature.window_end_us)
+            && end < start
+        {
+            self.record_integrity_issue(
+                Some(stream_key),
+                "window_invalid",
+                "feature window_end precedes window_start",
+            )
+            .await;
+            return false;
+        }
+
+        if let Some(start) = feature.window_start_us
+            && let Some(previous_end) = self.last_window_end_by_stream.get(stream_key).copied()
+            && start < previous_end
+        {
+            self.record_integrity_issue(
+                Some(stream_key),
+                "window_regression",
+                "feature window_start regressed behind previous window_end",
+            )
+            .await;
+            return false;
+        }
+
+        let next_end = feature.window_end_us.unwrap_or(feature.timestamp);
+        self.last_window_end_by_stream
+            .insert(stream_key.to_string(), next_end);
+        true
     }
 
     pub async fn run(mut self, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
@@ -232,6 +307,10 @@ impl DecoderTask {
             stage = obs::stage::DECODER,
             "Decoder task started"
         );
+        {
+            let mut state = self.state.write().await;
+            state.set_stage_integrity_snapshot(IntegrityStage::Decoder, 0, false);
+        }
 
         self.switch_profile(self.active_profile_id.clone()).await;
 
@@ -267,6 +346,10 @@ impl DecoderTask {
                         break;
                     };
 
+                    if !self.validate_feature_integrity(&feature).await {
+                        continue;
+                    }
+
                     if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
                         tracing::debug!(
                             event = obs::event::FEATURE_WINDOW_EMITTED,
@@ -298,6 +381,39 @@ impl DecoderTask {
 
                     match inference {
                         Ok((mut action, model_version, model_kind)) => {
+                            if !action.confidence.is_finite() {
+                                self.record_integrity_issue(
+                                    feature.stream_id.as_deref(),
+                                    "confidence_non_finite",
+                                    "decoder produced non-finite confidence",
+                                )
+                                .await;
+                                self.set_runtime_mode_for_model_kind("none").await;
+                                continue;
+                            }
+                            if !(0.0..=1.0).contains(&action.confidence) {
+                                self.record_integrity_issue(
+                                    feature.stream_id.as_deref(),
+                                    "confidence_out_of_range",
+                                    "decoder confidence was outside [0, 1]",
+                                )
+                                .await;
+                                action.confidence = action.confidence.clamp(0.0, 1.0);
+                            }
+                            if let Some(mouse) = &action.mouse
+                                && let Some(movement) = &mouse.movement
+                                && (!movement.dx.is_finite() || !movement.dy.is_finite())
+                            {
+                                self.record_integrity_issue(
+                                    feature.stream_id.as_deref(),
+                                    "movement_non_finite",
+                                    "decoder action movement contained NaN/Inf",
+                                )
+                                .await;
+                                self.set_runtime_mode_for_model_kind("none").await;
+                                continue;
+                            }
+
                             self.decision_sequence = self.decision_sequence.saturating_add(1);
                             let decision_id = format!("dec_{}", self.decision_sequence);
                             action.decision_id = Some(decision_id.clone());
@@ -347,6 +463,22 @@ impl DecoderTask {
                             self.set_runtime_mode_for_model_kind(&model_kind).await;
                         },
                         Err(err) => {
+                            let issue = match &err {
+                                Error::Decoder(DecoderError::InvalidInputDimensions { .. }) => {
+                                    "feature_dim_mismatch"
+                                }
+                                Error::Decoder(DecoderError::InferenceFailed(_)) => {
+                                    "inference_failed"
+                                }
+                                _ => "decoder_error",
+                            };
+                            let details = err.to_string();
+                            self.record_integrity_issue(
+                                feature.stream_id.as_deref(),
+                                issue,
+                                &details,
+                            )
+                            .await;
                             tracing::warn!("Decoder inference failed: {}", err);
                             self.set_runtime_mode_for_model_kind("none").await;
                         }

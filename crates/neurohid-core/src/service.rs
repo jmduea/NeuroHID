@@ -39,6 +39,31 @@ pub enum SignalCommand {
     UpdateConfig(SignalConfig),
 }
 
+/// Runtime integrity stages tracked in the shared health rollup.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntegrityStage {
+    Device,
+    Signal,
+    Decoder,
+    Action,
+    Ipc,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct IntegrityStageMetrics {
+    issues: u64,
+    degraded: bool,
+}
+
+impl IntegrityStageMetrics {
+    const fn ok() -> Self {
+        Self {
+            issues: 0,
+            degraded: false,
+        }
+    }
+}
+
 /// Commands sent from the hub/runtime to the DecoderTask.
 #[derive(Debug, Clone)]
 pub enum DecoderCommand {
@@ -251,6 +276,15 @@ pub struct ServiceState {
 
     /// Human-readable stage health summary.
     pub stage_health_summary: Option<String>,
+
+    // Internal per-stage integrity rollup state.
+    integrity_device: IntegrityStageMetrics,
+    integrity_signal: IntegrityStageMetrics,
+    integrity_decoder: IntegrityStageMetrics,
+    integrity_action: IntegrityStageMetrics,
+    integrity_ipc: IntegrityStageMetrics,
+    integrity_signal_eeg_streams_total: u64,
+    integrity_signal_eeg_streams_degraded: u64,
 }
 
 impl Default for ServiceState {
@@ -310,7 +344,126 @@ impl Default for ServiceState {
             pipeline_integrity_degraded: false,
             integrity_issue_count: 0,
             stage_health_summary: None,
+            integrity_device: IntegrityStageMetrics::ok(),
+            integrity_signal: IntegrityStageMetrics::ok(),
+            integrity_decoder: IntegrityStageMetrics::ok(),
+            integrity_action: IntegrityStageMetrics::ok(),
+            integrity_ipc: IntegrityStageMetrics::ok(),
+            integrity_signal_eeg_streams_total: 0,
+            integrity_signal_eeg_streams_degraded: 0,
         }
+    }
+}
+
+impl ServiceState {
+    const INTEGRITY_CRITICAL_ISSUES_THRESHOLD: u64 = 25;
+
+    fn stage_metrics_mut(&mut self, stage: IntegrityStage) -> &mut IntegrityStageMetrics {
+        match stage {
+            IntegrityStage::Device => &mut self.integrity_device,
+            IntegrityStage::Signal => &mut self.integrity_signal,
+            IntegrityStage::Decoder => &mut self.integrity_decoder,
+            IntegrityStage::Action => &mut self.integrity_action,
+            IntegrityStage::Ipc => &mut self.integrity_ipc,
+        }
+    }
+
+    pub fn reset_integrity_rollup(&mut self) {
+        self.integrity_device = IntegrityStageMetrics::ok();
+        self.integrity_signal = IntegrityStageMetrics::ok();
+        self.integrity_decoder = IntegrityStageMetrics::ok();
+        self.integrity_action = IntegrityStageMetrics::ok();
+        self.integrity_ipc = IntegrityStageMetrics::ok();
+        self.integrity_signal_eeg_streams_total = 0;
+        self.integrity_signal_eeg_streams_degraded = 0;
+        self.recompute_integrity_rollup();
+    }
+
+    pub fn register_integrity_issue(&mut self, stage: IntegrityStage, critical: bool) {
+        let metrics = self.stage_metrics_mut(stage);
+        metrics.issues = metrics.issues.saturating_add(1);
+        metrics.degraded = metrics.degraded || critical || metrics.issues > 0;
+        self.recompute_integrity_rollup();
+    }
+
+    pub fn set_stage_integrity_snapshot(
+        &mut self,
+        stage: IntegrityStage,
+        issues: u64,
+        degraded: bool,
+    ) {
+        let metrics = self.stage_metrics_mut(stage);
+        metrics.issues = issues;
+        metrics.degraded = degraded || issues > 0;
+        self.recompute_integrity_rollup();
+    }
+
+    pub fn set_signal_integrity_snapshot(
+        &mut self,
+        issues: u64,
+        eeg_streams_total: u64,
+        eeg_streams_degraded: u64,
+    ) {
+        self.integrity_signal.issues = issues;
+        self.integrity_signal.degraded = issues > 0 || eeg_streams_degraded > 0;
+        self.integrity_signal_eeg_streams_total = eeg_streams_total;
+        self.integrity_signal_eeg_streams_degraded = eeg_streams_degraded;
+        self.recompute_integrity_rollup();
+    }
+
+    fn stage_status(metrics: IntegrityStageMetrics) -> &'static str {
+        if metrics.degraded { "degraded" } else { "ok" }
+    }
+
+    fn recompute_integrity_rollup(&mut self) {
+        self.integrity_issue_count = self
+            .integrity_device
+            .issues
+            .saturating_add(self.integrity_signal.issues)
+            .saturating_add(self.integrity_decoder.issues)
+            .saturating_add(self.integrity_action.issues)
+            .saturating_add(self.integrity_ipc.issues);
+
+        let all_eeg_impacted = self.integrity_signal_eeg_streams_total > 0
+            && self.integrity_signal_eeg_streams_degraded
+                >= self.integrity_signal_eeg_streams_total;
+        let repeated_critical =
+            self.integrity_issue_count >= Self::INTEGRITY_CRITICAL_ISSUES_THRESHOLD;
+        self.pipeline_integrity_degraded = all_eeg_impacted || repeated_critical;
+
+        let pipeline_status = if self.pipeline_integrity_degraded {
+            "degraded"
+        } else {
+            "ok"
+        };
+        let pipeline_reason = if all_eeg_impacted {
+            format!(
+                "all_eeg_impacted({}/{})",
+                self.integrity_signal_eeg_streams_degraded, self.integrity_signal_eeg_streams_total
+            )
+        } else if repeated_critical {
+            format!(
+                "critical_threshold({}/{})",
+                self.integrity_issue_count,
+                Self::INTEGRITY_CRITICAL_ISSUES_THRESHOLD
+            )
+        } else {
+            "normal".to_string()
+        };
+        self.stage_health_summary = Some(format!(
+            "pipeline:{pipeline_status}[{pipeline_reason}] \
+             device:{}({}) signal:{}({}) decoder:{}({}) action:{}({}) ipc:{}({})",
+            Self::stage_status(self.integrity_device),
+            self.integrity_device.issues,
+            Self::stage_status(self.integrity_signal),
+            self.integrity_signal.issues,
+            Self::stage_status(self.integrity_decoder),
+            self.integrity_decoder.issues,
+            Self::stage_status(self.integrity_action),
+            self.integrity_action.issues,
+            Self::stage_status(self.integrity_ipc),
+            self.integrity_ipc.issues
+        ));
     }
 }
 
@@ -632,6 +785,7 @@ impl NeuroHidService {
         let device_config = self.config.device.clone();
         let cal_tx_for_device = calibration_sample_tx.clone();
         let cal_flag_for_device = calibration_flag.as_ref().map(Arc::clone);
+        let device_observability = observability_config.clone();
         let mut device_handle = tokio::spawn(async move {
             tracing::info!("Device task starting");
             let task = DeviceTask::new(
@@ -641,6 +795,7 @@ impl NeuroHidService {
                 cal_tx_for_device,
                 cal_flag_for_device,
                 device_command_rx,
+                device_observability,
             );
             task.run(shutdown_device).await
         });
@@ -782,9 +937,7 @@ impl NeuroHidService {
             state.rolling_success_score = 1.0;
             state.fallback_policy = self.config.service.fallback_policy.clone();
             state.task_error = None;
-            state.pipeline_integrity_degraded = false;
-            state.integrity_issue_count = 0;
-            state.stage_health_summary = Some("signal:starting".to_string());
+            state.reset_integrity_rollup();
         }
 
         tracing::info!("All tasks started, service is active");
@@ -1059,6 +1212,61 @@ impl NeuroHidService {
 
         tracing::info!("Service shutdown complete");
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{IntegrityStage, ServiceState};
+
+    #[test]
+    fn integrity_rollup_stays_warning_until_escalation_threshold() {
+        let mut state = ServiceState::default();
+        state.set_signal_integrity_snapshot(3, 3, 1);
+
+        assert_eq!(state.integrity_issue_count, 3);
+        assert!(!state.pipeline_integrity_degraded);
+        assert!(
+            state
+                .stage_health_summary
+                .as_deref()
+                .is_some_and(|summary| summary.contains("signal:degraded(3)"))
+        );
+    }
+
+    #[test]
+    fn integrity_rollup_degrades_when_all_eeg_streams_are_impacted() {
+        let mut state = ServiceState::default();
+        state.set_signal_integrity_snapshot(2, 2, 2);
+
+        assert!(state.pipeline_integrity_degraded);
+        assert_eq!(state.integrity_issue_count, 2);
+        assert!(
+            state
+                .stage_health_summary
+                .as_deref()
+                .is_some_and(|summary| summary.contains("all_eeg_impacted(2/2)"))
+        );
+    }
+
+    #[test]
+    fn integrity_rollup_degrades_after_repeated_critical_violations() {
+        let mut state = ServiceState::default();
+        for _ in 0..ServiceState::INTEGRITY_CRITICAL_ISSUES_THRESHOLD {
+            state.register_integrity_issue(IntegrityStage::Ipc, false);
+        }
+
+        assert!(state.pipeline_integrity_degraded);
+        assert_eq!(
+            state.integrity_issue_count,
+            ServiceState::INTEGRITY_CRITICAL_ISSUES_THRESHOLD
+        );
+        assert!(
+            state
+                .stage_health_summary
+                .as_deref()
+                .is_some_and(|summary| summary.contains("critical_threshold"))
+        );
     }
 }
 

@@ -369,6 +369,32 @@ impl DashboardScreen {
                     } else if snap.running {
                         theme::status_chip(ui, "Latency nominal", theme::Intent::Success);
                     }
+                    theme::status_chip(
+                        ui,
+                        if snap.pipeline_integrity_degraded {
+                            "Integrity degraded"
+                        } else {
+                            "Integrity stable"
+                        },
+                        if snap.pipeline_integrity_degraded {
+                            theme::Intent::Danger
+                        } else if snap.integrity_issue_count > 0 {
+                            theme::Intent::Warning
+                        } else {
+                            theme::Intent::Success
+                        },
+                    );
+                    theme::status_chip(
+                        ui,
+                        &format!("Integrity issues {}", snap.integrity_issue_count),
+                        if snap.integrity_issue_count == 0 {
+                            theme::Intent::Muted
+                        } else if snap.pipeline_integrity_degraded {
+                            theme::Intent::Danger
+                        } else {
+                            theme::Intent::Warning
+                        },
+                    );
                     let (bridge_label, bridge_intent) = if snap.ml_bridge_connected {
                         if snap.ml_bridge_stalled {
                             ("Bridge stalled", theme::Intent::Warning)
@@ -392,6 +418,10 @@ impl DashboardScreen {
                         theme::Intent::Warning
                     };
                     theme::status_chip(ui, message, intent);
+                }
+                if let Some(summary) = &snap.stage_health_summary {
+                    ui.add_space(4.0);
+                    ui.label(egui::RichText::new(summary).small().monospace().weak());
                 }
 
                 if let Some(trainer) = &self.trainer_snapshot {
@@ -418,17 +448,24 @@ impl DashboardScreen {
                         self.open_runtime_panel_requested = true;
                     }
                     let has_task_error = snap.task_error.is_some();
+                    let has_runtime_issue = has_task_error
+                        || snap.latency_degraded
+                        || snap.integrity_issue_count > 0
+                        || snap.ml_bridge_stalled;
                     if theme::action_button(
                         ui,
                         "Open Problems Panel",
-                        has_task_error,
+                        has_runtime_issue,
                         theme::ButtonTone::Ghost,
                     ) {
                         self.open_problems_panel_requested = true;
                     }
                 });
 
-                if snap.latency_degraded || snap.task_error.is_some() {
+                if snap.latency_degraded
+                    || snap.integrity_issue_count > 0
+                    || snap.task_error.is_some()
+                {
                     ui.label(
                         egui::RichText::new(
                             "Use Runtime and Problems panels for detailed triage actions.",
