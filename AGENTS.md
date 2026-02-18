@@ -92,6 +92,15 @@ fn read_config() -> Config {
 - In Copilot/VS Code workflows, prefer hook-routed enforcement where available.
 - On Windows + VS Code agent workflows, if command rewrite hooks are not active, use explicit `rtk ...` command prefixes by default.
 
+### Branch and TDD Governance Policy
+
+- Canonical governance source of truth is `.github/automation/policy-manifest.json`.
+- Implementation work MUST occur on a non-`main` branch (or dedicated worktree) unless the user explicitly approves otherwise.
+- `main` is PR-only; do not push development commits directly to `main`.
+- For behavior changes, include explicit RED/GREEN TDD evidence in PR metadata.
+- Keep `AGENTS.md`, `CONTRIBUTING.md`, `docs/development-guide.md`, and PR template text aligned with policy manifest changes.
+- Use `pwsh -File ./.github/scripts/verify-governance-setup.ps1` before implementation and `pwsh -File ./.github/scripts/pre-push-governance-checks.ps1 -RustScope focused` before push.
+
 ### 4. Unsafe Code
 
 Every `unsafe` block MUST have a `// SAFETY:` comment:

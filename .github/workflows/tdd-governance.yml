@@ -1,0 +1,46 @@
+name: TDD Governance
+
+on:
+    pull_request:
+        branches: [main]
+        types:
+            [
+                opened,
+                edited,
+                synchronize,
+                reopened,
+                labeled,
+                unlabeled,
+                ready_for_review,
+            ]
+
+permissions:
+    contents: read
+    pull-requests: write
+
+jobs:
+    tdd-evidence:
+        name: TDD Evidence
+        runs-on: [self-hosted, linux, neurohid-ci]
+        steps:
+            - uses: actions/checkout@v4
+            - name: Validate PR governance evidence
+              id: governance
+              shell: pwsh
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+                  PR_NUMBER: ${{ github.event.pull_request.number }}
+                  PR_BODY: ${{ github.event.pull_request.body }}
+                  PR_LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+              run: ./.github/scripts/validate-pr-governance.ps1
+            - name: Apply no-test-impact label when rationale is present
+              if: steps.governance.outputs.apply_no_test_impact_label == 'true'
+              uses: actions/github-script@v7
+              with:
+                  script: |
+                      await github.rest.issues.addLabels({
+                        owner: context.repo.owner,
+                        repo: context.repo.repo,
+                        issue_number: context.payload.pull_request.number,
+                        labels: ['no-test-impact']
+                      });

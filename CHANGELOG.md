@@ -9,10 +9,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Governance policy manifest at `.github/automation/policy-manifest.json` as canonical source for branch/TDD enforcement configuration
+- Governance integrity workflow `.github/workflows/governance-integrity.yml` and validator script `.github/scripts/validate-policy-integrity.ps1` to prevent policy/workflow/doc drift
+- Governance integrity validator now checks `CHANGELOG.md` `[Unreleased]` local file/workflow references and fails on missing paths
+- Governance integrity workflow now runs fixture-based validator regression checks via `.github/scripts/test-validate-policy-integrity.ps1`
+- Fixture coverage now includes both missing-path and forbidden-claim regression cases for governance policy validation
+- PR TDD governance workflow `.github/workflows/tdd-governance.yml` and validator script `.github/scripts/validate-pr-governance.ps1` to require structured RED/GREEN evidence and test-impact rationale
+- Branch protection checklist document at `docs/automation/branch-protection-checklist.md` aligned with required status checks
+- Local governance helper scripts `.github/scripts/verify-governance-setup.ps1` and `.github/scripts/pre-push-governance-checks.ps1` for branch/setup verification and pre-push fast gates
 - Repository root dual-license texts (`LICENSE-MIT`, `LICENSE-APACHE`) to match declared workspace licensing policy
 - Device discovery→connection lifecycle design reference at `docs/plans/2026-02-15-device-discovery-connection-design.md`, including interactive/headless flow mapping and troubleshooting guidance
-- BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
-- Canonical automation backbone: `.github/automation/scope-map.json`, impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
+- BMAD-native NeuroHID automation module scaffold with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
+- Canonical automation backbone: impact classifier (`.github/scripts/classify-impact.ps1`), local/CI quality runner (`.github/scripts/run-agent-ready-tasks.ps1`), and policy validators for docs freshness, unsafe compliance, and protocol contracts
 - Coverage quality gates in CI for both Rust (`cargo llvm-cov`) and Python (`pytest-cov`) with enforced minimum line-coverage thresholds and uploaded coverage artifacts
 - Coverage reporting integration via Codecov uploads (Rust `lcov.info`, Python `coverage.xml`) and top-level README coverage badge
 - Branch policy enforcement workflow (`.github/workflows/branch-policy.yml`) with inline GitHub API validation to require PR-based updates to `main`
@@ -28,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Real IPC integration tests for connect/disconnect/reconnect transitions in `neurohid-core` and `neurohid-hub`
 - Repository-level governance templates: ADR, planning DoR/DoD, UX checklist, and PR checklist
 - Repo-local automation assets for docs freshness, architecture validation, feature planning, TDD enforcement, UX review, and Python ML review
-- CI policy workflows: docs freshness gate, architecture ADR gate, Python quality gate, and UV command policy gate
+- CI policy workflows: docs freshness gate, architecture ADR gate, and Python quality gate
 - Structured JSON tracing support for `neurohid` and `neurohid-service` with configurable output via `NEUROHID_LOG_FORMAT`
 - Hot-path data-flow tracing across runtime stages with correlation fields (`decision_id`, `stream_id`) and bounded periodic summaries
 - Control-plane tracing for service/hub request boundaries (command, request id, response kind, duration)
@@ -38,13 +46,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Dashboard candidate training/staging jobs now run through `egui-async` bindings instead of manual thread/channel plumbing, improving frame-safe async task handling consistency across Hub screens
 - Hub now integrates `egui_logger` with a toggleable in-app Runtime Logs window, and Hub binary startup now uses a combined logger bridge so log events are visible in UI while still flowing through tracing subscribers
 - Hub now includes initial `egui_kittest` smoke tests for Python Lab and Jupyter IDE controls to lock in baseline UI behavior for the new async/editor/console flows
-- Visualization migration cookbook with phased `armas` and constrained `egui_dock` adoption guidance (`docs/ux/egui-visual-migration-cookbook.md`)
-- Default multi-agent phase workflow contract at `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md` with routing precedence and completion-phase artifacts
-- Agent routing integrity workflow `.github/workflows/agent-routing-integrity.yml` with hook schema checks, route integrity checks, and fixture-based regression checks
-- Hook policy validators: `.github/hooks/validate-routing.ps1`, `.github/hooks/test-validate-routing.ps1`, and `.github/hooks/validate-doc-contracts.ps1`
+- Visualization migration cookbook with phased `armas` and constrained `egui_dock` adoption guidance
+- Default multi-agent phase workflow contract with routing precedence and completion-phase artifacts
+- Agent routing integrity checks with hook schema and fixture-based regression coverage
+- Hook policy validators for routing and documentation contract checks
 
 ### Changed
 
+- Pull request template now requires explicit TDD evidence sections (`Failing Test Intent`, `RED Evidence (Before)`, `GREEN Evidence (After)`) and a constrained `No-Test-Impact Rationale` override path
+- Development and contributor governance docs now reference policy-manifest-driven branch/TDD enforcement and updated required status checks
+- Impact classification required-check output now includes `Governance Integrity` and `TDD Evidence`
 - Private-phase CI/workflow runner policy now targets dedicated self-hosted labels (`self-hosted` + OS + `neurohid-ci`) across branch policy, CI, architecture, crate-boundaries, Python quality, release, and publish workflows, with a `ci.yml` macOS lane toggle (`ENABLE_MACOS`) to allow pragmatic macOS de-scope when needed
 - Pre-merge validation and coverage enforcement behavior is unchanged under self-hosted execution (Rust/Python quality gates plus `PYTHON_COVERAGE_MIN` and `RUST_COVERAGE_MIN` thresholds remain active)
 - Workspace `lsl-sys` patch source now uses a shared git-pinned upstream (`[patch.crates-io]` with fixed `rev`) for reproducible Linux behavior across multiple applications without repo-local vendoring
@@ -68,9 +79,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Hub now persists visualization pane arrangement, widget assignments, and layout preset across launches via UI config state
 - Mixed LSL stream handling now classifies streams by metadata and routes only EEG-like streams into decoder feature extraction, while non-EEG streams remain connected and observable without crashing the service
 - Signal feature extraction now gracefully handles low-channel streams (including 1-channel sources) by bounds-checking frontal asymmetry indices instead of panicking
-- Hub UI now uses an always-on Armas-first component layer (no runtime pilot gate), with centralized theme/style primitives in `neurohid-hub/src/theme.rs` applied across shell, screens, and primary action controls
-- Hub shell navigation now uses `armas::components::Sidebar` (floating, icon-collapsible) in `neurohid-hub/src/app.rs`, replacing the prior custom sidebar composition
-- Theme wrappers `card_frame` and `panel_frame` in `neurohid-hub/src/theme.rs` now render through `armas::components::Card` (`CardVariant::Outlined`) so screen containers inherit a single Armas-backed surface implementation
+- Hub UI now uses an always-on Armas-first component layer (no runtime pilot gate), with centralized theme/style primitives in `crates/neurohid-hub/src/theme.rs` applied across shell, screens, and primary action controls
+- Hub shell navigation now uses `armas::components::Sidebar` (floating, icon-collapsible) in `crates/neurohid-hub/src/app.rs`, replacing the prior custom sidebar composition
+- Theme wrappers `card_frame` and `panel_frame` in `crates/neurohid-hub/src/theme.rs` now render through `armas::components::Card` (`CardVariant::Outlined`) so screen containers inherit a single Armas-backed surface implementation
 - Stream Console control actions (close/clear/pause/filter-clear) now use shared Armas-backed button wrappers instead of raw `egui::Button` instances
 - Hub screen controls across Settings, Dashboard, Devices, Visualization, Python Lab, and Jupyter IDE now route through shared Armas wrappers for select/input/toggle/slider/textarea/progress interactions
 - Visualization widget toolbars (`fft_plot`, `band_power`, `time_series`, `action_preview`, `accelerometer`, `focus`, `headplot`, `spectrogram`) now use shared Armas-backed navigation/control wrappers for interaction consistency
@@ -122,5 +133,5 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- Legacy `.github/agents/**` directory and file-path based agent routing infrastructure; BMAD-native agent IDs and `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md` are now authoritative
+- Legacy `.github/agents/**` directory and file-path based agent routing infrastructure; BMAD-native agent IDs and the phase-workflow contract are now authoritative
 - Legacy in-tree Emotiv integration path (replaced by dedicated `emotiv-cortex-v2` and `emotiv-cortex-cli` crates in `https://github.com/jmduea/emotiv-cortex-rs`)

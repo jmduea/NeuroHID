@@ -6,6 +6,8 @@
 - Python `3.12+`
 - `uv` for Python environment and command execution
 
+All commands below assume the repository root as the current working directory.
+
 ## Local Setup
 
 ```bash
@@ -18,7 +20,41 @@ uv sync --directory python
 ```bash
 cargo run -p neurohid --bin neurohid
 cargo run -p neurohid --bin neurohid-service
+cargo run -p neurohid --bin neurohid-validate
 uv run --directory python neurohid-ml bridge
+```
+
+## Canonical Local Quality Gates
+
+Run the same script family used by CI jobs:
+
+```bash
+# Focused Rust gates (+ optional docs/protocol/unsafe checks)
+pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -RustScope focused -WithDocs -WithProtocol -WithUnsafe
+
+# Python-only gates
+pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -SkipRust -WithPython
+```
+
+Architecture index pre-check:
+
+```bash
+pwsh -File ./.github/scripts/generate-architecture-index.ps1
+git diff --exit-code -- docs/architecture/index.md
+```
+
+## Local Governance Guardrails
+
+Before implementation on a branch:
+
+```bash
+pwsh -File ./.github/scripts/verify-governance-setup.ps1
+```
+
+Before pushing a branch:
+
+```bash
+pwsh -File ./.github/scripts/pre-push-governance-checks.ps1 -RustScope focused
 ```
 
 ## Validation and Testing
@@ -60,6 +96,8 @@ uv run --project python mypy python/src
 
 Use these exact required status checks for `main` branch protection.
 
+Policy source of truth: `.github/automation/policy-manifest.json`.
+
 ### Baseline required checks (always)
 
 - `Enforce PR-only main updates`
@@ -71,6 +109,8 @@ Use these exact required status checks for `main` branch protection.
 - `Documentation`
 - `Python Tests`
 - `Rust Coverage`
+- `Governance Integrity`
+- `TDD Evidence`
 
 ### macOS enabled (`ENABLE_MACOS` not set to `false`)
 
@@ -109,7 +149,9 @@ gh api --method PATCH repos/jmduea/NeuroHID/branches/main/protection/required_st
   -f "contexts[]=Format" \
   -f "contexts[]=Documentation" \
   -f "contexts[]=Python Tests" \
-  -f "contexts[]=Rust Coverage"
+  -f "contexts[]=Rust Coverage" \
+  -f "contexts[]=Governance Integrity" \
+  -f "contexts[]=TDD Evidence"
 ```
 
 macOS disabled (`ENABLE_MACOS=false`):
@@ -126,10 +168,24 @@ gh api --method PATCH repos/jmduea/NeuroHID/branches/main/protection/required_st
   -f "contexts[]=Format" \
   -f "contexts[]=Documentation" \
   -f "contexts[]=Python Tests" \
-  -f "contexts[]=Rust Coverage"
+  -f "contexts[]=Rust Coverage" \
+  -f "contexts[]=Governance Integrity" \
+  -f "contexts[]=TDD Evidence"
 ```
 
 ## Automation Scripts
 
 Repository scripts under `.github/scripts/` support focused rust/python/doc/unsafe gates and
 architecture-index generation.
+
+Primary script entrypoints:
+
+- `.github/scripts/run-agent-ready-tasks.ps1`
+- `.github/scripts/classify-impact.ps1`
+- `.github/scripts/generate-architecture-index.ps1`
+
+## See Also
+
+- `README.md`
+- `docs/deployment-guide.md`
+- `docs/index.md`
