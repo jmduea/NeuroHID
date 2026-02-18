@@ -74,30 +74,6 @@ impl MetricHistory {
         }
         self.values.push_back(value);
     }
-
-    fn latest(&self) -> Option<f64> {
-        self.values.back().copied()
-    }
-
-    fn len(&self) -> usize {
-        self.values.len()
-    }
-
-    fn min_max(&self) -> Option<(f64, f64)> {
-        let mut iter = self.values.iter().copied();
-        let first = iter.next()?;
-        let mut min = first;
-        let mut max = first;
-        for value in iter {
-            if value < min {
-                min = value;
-            }
-            if value > max {
-                max = value;
-            }
-        }
-        Some((min, max))
-    }
 }
 
 impl Default for DashboardScreen {
@@ -393,46 +369,22 @@ impl DashboardScreen {
                     } else if snap.running {
                         theme::status_chip(ui, "Latency nominal", theme::Intent::Success);
                     }
-                });
-                ui.add_space(6.0);
+                    let (bridge_label, bridge_intent) = if snap.ml_bridge_connected {
+                        if snap.ml_bridge_stalled {
+                            ("Bridge stalled", theme::Intent::Warning)
+                        } else {
+                            ("Bridge connected", theme::Intent::Success)
+                        }
+                    } else {
+                        ("Bridge disconnected", theme::Intent::Muted)
+                    };
+                    theme::status_chip(ui, bridge_label, bridge_intent);
 
-                ui.horizontal_wrapped(|ui| {
-                    theme::status_chip(
-                        ui,
-                        &format!("Runtime {}", state.config.service.runtime_mode),
-                        theme::Intent::Muted,
-                    );
                     if let Some(version) = &snap.decoder_model_version {
                         theme::status_chip(ui, &format!("Model {}", version), theme::Intent::Info);
                     }
-                    if let Some(model_kind) = &snap.fallback_model_kind {
-                        theme::status_chip(
-                            ui,
-                            &format!("Path {}", model_kind),
-                            theme::Intent::Muted,
-                        );
-                    }
                 });
 
-                let capability_text = if snap.enabled_capabilities.is_empty() {
-                    "Capabilities none".to_string()
-                } else {
-                    format!("Capabilities {}", snap.enabled_capabilities.join(", "))
-                };
-                theme::status_chip(ui, &capability_text, theme::Intent::Muted);
-                if routed_total > 0 {
-                    theme::status_chip(
-                        ui,
-                        &format!(
-                            "Routes EEG {} | Motion {} | Auxiliary {} | Unknown {}",
-                            snap.routed_eeg_streams,
-                            snap.routed_motion_streams,
-                            snap.routed_auxiliary_streams,
-                            snap.routed_unknown_streams
-                        ),
-                        theme::Intent::Info,
-                    );
-                }
                 if let Some(message) = &snap.limited_capabilities_message {
                     let intent = if snap.runtime_mode_state == RuntimeModeState::Degraded {
                         theme::Intent::Danger
@@ -442,155 +394,49 @@ impl DashboardScreen {
                     theme::status_chip(ui, message, intent);
                 }
 
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Signal latency: last {} us | p95 {} us",
-                        snap.signal_latency_last_us, snap.signal_latency_p95_us
-                    ))
-                    .small()
-                    .color(egui::Color32::GRAY),
-                );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Decode latency: last {} us | p95 {} us",
-                        snap.decode_latency_last_us, snap.decode_latency_p95_us
-                    ))
-                    .small()
-                    .color(egui::Color32::GRAY),
-                );
-                ui.label(
-                    egui::RichText::new(format!(
-                        "Action latency: last {} us | p95 {} us",
-                        snap.action_latency_last_us, snap.action_latency_p95_us
-                    ))
-                    .small()
-                    .color(egui::Color32::GRAY),
-                );
+                if let Some(trainer) = &self.trainer_snapshot {
+                    let trainer_intent = if trainer.trainer_connected {
+                        theme::Intent::Info
+                    } else {
+                        theme::Intent::Warning
+                    };
+                    theme::status_chip(
+                        ui,
+                        &format!("Trainer {}", trainer.trainer_state),
+                        trainer_intent,
+                    );
+                }
 
-                if snap.latency_degraded {
-                    let message = snap
-                        .latency_alert_message
-                        .clone()
-                        .unwrap_or_else(|| "Latency thresholds exceeded".to_string());
-                    theme::status_chip(ui, &message, theme::Intent::Danger);
+                ui.add_space(8.0);
+                ui.horizontal_wrapped(|ui| {
                     if theme::action_button(
                         ui,
                         "Open Runtime Panel",
                         true,
-                        theme::ButtonTone::Ghost,
+                        theme::ButtonTone::Secondary,
                     ) {
                         self.open_runtime_panel_requested = true;
                     }
-                }
-
-                ui.add_space(8.0);
-                ui.collapsing("ML Bridge & Trainer", |ui| {
-                    let mut learning_enabled = snap.learning_enabled;
-                    ui.horizontal(|ui| {
-                        ui.label("Learning enabled");
-                        if theme::toggle_switch(
-                            ui,
-                            "dashboard_learning_enabled",
-                            &mut learning_enabled,
-                        ) {
-                            service_manager.set_learning_enabled(learning_enabled);
-                        }
-                    });
-
-                    ui.horizontal_wrapped(|ui| {
-                        let bridge_text = if snap.ml_bridge_connected {
-                            if snap.ml_bridge_stalled {
-                                "Bridge stalled"
-                            } else {
-                                "Bridge connected"
-                            }
-                        } else {
-                            "Bridge disconnected"
-                        };
-
-                        let bridge_intent = if snap.ml_bridge_connected {
-                            if snap.ml_bridge_stalled {
-                                theme::Intent::Warning
-                            } else {
-                                theme::Intent::Success
-                            }
-                        } else {
-                            theme::Intent::Muted
-                        };
-                        theme::status_chip(ui, bridge_text, bridge_intent);
-
-                        if let Some(trainer) = &self.trainer_snapshot {
-                            let trainer_intent = if trainer.trainer_connected {
-                                theme::Intent::Info
-                            } else {
-                                theme::Intent::Warning
-                            };
-                            theme::status_chip(
-                                ui,
-                                &format!("Trainer {}", trainer.trainer_state),
-                                trainer_intent,
-                            );
-                        }
-                    });
-
-                    ui.horizontal_wrapped(|ui| {
-                        let refresh_snapshot_clicked = theme::action_button(
-                            ui,
-                            "Refresh Trainer Snapshot",
-                            true,
-                            theme::ButtonTone::Ghost,
-                        );
-                        if refresh_snapshot_clicked {
-                            self.trainer_snapshot = service_manager.trainer_snapshot();
-                            self.last_trainer_snapshot_poll = Some(Instant::now());
-                        }
-                        if theme::action_button(
-                            ui,
-                            "Open Runtime Panel",
-                            true,
-                            theme::ButtonTone::Secondary,
-                        ) {
-                            self.open_runtime_panel_requested = true;
-                        }
-                    });
-
-                    if let Some(trainer) = &self.trainer_snapshot {
-                        theme::status_chip(
-                            ui,
-                            &format!(
-                                "Trainer {} | replay {} | step {}",
-                                trainer.trainer_state, trainer.replay_size, trainer.training_step
-                            ),
-                            theme::Intent::Info,
-                        );
-                        if let Some(protocol) = trainer.protocol_version {
-                            theme::status_chip(
-                                ui,
-                                &format!(
-                                    "Protocol v{} | connected {}",
-                                    protocol, trainer.trainer_connected
-                                ),
-                                theme::Intent::Muted,
-                            );
-                        }
-                        if let Some(last_error) = &trainer.last_error {
-                            theme::status_chip(ui, last_error, theme::Intent::Warning);
-                        }
-                    } else {
-                        theme::status_chip(
-                            ui,
-                            "Trainer snapshot unavailable",
-                            theme::Intent::Muted,
-                        );
-                        theme::status_chip(
-                            ui,
-                            "Bridge disconnected / no trainer response",
-                            theme::Intent::Muted,
-                        );
+                    let has_task_error = snap.task_error.is_some();
+                    if theme::action_button(
+                        ui,
+                        "Open Problems Panel",
+                        has_task_error,
+                        theme::ButtonTone::Ghost,
+                    ) {
+                        self.open_problems_panel_requested = true;
                     }
-
-                    self.show_trainer_observability(ui, snap);
                 });
+
+                if snap.latency_degraded || snap.task_error.is_some() {
+                    ui.label(
+                        egui::RichText::new(
+                            "Use Runtime and Problems panels for detailed triage actions.",
+                        )
+                        .small()
+                        .weak(),
+                    );
+                }
 
                 if let Some((task, error)) = &snap.task_error {
                     ui.add_space(8.0);
@@ -750,232 +596,6 @@ impl DashboardScreen {
         self.candidate_rejected_history.clear();
         self.recent_candidate_outcomes.clear();
         self.last_candidate_outcome = None;
-    }
-
-    fn show_trainer_observability(&self, ui: &mut egui::Ui, snap: &ServiceSnapshot) {
-        ui.add_space(8.0);
-        ui.group(|ui| {
-            ui.label(
-                egui::RichText::new("Trainer Observability")
-                    .small()
-                    .strong(),
-            );
-            ui.add_space(4.0);
-
-            ui.columns(2, |cols| {
-                Self::draw_sparkline(
-                    &mut cols[0],
-                    "Replay Size",
-                    &self.replay_size_history,
-                    egui::Color32::from_rgb(80, 170, 255),
-                    0,
-                    "",
-                );
-                Self::draw_sparkline(
-                    &mut cols[1],
-                    "Training Step",
-                    &self.training_step_history,
-                    egui::Color32::from_rgb(120, 220, 150),
-                    0,
-                    "",
-                );
-            });
-
-            ui.columns(3, |cols| {
-                Self::draw_sparkline(
-                    &mut cols[0],
-                    "Policy Loss",
-                    &self.policy_loss_history,
-                    egui::Color32::from_rgb(255, 180, 70),
-                    4,
-                    "",
-                );
-                Self::draw_sparkline(
-                    &mut cols[1],
-                    "Value Loss",
-                    &self.value_loss_history,
-                    egui::Color32::from_rgb(255, 120, 120),
-                    4,
-                    "",
-                );
-                Self::draw_sparkline(
-                    &mut cols[2],
-                    "Entropy",
-                    &self.entropy_history,
-                    egui::Color32::from_rgb(190, 140, 255),
-                    4,
-                    "",
-                );
-            });
-
-            ui.add_space(4.0);
-            ui.horizontal(|ui| {
-                ui.label(format!("Promoted: {}", snap.candidate_promotions_succeeded));
-                ui.separator();
-                ui.label(format!("Rejected: {}", snap.candidate_promotions_rejected));
-            });
-
-            let total = snap
-                .candidate_promotions_succeeded
-                .saturating_add(snap.candidate_promotions_rejected);
-            if total > 0 {
-                let success_ratio = snap.candidate_promotions_succeeded as f32 / total as f32;
-                ui.label(format!(
-                    "Candidate promotion success {:.0}% ({}/{})",
-                    success_ratio * 100.0,
-                    snap.candidate_promotions_succeeded,
-                    total
-                ));
-                let _ = theme::progress_bar(ui, success_ratio, ui.available_width());
-            }
-
-            ui.columns(2, |cols| {
-                Self::draw_sparkline(
-                    &mut cols[0],
-                    "Promoted Trend",
-                    &self.candidate_promoted_history,
-                    egui::Color32::from_rgb(80, 200, 120),
-                    0,
-                    "",
-                );
-                Self::draw_sparkline(
-                    &mut cols[1],
-                    "Rejected Trend",
-                    &self.candidate_rejected_history,
-                    egui::Color32::from_rgb(220, 90, 90),
-                    0,
-                    "",
-                );
-            });
-
-            if let Some(last) = &snap.candidate_last_outcome {
-                let intent = if last.to_ascii_lowercase().contains("rejected") {
-                    theme::Intent::Warning
-                } else {
-                    theme::Intent::Success
-                };
-                theme::status_chip(ui, last, intent);
-            }
-
-            if !self.recent_candidate_outcomes.is_empty() {
-                ui.collapsing("Recent Candidate Outcomes", |ui| {
-                    for outcome in self.recent_candidate_outcomes.iter().rev() {
-                        ui.label(
-                            egui::RichText::new(format!("- {}", outcome))
-                                .small()
-                                .color(egui::Color32::GRAY),
-                        );
-                    }
-                });
-            }
-        });
-    }
-
-    fn draw_sparkline(
-        ui: &mut egui::Ui,
-        label: &str,
-        history: &MetricHistory,
-        color: egui::Color32,
-        precision: usize,
-        suffix: &str,
-    ) {
-        ui.label(
-            egui::RichText::new(format!(
-                "{}: {}",
-                label,
-                Self::format_metric(history.latest(), precision, suffix)
-            ))
-            .small(),
-        );
-
-        let (rect, response) =
-            ui.allocate_exact_size(egui::vec2(ui.available_width(), 44.0), egui::Sense::hover());
-        let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 4.0, egui::Color32::from_rgb(17, 22, 30));
-        painter.rect_stroke(
-            rect,
-            4.0,
-            egui::Stroke::new(1.0, egui::Color32::from_rgb(45, 56, 73)),
-            egui::StrokeKind::Inside,
-        );
-
-        for division in 1..4 {
-            let y = rect.top() + rect.height() * (division as f32 / 4.0);
-            painter.hline(
-                rect.x_range(),
-                y,
-                egui::Stroke::new(0.8, egui::Color32::from_rgb(33, 42, 56)),
-            );
-        }
-
-        if history.len() < 2 {
-            painter.text(
-                rect.center(),
-                egui::Align2::CENTER_CENTER,
-                "collecting samples...",
-                egui::FontId::proportional(11.0),
-                egui::Color32::GRAY,
-            );
-            return;
-        }
-
-        let Some((min, max)) = history.min_max() else {
-            return;
-        };
-        let span = (max - min).max(1e-6);
-        let denom = (history.len().saturating_sub(1)) as f32;
-        let points: Vec<egui::Pos2> = history
-            .values
-            .iter()
-            .enumerate()
-            .map(|(idx, value)| {
-                let x = if denom <= 0.0 {
-                    rect.left()
-                } else {
-                    rect.left() + rect.width() * (idx as f32 / denom)
-                };
-                let normalized = ((*value - min) / span) as f32;
-                let y = rect.bottom() - normalized * rect.height();
-                egui::pos2(x, y)
-            })
-            .collect();
-
-        if let (Some(first), Some(last)) = (points.first().copied(), points.last().copied()) {
-            let mut area_points = Vec::with_capacity(points.len() + 2);
-            area_points.push(egui::pos2(first.x, rect.bottom()));
-            area_points.extend(points.iter().copied());
-            area_points.push(egui::pos2(last.x, rect.bottom()));
-            painter.add(egui::Shape::convex_polygon(
-                area_points,
-                color.gamma_multiply(0.16),
-                egui::Stroke::NONE,
-            ));
-        }
-
-        painter.add(egui::Shape::line(
-            points.clone(),
-            egui::Stroke::new(1.7, color),
-        ));
-
-        if let Some(last_point) = points.last() {
-            painter.circle_filled(*last_point, 2.4, color);
-        }
-
-        if response.hovered() {
-            response.on_hover_text(format!(
-                "latest {} | min {} | max {}",
-                Self::format_metric(history.latest(), precision, suffix),
-                Self::format_metric(Some(min), precision, suffix),
-                Self::format_metric(Some(max), precision, suffix)
-            ));
-        }
-    }
-
-    fn format_metric(value: Option<f64>, precision: usize, suffix: &str) -> String {
-        match value {
-            Some(v) => format!("{:.*}{}", precision, v, suffix),
-            None => "n/a".to_string(),
-        }
     }
 }
 

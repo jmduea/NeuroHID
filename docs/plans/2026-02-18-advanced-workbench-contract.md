@@ -7,11 +7,11 @@ This contract applies to `UiMode::Advanced` in `neurohid-hub`.
 
 ## Shell Regions
 
-1. Activity rail (left-most): selects context lanes.
-2. Sidebar (left): shows lane-scoped navigation and tools.
-3. Center panel: active screen/editor surface.
-4. Bottom panel: tabbed utility surface (`Console`, `Logs`, `Runtime`, `Problems`).
-5. Status bar: low-noise runtime summary + deterministic panel actions.
+1. Primary sidebar (left): single-column shell with top lane strip, lane-scoped navigation,
+   and bottom-pinned settings anchor.
+2. Center panel: active screen/editor surface.
+3. Bottom panel: tabbed utility surface (`Problems`, `Runtime`, `Logs`, `Console`).
+4. Status bar: low-noise runtime summary + deterministic panel actions.
 
 ## Context Lanes
 
@@ -22,11 +22,13 @@ This contract applies to `UiMode::Advanced` in `neurohid-hub`.
 
 ## Interaction Contract
 
-1. Status bar right actions switch/toggle bottom tabs.
+1. Status bar right actions switch/toggle bottom tabs in fixed order:
+   `Problems`, `Runtime`, `Logs`, `Console`.
 2. Runtime triage content is first-class in the bottom panel.
 3. Detached runtime log window is replaced in Advanced mode by bottom `Logs` tab.
 4. Stream console can render embedded in bottom `Console` tab.
 5. Command palette (`Ctrl+Shift+P`) dispatches common workbench and runtime actions.
+6. Advanced mode does not render a separate activity rail panel.
 
 ## Keyboard Navigation
 
@@ -44,3 +46,10 @@ This contract applies to `UiMode::Advanced` in `neurohid-hub`.
 1. Advanced mode visually reads as an IDE workbench.
 2. Live Ops triage does not require modal windows.
 3. Cross-surface navigation is low-friction from status, problems, and command palette.
+
+## Workflow SLA
+
+1. From runtime warning signal to actionable triage control should take no more than
+   3 user interactions in Advanced mode.
+2. Detailed runtime troubleshooting should be completable from bottom `Runtime`/`Problems`
+   tabs without mandatory screen hopping.

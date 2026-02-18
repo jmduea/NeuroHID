@@ -33,7 +33,6 @@ pub enum OperationState {
 }
 
 pub const WORKBENCH_STATUS_BAR_HEIGHT: f32 = 30.0;
-pub const WORKBENCH_ACTIVITY_RAIL_WIDTH: f32 = 44.0;
 pub const WORKBENCH_BOTTOM_MIN_HEIGHT: f32 = 150.0;
 pub const WORKBENCH_BOTTOM_MAX_HEIGHT: f32 = 460.0;
 pub const WORKBENCH_STATUS_DIVIDER_GAP: f32 = 12.0;
@@ -196,10 +195,6 @@ pub fn operation_state_chip(ui: &mut egui::Ui, subject: &str, state: OperationSt
 
 pub fn workbench_surface_fill_ctx(ctx: &egui::Context) -> Color32 {
     ctx.style().visuals.window_fill.gamma_multiply(0.97)
-}
-
-pub fn workbench_rail_fill_ctx(ctx: &egui::Context) -> Color32 {
-    ctx.style().visuals.panel_fill.gamma_multiply(0.95)
 }
 
 pub fn workbench_divider_color(ui: &egui::Ui) -> Color32 {

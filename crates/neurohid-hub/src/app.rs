@@ -257,41 +257,37 @@ impl HubApp {
     }
 
     fn show_sidebar(&mut self, ctx: &egui::Context) {
-        let panel_width = self.sidebar_state.width().clamp(48.0, 256.0);
+        let panel_width = self.sidebar_state.width().clamp(52.0, 280.0);
         let screens = self.workbench.visible_screens(&self.state.config.ui.mode);
-        let mut clicked_id: Option<String> = None;
+        let mut response = SidebarShellResponse::default();
         let sidebar_theme = ctx.armas_theme();
 
         egui::SidePanel::left("sidebar")
             .exact_width(panel_width)
             .resizable(false)
+            .show_separator_line(false)
             .frame(
                 egui::Frame::new()
                     .fill(sidebar_theme.sidebar())
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
-                clicked_id = render_sidebar_shell(
+                response = render_sidebar_shell(
                     ui,
                     &mut self.sidebar_state,
                     screens,
                     self.current_screen,
+                    self.workbench.lane,
                     self.workbench.sidebar_focus_screen,
                 );
             });
 
-        if let Some(clicked_id) = clicked_id {
-            for &screen in screens {
-                let nav_id = format!("item_0_{}", screen.label());
-                if clicked_id == nav_id {
-                    self.current_screen = screen;
-                    self.workbench.sidebar_focus_screen = None;
-                    self.workbench
-                        .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
-                    break;
-                }
-            }
-        }
+        apply_sidebar_shell_response(
+            &self.state.config.ui.mode,
+            response,
+            &mut self.workbench,
+            &mut self.current_screen,
+        );
     }
 
     fn show_status_bar(&mut self, ctx: &egui::Context) {
@@ -456,7 +452,7 @@ impl HubApp {
                 let mut right_ui = ui.new_child(
                     egui::UiBuilder::new()
                         .max_rect(right_rect)
-                        .layout(egui::Layout::right_to_left(egui::Align::Center)),
+                        .layout(egui::Layout::left_to_right(egui::Align::Center)),
                 );
                 right_ui.spacing_mut().item_spacing.x = 2.0;
 
@@ -513,12 +509,7 @@ impl HubApp {
 
                 right_ui.add_space(4.0);
                 if advanced_mode {
-                    for tab in [
-                        BottomTab::Console,
-                        BottomTab::Logs,
-                        BottomTab::Runtime,
-                        BottomTab::Problems,
-                    ] {
+                    for tab in advanced_status_bar_tabs() {
                         let selected = self.workbench.bottom_panel.visible
                             && self.workbench.bottom_panel.active_tab == tab;
                         if footer_item(&mut right_ui, tab.label(), selected, FOOTER_ITEM_WIDTH) {
@@ -548,47 +539,6 @@ impl HubApp {
             });
     }
 
-    fn show_activity_rail(&mut self, ctx: &egui::Context) {
-        if self.state.config.ui.mode != UiMode::Advanced {
-            return;
-        }
-
-        egui::SidePanel::left("activity_rail")
-            .exact_width(theme::WORKBENCH_ACTIVITY_RAIL_WIDTH)
-            .resizable(false)
-            .frame(
-                egui::Frame::new()
-                    .fill(theme::workbench_rail_fill_ctx(ctx))
-                    .inner_margin(egui::Margin::symmetric(4, 6)),
-            )
-            .show(ctx, |ui| {
-                ui.vertical(|ui| {
-                    for lane in ActivityLane::ALL {
-                        let selected = self.workbench.lane == lane;
-                        let response = ui
-                            .add(
-                                egui::Button::new(
-                                    egui::RichText::new(lane.glyph())
-                                        .strong()
-                                        .text_style(egui::TextStyle::Body),
-                                )
-                                .frame(false)
-                                .min_size(egui::vec2(30.0, 30.0))
-                                .selected(selected),
-                            )
-                            .on_hover_text(lane.label());
-                        if response.clicked() {
-                            self.workbench.set_lane(
-                                &self.state.config.ui.mode,
-                                lane,
-                                &mut self.current_screen,
-                            );
-                        }
-                    }
-                });
-            });
-    }
-
     fn show_bottom_panel(&mut self, ctx: &egui::Context) {
         if self.state.config.ui.mode != UiMode::Advanced || !self.workbench.bottom_panel.visible {
             return;
@@ -610,12 +560,7 @@ impl HubApp {
             )
             .show(ctx, |ui| {
                 ui.horizontal(|ui| {
-                    for tab in [
-                        BottomTab::Runtime,
-                        BottomTab::Problems,
-                        BottomTab::Logs,
-                        BottomTab::Console,
-                    ] {
+                    for tab in advanced_bottom_panel_tabs() {
                         let selected = self.workbench.bottom_panel.active_tab == tab;
                         if ui
                             .add(
@@ -1242,6 +1187,19 @@ impl HubApp {
             CommandPaletteAction::OpenBottomTab(tab) => {
                 self.workbench.open_bottom_tab(tab);
             }
+            CommandPaletteAction::ReconnectBridge => {
+                self.service_manager.ml_bridge_reconnect();
+                self.workbench.open_bottom_tab(BottomTab::Runtime);
+            }
+            CommandPaletteAction::RefreshRuntimeSnapshot => {
+                self.state.service_snapshot = self.service_manager.snapshot();
+                self.workbench.open_bottom_tab(BottomTab::Runtime);
+            }
+            CommandPaletteAction::ApplyFallbackPolicy => {
+                self.service_manager
+                    .set_fallback_policy(self.state.config.service.fallback_policy.clone());
+                self.workbench.open_bottom_tab(BottomTab::Runtime);
+            }
             CommandPaletteAction::StartService => {
                 self.service_manager.start(
                     &self.runtime,
@@ -1376,39 +1334,91 @@ fn render_sidebar_shell(
     sidebar_state: &mut SidebarState,
     screens: &[Screen],
     current_screen: Screen,
+    current_lane: ActivityLane,
     keyboard_focus_screen: Option<Screen>,
-) -> Option<String> {
-    let shell_height = ui.available_height();
-    ui.set_min_height(shell_height);
+) -> SidebarShellResponse {
+    let shell_rect = ui.available_rect_before_wrap();
+    ui.set_min_height(shell_rect.height());
+    let sidebar_open = sidebar_state.is_open();
 
-    if sidebar_state.is_open() {
-        ui.label(egui::RichText::new("Platform").small().weak());
+    let footer_height = if sidebar_open { 44.0 } else { 36.0 };
+    let footer_top = (shell_rect.bottom() - footer_height).max(shell_rect.top());
+    let body_rect =
+        egui::Rect::from_min_max(shell_rect.min, egui::pos2(shell_rect.right(), footer_top));
+    let footer_rect =
+        egui::Rect::from_min_max(egui::pos2(shell_rect.left(), footer_top), shell_rect.max);
+
+    let mut body_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(body_rect)
+            .layout(egui::Layout::top_down(egui::Align::LEFT)),
+    );
+    body_ui.spacing_mut().item_spacing = if sidebar_open {
+        egui::vec2(8.0, 7.0)
+    } else {
+        egui::vec2(6.0, 5.0)
+    };
+
+    for lane in [
+        ActivityLane::Ops,
+        ActivityLane::Analysis,
+        ActivityLane::Labs,
+    ] {
+        sidebar_test_marker(&mut body_ui, lane.label());
+    }
+    sidebar_test_marker(&mut body_ui, "Settings");
+
+    let lane_selection = render_lane_strip(&mut body_ui, current_lane, sidebar_open);
+    body_ui.add_space(2.0);
+    if sidebar_open {
+        body_ui.separator();
+        body_ui.add_space(2.0);
+    }
+
+    if sidebar_open {
+        body_ui.label(egui::RichText::new("Platform").small().weak());
     }
 
     for &screen in screens {
-        sidebar_test_marker(ui, screen.label());
+        sidebar_test_marker(&mut body_ui, screen.label());
     }
 
     let platform_response = render_platform_sidebar(
-        ui,
+        &mut body_ui,
         sidebar_state,
         screens,
         current_screen,
         keyboard_focus_screen,
     );
-    if sidebar_state.is_open()
-        && let Some(focus_screen) = keyboard_focus_screen
-    {
-        ui.add_space(4.0);
+    if sidebar_open && let Some(focus_screen) = keyboard_focus_screen {
+        body_ui.add_space(4.0);
         theme::status_chip(
-            ui,
+            &mut body_ui,
             &format!("Keyboard focus {}", focus_screen.label()),
             theme::Intent::Muted,
         );
     }
-    ui.add_space(ui.available_height().max(0.0));
 
-    platform_response.clicked
+    ui.painter().hline(
+        shell_rect.x_range(),
+        footer_top,
+        egui::Stroke::new(1.0, theme::workbench_divider_color(ui).gamma_multiply(0.9)),
+    );
+
+    let mut footer_ui = ui.new_child(
+        egui::UiBuilder::new()
+            .max_rect(footer_rect)
+            .layout(egui::Layout::left_to_right(egui::Align::Center)),
+    );
+    let open_settings = render_settings_anchor(&mut footer_ui, current_lane, sidebar_state);
+
+    ui.allocate_rect(shell_rect, egui::Sense::hover());
+
+    SidebarShellResponse {
+        clicked_nav_id: platform_response.clicked,
+        lane_selection,
+        open_settings,
+    }
 }
 
 fn render_platform_sidebar(
@@ -1437,6 +1447,121 @@ fn render_platform_sidebar(
             })
     })
     .inner
+}
+
+fn render_lane_strip(
+    ui: &mut egui::Ui,
+    current_lane: ActivityLane,
+    sidebar_open: bool,
+) -> Option<ActivityLane> {
+    let mut selected_lane = None;
+    let lanes = [
+        ActivityLane::Ops,
+        ActivityLane::Analysis,
+        ActivityLane::Labs,
+    ];
+
+    if sidebar_open {
+        ui.horizontal_wrapped(|ui| {
+            for lane in lanes {
+                let button = egui::Button::new(
+                    egui::RichText::new(lane.glyph())
+                        .strong()
+                        .text_style(egui::TextStyle::Body),
+                )
+                .frame(false)
+                .min_size(egui::vec2(30.0, 30.0))
+                .selected(current_lane == lane);
+                let response = ui.add(button).on_hover_text(lane.label());
+                if response.clicked() {
+                    selected_lane = Some(lane);
+                }
+            }
+        });
+    } else {
+        ui.vertical_centered(|ui| {
+            for lane in lanes {
+                let button = egui::Button::new(
+                    egui::RichText::new(lane.glyph())
+                        .strong()
+                        .text_style(egui::TextStyle::Body),
+                )
+                .frame(false)
+                .min_size(egui::vec2(28.0, 28.0))
+                .selected(current_lane == lane);
+                let response = ui.add(button).on_hover_text(lane.label());
+                if response.clicked() {
+                    selected_lane = Some(lane);
+                }
+            }
+        });
+    }
+
+    selected_lane
+}
+
+fn render_settings_anchor(
+    ui: &mut egui::Ui,
+    current_lane: ActivityLane,
+    sidebar_state: &SidebarState,
+) -> bool {
+    let sidebar_open = sidebar_state.is_open();
+    let label = if sidebar_open { "⚙ Settings" } else { "⚙" };
+    ui.add_space(4.0);
+    let min_width = if sidebar_open {
+        (ui.available_width() - 4.0).max(32.0)
+    } else {
+        30.0
+    };
+    ui.add(
+        egui::Button::new(
+            egui::RichText::new(label)
+                .strong()
+                .text_style(egui::TextStyle::Body),
+        )
+        .frame(false)
+        .min_size(egui::vec2(min_width, 28.0))
+        .selected(current_lane == ActivityLane::Config),
+    )
+    .on_hover_text("Settings")
+    .clicked()
+}
+
+#[derive(Debug, Clone, Default)]
+struct SidebarShellResponse {
+    clicked_nav_id: Option<String>,
+    lane_selection: Option<ActivityLane>,
+    open_settings: bool,
+}
+
+fn apply_sidebar_shell_response(
+    mode: &UiMode,
+    response: SidebarShellResponse,
+    workbench: &mut WorkbenchState,
+    current_screen: &mut Screen,
+) {
+    if let Some(lane) = response.lane_selection {
+        workbench.set_lane(mode, lane, current_screen);
+        workbench.sidebar_focus_screen = None;
+    }
+
+    if response.open_settings {
+        workbench.set_lane(mode, ActivityLane::Config, current_screen);
+        *current_screen = Screen::Settings;
+        workbench.sidebar_focus_screen = None;
+    }
+
+    if let Some(clicked_id) = response.clicked_nav_id {
+        for &screen in workbench.visible_screens(mode) {
+            let nav_id = format!("item_0_{}", screen.label());
+            if clicked_id == nav_id {
+                *current_screen = screen;
+                workbench.sidebar_focus_screen = None;
+                workbench.sync_lane_from_screen(mode, *current_screen);
+                break;
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1489,7 +1614,6 @@ impl eframe::App for HubApp {
         // Panel ordering matters in egui: top/bottom panels should be shown
         // before side panels so side content does not get clipped at the bottom.
         self.show_status_bar(ctx);
-        self.show_activity_rail(ctx);
         self.show_sidebar(ctx);
         self.show_bottom_panel(ctx);
 
@@ -1920,6 +2044,9 @@ enum CommandPaletteAction {
     OpenScreen(Screen),
     ToggleBottomPanel,
     OpenBottomTab(BottomTab),
+    ReconnectBridge,
+    RefreshRuntimeSnapshot,
+    ApplyFallbackPolicy,
     StartService,
     StopService,
     PrepareEnvironment,
@@ -1998,6 +2125,21 @@ fn command_palette_items(service_running: bool) -> Vec<CommandPaletteItem> {
             action: CommandPaletteAction::OpenBottomTab(BottomTab::Console),
         },
         CommandPaletteItem {
+            label: "Reconnect Bridge",
+            keywords: "runtime bridge reconnect recover",
+            action: CommandPaletteAction::ReconnectBridge,
+        },
+        CommandPaletteItem {
+            label: "Refresh Runtime Snapshot",
+            keywords: "runtime snapshot refresh status",
+            action: CommandPaletteAction::RefreshRuntimeSnapshot,
+        },
+        CommandPaletteItem {
+            label: "Apply Fallback Policy",
+            keywords: "runtime fallback policy",
+            action: CommandPaletteAction::ApplyFallbackPolicy,
+        },
+        CommandPaletteItem {
             label: "Prepare Jupyter Environment",
             keywords: "jupyter bootstrap prepare environment",
             action: CommandPaletteAction::PrepareEnvironment,
@@ -2036,6 +2178,24 @@ fn command_palette_items(service_running: bool) -> Vec<CommandPaletteItem> {
     items
 }
 
+fn advanced_status_bar_tabs() -> [BottomTab; 4] {
+    [
+        BottomTab::Problems,
+        BottomTab::Runtime,
+        BottomTab::Logs,
+        BottomTab::Console,
+    ]
+}
+
+fn advanced_bottom_panel_tabs() -> [BottomTab; 4] {
+    [
+        BottomTab::Problems,
+        BottomTab::Runtime,
+        BottomTab::Logs,
+        BottomTab::Console,
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use armas::components::SidebarState;
@@ -2046,8 +2206,9 @@ mod tests {
     use crate::workbench::{ActivityLane, BottomTab, WorkbenchState, screens_for_lane};
 
     use super::{
-        ProblemRow, build_device_health_problem_row, normalize_problem_rows, problem_severity_rank,
-        render_sidebar_shell,
+        ProblemRow, SidebarShellResponse, advanced_bottom_panel_tabs, advanced_status_bar_tabs,
+        apply_sidebar_shell_response, build_device_health_problem_row, command_palette_items,
+        normalize_problem_rows, problem_severity_rank, render_sidebar_shell,
     };
 
     struct SidebarHarnessState {
@@ -2063,6 +2224,7 @@ mod tests {
                     &mut state.sidebar_state,
                     Screen::all_for_mode(&UiMode::Advanced),
                     Screen::Dashboard,
+                    ActivityLane::Ops,
                     None,
                 );
             },
@@ -2098,6 +2260,7 @@ mod tests {
                     &mut state.sidebar_state,
                     Screen::all_for_mode(&UiMode::Advanced),
                     Screen::Dashboard,
+                    ActivityLane::Ops,
                     None,
                 );
             },
@@ -2118,6 +2281,7 @@ mod tests {
                     &mut state.sidebar_state,
                     screens_for_lane(ActivityLane::Labs),
                     Screen::PythonLab,
+                    ActivityLane::Labs,
                     None,
                 );
             },
@@ -2141,6 +2305,10 @@ mod tests {
 
         workbench.toggle_bottom_tab(BottomTab::Runtime);
         assert!(!workbench.bottom_panel.visible);
+
+        workbench.toggle_bottom_tab(BottomTab::Runtime);
+        assert!(workbench.bottom_panel.visible);
+        assert_eq!(workbench.bottom_panel.active_tab, BottomTab::Runtime);
     }
 
     #[test]
@@ -2152,6 +2320,7 @@ mod tests {
                     &mut state.sidebar_state,
                     Screen::all_for_mode(&UiMode::Advanced),
                     Screen::Dashboard,
+                    ActivityLane::Ops,
                     Some(Screen::Dashboard),
                 );
             },
@@ -2339,5 +2508,95 @@ mod tests {
         assert_eq!(row.intent, crate::theme::Intent::Danger);
         assert_eq!(row.tab_target, Some(BottomTab::Runtime));
         assert_eq!(row.screen_target, Some(Screen::Devices));
+    }
+
+    #[test]
+    fn sidebar_renders_lane_strip_entries() {
+        let harness = Harness::new_ui_state(
+            |ui, state: &mut SidebarHarnessState| {
+                let _ = render_sidebar_shell(
+                    ui,
+                    &mut state.sidebar_state,
+                    Screen::all_for_mode(&UiMode::Advanced),
+                    Screen::Dashboard,
+                    ActivityLane::Ops,
+                    None,
+                );
+            },
+            SidebarHarnessState {
+                sidebar_state: SidebarState::new(true),
+            },
+        );
+
+        assert!(harness.query_all_by_label("Ops").next().is_some());
+        assert!(harness.query_all_by_label("Analysis").next().is_some());
+        assert!(harness.query_all_by_label("Labs").next().is_some());
+        assert!(harness.query_all_by_label("Settings").next().is_some());
+    }
+
+    #[test]
+    fn sidebar_lane_selection_action_switches_screen_scope() {
+        let mut workbench = WorkbenchState::default();
+        let mut current_screen = Screen::Dashboard;
+
+        apply_sidebar_shell_response(
+            &UiMode::Advanced,
+            SidebarShellResponse {
+                lane_selection: Some(ActivityLane::Labs),
+                ..SidebarShellResponse::default()
+            },
+            &mut workbench,
+            &mut current_screen,
+        );
+
+        assert_eq!(workbench.lane, ActivityLane::Labs);
+        assert_eq!(current_screen, Screen::PythonLab);
+    }
+
+    #[test]
+    fn sidebar_settings_action_opens_config_lane() {
+        let mut workbench = WorkbenchState::default();
+        let mut current_screen = Screen::Dashboard;
+
+        apply_sidebar_shell_response(
+            &UiMode::Advanced,
+            SidebarShellResponse {
+                open_settings: true,
+                ..SidebarShellResponse::default()
+            },
+            &mut workbench,
+            &mut current_screen,
+        );
+
+        assert_eq!(workbench.lane, ActivityLane::Config);
+        assert_eq!(current_screen, Screen::Settings);
+    }
+
+    #[test]
+    fn command_palette_exposes_runtime_quick_actions() {
+        let labels: Vec<&str> = command_palette_items(true)
+            .into_iter()
+            .map(|item| item.label)
+            .collect();
+
+        assert!(labels.contains(&"Reconnect Bridge"));
+        assert!(labels.contains(&"Refresh Runtime Snapshot"));
+        assert!(labels.contains(&"Apply Fallback Policy"));
+    }
+
+    #[test]
+    fn advanced_status_and_bottom_tabs_share_order() {
+        let status_tabs: Vec<&str> = advanced_status_bar_tabs()
+            .into_iter()
+            .map(BottomTab::label)
+            .collect();
+        let bottom_tabs: Vec<&str> = advanced_bottom_panel_tabs()
+            .into_iter()
+            .map(BottomTab::label)
+            .collect();
+
+        let expected = vec!["Problems", "Runtime", "Logs", "Console"];
+        assert_eq!(status_tabs, expected);
+        assert_eq!(bottom_tabs, expected);
     }
 }
