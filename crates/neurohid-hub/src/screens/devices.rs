@@ -35,7 +35,7 @@ impl DevicesScreen {
         theme::page_header(
             ui,
             "Devices",
-            "Discover, connect, and monitor available streams",
+            "Discover, connect, and monitor available LSL streams",
         );
 
         let snap = &state.service_snapshot;
@@ -94,13 +94,14 @@ impl DevicesScreen {
                 } else {
                     theme::status_chip(ui, "Device idle", theme::Intent::Muted);
                 }
+                theme::status_chip(ui, "LSL-first scope", theme::Intent::Info);
             });
         });
         ui.add_space(8.0);
 
         // Header with rescan button
         ui.horizontal(|ui| {
-            ui.heading("Available Streams");
+            ui.heading("Available Streams (LSL-first)");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if theme::action_button(ui, "Rescan", true, theme::ButtonTone::Primary) {
                     service_manager.rescan_streams();
@@ -117,6 +118,11 @@ impl DevicesScreen {
                     ui,
                     "Ensure device software is pushing to LSL; use Rescan to check manually",
                     theme::Intent::Warning,
+                );
+                theme::status_chip(
+                    ui,
+                    "Serial/BrainFlow parity is planned in later phases",
+                    theme::Intent::Muted,
                 );
                 theme::status_chip(
                     ui,
@@ -211,6 +217,19 @@ impl DevicesScreen {
 
         // Battery: take the first non-None battery reading from any stream in the group
         let battery = streams.iter().find_map(|s| s.battery_percent);
+        let average_drop_pct = {
+            let values: Vec<f32> = streams.iter().filter_map(|s| s.drop_rate_pct).collect();
+            if values.is_empty() {
+                None
+            } else {
+                Some(values.iter().sum::<f32>() / values.len() as f32)
+            }
+        };
+        let worst_staleness_ms = streams.iter().filter_map(|s| s.last_sample_age_ms).max();
+        let degraded_streams = streams
+            .iter()
+            .filter(|s| s.integrity_state.as_deref() == Some("degraded"))
+            .count();
 
         // Device-level status indicator
         let status_text = if all_connected {
@@ -242,6 +261,27 @@ impl DevicesScreen {
                         theme::Intent::Danger
                     };
                     theme::status_chip(ui, &format!("Battery {}%", bat), battery_intent);
+                }
+                if let Some(drop_pct) = average_drop_pct {
+                    theme::status_chip(
+                        ui,
+                        &format!("Avg drop {:.1}%", drop_pct),
+                        drop_rate_intent(Some(drop_pct)),
+                    );
+                }
+                if let Some(staleness_ms) = worst_staleness_ms {
+                    theme::status_chip(
+                        ui,
+                        &format!("Worst age {}ms", staleness_ms),
+                        staleness_intent(Some(staleness_ms)),
+                    );
+                }
+                if degraded_streams > 0 {
+                    theme::status_chip(
+                        ui,
+                        &format!("Integrity degraded {}", degraded_streams),
+                        theme::Intent::Warning,
+                    );
                 }
             });
             ui.label(
@@ -345,6 +385,8 @@ impl DevicesScreen {
                 .color(egui::Color32::LIGHT_GRAY),
             );
         });
+        show_stream_runtime_chips(ui, stream, 32.0);
+        show_preprocessing_and_integrity(ui, stream, 32.0);
         ui.horizontal(|ui| {
             ui.add_space(32.0); // indent button
             if stream.connected {
@@ -427,6 +469,8 @@ impl DevicesScreen {
                     .color(egui::Color32::LIGHT_GRAY),
                 );
             });
+            show_stream_runtime_chips(ui, stream, 0.0);
+            show_preprocessing_and_integrity(ui, stream, 0.0);
             ui.add_space(4.0);
             // Connect/Disconnect button
             if stream.connected {
@@ -506,5 +550,191 @@ pub(crate) fn derive_device_label(streams: &[&DiscoveredStream], source_id: &str
         format!("{}…", &source_id[..24])
     } else {
         source_id.to_string()
+    }
+}
+
+fn stream_route_hint(stream: &DiscoveredStream) -> &'static str {
+    let name = stream.name.to_ascii_lowercase();
+    let stream_type = stream.stream_type.to_ascii_lowercase();
+    let id = stream.id.to_ascii_lowercase();
+    let combined = format!("{stream_type} {name} {id}");
+
+    if ["motion", "acc", "imu", "gyro"]
+        .iter()
+        .any(|token| combined.contains(token))
+    {
+        return "motion";
+    }
+
+    if [
+        "quality",
+        "metric",
+        "bandpower",
+        "mental",
+        "facial",
+        "marker",
+        "command",
+        "devicequality",
+    ]
+    .iter()
+    .any(|token| combined.contains(token))
+    {
+        return "auxiliary";
+    }
+
+    if combined.contains("eeg") && stream.channel_count >= 2 {
+        return "eeg";
+    }
+
+    "unknown"
+}
+
+fn route_intent(route: &str) -> theme::Intent {
+    match route {
+        "eeg" => theme::Intent::Success,
+        "motion" => theme::Intent::Info,
+        "auxiliary" => theme::Intent::Warning,
+        _ => theme::Intent::Muted,
+    }
+}
+
+fn drop_rate_intent(drop_rate_pct: Option<f32>) -> theme::Intent {
+    match drop_rate_pct.unwrap_or_default() {
+        value if value < 1.0 => theme::Intent::Success,
+        value if value < 5.0 => theme::Intent::Warning,
+        _ => theme::Intent::Danger,
+    }
+}
+
+fn staleness_intent(staleness_ms: Option<u64>) -> theme::Intent {
+    match staleness_ms {
+        Some(value) if value <= 250 => theme::Intent::Success,
+        Some(value) if value <= 1_000 => theme::Intent::Warning,
+        Some(_) => theme::Intent::Danger,
+        None => theme::Intent::Muted,
+    }
+}
+
+fn show_stream_runtime_chips(ui: &mut egui::Ui, stream: &DiscoveredStream, indent_px: f32) {
+    ui.horizontal_wrapped(|ui| {
+        if indent_px > 0.0 {
+            ui.add_space(indent_px);
+        }
+
+        let route = stream_route_hint(stream);
+        theme::status_chip(ui, &format!("Route {}", route), route_intent(route));
+
+        if let Some(effective_hz) = stream.effective_sample_rate_hz {
+            theme::status_chip(
+                ui,
+                &format!("Eff {:.1} Hz", effective_hz),
+                theme::Intent::Info,
+            );
+        }
+
+        theme::status_chip(
+            ui,
+            &format!(
+                "Drop {}",
+                stream
+                    .drop_rate_pct
+                    .map(|value| format!("{value:.1}%"))
+                    .unwrap_or_else(|| "n/a".to_string())
+            ),
+            drop_rate_intent(stream.drop_rate_pct),
+        );
+
+        theme::status_chip(
+            ui,
+            &format!(
+                "Age {}",
+                stream
+                    .last_sample_age_ms
+                    .map(|value| format!("{value}ms"))
+                    .unwrap_or_else(|| "n/a".to_string())
+            ),
+            staleness_intent(stream.last_sample_age_ms),
+        );
+    });
+}
+
+fn show_preprocessing_and_integrity(ui: &mut egui::Ui, stream: &DiscoveredStream, indent_px: f32) {
+    ui.horizontal_wrapped(|ui| {
+        if indent_px > 0.0 {
+            ui.add_space(indent_px);
+        }
+
+        if let Some(summary) = &stream.preprocessing_summary {
+            theme::status_chip(ui, &format!("Preproc {}", summary), theme::Intent::Muted);
+        } else {
+            theme::status_chip(ui, "Preproc pending", theme::Intent::Muted);
+        }
+
+        let integrity = stream.integrity_state.as_deref().unwrap_or("unknown");
+        let integrity_intent = match integrity {
+            "ok" => theme::Intent::Success,
+            "degraded" => theme::Intent::Warning,
+            _ => theme::Intent::Muted,
+        };
+        theme::status_chip(ui, &format!("Integrity {integrity}"), integrity_intent);
+    });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{
+        DiscoveredStream, derive_device_label, drop_rate_intent, staleness_intent,
+        stream_route_hint,
+    };
+    use crate::theme::Intent;
+
+    fn make_stream(name: &str, stream_type: &str, channel_count: i32) -> DiscoveredStream {
+        DiscoveredStream {
+            id: format!("src::{name}"),
+            name: name.to_string(),
+            stream_type: stream_type.to_string(),
+            channel_count,
+            sample_rate: 128.0,
+            connected: true,
+            battery_percent: None,
+            channel_quality: None,
+            source_id: Some("src".to_string()),
+            effective_sample_rate_hz: None,
+            samples_received: None,
+            samples_dropped: None,
+            drop_rate_pct: None,
+            last_sample_age_ms: None,
+            preprocessing_summary: None,
+            integrity_state: None,
+        }
+    }
+
+    #[test]
+    fn route_hint_detects_eeg_motion_and_auxiliary_streams() {
+        let eeg = make_stream("EmotivEEG", "EEG", 5);
+        let motion = make_stream("EmotivMotion", "Motion", 3);
+        let auxiliary = make_stream("EmotivMentalCommands", "MentalCommand", 1);
+
+        assert_eq!(stream_route_hint(&eeg), "eeg");
+        assert_eq!(stream_route_hint(&motion), "motion");
+        assert_eq!(stream_route_hint(&auxiliary), "auxiliary");
+    }
+
+    #[test]
+    fn intent_thresholds_for_drop_and_staleness_are_stable() {
+        assert_eq!(drop_rate_intent(Some(0.2)), Intent::Success);
+        assert_eq!(drop_rate_intent(Some(2.0)), Intent::Warning);
+        assert_eq!(drop_rate_intent(Some(8.0)), Intent::Danger);
+        assert_eq!(staleness_intent(Some(120)), Intent::Success);
+        assert_eq!(staleness_intent(Some(900)), Intent::Warning);
+        assert_eq!(staleness_intent(Some(5_000)), Intent::Danger);
+    }
+
+    #[test]
+    fn derive_device_label_uses_shared_prefix_when_available() {
+        let eeg = make_stream("EmotivEEG", "EEG", 5);
+        let motion = make_stream("EmotivMotion", "Motion", 3);
+        let streams = vec![&eeg, &motion];
+        assert_eq!(derive_device_label(&streams, "src"), "Emotiv");
     }
 }

@@ -41,6 +41,79 @@ fn matches_device_health_preset(
         && (config.quality_critical_threshold - quality_critical).abs() <= EPS
 }
 
+fn signal_preset_name(config: &neurohid_types::config::SignalConfig) -> &'static str {
+    if matches_signal_preset(
+        config, 1024, true, 60.0, true, 0.5, 45.0, true, 100.0, 500, 50,
+    ) {
+        "Balanced"
+    } else if matches_signal_preset(
+        config, 1024, true, 60.0, true, 1.0, 30.0, true, 80.0, 400, 40,
+    ) {
+        "Focus"
+    } else if matches_signal_preset(
+        config, 1024, false, 60.0, false, 0.5, 45.0, false, 100.0, 500, 50,
+    ) {
+        "Raw"
+    } else {
+        "Custom"
+    }
+}
+
+#[expect(
+    clippy::too_many_arguments,
+    reason = "Preset matcher compares compact scalar config"
+)]
+fn matches_signal_preset(
+    config: &neurohid_types::config::SignalConfig,
+    buffer_size_samples: usize,
+    notch_filter_enabled: bool,
+    notch_filter_hz: f32,
+    bandpass_filter_enabled: bool,
+    bandpass_low_hz: f32,
+    bandpass_high_hz: f32,
+    artifact_rejection_enabled: bool,
+    artifact_threshold_uv: f32,
+    feature_window_ms: u32,
+    feature_step_ms: u32,
+) -> bool {
+    const EPS: f32 = 0.000_1;
+    config.buffer_size_samples == buffer_size_samples
+        && config.notch_filter_enabled == notch_filter_enabled
+        && (config.notch_filter_hz - notch_filter_hz).abs() <= EPS
+        && config.bandpass_filter_enabled == bandpass_filter_enabled
+        && (config.bandpass_low_hz - bandpass_low_hz).abs() <= EPS
+        && (config.bandpass_high_hz - bandpass_high_hz).abs() <= EPS
+        && config.artifact_rejection_enabled == artifact_rejection_enabled
+        && (config.artifact_threshold_uv - artifact_threshold_uv).abs() <= EPS
+        && config.feature_window_ms == feature_window_ms
+        && config.feature_step_ms == feature_step_ms
+}
+
+fn apply_signal_preset(config: &mut neurohid_types::config::SignalConfig, preset: &str) -> bool {
+    let previous = config.clone();
+    match preset {
+        "Balanced" => {
+            *config = neurohid_types::config::SignalConfig::default();
+        }
+        "Focus" => {
+            *config = neurohid_types::config::SignalConfig::default();
+            config.bandpass_low_hz = 1.0;
+            config.bandpass_high_hz = 30.0;
+            config.artifact_threshold_uv = 80.0;
+            config.feature_window_ms = 400;
+            config.feature_step_ms = 40;
+        }
+        "Raw" => {
+            *config = neurohid_types::config::SignalConfig::default();
+            config.notch_filter_enabled = false;
+            config.bandpass_filter_enabled = false;
+            config.artifact_rejection_enabled = false;
+        }
+        _ => {}
+    }
+    *config != previous
+}
+
 impl Default for SettingsScreen {
     fn default() -> Self {
         Self::new()
@@ -105,6 +178,18 @@ impl SettingsScreen {
                     neurohid_types::config::DeviceBackend::BrainFlow => "Backend BrainFlow",
                 };
                 theme::status_chip(ui, backend_label, theme::Intent::Muted);
+                theme::status_chip(ui, "LSL-first telemetry UX", theme::Intent::Info);
+                if matches!(
+                    state.config.device.backend,
+                    neurohid_types::config::DeviceBackend::Serial
+                        | neurohid_types::config::DeviceBackend::BrainFlow
+                ) {
+                    theme::status_chip(
+                        ui,
+                        "Serial/BrainFlow parity is phased later",
+                        theme::Intent::Warning,
+                    );
+                }
 
                 theme::status_chip(
                     ui,
@@ -237,6 +322,11 @@ impl SettingsScreen {
                     }
 
                     if matches!(cfg.backend, neurohid_types::config::DeviceBackend::Serial) {
+                        theme::status_chip(
+                            ui,
+                            "Serial backend remains functional; deep telemetry parity is phased",
+                            theme::Intent::Warning,
+                        );
                         ui.horizontal(|ui| {
                             ui.label("Serial port:");
                             let serial_cfg = cfg.serial.get_or_insert_with(Default::default);
@@ -303,6 +393,11 @@ impl SettingsScreen {
                         cfg.backend,
                         neurohid_types::config::DeviceBackend::BrainFlow
                     ) {
+                        theme::status_chip(
+                            ui,
+                            "BrainFlow backend remains functional; deep telemetry parity is phased",
+                            theme::Intent::Warning,
+                        );
                         ui.horizontal(|ui| {
                             ui.label("Board id:");
                             let bf_cfg = cfg.brainflow.get_or_insert_with(Default::default);
@@ -392,6 +487,92 @@ impl SettingsScreen {
                     let mut changed = false;
                     let cfg = &mut state.config.signal;
 
+                    ui.horizontal_wrapped(|ui| {
+                        ui.label("Presets:");
+                        if theme::action_button(ui, "Balanced", true, theme::ButtonTone::Secondary)
+                            && apply_signal_preset(cfg, "Balanced")
+                        {
+                            changed = true;
+                        }
+                        if theme::action_button(ui, "Focus", true, theme::ButtonTone::Secondary)
+                            && apply_signal_preset(cfg, "Focus")
+                        {
+                            changed = true;
+                        }
+                        if theme::action_button(ui, "Raw", true, theme::ButtonTone::Secondary)
+                            && apply_signal_preset(cfg, "Raw")
+                        {
+                            changed = true;
+                        }
+                    });
+                    theme::status_chip(
+                        ui,
+                        &format!("Current preset: {}", signal_preset_name(cfg)),
+                        if signal_preset_name(cfg) == "Custom" {
+                            theme::Intent::Muted
+                        } else {
+                            theme::Intent::Info
+                        },
+                    );
+
+                    ui.horizontal_wrapped(|ui| {
+                        let notch_label = if cfg.notch_filter_enabled {
+                            format!("Notch {:.0}Hz", cfg.notch_filter_hz)
+                        } else {
+                            "Notch off".to_string()
+                        };
+                        theme::status_chip(
+                            ui,
+                            &notch_label,
+                            if cfg.notch_filter_enabled {
+                                theme::Intent::Info
+                            } else {
+                                theme::Intent::Muted
+                            },
+                        );
+                        let bandpass_label = if cfg.bandpass_filter_enabled {
+                            format!("Bandpass {:.1}-{:.1}Hz", cfg.bandpass_low_hz, cfg.bandpass_high_hz)
+                        } else {
+                            "Bandpass off".to_string()
+                        };
+                        theme::status_chip(
+                            ui,
+                            &bandpass_label,
+                            if cfg.bandpass_filter_enabled {
+                                theme::Intent::Info
+                            } else {
+                                theme::Intent::Muted
+                            },
+                        );
+                        let artifact_label = if cfg.artifact_rejection_enabled {
+                            format!("Artifact {:.1}uV", cfg.artifact_threshold_uv)
+                        } else {
+                            "Artifact off".to_string()
+                        };
+                        theme::status_chip(
+                            ui,
+                            &artifact_label,
+                            if cfg.artifact_rejection_enabled {
+                                theme::Intent::Info
+                            } else {
+                                theme::Intent::Muted
+                            },
+                        );
+                    });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Buffer samples:");
+                        if theme::drag_value(
+                            ui,
+                            &mut cfg.buffer_size_samples,
+                            128..=16_384,
+                            1.0,
+                            None,
+                        ) {
+                            changed = true;
+                        }
+                    });
+
                     ui.horizontal(|ui| {
                         ui.label("Notch filter:");
                         if theme::toggle_switch(
@@ -441,6 +622,32 @@ impl SettingsScreen {
                             changed = true;
                         }
                     });
+
+                    ui.horizontal(|ui| {
+                        ui.label("Artifact rejection:");
+                        if theme::toggle_switch(
+                            ui,
+                            "settings_artifact_rejection_enabled",
+                            &mut cfg.artifact_rejection_enabled,
+                        ) {
+                            changed = true;
+                        }
+                        ui.label("Threshold (uV):");
+                        if theme::drag_value(
+                            ui,
+                            &mut cfg.artifact_threshold_uv,
+                            10.0..=1_000.0,
+                            1.0,
+                            None,
+                        ) {
+                            changed = true;
+                        }
+                    });
+                    theme::status_chip(
+                        ui,
+                        "Hot-updates apply live in embedded and external runtime modes",
+                        theme::Intent::Info,
+                    );
 
                     changed
                 });
@@ -1336,5 +1543,41 @@ impl SettingsScreen {
         if signal_changed_this_frame {
             service_manager.update_signal_config(state.config.signal.clone());
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{apply_signal_preset, signal_preset_name};
+
+    #[test]
+    fn signal_preset_name_identifies_defaults_as_balanced() {
+        let config = neurohid_types::config::SignalConfig::default();
+        assert_eq!(signal_preset_name(&config), "Balanced");
+    }
+
+    #[test]
+    fn applying_focus_signal_preset_updates_expected_fields() {
+        let mut config = neurohid_types::config::SignalConfig::default();
+        assert!(apply_signal_preset(&mut config, "Focus"));
+        assert_eq!(signal_preset_name(&config), "Focus");
+        assert!(config.notch_filter_enabled);
+        assert!(config.bandpass_filter_enabled);
+        assert!(config.artifact_rejection_enabled);
+        assert_eq!(config.bandpass_low_hz, 1.0);
+        assert_eq!(config.bandpass_high_hz, 30.0);
+        assert_eq!(config.artifact_threshold_uv, 80.0);
+        assert_eq!(config.feature_window_ms, 400);
+        assert_eq!(config.feature_step_ms, 40);
+    }
+
+    #[test]
+    fn applying_raw_signal_preset_disables_preprocessing() {
+        let mut config = neurohid_types::config::SignalConfig::default();
+        assert!(apply_signal_preset(&mut config, "Raw"));
+        assert_eq!(signal_preset_name(&config), "Raw");
+        assert!(!config.notch_filter_enabled);
+        assert!(!config.bandpass_filter_enabled);
+        assert!(!config.artifact_rejection_enabled);
     }
 }
