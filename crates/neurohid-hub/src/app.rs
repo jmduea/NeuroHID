@@ -1367,16 +1367,9 @@ fn render_sidebar_shell(
         sidebar_test_marker(&mut body_ui, lane.label());
     }
     sidebar_test_marker(&mut body_ui, "Settings");
-
-    let lane_selection = render_lane_strip(&mut body_ui, current_lane, sidebar_open);
-    body_ui.add_space(2.0);
     if sidebar_open {
-        body_ui.separator();
-        body_ui.add_space(2.0);
-    }
-
-    if sidebar_open {
-        body_ui.label(egui::RichText::new("Platform").small().weak());
+        sidebar_test_marker(&mut body_ui, "Lanes");
+        sidebar_test_marker(&mut body_ui, "Platform");
     }
 
     for &screen in screens {
@@ -1388,8 +1381,17 @@ fn render_sidebar_shell(
         sidebar_state,
         screens,
         current_screen,
+        current_lane,
         keyboard_focus_screen,
     );
+    let mut lane_selection = None;
+    let mut clicked_nav_id = None;
+    if let Some(clicked_id) = platform_response.clicked {
+        lane_selection = lane_selection_from_clicked_id(&clicked_id);
+        if lane_selection.is_none() {
+            clicked_nav_id = Some(clicked_id);
+        }
+    }
     if sidebar_open && let Some(focus_screen) = keyboard_focus_screen {
         body_ui.add_space(4.0);
         theme::status_chip(
@@ -1415,7 +1417,7 @@ fn render_sidebar_shell(
     ui.allocate_rect(shell_rect, egui::Sense::hover());
 
     SidebarShellResponse {
-        clicked_nav_id: platform_response.clicked,
+        clicked_nav_id,
         lane_selection,
         open_settings,
     }
@@ -1426,78 +1428,86 @@ fn render_platform_sidebar(
     sidebar_state: &mut SidebarState,
     screens: &[Screen],
     current_screen: Screen,
+    current_lane: ActivityLane,
     keyboard_focus_screen: Option<Screen>,
 ) -> SidebarResponse {
-    ui.push_id("platform_sidebar", |ui| {
-        Sidebar::new()
-            .state(sidebar_state)
-            .variant(SidebarVariant::Sidebar)
-            .collapsible(CollapsibleMode::Icon)
-            .show(ui, |sidebar| {
-                for &screen in screens {
-                    let glyph = if keyboard_focus_screen == Some(screen) {
-                        "▸"
-                    } else {
-                        screen_glyph(screen)
-                    };
-                    sidebar
-                        .item(glyph, screen.label())
-                        .active(current_screen == screen);
-                }
-            })
-    })
-    .inner
-}
+    let sidebar_open = sidebar_state.is_open();
+    let mut hover_labels: Vec<Option<String>> = Vec::new();
+    let response = ui
+        .push_id("platform_sidebar", |ui| {
+            Sidebar::new()
+                .state(sidebar_state)
+                .variant(SidebarVariant::Sidebar)
+                .collapsible(CollapsibleMode::Icon)
+                .show(ui, |sidebar| {
+                    if sidebar_open {
+                        sidebar.group_label("Lanes");
+                        hover_labels.push(None);
+                    }
 
-fn render_lane_strip(
-    ui: &mut egui::Ui,
-    current_lane: ActivityLane,
-    sidebar_open: bool,
-) -> Option<ActivityLane> {
-    let mut selected_lane = None;
-    let lanes = [
-        ActivityLane::Ops,
-        ActivityLane::Analysis,
-        ActivityLane::Labs,
-    ];
+                    for lane in [
+                        ActivityLane::Ops,
+                        ActivityLane::Analysis,
+                        ActivityLane::Labs,
+                    ] {
+                        sidebar
+                            .item(lane.glyph(), lane.label())
+                            .active(current_lane == lane);
+                        hover_labels.push(Some(lane.label().to_string()));
+                    }
 
-    if sidebar_open {
-        ui.horizontal_wrapped(|ui| {
-            for lane in lanes {
-                let button = egui::Button::new(
-                    egui::RichText::new(lane.glyph())
-                        .strong()
-                        .text_style(egui::TextStyle::Body),
-                )
-                .frame(false)
-                .min_size(egui::vec2(30.0, 30.0))
-                .selected(current_lane == lane);
-                let response = ui.add(button).on_hover_text(lane.label());
-                if response.clicked() {
-                    selected_lane = Some(lane);
-                }
-            }
-        });
-    } else {
-        ui.vertical_centered(|ui| {
-            for lane in lanes {
-                let button = egui::Button::new(
-                    egui::RichText::new(lane.glyph())
-                        .strong()
-                        .text_style(egui::TextStyle::Body),
-                )
-                .frame(false)
-                .min_size(egui::vec2(28.0, 28.0))
-                .selected(current_lane == lane);
-                let response = ui.add(button).on_hover_text(lane.label());
-                if response.clicked() {
-                    selected_lane = Some(lane);
-                }
-            }
+                    if sidebar_open {
+                        sidebar.group_label("Platform");
+                        hover_labels.push(None);
+                    }
+
+                    for &screen in screens {
+                        let glyph = if keyboard_focus_screen == Some(screen) {
+                            ">"
+                        } else {
+                            screen_glyph(screen)
+                        };
+                        sidebar
+                            .item(glyph, screen.label())
+                            .active(current_screen == screen);
+                        hover_labels.push(Some(screen.label().to_string()));
+                    }
+                })
+        })
+        .inner;
+
+    if !response.is_expanded
+        && let Some(label) = response
+            .hovered
+            .and_then(|index| hover_labels.get(index))
+            .and_then(|entry| entry.as_deref())
+    {
+        let _ = egui::Tooltip::always_open(
+            ui.ctx().clone(),
+            ui.layer_id(),
+            egui::Id::new("platform_sidebar_icon_tip"),
+            egui::PopupAnchor::Pointer,
+        )
+        .gap(12.0)
+        .show(|ui| {
+            ui.label(label);
         });
     }
 
-    selected_lane
+    response
+}
+
+fn lane_selection_from_clicked_id(clicked_id: &str) -> Option<ActivityLane> {
+    for lane in [
+        ActivityLane::Ops,
+        ActivityLane::Analysis,
+        ActivityLane::Labs,
+    ] {
+        if clicked_id == format!("item_0_{}", lane.label()) {
+            return Some(lane);
+        }
+    }
+    None
 }
 
 fn render_settings_anchor(
@@ -1506,7 +1516,7 @@ fn render_settings_anchor(
     sidebar_state: &SidebarState,
 ) -> bool {
     let sidebar_open = sidebar_state.is_open();
-    let label = if sidebar_open { "⚙ Settings" } else { "⚙" };
+    let label = if sidebar_open { "ST Settings" } else { "ST" };
     ui.add_space(4.0);
     let min_width = if sidebar_open {
         (ui.available_width() - 4.0).max(32.0)
@@ -1761,14 +1771,14 @@ impl eframe::App for HubApp {
 
 fn screen_glyph(screen: Screen) -> &'static str {
     match screen {
-        Screen::Dashboard => "◉",
-        Screen::Visualization => "◧",
-        Screen::Devices => "⌁",
-        Screen::Profiles => "◎",
-        Screen::Calibration => "◍",
-        Screen::JupyterIde => "⟡",
-        Screen::PythonLab => "⌬",
-        Screen::Settings => "⚙",
+        Screen::Dashboard => "DB",
+        Screen::Visualization => "VZ",
+        Screen::Devices => "DV",
+        Screen::Profiles => "PF",
+        Screen::Calibration => "CL",
+        Screen::JupyterIde => "JP",
+        Screen::PythonLab => "PY",
+        Screen::Settings => "ST",
     }
 }
 

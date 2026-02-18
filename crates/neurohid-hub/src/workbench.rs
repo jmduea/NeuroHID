@@ -32,10 +32,10 @@ impl ActivityLane {
 
     pub const fn glyph(self) -> &'static str {
         match self {
-            Self::Ops => "◉",
-            Self::Analysis => "◧",
-            Self::Labs => "⌬",
-            Self::Config => "⚙",
+            Self::Ops => "OP",
+            Self::Analysis => "AN",
+            Self::Labs => "LB",
+            Self::Config => "CF",
         }
     }
 }
