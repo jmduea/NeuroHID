@@ -244,7 +244,10 @@ impl ControlResponse {
 /// Control response variants.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "IPC payload ergonomics favor one tagged enum for serde wire compatibility"
+)]
 pub enum ControlResponsePayload {
     /// Command accepted (no additional payload).
     Ack,

@@ -23,22 +23,13 @@ impl std::fmt::Display for DeviceId {
     }
 }
 
-/// TODO: Hardcode only devices that we have an integration for, otherwise discover device name/type dynamically.
 /// The type/model of a device.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DeviceType {
-    /// Emotiv Insight (5-channel consumer EEG)
-    EmotivInsight,
-    /// Emotiv EPOC+ (14-channel)
-    EmotivEpocPlus,
-    /// Emotiv EPOC X (14-channel, newer)
-    EmotivEpocX,
     /// OpenBCI Cyton (8-channel, expandable)
     OpenBCICyton,
     /// OpenBCI Ganglion (4-channel)
     OpenBCIGanglion,
-    /// Muse 2 (4-channel consumer)
-    Muse2,
     /// Mock device for testing
     Mock,
     /// Unknown or unsupported device
@@ -46,30 +37,20 @@ pub enum DeviceType {
 }
 
 impl DeviceType {
-    /// TODO: Could be derived from device metadata instead of hardcoded, let integrations provide this info if we want to hardcode it.
     /// Get the expected channel count for this device type
     pub fn expected_channel_count(&self) -> Option<usize> {
         match self {
-            DeviceType::EmotivInsight => Some(5),
-            DeviceType::EmotivEpocPlus => Some(14),
-            DeviceType::EmotivEpocX => Some(14),
-            DeviceType::OpenBCICyton => Some(8), // Can be expanded to 16
+            DeviceType::OpenBCICyton => Some(8),
             DeviceType::OpenBCIGanglion => Some(4),
-            DeviceType::Muse2 => Some(4),
-            DeviceType::Mock => None, // Configurable
+            DeviceType::Mock => None,
             DeviceType::Unknown(_) => None,
         }
     }
-    /// TODO: Same as above. Derive if possible or let integrations provide.
     /// Get the expected sampling rate for this device type
     pub fn expected_sampling_rate(&self) -> Option<f32> {
         match self {
-            DeviceType::EmotivInsight => Some(128.0),
-            DeviceType::EmotivEpocPlus => Some(128.0),
-            DeviceType::EmotivEpocX => Some(256.0),
             DeviceType::OpenBCICyton => Some(250.0),
             DeviceType::OpenBCIGanglion => Some(200.0),
-            DeviceType::Muse2 => Some(256.0),
             DeviceType::Mock => None,
             DeviceType::Unknown(_) => None,
         }

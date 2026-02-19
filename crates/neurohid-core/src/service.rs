@@ -93,11 +93,9 @@ pub struct NeuroHidService {
     config: SystemConfig,
 
     /// Profile storage handle retained for runtime profile operations.
-    #[allow(dead_code)]
     profile_store: Option<ProfileStore>,
 
     /// Active profile identifier retained for profile-aware task wiring.
-    #[allow(dead_code)]
     profile_id: Option<ProfileId>,
 
     /// Shutdown signal receiver
@@ -117,8 +115,6 @@ pub struct ServiceState {
     pub active: bool,
 
     /// Whether online learning is enabled.
-    /// Reserved for cross-task learning control wiring.
-    #[allow(dead_code)]
     pub learning_enabled: bool,
 
     /// Current signal quality (updated by device task)

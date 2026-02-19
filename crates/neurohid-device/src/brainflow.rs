@@ -1,8 +1,12 @@
-//! BrainFlow backend adapter with normalized board metadata.
+//! BrainFlow simulation adapter with normalized board metadata.
 //!
-//! The native BrainFlow SDK integration is gated by build features in downstream
-//! crates. This adapter provides a stable provider/device contract with
-//! deterministic metadata so UI and routing behavior are consistent.
+//! This adapter wraps a mock device behind the BrainFlow board catalogue so
+//! that board metadata (channels, sampling rates, resolution) matches
+//! real BrainFlow boards. No actual BrainFlow SDK is linked — the adapter
+//! is intended for offline development, UI testing, and CI.
+//!
+//! When the native BrainFlow SDK integration is needed, add the `brainflow`
+//! feature and plumb the real SDK behind this same `DeviceProvider` trait.
 
 use async_trait::async_trait;
 use futures::Stream;

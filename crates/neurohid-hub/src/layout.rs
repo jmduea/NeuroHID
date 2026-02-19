@@ -221,20 +221,6 @@ impl LayoutManager {
         self.dirty = true;
     }
 
-    #[allow(dead_code)]
-    pub fn set_pane_widget(&mut self, pane_index: usize, widget_id: WidgetId) {
-        if let Some(current) = self.pane_widget_ids.get_mut(pane_index)
-            && *current != widget_id
-        {
-            *current = widget_id;
-            if let Some(widget) = self.widget_instances.get_mut(pane_index) {
-                *widget = create_widget(widget_id);
-            }
-            self.dock_state = Self::build_dock_state(self.config, &self.pane_widget_ids);
-            self.dirty = true;
-        }
-    }
-
     pub fn take_persisted_state(&mut self) -> Option<PersistedLayoutState> {
         if !self.dirty {
             return None;

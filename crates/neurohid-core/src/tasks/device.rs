@@ -248,7 +248,7 @@ impl DeviceTask {
         let mut rescan_interval = time::interval(Duration::from_secs(10));
 
         // Initial scan
-        scan(&provider, &self.state, &active_streams).await;
+        scan(&*provider, &self.state, &active_streams).await;
 
         loop {
             tokio::select! {
@@ -261,8 +261,7 @@ impl DeviceTask {
                     match cmd {
                         DeviceCommand::Rescan => {
                             tracing::info!("Rescan requested");
-                            scan(&provider, &self.state, &active_streams).await;
-                        }
+                            scan(&*provider, &self.state, &active_streams).await;                        }
 
                         DeviceCommand::Connect(stream_id) => {
                             if active_streams.contains_key(&stream_id) {
@@ -358,7 +357,7 @@ impl DeviceTask {
                             .unwrap_or(true)
                     };
                     if should_scan {
-                        scan(&provider, &self.state, &active_streams).await;
+                        scan(&*provider, &self.state, &active_streams).await;
                     }
                 }
             }
@@ -741,9 +740,8 @@ async fn report_device_integrity_issue(
 }
 
 /// Scan for available streams and update `ServiceState::discovered_streams`.
-#[allow(clippy::borrowed_box)]
 async fn scan(
-    provider: &Box<dyn DeviceProvider>,
+    provider: &dyn DeviceProvider,
     state: &Arc<RwLock<ServiceState>>,
     active_streams: &HashMap<String, ActiveStream>,
 ) {

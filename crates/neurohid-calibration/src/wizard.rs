@@ -38,7 +38,6 @@ impl WizardState {
     }
 
     /// Goes back to the previous step — for wizard navigation buttons.
-    #[allow(dead_code)]
     pub fn go_back(&mut self) {
         // Find previous step by iterating from start
         let mut prev = CalibrationStep::SignalCheck;
@@ -55,7 +54,6 @@ impl WizardState {
     }
 
     /// Checks if the wizard is complete — for wizard completion check.
-    #[allow(dead_code)]
     pub fn is_complete(&self) -> bool {
         self.current_step.next().is_none()
     }

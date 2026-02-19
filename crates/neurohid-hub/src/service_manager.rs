@@ -460,7 +460,6 @@ impl ServiceManager {
     }
 
     /// Whether the service is currently running.
-    #[allow(dead_code)] // public API for future use
     pub fn is_running(&self) -> bool {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => self.runtime_handle.is_some(),

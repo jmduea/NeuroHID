@@ -2836,12 +2836,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mss"
-version = "0.1.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8eb4ec09fe71c1adf52ee548f4734f05a9e27fda252e8f067d0e22c3af09e958"
-
-[[package]]
 name = "naga"
 version = "27.0.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3061,7 +3055,6 @@ dependencies = [
  "core-foundation 0.10.1",
  "core-graphics 0.25.0",
  "enigo",
- "mss",
  "neurohid-types",
  "thiserror 2.0.18",
  "tokio-test",

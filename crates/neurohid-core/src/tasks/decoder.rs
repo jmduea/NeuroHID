@@ -111,7 +111,7 @@ impl ArtifactLoader for OnnxArtifactLoader {
 
 /// Decoder task for Rust-native ONNX inference.
 pub struct DecoderTask {
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "retained for runtime decoder reconfiguration")]
     config: DecoderConfig,
     feature_rx: mpsc::Receiver<FeatureVector>,
     action_tx: mpsc::Sender<Action>,
@@ -132,7 +132,7 @@ pub struct DecoderTask {
 }
 
 impl DecoderTask {
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "task constructor wires all channel endpoints")]
     pub fn new(
         config: DecoderConfig,
         feature_rx: mpsc::Receiver<FeatureVector>,
@@ -163,7 +163,7 @@ impl DecoderTask {
     }
 
     #[cfg(test)]
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "test constructor with injectable loader")]
     fn new_with_loader(
         config: DecoderConfig,
         feature_rx: mpsc::Receiver<FeatureVector>,
@@ -194,7 +194,7 @@ impl DecoderTask {
         )
     }
 
-    #[allow(clippy::too_many_arguments)]
+    #[expect(clippy::too_many_arguments, reason = "shared inner constructor")]
     fn new_inner(
         config: DecoderConfig,
         feature_rx: mpsc::Receiver<FeatureVector>,

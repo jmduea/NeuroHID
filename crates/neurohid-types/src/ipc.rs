@@ -336,7 +336,10 @@ pub struct ControlRpcResponse {
 /// Control RPC response variants.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "mirrors ControlResponsePayload for IPC wire compatibility"
+)]
 pub enum ControlRpcResponsePayload {
     Ack,
     Snapshot { snapshot: ControlSnapshot },
@@ -498,7 +501,7 @@ pub enum TrainerStreamPayload {
 /// Runtime events broadcast to observers (Hub/notebooks/scripts).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[allow(
+#[expect(
     clippy::large_enum_variant,
     reason = "IPC payload ergonomics favor one tagged enum for serde wire compatibility"
 )]
