@@ -193,6 +193,10 @@ class PolicyNetwork(nn.Module):
 class Decoder:
     """High-level decoder interface for the NeuroHID system.
 
+    WARNING: The training loop uses a simplified policy-gradient update, not
+    full PPO.  See ``_ppo_update`` for details on what is and isn't
+    implemented.  Inference (``get_action``) works correctly.
+
     This class wraps the policy network and provides methods for:
     - Inference: Getting actions from features
     - Training: Updating the policy from experiences
@@ -280,10 +284,19 @@ class Decoder:
         return metrics
 
     def _ppo_update(self, batch: dict) -> dict:
-        """Perform PPO policy update.
+        """Perform a simplified policy-gradient update.
 
-        This is a simplified implementation. A full production version would
-        include advantage estimation, multiple update epochs, and more.
+        WARNING: This is NOT a full PPO implementation. Key simplifications:
+        - Uses rewards directly instead of GAE advantage estimation
+          (config.gamma and config.gae_lambda are unused).
+        - Does not compute importance-sampling ratios π_new/π_old
+          (config.clip_epsilon is unused).
+        - Policy loss is vanilla REINFORCE, not clipped PPO objective.
+        - Stored log_probs are placeholders and not used for ratio computation.
+
+        A production implementation should compute proper GAE advantages,
+        store per-action log-probs at collection time, and apply the clipped
+        surrogate objective from Schulman et al. (2017).
         """
         # Convert batch to tensors
         features = torch.FloatTensor(batch["features"]).to(self.device)
@@ -299,12 +312,11 @@ class Decoder:
             cont_dist = torch.distributions.Normal(cont_mean, cont_log_std.exp())
             disc_dist = torch.distributions.Categorical(logits=disc_logits)
 
-            # For simplicity, we're using rewards directly as advantages
-            # A proper implementation would compute GAE advantages
+            # Advantages: rewards minus baseline (value estimate).
+            # NOTE: A proper implementation would use GAE(γ, λ) here.
             advantages = rewards - values.detach()
 
-            # PPO clipped objective (simplified)
-            # In practice, you'd compute the ratio and clip it properly
+            # Vanilla policy-gradient loss (not clipped PPO — see docstring).
             policy_loss = -advantages.mean()
             value_loss = functional.mse_loss(values, rewards)
             entropy = cont_dist.entropy().mean() + disc_dist.entropy().mean()
@@ -385,8 +397,9 @@ class ExperienceBuffer:
         self.rewards.append(reward)
         self.dones.append(done)
 
-        # Compute and store log_prob (simplified - in practice you'd store this
-        # at action time)
+        # Placeholder log_prob — a real PPO implementation should accept the
+        # log-prob computed at action time and store it here for later
+        # importance-sampling ratio computation.
         self.log_probs.append(0.0)
 
         # Maintain max size
