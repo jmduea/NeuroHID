@@ -27,6 +27,7 @@ path = "src/bin/neurohid-validate.rs"
 [dependencies]
 neurohid-hub = { path = "../neurohid-hub" }
 neurohid-core = { path = "../neurohid-core" }
+neurohid-ipc = { path = "../neurohid-ipc" }
 neurohid-storage = { path = "../neurohid-storage" }
 neurohid-types = { path = "../neurohid-types" }
 
@@ -47,6 +48,7 @@ ctrlc = "3.4"
 # Error handling
 anyhow = { workspace = true }
 toml = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 # GUI framework

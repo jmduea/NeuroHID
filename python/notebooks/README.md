@@ -26,7 +26,7 @@ These notebooks are designed for the managed Jupyter IDE flow in Hub Advanced mo
 Defaults target:
 
 - Control: TCP loopback `127.0.0.1:47385` (or Windows named pipe when configured).
-- Runtime-ML telemetry: Windows named pipe `\\.\pipe\neurohid.ml.v2` (or loopback TCP).
+- Runtime-ML telemetry: Windows named pipe `\\.\pipe\neurohid.ml.v3` (or loopback TCP).
 
 ## CLI Quickstart (uv)
 

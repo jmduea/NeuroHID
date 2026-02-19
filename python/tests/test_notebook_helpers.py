@@ -78,6 +78,41 @@ class NotebookHelperTests(unittest.TestCase):
             with self.assertRaisesRegex(_notebook.NotebookError, "stdout message"):
                 notebook._run_command(["bad"])
 
+    def test_subscribe_events_with_reconnect_uses_resume_cursor(self) -> None:
+        notebook = _notebook.NeuroHidNotebook(auto_start_service=False)
+
+        class _FlakyControl:
+            def __init__(self) -> None:
+                self.calls = 0
+                self.resume_args: list[int | None] = []
+
+            def subscribe_events(self, **kwargs):  # type: ignore[no-untyped-def]
+                self.calls += 1
+                self.resume_args.append(kwargs.get("resume_from_seq"))
+                if self.calls == 1:
+                    raise _notebook.NotebookError("temporary disconnect")
+                return iter(
+                    [
+                        {"type": "sample", "_seq": 11},
+                        {"type": "sample", "_seq": 12},
+                    ]
+                )
+
+        flaky = _FlakyControl()
+        notebook._control = flaky  # type: ignore[assignment]
+        events = list(
+            notebook.subscribe_events_with_reconnect(
+                max_messages=2,
+                families=["sample"],
+                reconnect_attempts=2,
+                reconnect_backoff_secs=0.0,
+            )
+        )
+
+        self.assertEqual(events[0]["_seq"], 11)
+        self.assertEqual(events[1]["_seq"], 12)
+        self.assertEqual(flaky.resume_args, [None, None])
+
 
 if __name__ == "__main__":
     unittest.main()

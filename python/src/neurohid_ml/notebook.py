@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
@@ -26,7 +27,9 @@ class NeuroHidNotebook:
     control_host: str = "127.0.0.1"
     control_port: int = 47385
     control_transport: str = "tcp"
-    control_pipe_name: str = r"\\.\pipe\neurohid.control.v2"
+    control_pipe_name: str = r"\\.\pipe\neurohid.control.v3"
+    ipc_mode: str | None = "local_socket"
+    ipc_endpoint: str = "neurohid.control.v3"
     service_bin: str = "neurohid-service"
     auto_start_service: bool = True
     service_launch_command: str | None = None
@@ -36,8 +39,8 @@ class NeuroHidNotebook:
     connect_retries: int = 1
     ml_transport: str = "named_pipe" if os.name == "nt" else "tcp_loopback"
     ml_host: str = "127.0.0.1"
-    ml_port: int = 47384
-    ml_pipe_name: str = r"\\.\pipe\neurohid.ml.v2"
+    ml_port: int = 47385
+    ml_pipe_name: str = r"\\.\pipe\neurohid.control.v3"
     ml_connect_timeout_secs: float = 1.5
     ml_read_timeout_secs: float = 0.2
     _control: NeuroHidControlClient = field(init=False, repr=False)
@@ -48,6 +51,8 @@ class NeuroHidNotebook:
             control_port=self.control_port,
             control_transport=self.control_transport,
             control_pipe_name=self.control_pipe_name,
+            ipc_mode=self.ipc_mode,
+            ipc_endpoint=self.ipc_endpoint,
             service_bin=self.service_bin,
             auto_start_service=self.auto_start_service,
             service_launch_command=self.service_launch_command,
@@ -75,6 +80,15 @@ class NeuroHidNotebook:
     def reconnect_bridge(self) -> dict[str, Any]:
         return self._control.reconnect_bridge()
 
+    def daemon_start(self) -> dict[str, Any]:
+        return self._control.daemon_start()
+
+    def daemon_stop(self) -> dict[str, Any]:
+        return self._control.daemon_stop()
+
+    def daemon_status(self) -> dict[str, Any]:
+        return self._control.daemon_status()
+
     def reload_model(self) -> dict[str, Any]:
         return self._control.reload_model()
 
@@ -93,12 +107,97 @@ class NeuroHidNotebook:
     def ensure_connected_stream(self, *, rescan: bool = True) -> str | None:
         return self._control.ensure_connected_stream(rescan=rescan)
 
+    def subscribe_events(
+        self,
+        *,
+        max_messages: int | None = None,
+        families: list[str] | None = None,
+        resume_from_seq: int | None = None,
+        sample_every: int = 1,
+        max_duration_ms: int | None = None,
+        snapshot_interval_ms: int = 1_000,
+        prefer_stream: bool = True,
+    ) -> Iterator[dict[str, Any]]:
+        return self._control.subscribe_events(
+            max_messages=max_messages,
+            families=families,
+            resume_from_seq=resume_from_seq,
+            sample_every=sample_every,
+            max_duration_ms=max_duration_ms,
+            snapshot_interval_ms=snapshot_interval_ms,
+            prefer_stream=prefer_stream,
+        )
+
+    def subscribe_observations(
+        self,
+        *,
+        max_messages: int | None = None,
+        resume_from_seq: int | None = None,
+        sample_every: int = 1,
+        max_duration_ms: int | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        return self.subscribe_events(
+            max_messages=max_messages,
+            families=["observation_frame"],
+            resume_from_seq=resume_from_seq,
+            sample_every=sample_every,
+            max_duration_ms=max_duration_ms,
+        )
+
+    def subscribe_events_with_reconnect(
+        self,
+        *,
+        max_messages: int | None = None,
+        families: list[str] | None = None,
+        resume_from_seq: int | None = None,
+        sample_every: int = 1,
+        max_duration_ms: int | None = None,
+        snapshot_interval_ms: int = 1_000,
+        reconnect_attempts: int = 3,
+        reconnect_backoff_secs: float = 0.3,
+    ) -> Iterator[dict[str, Any]]:
+        emitted = 0
+        attempts = 0
+        resume_cursor = resume_from_seq
+        while max_messages is None or emitted < max_messages:
+            remaining = None if max_messages is None else max_messages - emitted
+            try:
+                for event in self.subscribe_events(
+                    max_messages=remaining,
+                    families=families,
+                    resume_from_seq=resume_cursor,
+                    sample_every=sample_every,
+                    max_duration_ms=max_duration_ms,
+                    snapshot_interval_ms=snapshot_interval_ms,
+                ):
+                    attempts = 0
+                    emitted += 1
+                    seq = event.get("_seq")
+                    if isinstance(seq, int):
+                        resume_cursor = seq
+                    yield event
+                    if max_messages is not None and emitted >= max_messages:
+                        return
+                return
+            except NotebookError:
+                attempts += 1
+                if attempts > max(reconnect_attempts, 0):
+                    raise
+                time.sleep(max(reconnect_backoff_secs, 0.0))
+
+    def observation_to_numpy(self, event_payload: dict[str, Any]) -> Any:
+        return self._control.observation_to_numpy(event_payload)
+
+    def events_to_dataframe(self, events: list[dict[str, Any]]) -> Any:
+        return self._control.events_to_dataframe(events)
+
     def telemetry_client(self) -> NeuroHidTelemetryClient:
+        ipc = self._control._build_ipc_client()  # Compatibility shim while private helper exists.
         return NeuroHidTelemetryClient(
-            transport=self.ml_transport,
-            host=self.ml_host,
-            port=self.ml_port,
-            pipe_name=self.ml_pipe_name,
+            ipc_mode=ipc.ipc_mode,
+            ipc_endpoint=ipc.ipc_endpoint,
+            host=ipc.host,
+            port=ipc.port,
             connect_timeout_secs=self.ml_connect_timeout_secs,
             read_timeout_secs=self.ml_read_timeout_secs,
         )

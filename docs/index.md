@@ -40,7 +40,7 @@ explicitly override for that subtree.
 
 - Changelog: [`../CHANGELOG.md`](../CHANGELOG.md)
 - Crate README files: `../crates/*/README.md`
-- Runtime/ML protocol contract: [`./runtime-ml-protocol-v2.md`](./runtime-ml-protocol-v2.md)
+- Runtime/ML protocol contract: [`./runtime-ml-protocol-v3.md`](./runtime-ml-protocol-v3.md)
 
 ## Suggested Reading Order
 

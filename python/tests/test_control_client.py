@@ -41,6 +41,33 @@ class ControlClientTests(unittest.TestCase):
                 }
             )
         )
+
+    def test_daemon_status_invokes_service_binary(self) -> None:
+        client = _control.NeuroHidControlClient(
+            auto_start_service=False,
+            service_bin="svc-bin",
+            control_port=49001,
+        )
+        completed = _control.subprocess.CompletedProcess(
+            args=["svc-bin"],
+            returncode=0,
+            stdout="status=running",
+            stderr="",
+        )
+        with patch.object(
+            _control.subprocess,
+            "run",
+            autospec=True,
+            return_value=completed,
+        ) as run_call:
+            response = client.daemon_status()
+
+        called = run_call.call_args.args[0]
+        self.assertEqual(
+            called,
+            ["svc-bin", "daemon", "status"],
+        )
+        self.assertEqual(response["payload"]["type"], "daemon_status")
         self.assertFalse(
             _control._is_eligible_eeg_stream(  # noqa: SLF001 - testing module helper
                 {
@@ -49,6 +76,39 @@ class ControlClientTests(unittest.TestCase):
                     "sample_rate": 32.0,
                 }
             )
+        )
+
+    def test_subscribe_events_forwards_stream_options(self) -> None:
+        client = _control.NeuroHidControlClient(auto_start_service=False)
+        ipc_client = unittest.mock.Mock()
+        ipc_client.iter_runtime_events.return_value = iter([{"type": "snapshot"}])
+        with patch.object(
+            _control.NeuroHidControlClient,
+            "_build_ipc_client",
+            autospec=True,
+            return_value=ipc_client,
+        ):
+            events = list(
+                client.subscribe_events(
+                    max_messages=1,
+                    families=["sample", "feature_frame"],
+                    resume_from_seq=42,
+                    sample_every=3,
+                    max_duration_ms=2_000,
+                    snapshot_interval_ms=500,
+                    prefer_stream=False,
+                )
+            )
+
+        self.assertEqual(events, [{"type": "snapshot"}])
+        ipc_client.iter_runtime_events.assert_called_once_with(
+            max_messages=1,
+            families=["sample", "feature_frame"],
+            resume_from_seq=42,
+            sample_every=3,
+            max_duration_ms=2_000,
+            snapshot_interval_ms=500,
+            prefer_stream=False,
         )
 
 

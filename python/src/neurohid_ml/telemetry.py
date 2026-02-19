@@ -1,70 +1,96 @@
-"""Notebook-facing telemetry client for Runtime-ML IPC v2."""
+"""Notebook-facing runtime-events client for IPC v3."""
 
 from __future__ import annotations
 
 import json
-import os
 import socket
 import struct
 from dataclasses import dataclass
 from typing import Any, BinaryIO, Iterator
 
 from neurohid_ml.control import NotebookError
+from neurohid_ml.ipc import NeuroHidIpcClient
 
 DEFAULT_ML_HOST = "127.0.0.1"
-DEFAULT_ML_PORT = 47_384
-DEFAULT_ML_PIPE_NAME = r"\\.\pipe\neurohid.ml.v2"
+DEFAULT_ML_PORT = 47_385
+DEFAULT_ML_PIPE_NAME = r"\\.\pipe\neurohid.control.v3"
 
 
 @dataclass(slots=True)
 class NeuroHidTelemetryClient:
-    """Synchronous telemetry envelope reader for notebooks."""
+    """Synchronous runtime.events reader for notebooks."""
 
-    transport: str = "named_pipe" if os.name == "nt" else "tcp_loopback"
+    ipc_mode: str = "local_socket"
+    ipc_endpoint: str = DEFAULT_ML_PIPE_NAME
+    transport: str | None = None  # Legacy alias.
     host: str = DEFAULT_ML_HOST
     port: int = DEFAULT_ML_PORT
-    pipe_name: str = DEFAULT_ML_PIPE_NAME
+    pipe_name: str = DEFAULT_ML_PIPE_NAME  # Legacy alias.
     connect_timeout_secs: float = 1.5
-    read_timeout_secs: float = 0.2
+    read_timeout_secs: float = 0.5
+    connect_retries: int = 1
 
     def endpoint_label(self) -> str:
-        mode = self.transport.strip().lower()
-        if mode == "named_pipe":
-            return self.pipe_name
-        return f"{self.host}:{self.port}"
+        return self._ipc().endpoint_label()
 
     def recv(self) -> dict[str, Any] | None:
-        mode = self.transport.strip().lower()
-
         try:
-            if mode == "named_pipe":
-                if os.name != "nt":
-                    raise NotebookError("transport='named_pipe' is only supported on Windows")
-                with open(self.pipe_name, "r+b", buffering=0) as pipe:
-                    return _read_framed_json(pipe)
-
-            with socket.create_connection(
-                (self.host, self.port),
-                timeout=self.connect_timeout_secs,
-            ) as conn:
-                conn.settimeout(self.read_timeout_secs)
-                return _read_framed_json(conn)
+            event = self._ipc().poll_runtime_event(family="runtime_telemetry")
+            return event
         except TimeoutError:
             return None
         except OSError as error:
             raise NotebookError(
-                "unable to reach NeuroHID telemetry endpoint at "
+                "unable to reach NeuroHID runtime.events endpoint at "
                 f"{self.endpoint_label()} ({error})"
             ) from error
+        except RuntimeError as error:
+            raise NotebookError(str(error)) from error
 
-    def iter_messages(self, *, max_messages: int | None = None) -> Iterator[dict[str, Any]]:
-        emitted = 0
-        while max_messages is None or emitted < max_messages:
-            message = self.recv()
-            if message is None:
-                continue
-            yield message
-            emitted += 1
+    def iter_messages(
+        self,
+        *,
+        max_messages: int | None = None,
+        families: list[str] | None = None,
+        resume_from_seq: int | None = None,
+        sample_every: int = 1,
+        max_duration_ms: int | None = None,
+        snapshot_interval_ms: int = 1_000,
+        prefer_stream: bool = True,
+    ) -> Iterator[dict[str, Any]]:
+        requested_families = families if families else ["runtime_telemetry"]
+        yield from self._ipc().iter_runtime_events(
+            max_messages=max_messages,
+            families=requested_families,
+            resume_from_seq=resume_from_seq,
+            sample_every=sample_every,
+            max_duration_ms=max_duration_ms,
+            snapshot_interval_ms=snapshot_interval_ms,
+            prefer_stream=prefer_stream,
+        )
+
+    def _ipc(self) -> NeuroHidIpcClient:
+        mode = self.ipc_mode.strip().lower()
+        if not mode and self.transport:
+            legacy_mode = self.transport.strip().lower()
+            if legacy_mode == "named_pipe":
+                mode = "local_socket"
+            elif legacy_mode in {"tcp", "tcp_loopback"}:
+                mode = "tcp_loopback"
+        if not mode:
+            mode = "local_socket"
+        endpoint = self.ipc_endpoint
+        if mode == "local_socket" and self.pipe_name:
+            endpoint = self.pipe_name
+        return NeuroHidIpcClient(
+            ipc_mode=mode,
+            ipc_endpoint=endpoint,
+            host=self.host,
+            port=self.port,
+            connect_timeout_secs=self.connect_timeout_secs,
+            read_timeout_secs=self.read_timeout_secs,
+            connect_retries=self.connect_retries,
+        )
 
 
 def _read_exact(reader: BinaryIO | socket.socket, size: int) -> bytes:

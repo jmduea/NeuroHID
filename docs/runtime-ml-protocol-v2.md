@@ -2,6 +2,9 @@
 
 This document defines the JSON envelope contract for Runtime ↔ Trainer messaging.
 
+> Deprecated: IPC v3 is the canonical protocol contract.
+> See [`runtime-ml-protocol-v3.md`](./runtime-ml-protocol-v3.md).
+
 ## Envelope
 
 ```json
