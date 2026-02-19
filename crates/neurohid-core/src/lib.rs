@@ -13,3 +13,16 @@
 pub mod runtime;
 pub mod service;
 pub mod tasks;
+
+/// Re-exports from downstream crates used by the hub and other embedders.
+///
+/// Consumers that embed the runtime through [`runtime::RuntimeHandle`] can
+/// import IPC and storage helpers from here instead of depending on the
+/// component crates directly.
+pub mod facade {
+    // IPC types needed by hub external-mode control path.
+    pub use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport, send_control_request_blocking};
+
+    // Storage types needed by hub initialization and state.
+    pub use neurohid_storage::{ConfigStore, DataPaths, ProfileStore, SecureStorage, initialize};
+}

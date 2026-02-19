@@ -14,11 +14,8 @@ use neurohid_storage::ProfileStore;
 use neurohid_types::{
     IpcEnvelopeV3,
     action::Action,
-    config::{SignalConfig, SystemConfig},
-    control::{
-        ControlCommand, ControlRequest, ControlResponse, ControlSnapshot,
-        TrainerSnapshot,
-    },
+    config::{FallbackPolicy, SignalConfig, SystemConfig},
+    control::{ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, TrainerSnapshot},
     error::{Error, Result},
     event::StreamMarker,
     ipc_v3::RuntimeEventV3,
@@ -97,6 +94,18 @@ pub enum RuntimeCommand {
     PromoteCandidateModel,
     /// Replace signal processing configuration at runtime.
     SetSignalConfig { signal: SignalConfig },
+    /// Enable or disable runtime learning.
+    SetLearningEnabled { enabled: bool },
+    /// Trigger an ML bridge reconnect attempt.
+    MlBridgeReconnect,
+    /// Push fallback policy settings into the running runtime.
+    SetFallbackPolicy { policy: FallbackPolicy },
+    /// Update active profile status used by runtime action gating.
+    SetProfileStatus {
+        profile_id: Option<ProfileId>,
+        profile_name: Option<String>,
+        profile_ready: bool,
+    },
 }
 
 /// Type alias for the canonical runtime snapshot.
@@ -108,6 +117,20 @@ pub type RuntimeSnapshot = ControlSnapshot;
 /// Handle to a running managed runtime.
 pub struct RuntimeHandle {
     handle: ServiceHandle,
+}
+
+impl RuntimeHandle {
+    /// Check whether the runtime is still alive.
+    ///
+    /// Returns `true` if the runtime task is active or the state lock is
+    /// contended (assumed alive). Returns `false` only when the state is
+    /// confirmed inactive or the join handle has finished.
+    pub fn is_alive(&self) -> bool {
+        match self.handle.state.try_read() {
+            Ok(state) => state.active,
+            Err(_) => !self.handle.join_handle.is_finished(),
+        }
+    }
 }
 
 /// Cloneable runtime facade used by IPC/control servers.
@@ -335,6 +358,51 @@ impl RuntimeIpcHandle {
                     })?;
                 Ok(())
             }
+            RuntimeCommand::SetLearningEnabled { enabled } => {
+                if let Ok(mut state) = self.state.try_write() {
+                    state.learning_enabled = enabled;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.learning_enabled = enabled;
+                }
+                Ok(())
+            }
+            RuntimeCommand::MlBridgeReconnect => {
+                if let Ok(mut state) = self.state.try_write() {
+                    state.ml_bridge_stalled = false;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.ml_bridge_stalled = false;
+                }
+                Ok(())
+            }
+            RuntimeCommand::SetFallbackPolicy { policy } => {
+                if let Ok(mut state) = self.state.try_write() {
+                    state.fallback_policy = policy;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.fallback_policy = policy;
+                }
+                Ok(())
+            }
+            RuntimeCommand::SetProfileStatus {
+                profile_id,
+                profile_name,
+                profile_ready,
+            } => {
+                let _ = self
+                    .decoder_command_tx
+                    .try_send(crate::service::DecoderCommand::SetActiveProfile { profile_id });
+                if let Ok(mut state) = self.state.try_write() {
+                    state.active_profile_name = profile_name;
+                    state.profile_ready = profile_ready;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.active_profile_name = profile_name;
+                    state.profile_ready = profile_ready;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -433,9 +501,7 @@ impl RuntimeIpcHandle {
     pub fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
         let request_id = request.request_id.clone();
         match request.command {
-            ControlCommand::Snapshot => {
-                ControlResponse::snapshot(request_id, self.snapshot())
-            }
+            ControlCommand::Snapshot => ControlResponse::snapshot(request_id, self.snapshot()),
             ControlCommand::Shutdown => match self.command(RuntimeCommand::Stop) {
                 Ok(()) => ControlResponse::ack(request_id),
                 Err(error) => ControlResponse::error(request_id, error.to_string()),
@@ -479,34 +545,25 @@ impl RuntimeIpcHandle {
                 }
             }
             ControlCommand::SetLearningEnabled { enabled } => {
-                if let Ok(mut state) = self.state.try_write() {
-                    state.learning_enabled = enabled;
-                } else if tokio::runtime::Handle::try_current().is_err() {
-                    let mut state = self.state.blocking_write();
-                    state.learning_enabled = enabled;
+                match self.command(RuntimeCommand::SetLearningEnabled { enabled }) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
                 }
-                ControlResponse::ack(request_id)
             }
             ControlCommand::MlBridgeReconnect => {
-                if let Ok(mut state) = self.state.try_write() {
-                    state.ml_bridge_stalled = false;
-                } else if tokio::runtime::Handle::try_current().is_err() {
-                    let mut state = self.state.blocking_write();
-                    state.ml_bridge_stalled = false;
+                match self.command(RuntimeCommand::MlBridgeReconnect) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
                 }
-                ControlResponse::ack(request_id)
             }
             ControlCommand::TrainerSnapshot => {
                 ControlResponse::trainer_snapshot(request_id, self.trainer_snapshot())
             }
             ControlCommand::SetFallbackPolicy { policy } => {
-                if let Ok(mut state) = self.state.try_write() {
-                    state.fallback_policy = policy;
-                } else if tokio::runtime::Handle::try_current().is_err() {
-                    let mut state = self.state.blocking_write();
-                    state.fallback_policy = policy;
+                match self.command(RuntimeCommand::SetFallbackPolicy { policy }) {
+                    Ok(()) => ControlResponse::ack(request_id),
+                    Err(error) => ControlResponse::error(request_id, error.to_string()),
                 }
-                ControlResponse::ack(request_id)
             }
             ControlCommand::SetSignalConfig { signal } => {
                 match self.command(RuntimeCommand::SetSignalConfig { signal }) {
@@ -517,8 +574,6 @@ impl RuntimeIpcHandle {
         }
     }
 }
-
-
 
 #[cfg(test)]
 mod tests {

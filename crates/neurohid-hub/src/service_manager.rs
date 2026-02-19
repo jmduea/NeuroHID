@@ -6,10 +6,10 @@
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
-use tokio::sync::{broadcast, watch};
+use tokio::sync::watch;
 
-use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
-use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport, send_control_request_blocking};
+use neurohid_core::facade::{IpcClient, IpcConfig, IpcTransport, send_control_request_blocking};
+use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle};
 use neurohid_storage::ProfileStore;
 use neurohid_types::observability::{self as obs, EmitGate, ObservabilityComponent};
 use neurohid_types::{
@@ -18,8 +18,7 @@ use neurohid_types::{
         FallbackPolicy, IpcMode, ServiceConfig, ServiceRuntimeMode, SignalConfig, SystemConfig,
     },
     control::{
-        ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload,
-        TrainerSnapshot,
+        ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, TrainerSnapshot,
     },
     profile::ProfileId,
 };
@@ -46,7 +45,7 @@ struct ExternalEventState {
 
 /// Manages service/runtime lifecycle for the hub.
 pub struct ServiceManager {
-    handle: Option<ServiceHandle>,
+    runtime_handle: Option<RuntimeHandle>,
     last_error: Option<String>,
     /// Whether the data bus has been connected to this handle's broadcast receivers.
     bus_connected: bool,
@@ -72,7 +71,7 @@ impl ServiceManager {
     pub fn new() -> Self {
         let service_defaults = ServiceConfig::default();
         Self {
-            handle: None,
+            runtime_handle: None,
             last_error: None,
             bus_connected: false,
             cached_snapshot: ServiceSnapshot::default(),
@@ -250,17 +249,16 @@ impl ServiceManager {
             return;
         }
 
-        if let Some(handle) = &self.handle {
-            // Check if service is still active
-            let active = handle.state.try_read().map(|s| s.active).unwrap_or(true);
+        if let Some(rt) = &self.runtime_handle {
+            let active = rt.is_alive();
 
             if active && !self.bus_connected {
-                // Create new receivers by resubscribing from the existing ones
-                let sample_rx = handle.sample_broadcast_rx.resubscribe();
-                let feature_rx = handle.feature_broadcast_rx.resubscribe();
-                let action_rx = handle.action_broadcast_rx.resubscribe();
-                let marker_rx = handle.marker_broadcast_rx.resubscribe();
-                bus.connect(sample_rx, feature_rx, action_rx, marker_rx);
+                bus.connect(
+                    rt.subscribe_samples(),
+                    rt.subscribe_features(),
+                    rt.subscribe_actions(),
+                    rt.subscribe_markers(),
+                );
                 self.bus_connected = true;
                 tracing::info!("Data bus connected to service broadcasts");
             } else if !active && self.bus_connected {
@@ -286,8 +284,8 @@ impl ServiceManager {
     pub fn enter_calibration_mode(&self) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.set_calibration_mode(true);
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::ToggleCalibration { enabled: true });
                     tracing::info!("Entered calibration mode");
                 }
             }
@@ -301,8 +299,8 @@ impl ServiceManager {
     pub fn exit_calibration_mode(&self) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.set_calibration_mode(false);
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::ToggleCalibration { enabled: false });
                     tracing::info!("Exited calibration mode");
                 }
             }
@@ -316,8 +314,8 @@ impl ServiceManager {
     pub fn set_output_enabled(&self, enabled: bool) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.set_output_enabled(enabled);
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::ToggleOutput { enabled });
                 }
             }
             ServiceRuntimeMode::External => {
@@ -330,8 +328,8 @@ impl ServiceManager {
     pub fn reload_model(&self) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.reload_model();
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::ReloadModel);
                 }
             }
             ServiceRuntimeMode::External => {
@@ -344,8 +342,8 @@ impl ServiceManager {
     pub fn promote_candidate_model(&self) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.promote_candidate_model();
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::PromoteCandidateModel);
                 }
             }
             ServiceRuntimeMode::External => {
@@ -358,8 +356,8 @@ impl ServiceManager {
     pub fn set_learning_enabled(&self, enabled: bool) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.set_learning_enabled(enabled);
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::SetLearningEnabled { enabled });
                 }
             }
             ServiceRuntimeMode::External => {
@@ -372,8 +370,8 @@ impl ServiceManager {
     pub fn ml_bridge_reconnect(&self) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.ml_bridge_reconnect();
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::MlBridgeReconnect);
                 }
             }
             ServiceRuntimeMode::External => {
@@ -386,8 +384,8 @@ impl ServiceManager {
     pub fn set_fallback_policy(&self, policy: FallbackPolicy) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.set_fallback_policy(policy);
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::SetFallbackPolicy { policy });
                 }
             }
             ServiceRuntimeMode::External => {
@@ -400,26 +398,8 @@ impl ServiceManager {
     pub fn trainer_snapshot(&mut self) -> Option<TrainerSnapshot> {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                let handle = self.handle.as_ref()?;
-                let state = handle.state.try_read().ok()?;
-                Some(TrainerSnapshot {
-                    trainer_connected: state.ml_bridge_connected,
-                    trainer_state: if state.ml_bridge_stalled {
-                        "stalled".to_string()
-                    } else if state.ml_bridge_connected {
-                        "connected".to_string()
-                    } else {
-                        "disconnected".to_string()
-                    },
-                    replay_size: state.trainer_replay_size.unwrap_or(0),
-                    training_step: state.trainer_step.unwrap_or(0),
-                    last_heartbeat_us: state.ml_bridge_last_heartbeat_us,
-                    last_error: state
-                        .trainer_last_error
-                        .clone()
-                        .or_else(|| state.task_error.clone().map(|(_, error)| error)),
-                    protocol_version: state.ml_protocol_version,
-                })
+                let rt = self.runtime_handle.as_ref()?;
+                Some(rt.trainer_snapshot())
             }
             ServiceRuntimeMode::External => {
                 let endpoint = self.control_endpoint_label();
@@ -464,8 +444,12 @@ impl ServiceManager {
     ) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    handle.set_profile_status(profile_id, Some(profile_name), profile_ready);
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::SetProfileStatus {
+                        profile_id,
+                        profile_name: Some(profile_name),
+                        profile_ready,
+                    });
                 }
             }
             ServiceRuntimeMode::External => {
@@ -483,7 +467,7 @@ impl ServiceManager {
     #[allow(dead_code)] // public API for future use
     pub fn is_running(&self) -> bool {
         match self.runtime_mode {
-            ServiceRuntimeMode::Embedded => self.handle.is_some(),
+            ServiceRuntimeMode::Embedded => self.runtime_handle.is_some(),
             ServiceRuntimeMode::External => self.cached_snapshot.running,
         }
     }
@@ -497,8 +481,8 @@ impl ServiceManager {
     pub fn rescan_streams(&self) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    let _ = handle.device_command_tx.try_send(DeviceCommand::Rescan);
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::RescanStreams);
                 }
             }
             ServiceRuntimeMode::External => {
@@ -511,10 +495,10 @@ impl ServiceManager {
     pub fn connect_stream(&self, stream_id: &str) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    let _ = handle
-                        .device_command_tx
-                        .try_send(DeviceCommand::Connect(stream_id.to_string()));
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::ConnectStream {
+                        stream_id: stream_id.to_string(),
+                    });
                 }
             }
             ServiceRuntimeMode::External => {
@@ -529,10 +513,10 @@ impl ServiceManager {
     pub fn disconnect_stream(&self, stream_id: &str) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    let _ = handle
-                        .device_command_tx
-                        .try_send(DeviceCommand::Disconnect(stream_id.to_string()));
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::DisconnectStream {
+                        stream_id: stream_id.to_string(),
+                    });
                 }
             }
             ServiceRuntimeMode::External => {
@@ -561,10 +545,8 @@ impl ServiceManager {
     pub fn update_signal_config(&self, cfg: SignalConfig) {
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
-                if let Some(handle) = &self.handle {
-                    let _ = handle
-                        .signal_command_tx
-                        .try_send(SignalCommand::UpdateConfig(cfg));
+                if let Some(rt) = &self.runtime_handle {
+                    let _ = rt.command(RuntimeCommand::SetSignalConfig { signal: cfg });
                 }
             }
             ServiceRuntimeMode::External => {
@@ -582,38 +564,33 @@ impl ServiceManager {
     ) {
         // If we have a handle but the service has stopped itself (e.g., task failure),
         // drop the stale handle so the user can restart without clicking "Stop" first.
-        // Use `try_read()` first (non-blocking), but if the lock is contended fall
-        // back to assuming the handle is stale rather than silently blocking restart.
-        let should_drop_handle =
-            self.handle
-                .as_ref()
-                .is_some_and(|handle| match handle.state.try_read() {
-                    Ok(state) => !state.active,
-                    // Lock contended — check if the join handle has already finished,
-                    // which is a reliable signal that the service is dead.
-                    Err(_) => handle.join_handle.is_finished(),
-                });
+        let should_drop_handle = self
+            .runtime_handle
+            .as_ref()
+            .is_some_and(|rt| !rt.is_alive());
         if should_drop_handle {
-            self.handle.take();
+            self.runtime_handle.take();
             self.bus_connected = false;
         }
 
-        if self.handle.is_some() {
+        if self.runtime_handle.is_some() {
             tracing::warn!("Service already running");
             return;
         }
 
-        let (shutdown_tx, shutdown_rx) = broadcast::channel::<()>(1);
+        let mut builder = RuntimeBuilder::new(config);
+        if let Some(store) = profile_store {
+            builder = builder.with_profile_store(store);
+        }
+        if let Some(id) = profile_id {
+            builder = builder.with_profile_id(id);
+        }
 
-        let service_result = runtime.block_on(async {
-            NeuroHidService::new(config, profile_store, profile_id, shutdown_rx).await
-        });
+        let result = runtime.block_on(async { builder.start().await });
 
-        match service_result {
-            Ok(service) => {
-                let _guard = runtime.enter();
-                let handle = service.spawn(shutdown_tx);
-                self.handle = Some(handle);
+        match result {
+            Ok(handle) => {
+                self.runtime_handle = Some(handle);
                 self.last_error = None;
                 self.bus_connected = false;
                 tracing::info!("Service started");
@@ -625,83 +602,19 @@ impl ServiceManager {
     }
 
     fn stop_embedded(&mut self) {
-        if let Some(handle) = self.handle.take() {
-            let _ = handle.shutdown_tx.send(());
+        if let Some(rt) = self.runtime_handle.take() {
+            let _ = rt.command(RuntimeCommand::Stop);
             self.bus_connected = false;
             tracing::info!("Service stop signal sent");
         }
     }
 
     fn snapshot_embedded(&mut self) -> ServiceSnapshot {
-        let Some(handle) = &self.handle else {
+        let Some(rt) = &self.runtime_handle else {
             return ServiceSnapshot::default();
         };
 
-        // try_read() is non-blocking — if the lock is held by a task,
-        // return the cached snapshot (stale by at most one frame) to avoid
-        // discarding discovered_streams and breaking quality routing.
-        let state_guard = match handle.state.try_read() {
-            Ok(guard) => guard,
-            Err(_) => return self.cached_snapshot.clone(),
-        };
-
-        let uptime_secs = state_guard
-            .started_at
-            .map(|t| t.elapsed().as_secs())
-            .unwrap_or(0);
-
-        let snap = ServiceSnapshot {
-            running: state_guard.active,
-            device_connected: state_guard.device_connected,
-            device_name: state_guard.device_name.clone(),
-            device_battery: state_guard.device_battery,
-            signal_quality: state_guard.signal_quality,
-            actions_emitted: state_guard.actions_emitted,
-            errors_detected: state_guard.errors_detected,
-            uptime_secs,
-            ipc_connected: state_guard.ipc_connected,
-            ipc_simulated: state_guard.ipc_simulated,
-            learning_enabled: state_guard.learning_enabled,
-            ml_bridge_connected: state_guard.ml_bridge_connected,
-            ml_bridge_stalled: state_guard.ml_bridge_stalled,
-            runtime_mode_state: state_guard.runtime_mode_state,
-            enabled_capabilities: state_guard.enabled_capabilities.clone(),
-            limited_capabilities_message: state_guard.limited_capabilities_message.clone(),
-            fallback_model_kind: state_guard.fallback_model_kind.clone(),
-            trainer_replay_size: state_guard.trainer_replay_size,
-            trainer_step: state_guard.trainer_step,
-            trainer_policy_loss: state_guard.trainer_policy_loss,
-            trainer_value_loss: state_guard.trainer_value_loss,
-            trainer_entropy: state_guard.trainer_entropy,
-            trainer_last_error: state_guard.trainer_last_error.clone(),
-            candidate_promotions_succeeded: state_guard.candidate_promotions_succeeded,
-            candidate_promotions_rejected: state_guard.candidate_promotions_rejected,
-            candidate_last_outcome: state_guard.candidate_last_outcome.clone(),
-            ml_protocol_version: state_guard.ml_protocol_version,
-            calibration_mode: state_guard.calibration_mode,
-            output_enabled: state_guard.output_enabled,
-            profile_ready: state_guard.profile_ready,
-            decoder_ready: state_guard.decoder_ready,
-            decoder_model_version: state_guard.decoder_model_version.clone(),
-            signal_latency_last_us: state_guard.signal_latency_last_us,
-            signal_latency_p95_us: state_guard.signal_latency_p95_us,
-            decode_latency_last_us: state_guard.decode_latency_last_us,
-            decode_latency_p95_us: state_guard.decode_latency_p95_us,
-            action_latency_last_us: state_guard.action_latency_last_us,
-            action_latency_p95_us: state_guard.action_latency_p95_us,
-            latency_degraded: state_guard.latency_degraded,
-            latency_alert_message: state_guard.latency_alert_message.clone(),
-            active_profile_name: state_guard.active_profile_name.clone(),
-            task_error: state_guard.task_error.clone(),
-            discovered_streams: state_guard.discovered_streams.clone(),
-            routed_eeg_streams: state_guard.routed_eeg_streams,
-            routed_motion_streams: state_guard.routed_motion_streams,
-            routed_auxiliary_streams: state_guard.routed_auxiliary_streams,
-            routed_unknown_streams: state_guard.routed_unknown_streams,
-            pipeline_integrity_degraded: state_guard.pipeline_integrity_degraded,
-            integrity_issue_count: state_guard.integrity_issue_count,
-            stage_health_summary: state_guard.stage_health_summary.clone(),
-        };
+        let snap = rt.snapshot();
         self.cached_snapshot = snap.clone();
         snap
     }
@@ -1183,7 +1096,6 @@ mod tests {
 
     use super::ServiceManager;
     use crate::state::ServiceSnapshot;
-    use neurohid_core::tasks::TrainerIngressEvent;
     #[cfg(windows)]
     use neurohid_ipc::{HelloV2, RuntimeMlRoleV2, TrainerStreamKindV3};
     #[cfg(windows)]
@@ -1218,17 +1130,14 @@ mod tests {
         assert!(!initial.ipc_connected);
         assert!(!initial.ipc_simulated);
 
-        let trainer_ingress = manager
-            .handle
+        let ipc_handle = manager
+            .runtime_handle
             .as_ref()
             .expect("embedded runtime handle should be available")
-            .trainer_ingress_tx
-            .clone();
+            .ipc_handle();
         runtime.block_on(async {
-            trainer_ingress
-                .send(TrainerIngressEvent::Connected {
-                    session_id: "hub-test-trainer".to_string(),
-                })
+            ipc_handle
+                .trainer_connected("hub-test-trainer".to_string())
                 .await
                 .expect("trainer connect event should send");
         });
@@ -1238,8 +1147,8 @@ mod tests {
         });
 
         runtime.block_on(async {
-            trainer_ingress
-                .send(TrainerIngressEvent::Disconnected)
+            ipc_handle
+                .trainer_disconnected()
                 .await
                 .expect("trainer disconnect event should send");
         });
@@ -1341,17 +1250,14 @@ mod tests {
         manager.start(&runtime, config.clone(), None, None);
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| snap.running);
 
-        let trainer_ingress = manager
-            .handle
+        let ipc_handle = manager
+            .runtime_handle
             .as_ref()
             .expect("embedded runtime handle should be available")
-            .trainer_ingress_tx
-            .clone();
+            .ipc_handle();
         runtime.block_on(async {
-            trainer_ingress
-                .send(TrainerIngressEvent::Connected {
-                    session_id: "named-pipe-test".to_string(),
-                })
+            ipc_handle
+                .trainer_connected("named-pipe-test".to_string())
                 .await
                 .expect("trainer ingress connected event should send");
         });
@@ -1383,8 +1289,8 @@ mod tests {
                 &hello,
             )
             .expect("hello envelope should encode");
-            trainer_ingress
-                .send(TrainerIngressEvent::Envelope(envelope))
+            ipc_handle
+                .trainer_send_envelope(envelope)
                 .await
                 .expect("trainer ingress envelope should send");
         });
@@ -1393,8 +1299,8 @@ mod tests {
         });
 
         runtime.block_on(async {
-            trainer_ingress
-                .send(TrainerIngressEvent::Disconnected)
+            ipc_handle
+                .trainer_disconnected()
                 .await
                 .expect("trainer ingress disconnected event should send");
         });
@@ -1403,10 +1309,8 @@ mod tests {
         });
 
         runtime.block_on(async {
-            trainer_ingress
-                .send(TrainerIngressEvent::Connected {
-                    session_id: "named-pipe-reconnect".to_string(),
-                })
+            ipc_handle
+                .trainer_connected("named-pipe-reconnect".to_string())
                 .await
                 .expect("trainer ingress reconnect event should send");
         });
@@ -1414,8 +1318,8 @@ mod tests {
             snap.ipc_connected
         });
         runtime.block_on(async {
-            trainer_ingress
-                .send(TrainerIngressEvent::Disconnected)
+            ipc_handle
+                .trainer_disconnected()
                 .await
                 .expect("trainer ingress disconnected event should send");
         });

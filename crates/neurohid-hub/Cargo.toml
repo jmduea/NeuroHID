@@ -13,11 +13,8 @@ default = []
 [dependencies]
 neurohid-types = { path = "../neurohid-types" }
 neurohid-core = { path = "../neurohid-core" }
-neurohid-ipc = { path = "../neurohid-ipc" }
 neurohid-calibration = { path = "../neurohid-calibration" }
-neurohid-device = { path = "../neurohid-device" }
 neurohid-storage = { path = "../neurohid-storage" }
-neurohid-signal = { path = "../neurohid-signal" }
 
 # GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
 egui = { workspace = true }
@@ -55,3 +52,4 @@ eframe = { workspace = true, features = ["default_fonts", "glow"] }
 
 [dev-dependencies]
 egui_kittest = "0.33.1"
+neurohid-ipc = { path = "../neurohid-ipc" }
