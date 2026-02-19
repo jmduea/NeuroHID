@@ -593,9 +593,6 @@ impl Widget for FftPlotWidget {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
-        // TODO: Get actual sample rate from stream metadata
-        let sample_rate = 128.0;
-        let nyquist = sample_rate / 2.0;
         let half_bins = FFT_SIZE / 2;
         let source_options = ctx.candidate_sources_for(WidgetId::FftPlot);
         if !source_options.is_empty() {
@@ -609,6 +606,13 @@ impl Widget for FftPlotWidget {
                 self.cached_fft.clear();
             }
         }
+
+        let sample_rate: f32 = self
+            .selected_source
+            .as_deref()
+            .and_then(|id| ctx.sample_rate_for_source(id))
+            .unwrap_or(128.0) as f32;
+        let nyquist = sample_rate / 2.0;
 
         // Settings bar
         ui.horizontal(|ui| {

@@ -192,6 +192,15 @@ impl<'a> WidgetContext<'a> {
             .find(|s| s.id == source_id && s.channel_count > 0)
             .map(|s| s.channel_count as usize)
     }
+
+    /// Resolve nominal sample rate from a discovered source id.
+    pub fn sample_rate_for_source(&self, source_id: &str) -> Option<f64> {
+        self.snapshot
+            .discovered_streams
+            .iter()
+            .find(|s| s.id == source_id && s.sample_rate > 0.0)
+            .map(|s| s.effective_sample_rate_hz.unwrap_or(s.sample_rate))
+    }
 }
 
 /// The trait implemented by all visualization widgets.

@@ -449,8 +449,6 @@ impl Widget for TimeSeriesWidget {
     }
 
     fn show(&mut self, ui: &mut egui::Ui, ctx: &WidgetContext<'_>, pane_index: usize) {
-        // TODO: Get actual sample rate from stream metadata, and update when source changes.
-        let sample_rate = 128.0f32;
         let source_options = ctx.candidate_sources_for(WidgetId::TimeSeries);
         if !source_options.is_empty() {
             let valid = self
@@ -462,6 +460,12 @@ impl Widget for TimeSeriesWidget {
                 self.selected_source = Some(source_options[0].id.clone());
             }
         }
+
+        let sample_rate: f32 = self
+            .selected_source
+            .as_deref()
+            .and_then(|id| ctx.sample_rate_for_source(id))
+            .unwrap_or(128.0) as f32;
 
         // Settings bar
         ui.horizontal(|ui| {

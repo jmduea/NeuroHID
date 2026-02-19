@@ -18,7 +18,7 @@ const RAILED_GOOD: f32 = 1.0; // < 1% railed
 const RAILED_WARN: f32 = 5.0; // 1-5% railed
 ///TODO: Another configurable
 /// Number of recent samples to analyze for quality metrics.
-const WINDOW_SAMPLES: usize = 256; // ~2 seconds at 128 Hz
+const WINDOW_SAMPLES: usize = 256;
 
 #[derive(Clone)]
 struct ChannelMetrics {
