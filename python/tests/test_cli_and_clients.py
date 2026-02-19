@@ -17,6 +17,14 @@ _telemetry = importlib.import_module("neurohid_ml.telemetry")
 
 
 class CliAndClientTests(unittest.TestCase):
+    def test_parse_args_bridge_defaults_use_canonical_values(self) -> None:
+        args = _cli._parse_args(["bridge"])
+
+        self.assertEqual(args.command, "bridge")
+        self.assertEqual(args.ipc_mode, "local_socket")
+        self.assertEqual(args.ipc_endpoint, "neurohid.control.v3")
+        self.assertEqual(args.port, 47_384)
+
     def test_control_send_command_raises_on_error_payload(self) -> None:
         client = _control.NeuroHidControlClient(auto_start_service=False)
 

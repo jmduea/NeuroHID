@@ -1,11 +1,13 @@
 # Verified Remaining Work to Complete the Full IPC Replacement Plan
 
 ## Summary
+
 Based on current repo state, the migration is materially advanced, but the original full replacement is **not complete** yet.  
 What is already in place includes unified control/events endpoint behavior, config aliasing, daemon metadata lifecycle, and hub control-path migration to `neurohid-ipc` wrappers.  
 The main remaining blockers are trainer transport ownership, broker-level multiplexing/replay/backpressure semantics, hub event-driven external mode, and full Python bridge cutover.
 
 ## Progress Update (2026-02-19)
+
 1. Unified IPC server accept loop now handles clients concurrently so long-lived `runtime.events`
    subscribers no longer serialize all traffic.
    `crates/neurohid/src/bin/neurohid-service.rs`
@@ -24,6 +26,7 @@ The main remaining blockers are trainer transport ownership, broker-level multip
    `python/src/neurohid_ml/ipc.py`
 
 ## Verified Current Baseline (Completed So Far)
+
 1. Unified IPC config migration path exists and legacy fields are no longer serialized.
 `crates/neurohid-types/src/config.rs:1213`
 2. Daemon metadata + lock lifecycle has been added with metadata-first endpoint resolution.
@@ -44,6 +47,7 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 ## Remaining Work Required (Must Complete for Original Full Replacement)
 
 ### P0: Single-Endpoint Transport Ownership (Core Blocker)
+
 1. Remove trainer-side dedicated listener in `IpcTask`; it still binds `ml_transport/ml_pipe_name/ipc_port`.
 `crates/neurohid-core/src/tasks/ipc.rs:186`
 2. Move trainer channel transport ownership to service-side unified listener so `control.rpc`, `trainer.stream`, and `runtime.events` are all served by one endpoint.
@@ -54,12 +58,14 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 `crates/neurohid/src/bin/neurohid-service.rs:708`
 
 ### P0: Runtime Events Replay/Backpressure Contract Completion
+
 1. Enforce explicit per-channel queue/backpressure defaults and policies (Control=256 reject, Trainer=1024 stall+warn, Events=4096 oldest-drop + drop event).
 `crates/neurohid-ipc/src/protocol.rs`  
 `crates/neurohid-ipc/src/server.rs`
 2. Add runtime IPC observability metrics/events for connection churn, lag, drops, resume hits/misses.
 
 ### P0: Runtime Observation/Event Completeness
+
 1. Emit runtime-native `decision_event`, `errp_window`, `errp_result`, and `integrity_issue` events end-to-end; variants exist but are not emitted today.
 `crates/neurohid-types/src/ipc_v3.rs`  
 `crates/neurohid/src/bin/neurohid-service.rs:1148`
@@ -67,12 +73,14 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 3. Add schema/capability negotiation contract beyond current static `capabilities` payload.
 
 ### P1: Hub External Runtime Event-Driven Mode
-1. Add long-lived `runtime.events` subscription consumer in external mode and apply updates to cached snapshot/trainer state.
+
+1. ✅ Add long-lived `runtime.events` subscription consumer in external mode and apply updates to cached snapshot/trainer state.
 `crates/neurohid-hub/src/service_manager.rs:686`
-2. Keep polling path only as degraded fallback when subscription unavailable.
-3. Add reconnect/resume behavior in hub external subscriber.
+2. ✅ Keep polling path only as degraded fallback when subscription unavailable.
+3. ✅ Add reconnect/resume behavior in hub external subscriber.
 
 ### P1: Python Full Cutover for Bridge + Public API
+
 1. Replace remaining public transport split knobs (`control_transport`, `control_pipe_name`, `ml_transport`, `ml_pipe_name`) as canonical API; keep only compatibility aliases.
 `python/src/neurohid_ml/control.py:29`  
 `python/src/neurohid_ml/notebook.py:40`
@@ -82,6 +90,7 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 4. Finalize reconnect/resume behavior parity for notebook observation subscriptions once server backfill exists.
 
 ### P1: Config/Compatibility Hard Cutover
+
 1. Remove runtime dependence on legacy split fields after trainer migration completes.
 `crates/neurohid-core/src/tasks/ipc.rs:187`
 2. Remove temporary legacy CLI fallback `--daemon-command`.
@@ -90,6 +99,7 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 3. Define and enforce Rust/Python protocol compatibility matrix in CI.
 
 ### P2: Docs + Tooling + Validation Alignment
+
 1. Update deployment docs to stop describing split control/ML endpoints and old trainer port assumptions.
 `docs/deployment-guide.md:35`
 2. Update `neurohid-validate` scenarios/config shaping to unified endpoint model.
@@ -97,47 +107,74 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 3. Ensure all canonical docs reflect v3 single-endpoint architecture and replay semantics.
 
 ## Public APIs / Interfaces Still To Finalize
+
 1. `ServiceConfig` final external contract:
+
 - Canonical: `ipc_mode`, `ipc_endpoint`.
 - Legacy fields accepted only as parse-time aliases during defined migration window.
+
 2. `neurohid-ipc` broker API:
+
 - `send_control(...)`
 - `open_trainer_stream(...)`
 - `subscribe_runtime_events(...)`
 - Replay/resume and channel backpressure policy surfaces.
+
 3. `runtime.events` subscribe contract:
+
 - `families`, `resume_from_seq`, `max_events`, `max_duration_ms`, `sample_every`, `snapshot_interval_ms`.
 - Add replay-miss/loss signaling guarantees.
+
 4. Python public API:
+
 - Keep `send_command(...)`, `subscribe_events(...)`, `subscribe_observations(...)`, reconnect/resume helpers.
 - Demote legacy transport args to compatibility-only and remove from canonical docs/examples.
+
 5. Daemon CLI:
+
 - Canonical `neurohid-service daemon start|stop|status` only after fallback removal.
 
 ## Test Cases and Acceptance Scenarios Still Required
+
 1. Broker integration tests:
+
 - one-endpoint multiplex (`control.rpc`, `trainer.stream`, `runtime.events`) with concurrent clients.
+
 2. Replay/resume tests:
+
 - in-window resume hit
 - out-of-window resume miss with lifecycle signal.
+
 3. Backpressure policy tests:
+
 - per-channel limit enforcement and drop notification behavior.
+
 4. Runtime integration tests:
+
 - decision->ErrP flow and integrity issues visible on `runtime.events`.
+
 5. Hub external mode tests:
+
 - event-driven state updates + polling fallback.
+
 6. Python tests:
+
 - unified client command+stream path
 - reconnect/resume cursor handling with true server backfill.
+
 7. End-to-end scenarios:
+
 - background runtime + trainer + notebook subscriber simultaneously on one endpoint.
 - control commands and observation stream with no transport-specific branching.
+
 8. CI gates:
+
 - Rust check/test/clippy/fmt for touched crates.
 - Python pytest/ruff/black/mypy for touched package.
 - Linux + Windows matrix for local socket/named-pipe behavior.
 
 ## Assumptions and Defaults
+
 1. Breaking cutover remains accepted.
 2. JSON remains wire format.
 3. Local-only IPC remains enforced (`local_socket` or loopback TCP only).

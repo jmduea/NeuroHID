@@ -21,6 +21,13 @@ from typing import Any, BinaryIO, Optional
 import numpy as np
 
 from neurohid_ml.errp import ErrPConfig, ErrPDetector
+from neurohid_ml.ipc_constants import (
+    CANONICAL_IPC_MODE,
+    CANONICAL_LOCAL_ENDPOINT,
+    CANONICAL_TCP_HOST,
+    CANONICAL_TCP_PORT,
+    DEFAULT_ML_PIPE_NAME,
+)
 
 ipckit: Any
 try:
@@ -29,10 +36,10 @@ except Exception:  # pragma: no cover - optional dependency
     ipckit = None
 
 IPC_PROTOCOL_V3 = 3
-DEFAULT_IPC_PORT = 47_384
-DEFAULT_IPC_ENDPOINT = "neurohid.control.v3"
-DEFAULT_PIPE_NAME = r"\\.\pipe\neurohid.ml.v3"
-DEFAULT_HOST = "127.0.0.1"
+DEFAULT_IPC_PORT = CANONICAL_TCP_PORT
+DEFAULT_IPC_ENDPOINT = CANONICAL_LOCAL_ENDPOINT
+DEFAULT_PIPE_NAME = DEFAULT_ML_PIPE_NAME
+DEFAULT_HOST = CANONICAL_TCP_HOST
 
 
 class IpcTransport(str, Enum):
@@ -46,7 +53,7 @@ class IpcTransport(str, Enum):
 class IpcConfig:
     """Configuration for trainer<->runtime ML bridge connectivity."""
 
-    ipc_mode: str | None = "local_socket"
+    ipc_mode: str | None = CANONICAL_IPC_MODE
     ipc_endpoint: str = DEFAULT_IPC_ENDPOINT
     transport: IpcTransport | str = (
         IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK
@@ -63,9 +70,11 @@ class IpcConfig:
 
     def __post_init__(self) -> None:
         mode = (self.ipc_mode or "").strip().lower()
-        transport_raw = self.transport.value if isinstance(self.transport, IpcTransport) else str(
-            self.transport
-        ).strip().lower()
+        transport_raw = (
+            self.transport.value
+            if isinstance(self.transport, IpcTransport)
+            else str(self.transport).strip().lower()
+        )
         if not mode:
             if transport_raw in {"named_pipe", "pipe", "local_socket"}:
                 mode = "local_socket"
@@ -119,9 +128,7 @@ def _parse_tcp_endpoint(endpoint: str) -> tuple[str, int]:
         raise RuntimeError("ipc_endpoint must not be empty for tcp_loopback mode")
     host, sep, port_raw = value.rpartition(":")
     if sep == "":
-        raise RuntimeError(
-            f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port"
-        )
+        raise RuntimeError(f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port")
     host = host.strip() or DEFAULT_HOST
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1].strip() or DEFAULT_HOST
@@ -359,9 +366,7 @@ class IpcClient:
                 last_error = error
                 time.sleep(0.1)
 
-        raise TimeoutError(
-            f"timed out opening named pipe {self.config.ipc_endpoint}: {last_error}"
-        )
+        raise TimeoutError(f"timed out opening named pipe {self.config.ipc_endpoint}: {last_error}")
 
     def _pipe_read_exact(self, size: int) -> bytes:
         if self.pipe is None:

@@ -4,25 +4,12 @@
 //! Each channel is rendered as a separate trace with a unique color.
 
 use crate::theme;
+use crate::widgets::channel_meta::{
+    EEG_CHANNEL_COLORS as CHANNEL_COLORS, EEG_CHANNEL_NAMES as CHANNEL_NAMES,
+};
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use neurohid_types::event::{MarkerType, StreamMarker};
-
-/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
-/// Channel colors matching common EEG GUI conventions.
-const CHANNEL_COLORS: &[egui::Color32] = &[
-    egui::Color32::from_rgb(129, 199, 132), // green
-    egui::Color32::from_rgb(100, 181, 246), // blue
-    egui::Color32::from_rgb(239, 154, 154), // red
-    egui::Color32::from_rgb(255, 213, 79),  // yellow
-    egui::Color32::from_rgb(206, 147, 216), // purple
-    egui::Color32::from_rgb(255, 183, 77),  // orange
-    egui::Color32::from_rgb(128, 222, 234), // cyan
-    egui::Color32::from_rgb(240, 98, 146),  // pink
-];
-
-/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
-const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
 /// TODO: Create a shared style module?
 /// Left margin for amplitude scale indicator

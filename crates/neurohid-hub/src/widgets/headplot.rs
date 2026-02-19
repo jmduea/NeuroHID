@@ -3,17 +3,9 @@
 //! Displays a simple topographic heatmap over the five canonical EEG channels.
 
 use crate::theme;
+use crate::widgets::channel_meta::{EEG_CHANNEL_NAMES as CHANNEL_NAMES, EEG_HEAD_POSITIONS as POS};
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
-
-const CHANNEL_NAMES: [&str; 5] = ["AF3", "AF4", "T7", "T8", "Pz"];
-const POS: [(f32, f32); 5] = [
-    (0.35, 0.25), // AF3
-    (0.65, 0.25), // AF4
-    (0.15, 0.50), // T7
-    (0.85, 0.50), // T8
-    (0.50, 0.70), // Pz
-];
 
 pub struct HeadplotWidget {
     window: usize,

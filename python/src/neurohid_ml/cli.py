@@ -14,6 +14,15 @@ import time
 from pathlib import Path
 from typing import Sequence
 
+from neurohid_ml.ipc_constants import (
+    CANONICAL_IPC_MODE,
+    CANONICAL_LOCAL_ENDPOINT,
+    CANONICAL_TCP_HOST,
+    CANONICAL_TCP_PORT,
+    DEFAULT_CONTROL_PIPE_NAME,
+    DEFAULT_ML_PIPE_NAME,
+)
+
 
 def _add_training_hyperparameter_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model-version", type=str, default="candidate-0")
@@ -48,12 +57,12 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     bridge.add_argument(
         "--ipc-mode",
         choices=["local_socket", "tcp_loopback"],
-        default="local_socket",
+        default=CANONICAL_IPC_MODE,
         help="canonical bridge IPC mode",
     )
     bridge.add_argument(
         "--ipc-endpoint",
-        default="neurohid.control.v3",
+        default=CANONICAL_LOCAL_ENDPOINT,
         help="canonical bridge endpoint path/name or host:port",
     )
     bridge.add_argument(
@@ -62,9 +71,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
         help="legacy bridge transport alias (prefer --ipc-mode/--ipc-endpoint)",
     )
-    bridge.add_argument("--host", default="127.0.0.1", help="legacy alias")
-    bridge.add_argument("--port", type=int, default=47384, help="legacy alias")
-    bridge.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v3", help="legacy alias")
+    bridge.add_argument("--host", default=CANONICAL_TCP_HOST, help="legacy alias")
+    bridge.add_argument("--port", type=int, default=CANONICAL_TCP_PORT, help="legacy alias")
+    bridge.add_argument("--pipe-name", default=DEFAULT_ML_PIPE_NAME, help="legacy alias")
 
     control = subparsers.add_parser(
         "control",
@@ -106,17 +115,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     control.add_argument(
         "--ipc-mode",
         choices=["local_socket", "tcp_loopback"],
-        default="local_socket",
+        default=CANONICAL_IPC_MODE,
         help="canonical control IPC mode",
     )
     control.add_argument(
         "--ipc-endpoint",
-        default=r"\\.\pipe\neurohid.control.v3" if os.name == "nt" else "neurohid.control.v3",
+        default=DEFAULT_CONTROL_PIPE_NAME if os.name == "nt" else CANONICAL_LOCAL_ENDPOINT,
         help="canonical IPC endpoint path/name or loopback address",
     )
-    control.add_argument("--host", default="127.0.0.1")
-    control.add_argument("--port", type=int, default=47385)
-    control.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.control.v3")
+    control.add_argument("--host", default=CANONICAL_TCP_HOST)
+    control.add_argument("--port", type=int, default=CANONICAL_TCP_PORT)
+    control.add_argument("--pipe-name", default=DEFAULT_CONTROL_PIPE_NAME)
     control.add_argument(
         "--service-bin",
         default="neurohid-service",
@@ -142,17 +151,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     telemetry_read.add_argument(
         "--ipc-mode",
         choices=["local_socket", "tcp_loopback"],
-        default="local_socket",
+        default=CANONICAL_IPC_MODE,
         help="canonical runtime.events IPC mode",
     )
     telemetry_read.add_argument(
         "--ipc-endpoint",
-        default=r"\\.\pipe\neurohid.control.v3" if os.name == "nt" else "neurohid.control.v3",
+        default=DEFAULT_CONTROL_PIPE_NAME if os.name == "nt" else CANONICAL_LOCAL_ENDPOINT,
         help="canonical IPC endpoint path/name or loopback address",
     )
-    telemetry_read.add_argument("--host", default="127.0.0.1")
-    telemetry_read.add_argument("--port", type=int, default=47385)
-    telemetry_read.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.control.v3")
+    telemetry_read.add_argument("--host", default=CANONICAL_TCP_HOST)
+    telemetry_read.add_argument("--port", type=int, default=CANONICAL_TCP_PORT)
+    telemetry_read.add_argument("--pipe-name", default=DEFAULT_CONTROL_PIPE_NAME)
     telemetry_read.add_argument(
         "--max-messages",
         type=int,

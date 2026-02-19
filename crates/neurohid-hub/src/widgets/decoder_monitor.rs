@@ -4,6 +4,7 @@
 //! confidence gauge, decoded-actions-per-minute, and feature-vector summary.
 
 use crate::theme;
+use crate::widgets::channel_meta::EEG_CHANNEL_NAMES as CHANNEL_NAMES;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use neurohid_types::action::Action;
@@ -17,7 +18,6 @@ const ACTION_HISTORY_SECS: f64 = 60.0;
 const CHANNELS: usize = 5;
 const BANDS: usize = 5;
 const BAND_NAMES: &[&str] = &["d", "th", "a", "b", "g"];
-const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
 pub struct DecoderMonitorWidget {
     /// Recent action timestamps for computing actions-per-minute.

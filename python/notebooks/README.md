@@ -11,7 +11,7 @@ These notebooks are designed for the managed Jupyter IDE flow in Hub Advanced mo
 ## Preconditions
 
 - NeuroHID service is running.
-- Control endpoint is available on `127.0.0.1:47385` (default helper config).
+- Canonical IPC endpoint is available (`ipc_mode=local_socket`, `ipc_endpoint=neurohid.control.v3`).
 - Python environment is bootstrapped via Hub (`Prepare Environment`).
 
 ## Programmatic Control Helpers
@@ -25,8 +25,8 @@ These notebooks are designed for the managed Jupyter IDE flow in Hub Advanced mo
 
 Defaults target:
 
-- Control: TCP loopback `127.0.0.1:47385` (or Windows named pipe when configured).
-- Runtime-ML telemetry: Windows named pipe `\\.\pipe\neurohid.ml.v3` (or loopback TCP).
+- Canonical local socket endpoint: `neurohid.control.v3`.
+- Canonical TCP fallback endpoint: `127.0.0.1:47384`.
 
 ## CLI Quickstart (uv)
 
@@ -37,4 +37,4 @@ From repository root:
 - Force bridge reconnect: `uv run --project python neurohid-ml control ml_bridge_reconnect`
 - Ensure one EEG stream is connected: `uv run --project python neurohid-ml control ensure_connected_stream`
 - Read one telemetry envelope: `uv run --project python neurohid-ml telemetry-read --max-messages 1`
-- Tail 10 telemetry envelopes (TCP mode): `uv run --project python neurohid-ml telemetry-read --transport tcp_loopback --port 47384 --max-messages 10`
+- Tail 10 telemetry envelopes (TCP mode): `uv run --project python neurohid-ml telemetry-read --ipc-mode tcp_loopback --ipc-endpoint 127.0.0.1:47384 --max-messages 10`

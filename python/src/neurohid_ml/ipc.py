@@ -8,6 +8,13 @@ import time
 from dataclasses import dataclass
 from typing import Any, Iterator, Sequence
 
+from neurohid_ml.ipc_constants import (
+    CANONICAL_IPC_MODE,
+    CANONICAL_LOCAL_ENDPOINT,
+    CANONICAL_TCP_HOST,
+    CANONICAL_TCP_PORT,
+)
+
 ipckit: Any
 try:
     import ipckit  # type: ignore[import-not-found]
@@ -24,9 +31,7 @@ def _parse_tcp_endpoint(endpoint: str) -> tuple[str, int]:
         raise RuntimeError("ipc_endpoint must not be empty for tcp_loopback mode")
     host, sep, port_raw = value.rpartition(":")
     if sep == "":
-        raise RuntimeError(
-            f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port"
-        )
+        raise RuntimeError(f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port")
     host = host.strip() or "127.0.0.1"
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1].strip() or "127.0.0.1"
@@ -160,10 +165,10 @@ def events_to_dataframe(events: Sequence[dict[str, Any]]) -> Any:
 class NeuroHidIpcClient:
     """Unified IPC v3 client supporting local-socket and TCP loopback modes."""
 
-    ipc_mode: str = "local_socket"
-    ipc_endpoint: str = "neurohid.control.v3"
-    host: str = "127.0.0.1"
-    port: int = 47_385
+    ipc_mode: str = CANONICAL_IPC_MODE
+    ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
+    host: str = CANONICAL_TCP_HOST
+    port: int = CANONICAL_TCP_PORT
     connect_timeout_secs: float = 1.5
     read_timeout_secs: float = 1.5
     connect_retries: int = 1

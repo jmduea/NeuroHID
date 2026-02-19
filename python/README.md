@@ -20,19 +20,23 @@ uv run --directory python neurohid-ml --help
 ## Runtime Bridge Workflows
 
 ```bash
-# Start bridge with default transport settings
+# Start bridge with canonical IPC defaults
 uv run --directory python neurohid-ml bridge
 
-# Start bridge with explicit TCP loopback transport
-uv run --directory python neurohid-ml bridge --transport tcp_loopback --port 47384
+# Start bridge with explicit canonical TCP endpoint
+uv run --directory python neurohid-ml bridge --ipc-mode tcp_loopback --ipc-endpoint 127.0.0.1:47384
 ```
 
 ## Control and Telemetry Helpers
 
 ```bash
-uv run --directory python neurohid-ml control snapshot
-uv run --directory python neurohid-ml telemetry-read --max-messages 1
+uv run --directory python neurohid-ml control snapshot --ipc-mode local_socket --ipc-endpoint neurohid.control.v3
+uv run --directory python neurohid-ml telemetry-read --max-messages 1 --ipc-mode local_socket --ipc-endpoint neurohid.control.v3
 ```
+
+Canonical public IPC arguments are `--ipc-mode` and `--ipc-endpoint`.
+Legacy `--transport/--host/--port/--pipe-name` flags remain compatibility aliases and emit
+deprecation warnings when used.
 
 ## Training and Candidate Staging
 

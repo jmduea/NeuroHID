@@ -17,6 +17,13 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from neurohid_ml.control import NeuroHidControlClient, NotebookError
+from neurohid_ml.ipc_constants import (
+    CANONICAL_IPC_MODE,
+    CANONICAL_LOCAL_ENDPOINT,
+    CANONICAL_TCP_HOST,
+    CANONICAL_TCP_PORT,
+    DEFAULT_CONTROL_PIPE_NAME,
+)
 from neurohid_ml.telemetry import NeuroHidTelemetryClient
 
 
@@ -24,12 +31,12 @@ from neurohid_ml.telemetry import NeuroHidTelemetryClient
 class NeuroHidNotebook:
     """Ergonomic API surface for Jupyter notebooks."""
 
-    control_host: str = "127.0.0.1"
-    control_port: int = 47385
+    control_host: str = CANONICAL_TCP_HOST
+    control_port: int = CANONICAL_TCP_PORT
     control_transport: str = "tcp"
-    control_pipe_name: str = r"\\.\pipe\neurohid.control.v3"
-    ipc_mode: str | None = "local_socket"
-    ipc_endpoint: str = "neurohid.control.v3"
+    control_pipe_name: str = DEFAULT_CONTROL_PIPE_NAME
+    ipc_mode: str | None = CANONICAL_IPC_MODE
+    ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
     service_bin: str = "neurohid-service"
     auto_start_service: bool = True
     service_launch_command: str | None = None
@@ -38,9 +45,9 @@ class NeuroHidNotebook:
     read_timeout_secs: float = 1.5
     connect_retries: int = 1
     ml_transport: str = "named_pipe" if os.name == "nt" else "tcp_loopback"
-    ml_host: str = "127.0.0.1"
-    ml_port: int = 47385
-    ml_pipe_name: str = r"\\.\pipe\neurohid.control.v3"
+    ml_host: str = CANONICAL_TCP_HOST
+    ml_port: int = CANONICAL_TCP_PORT
+    ml_pipe_name: str = DEFAULT_CONTROL_PIPE_NAME
     ml_connect_timeout_secs: float = 1.5
     ml_read_timeout_secs: float = 0.2
     _control: NeuroHidControlClient = field(init=False, repr=False)

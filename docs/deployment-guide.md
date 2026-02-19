@@ -35,13 +35,13 @@ Named/local-socket transports are Windows-focused. On Linux/macOS, use loopback 
 ```toml
 [service]
 ipc_mode = "tcp_loopback"
-ipc_endpoint = "127.0.0.1:47385"
+ipc_endpoint = "127.0.0.1:47384"
 ```
 
 Run the Python bridge against the same canonical endpoint:
 
 ```bash
-uv run --directory python neurohid-ml bridge --ipc-mode tcp_loopback --ipc-endpoint 127.0.0.1:47385
+uv run --directory python neurohid-ml bridge --ipc-mode tcp_loopback --ipc-endpoint 127.0.0.1:47384
 ```
 
 ## IPC and Bridge Mode

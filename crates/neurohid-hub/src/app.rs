@@ -1050,21 +1050,21 @@ impl HubApp {
                 theme::card_frame(ui).show(ui, |ui| {
                     ui.horizontal_wrapped(|ui| {
                         theme::status_chip(ui, &problem.message, problem.intent);
-                        if let Some(screen) = problem.screen_target {
-                            if theme::action_button(
+                        if let Some(screen) = problem.screen_target
+                            && theme::action_button(
                                 ui,
                                 &format!("Open {}", screen.label()),
                                 true,
                                 theme::ButtonTone::Ghost,
-                            ) {
-                                self.current_screen = screen;
-                                self.workbench.sync_lane_from_screen(
-                                    &self.state.config.ui.mode,
-                                    self.current_screen,
-                                );
-                                if let Some(tab) = problem.tab_target {
-                                    self.workbench.open_bottom_tab(tab);
-                                }
+                            )
+                        {
+                            self.current_screen = screen;
+                            self.workbench.sync_lane_from_screen(
+                                &self.state.config.ui.mode,
+                                self.current_screen,
+                            );
+                            if let Some(tab) = problem.tab_target {
+                                self.workbench.open_bottom_tab(tab);
                             }
                         }
                     });

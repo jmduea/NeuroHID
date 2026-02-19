@@ -4,30 +4,11 @@
 //! and railed-sample percentages to help users optimize electrode placement.
 
 use crate::theme;
+use crate::widgets::channel_meta::{
+    EEG_CHANNEL_COLORS as CHANNEL_COLORS, EEG_CHANNEL_NAMES as CHANNEL_NAMES, EEG_HEAD_POSITIONS,
+};
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
-
-/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
-const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
-/// TODO: also in FFT plot — unify/dynamically generate based on stream metadata?
-const CHANNEL_COLORS: &[egui::Color32] = &[
-    egui::Color32::from_rgb(129, 199, 132),
-    egui::Color32::from_rgb(100, 181, 246),
-    egui::Color32::from_rgb(239, 154, 154),
-    egui::Color32::from_rgb(255, 213, 79),
-    egui::Color32::from_rgb(206, 147, 216),
-];
-
-///TODO: Make configurable, or derive from stream metadata if available. Could also infer from channel names + standard EEG Layouts.
-/// Electrode positions on head diagram (normalized 0-100 coordinate space).
-/// Top-down view: nose at top, left ear on left.
-const ELECTRODE_POSITIONS: &[(usize, f32, f32)] = &[
-    (0, 35.0, 25.0), // AF3 - front-left
-    (1, 65.0, 25.0), // AF4 - front-right
-    (2, 15.0, 50.0), // T7 - left temporal
-    (3, 85.0, 50.0), // T8 - right temporal
-    (4, 50.0, 70.0), // Pz - parietal center
-];
 
 ///TODO: Make thresholds configurable, or derive from device metadata if available.
 /// Threshold helpers - based on Emotiv Insight expectations.
@@ -325,15 +306,14 @@ impl SignalQualityWidget {
         );
 
         // Draw electrodes at their positions
-        for &(ch_idx, norm_x, norm_y) in ELECTRODE_POSITIONS {
+        for (ch_idx, &(x_norm, y_norm)) in EEG_HEAD_POSITIONS.iter().enumerate() {
             if ch_idx >= self.cached_metrics.len() {
                 continue;
             }
 
             // Convert normalized coordinates to screen position
-            // norm_x/norm_y are in 0-100 space, centered at 50,50
-            let x = center.x + (norm_x - 50.0) * scale;
-            let y = center.y + (norm_y - 50.0) * scale;
+            let x = rect.left() + x_norm * rect.width();
+            let y = rect.top() + y_norm * rect.height();
             let pos = egui::pos2(x, y);
 
             let quality = self.cached_metrics[ch_idx].quality;

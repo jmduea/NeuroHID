@@ -1236,10 +1236,13 @@ mod tests {
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use super::ServiceManager;
+    use crate::state::ServiceSnapshot;
     use neurohid_core::tasks::TrainerIngressEvent;
     #[cfg(windows)]
     use neurohid_ipc::{HelloV2, RuntimeMlRoleV2, TrainerStreamKindV3};
-    use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport};
+    #[cfg(windows)]
+    use neurohid_ipc::{IpcConfig, IpcServer, IpcTransport};
     use neurohid_types::{
         ControlRpcRequestV3, ControlRpcResponseV3, IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3,
         config::{ControlTransport, DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig},
@@ -1248,13 +1251,6 @@ mod tests {
             ControlSnapshot, RuntimeModeState,
         },
     };
-    #[cfg(windows)]
-    use tokio::io::{AsyncReadExt, AsyncWriteExt};
-    #[cfg(windows)]
-    use tokio::net::windows::named_pipe::ServerOptions;
-
-    use super::ServiceManager;
-    use crate::state::ServiceSnapshot;
 
     #[test]
     fn snapshot_tracks_real_ipc_connect_disconnect_transitions() {
@@ -1392,14 +1388,28 @@ mod tests {
         config.service.ipc_simulation_enabled = false;
         config.service.ipc_mode = IpcMode::LocalSocket;
         config.service.ipc_endpoint = unique_pipe_name("neurohid_ipc_test");
+        config.service.control_transport = ControlTransport::NamedPipe;
+        config.service.control_pipe_name = config.service.ipc_endpoint.clone();
         config.service.ml_stall_timeout_ms = 120;
         config.service.ml_heartbeat_interval_ms = 50;
 
         manager.start(&runtime, config.clone(), None, None);
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| snap.running);
 
-        let mut client =
-            runtime.block_on(connect_test_named_pipe_client(&config.service.ipc_endpoint));
+        let trainer_ingress = manager
+            .handle
+            .as_ref()
+            .expect("embedded runtime handle should be available")
+            .trainer_ingress_tx
+            .clone();
+        runtime.block_on(async {
+            trainer_ingress
+                .send(TrainerIngressEvent::Connected {
+                    session_id: "named-pipe-test".to_string(),
+                })
+                .await
+                .expect("trainer ingress connected event should send");
+        });
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             snap.ipc_connected && snap.ml_bridge_connected
         });
@@ -1428,35 +1438,41 @@ mod tests {
                 &hello,
             )
             .expect("hello envelope should encode");
-            client
-                .send(envelope)
+            trainer_ingress
+                .send(TrainerIngressEvent::Envelope(envelope))
                 .await
-                .expect("hello send should succeed");
+                .expect("trainer ingress envelope should send");
         });
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             !snap.ml_bridge_stalled
         });
 
         runtime.block_on(async {
-            client
-                .disconnect()
+            trainer_ingress
+                .send(TrainerIngressEvent::Disconnected)
                 .await
-                .expect("disconnect should succeed");
+                .expect("trainer ingress disconnected event should send");
         });
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             !snap.ipc_connected
         });
 
-        let mut reconnect_client =
-            runtime.block_on(connect_test_named_pipe_client(&config.service.ipc_endpoint));
+        runtime.block_on(async {
+            trainer_ingress
+                .send(TrainerIngressEvent::Connected {
+                    session_id: "named-pipe-reconnect".to_string(),
+                })
+                .await
+                .expect("trainer ingress reconnect event should send");
+        });
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             snap.ipc_connected
         });
         runtime.block_on(async {
-            reconnect_client
-                .disconnect()
+            trainer_ingress
+                .send(TrainerIngressEvent::Disconnected)
                 .await
-                .expect("disconnect should succeed");
+                .expect("trainer ingress disconnected event should send");
         });
 
         manager.stop();
@@ -1519,28 +1535,6 @@ mod tests {
             }
 
             thread::sleep(Duration::from_millis(20));
-        }
-    }
-
-    #[cfg(windows)]
-    async fn connect_test_named_pipe_client(pipe_name: &str) -> IpcClient {
-        let mut client = IpcClient::new(IpcConfig {
-            transport: IpcTransport::LocalSocket,
-            endpoint: pipe_name.to_string(),
-            connect_timeout_ms: 250,
-            ..IpcConfig::default()
-        });
-
-        let start = tokio::time::Instant::now();
-        loop {
-            match client.connect().await {
-                Ok(()) => return client,
-                Err(err) if start.elapsed() < Duration::from_secs(3) => {
-                    tracing::debug!(%err, pipe = %pipe_name, "Waiting for named-pipe IPC server");
-                    tokio::time::sleep(Duration::from_millis(25)).await;
-                }
-                Err(err) => panic!("named-pipe client failed to connect: {err}"),
-            }
         }
     }
 
@@ -1672,25 +1666,28 @@ mod tests {
                 .expect("named-pipe mock runtime should build");
 
             runtime.block_on(async move {
+                let server = IpcServer::new(IpcConfig {
+                    transport: IpcTransport::LocalSocket,
+                    endpoint: pipe_name,
+                    ..IpcConfig::default()
+                })
+                .await
+                .expect("named-pipe mock server should start");
+
                 let mut running = true;
                 let mut calibration_mode = false;
                 let mut output_enabled = true;
 
                 while running {
-                    let server = ServerOptions::new()
-                        .create(&pipe_name)
-                        .expect("named-pipe control server create should succeed");
-                    server
-                        .connect()
+                    let connection = server
+                        .accept()
                         .await
-                        .expect("named-pipe control server connect should succeed");
-
-                    let (mut read_half, mut write_half) = tokio::io::split(server);
+                        .expect("named-pipe mock server accept should succeed");
 
                     loop {
-                        let envelope = match read_control_envelope_async(&mut read_half).await {
-                            Some(envelope) => envelope,
-                            None => break,
+                        let envelope = match connection.recv().await {
+                            Ok(envelope) => envelope,
+                            Err(_) => break,
                         };
                         let parsed = if envelope.v == IPC_PROTOCOL_V3
                             && envelope.channel == IpcChannelV3::ControlRpc
@@ -1811,7 +1808,19 @@ mod tests {
                             ),
                         };
 
-                        write_control_response_async(&mut write_half, &response)
+                        let response_payload = ControlRpcResponseV3::from(response.clone());
+                        let response_envelope = IpcEnvelopeV3::new(
+                            IpcChannelV3::ControlRpc,
+                            "response",
+                            envelope.seq.saturating_add(1),
+                            response.request_id.clone(),
+                            Some("mock-control".to_string()),
+                            &response_payload,
+                        )
+                        .expect("named-pipe control response should encode");
+
+                        connection
+                            .send(response_envelope)
                             .await
                             .expect("named-pipe control response write should succeed");
 
@@ -1906,52 +1915,6 @@ mod tests {
         writer
             .flush()
             .map_err(|e| format!("failed to flush control frame payload: {}", e))?;
-        Ok(())
-    }
-
-    #[cfg(windows)]
-    async fn read_control_envelope_async<R>(reader: &mut R) -> Option<IpcEnvelopeV3>
-    where
-        R: tokio::io::AsyncRead + Unpin,
-    {
-        let mut len_buf = [0_u8; 4];
-        if reader.read_exact(&mut len_buf).await.is_err() {
-            return None;
-        }
-        let frame_len = u32::from_le_bytes(len_buf) as usize;
-        if frame_len == 0 {
-            return None;
-        }
-        let mut payload = vec![0_u8; frame_len];
-        if reader.read_exact(&mut payload).await.is_err() {
-            return None;
-        }
-        serde_json::from_slice::<IpcEnvelopeV3>(&payload).ok()
-    }
-
-    #[cfg(windows)]
-    async fn write_control_response_async<W>(
-        writer: &mut W,
-        response: &ControlResponse,
-    ) -> Result<(), std::io::Error>
-    where
-        W: tokio::io::AsyncWrite + Unpin,
-    {
-        let response_payload = ControlRpcResponseV3::from(response.clone());
-        let envelope = IpcEnvelopeV3::new(
-            IpcChannelV3::ControlRpc,
-            "response",
-            1,
-            response.request_id.clone(),
-            Some("mock-control".to_string()),
-            &response_payload,
-        )
-        .map_err(std::io::Error::other)?;
-        let payload = serde_json::to_vec(&envelope).map_err(std::io::Error::other)?;
-        let frame_len = payload.len() as u32;
-        writer.write_all(&frame_len.to_le_bytes()).await?;
-        writer.write_all(&payload).await?;
-        writer.flush().await?;
         Ok(())
     }
 

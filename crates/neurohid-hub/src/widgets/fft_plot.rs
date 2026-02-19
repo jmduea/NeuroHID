@@ -4,21 +4,13 @@
 //! X-axis is frequency (0-64 Hz), Y-axis is amplitude in uV.
 
 use crate::theme;
+use crate::widgets::channel_meta::{
+    EEG_CHANNEL_COLORS as CHANNEL_COLORS, EEG_CHANNEL_NAMES as CHANNEL_NAMES,
+};
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
+use rustfft::{FftPlanner, num_complex::Complex};
 use std::collections::VecDeque;
-
-///TODO: Dynamic colors based on theme, channel count
-const CHANNEL_COLORS: &[egui::Color32] = &[
-    egui::Color32::from_rgb(129, 199, 132),
-    egui::Color32::from_rgb(100, 181, 246),
-    egui::Color32::from_rgb(239, 154, 154),
-    egui::Color32::from_rgb(255, 213, 79),
-    egui::Color32::from_rgb(206, 147, 216),
-];
-
-///TODO: Dynamic channel names based on stream metadata
-const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
 /// Number of FFT bins (power of 2).
 const FFT_SIZE: usize = 256;
@@ -145,21 +137,21 @@ impl FftPlotWidget {
             *v *= w;
         }
 
-        // Simple DFT magnitude (not using rustfft to avoid dependency in hub)
-        // We only need bins up to Nyquist (n/2)
+        // FFT magnitude using rustfft; only bins up to Nyquist (n/2).
+        let mut planner = FftPlanner::<f32>::new();
+        let fft = planner.plan_fft_forward(n);
+        let mut buffer: Vec<Complex<f32>> = real
+            .into_iter()
+            .map(|value| Complex::new(value, 0.0))
+            .collect();
+        fft.process(&mut buffer);
+
         let half = n / 2;
         let mut magnitudes = Vec::with_capacity(half);
 
-        for k in 0..half {
-            let mut re = 0.0f32;
-            let mut im = 0.0f32;
-            for (j, &x) in real.iter().enumerate() {
-                let angle = 2.0 * std::f32::consts::PI * k as f32 * j as f32 / n as f32;
-                re += x * angle.cos();
-                im -= x * angle.sin();
-            }
-            let mag = (re * re + im * im).sqrt() / n as f32;
-            magnitudes.push(mag);
+        for frequency_bin in buffer.iter().take(half) {
+            let mag = frequency_bin.norm() / n as f32;
+            magnitudes.push(mag.max(0.0));
         }
 
         magnitudes
@@ -556,6 +548,38 @@ impl FftPlotWidget {
                 );
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::VecDeque;
+
+    use neurohid_types::signal::Sample;
+
+    use super::{FFT_SIZE, FftPlotWidget};
+
+    #[test]
+    fn compute_fft_detects_sine_peak_near_target_frequency() {
+        let sample_rate = 128.0f32;
+        let target_hz = 10.0f32;
+        let mut samples = VecDeque::with_capacity(FFT_SIZE);
+
+        for i in 0..FFT_SIZE {
+            let t = i as f32 / sample_rate;
+            let value = (2.0 * std::f32::consts::PI * target_hz * t).sin();
+            samples.push_back(Sample::new(vec![value]));
+        }
+
+        let spectrum = FftPlotWidget::compute_fft(&samples, 0);
+        let half_bins = FFT_SIZE / 2;
+        let nyquist = sample_rate / 2.0;
+        let (peak_bin, peak_hz, _mag) =
+            FftPlotWidget::find_peak(&spectrum, half_bins, nyquist, half_bins)
+                .expect("expected a dominant peak");
+
+        assert!(peak_bin > 0);
+        assert!((peak_hz - target_hz).abs() < 1.5);
     }
 }
 

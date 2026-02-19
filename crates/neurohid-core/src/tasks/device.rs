@@ -60,6 +60,14 @@ struct ActiveStream {
     join_handle: tokio::task::JoinHandle<()>,
 }
 
+struct StreamTaskContext {
+    sample_tx: mpsc::Sender<Sample>,
+    calibration_sample_tx: Option<mpsc::Sender<Sample>>,
+    calibration_mode: Option<Arc<AtomicBool>>,
+    state: Arc<RwLock<ServiceState>>,
+    observability_policy: EmitPolicyConfig,
+}
+
 const DEVICE_SUMMARY_EVERY_SAMPLES: u64 = 2_048;
 
 #[derive(Debug, Clone, Copy)]
@@ -273,12 +281,17 @@ impl DeviceTask {
                                     let handle = spawn_stream_task(
                                         device,
                                         stream_id.clone(),
-                                        self.sample_tx.clone(),
-                                        self.calibration_sample_tx.clone(),
-                                        self.calibration_mode.as_ref().map(Arc::clone),
-                                        self.state.clone(),
+                                        StreamTaskContext {
+                                            sample_tx: self.sample_tx.clone(),
+                                            calibration_sample_tx: self.calibration_sample_tx.clone(),
+                                            calibration_mode: self
+                                                .calibration_mode
+                                                .as_ref()
+                                                .map(Arc::clone),
+                                            state: self.state.clone(),
+                                            observability_policy: self.stream_emit_policy.clone(),
+                                        },
                                         cancel.clone(),
-                                        self.stream_emit_policy.clone(),
                                     );
 
                                     active_streams.insert(
@@ -504,14 +517,18 @@ impl DeviceTask {
 fn spawn_stream_task(
     mut device: Box<dyn Device>,
     stream_id: String,
-    sample_tx: mpsc::Sender<Sample>,
-    calibration_sample_tx: Option<mpsc::Sender<Sample>>,
-    calibration_mode: Option<Arc<AtomicBool>>,
-    state: Arc<RwLock<ServiceState>>,
+    context: StreamTaskContext,
     cancel: CancellationToken,
-    observability_policy: EmitPolicyConfig,
 ) -> tokio::task::JoinHandle<()> {
     tokio::spawn(async move {
+        let StreamTaskContext {
+            sample_tx,
+            calibration_sample_tx,
+            calibration_mode,
+            state,
+            observability_policy,
+        } = context;
+
         let mut emit_gate = EmitGate::new(observability_policy);
         let mut integrity = DeviceSampleIntegrityTracker::new();
 

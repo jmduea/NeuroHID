@@ -337,4 +337,15 @@ mod tests {
         let _ = hold_tx.send(());
         let _ = task.await;
     }
+
+    #[test]
+    fn runtime_backpressure_drop_updates_counters() {
+        let broker = IpcBroker::new(BrokerConfig::default());
+
+        broker.record_runtime_backpressure_drop(5);
+
+        let counters = broker.counters();
+        assert_eq!(counters.runtime_backpressure_drops, 5);
+        assert_eq!(counters.subscriber_lag_events, 1);
+    }
 }

@@ -3027,6 +3027,7 @@ dependencies = [
  "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
+ "rustfft",
  "serde",
  "serde_json",
  "signal-hook",

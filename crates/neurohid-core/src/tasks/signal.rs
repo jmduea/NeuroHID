@@ -251,9 +251,7 @@ impl StreamBuffer {
     }
 
     fn record_sequence(&mut self, sequence_number: Option<u64>) -> Option<SignalSequenceIssue> {
-        let Some(sequence_number) = sequence_number else {
-            return None;
-        };
+        let sequence_number = sequence_number?;
 
         if let Some(previous) = self.last_sequence_number {
             let expected = previous.saturating_add(1);

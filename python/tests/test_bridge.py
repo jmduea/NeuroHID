@@ -33,7 +33,13 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
         session = _bridge.BridgeSession(client)
 
         should_stop = await session.handle_runtime_message(
-            {"v": 1, "channel": "trainer.stream", "msg_type": "hello", "seq": 1, "payload": {}}
+            {
+                "v": 1,
+                "channel": "trainer.stream",
+                "msg_type": "hello",
+                "seq": 1,
+                "payload": {},
+            }
         )
 
         self.assertFalse(should_stop)
@@ -109,6 +115,13 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.sent[-1]["kind"], "errp_result")
         self.assertEqual(client.sent[-1]["payload"]["decision_id"], "d-1")
         self.assertEqual(client.sent[-1]["payload"]["error_probability"], 0.0)
+
+
+class BridgeConfigTests(unittest.TestCase):
+    def test_tcp_mode_uses_canonical_default_port(self) -> None:
+        config = _bridge.IpcConfig(ipc_mode="tcp_loopback", ipc_endpoint="")
+        self.assertEqual(config.host, "127.0.0.1")
+        self.assertEqual(config.port, 47_384)
 
 
 if __name__ == "__main__":

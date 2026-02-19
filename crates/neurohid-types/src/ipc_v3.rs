@@ -261,6 +261,10 @@ impl From<RuntimeMlKindV2> for TrainerStreamKindV3 {
 /// Runtime events broadcast to observers (Hub/notebooks/scripts).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
+#[allow(
+    clippy::large_enum_variant,
+    reason = "IPC payload ergonomics favor one tagged enum for serde wire compatibility; revisit during P3 simplification"
+)]
 pub enum RuntimeEventV3 {
     Snapshot {
         snapshot: ControlSnapshot,

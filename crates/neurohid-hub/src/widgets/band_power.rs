@@ -4,11 +4,10 @@
 //! Bands: Delta (0.5-4), Theta (4-8), Alpha (8-13), Beta (13-30), Gamma (30-45).
 
 use crate::theme;
+use crate::widgets::channel_meta::EEG_CHANNEL_NAMES as CHANNEL_NAMES;
 use crate::widgets::{Widget, WidgetContext, WidgetId};
 use eframe::egui;
 use std::collections::VecDeque;
-
-const CHANNEL_NAMES: &[&str] = &["AF3", "AF4", "T7", "T8", "Pz"];
 
 /// Standard EEG frequency bands with name, freq range, and color.
 const BANDS: &[(&str, f32, f32, egui::Color32)] = &[

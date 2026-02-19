@@ -143,10 +143,10 @@ impl WorkbenchState {
         }
 
         self.lane = lane;
-        if !screens_for_lane(lane).contains(current_screen) {
-            if let Some(&first) = screens_for_lane(lane).first() {
-                *current_screen = first;
-            }
+        if !screens_for_lane(lane).contains(current_screen)
+            && let Some(&first) = screens_for_lane(lane).first()
+        {
+            *current_screen = first;
         }
         if self.sidebar_focus_screen.is_some() {
             self.sidebar_focus_screen = Some(*current_screen);

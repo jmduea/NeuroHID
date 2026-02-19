@@ -1204,12 +1204,38 @@ mod tests {
                 .any(|warning| warning.contains("legacy service.ml_*"))
         );
     }
+
+    #[test]
+    fn service_config_ignores_legacy_aliases_when_canonical_fields_set() {
+        let mut config = ServiceConfig {
+            ipc_mode: IpcMode::TcpLoopback,
+            ipc_endpoint: "127.0.0.1:47384".to_string(),
+            control_transport: ControlTransport::NamedPipe,
+            control_pipe_name: r"\\.\pipe\legacy.control".to_string(),
+            ml_transport: MlTransport::NamedPipe,
+            ml_pipe_name: r"\\.\pipe\legacy.ml".to_string(),
+            ..ServiceConfig::default()
+        };
+
+        let warnings = config.apply_legacy_ipc_aliases();
+
+        assert_eq!(config.ipc_mode, IpcMode::TcpLoopback);
+        assert_eq!(config.ipc_endpoint, "127.0.0.1:47384");
+        assert!(warnings.iter().any(|warning| {
+            warning.contains("legacy service.control_*/service.ml_* fields are ignored")
+        }));
+    }
 }
 
 impl ServiceConfig {
     /// Resolve legacy split transport fields into unified IPC mode/endpoint.
     ///
     /// Returns warning messages describing migration behavior.
+    ///
+    /// Migration policy: `service.control_*` and `service.ml_*` remain parse-compatible
+    /// aliases during the v3 stabilization window, while `service.ipc_mode` and
+    /// `service.ipc_endpoint` are canonical. When canonical fields are explicitly set,
+    /// legacy aliases are ignored and an explicit warning is returned.
     pub fn apply_legacy_ipc_aliases(&mut self) -> Vec<String> {
         let mut warnings = Vec::new();
         let unified_is_default = self.ipc_mode == IpcMode::default()

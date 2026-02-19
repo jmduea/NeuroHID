@@ -6,6 +6,7 @@
 pub mod accelerometer;
 pub mod action_preview;
 pub mod band_power;
+pub mod channel_meta;
 pub mod decoder_monitor;
 pub mod fft_plot;
 pub mod focus;
