@@ -67,3 +67,15 @@ When a PR changes `Cargo.toml` files, include a short section in
 ```
 
 Keep rationale concise (3-6 bullets) unless crate ownership actually changes.
+
+## Update Notes
+
+### 2025-06-25 Hub coupling reduction (advanced-workbench-refactor)
+
+- Change summary: Removed `neurohid-device` and `neurohid-signal` from hub deps; moved `neurohid-ipc` to dev-deps (production code uses `neurohid-core::facade` re-exports).
+- Boundary impact: minor
+- Dependency direction check:
+   - [x] No reverse coupling introduced
+   - [x] Layer map still valid
+- Placement rationale: Hub should depend on `core` for runtime access, not reach through to component crates directly. IPC/storage access via `core::facade` keeps the layer hierarchy clean.
+- Follow-up needed: None.

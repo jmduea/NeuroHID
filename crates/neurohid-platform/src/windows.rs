@@ -200,6 +200,8 @@ impl Platform for WindowsPlatform {
             use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
             let mut point = POINT { x: 0, y: 0 };
+            // SAFETY: POINT is initialized to zeroes; GetCursorPos writes to the
+            // out-pointer which is valid for the duration of the call.
             unsafe {
                 GetCursorPos(&mut point)
                     .map_err(|e| PlatformError::CursorQueryFailed(e.to_string()))?;
@@ -218,6 +220,8 @@ impl Platform for WindowsPlatform {
                 GetSystemMetrics, SM_CMONITORS, SM_CXSCREEN, SM_CYSCREEN,
             };
 
+            // SAFETY: SM_CXSCREEN, SM_CYSCREEN, and SM_CMONITORS are read-only
+            // system queries with no pointer parameters.
             unsafe {
                 let width = GetSystemMetrics(SM_CXSCREEN) as u32;
                 let height = GetSystemMetrics(SM_CYSCREEN) as u32;

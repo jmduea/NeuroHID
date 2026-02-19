@@ -433,3 +433,247 @@ impl PermissionHint {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use neurohid_types::{
+        action::{Key, MouseButton, MouseMovement},
+        error::Result,
+        observation::{CursorState, ScreenInfo},
+    };
+
+    /// A mock platform with configurable cursor/screen state and call recording.
+    struct MockPlatform {
+        cursor_x: i32,
+        cursor_y: i32,
+        screen_width: u32,
+        screen_height: u32,
+        calls: Vec<String>,
+    }
+
+    impl MockPlatform {
+        fn new(cursor_x: i32, cursor_y: i32, screen_width: u32, screen_height: u32) -> Self {
+            Self {
+                cursor_x,
+                cursor_y,
+                screen_width,
+                screen_height,
+                calls: Vec::new(),
+            }
+        }
+    }
+
+    impl Platform for MockPlatform {
+        fn platform_name(&self) -> &'static str {
+            "mock"
+        }
+
+        fn check_input_permissions(&self) -> Result<()> {
+            Ok(())
+        }
+
+        fn check_query_permissions(&self) -> Result<()> {
+            Ok(())
+        }
+
+        fn emit_mouse_move(&mut self, movement: MouseMovement) -> Result<()> {
+            self.calls
+                .push(format!("mouse_move({}, {})", movement.dx, movement.dy));
+            Ok(())
+        }
+
+        fn emit_mouse_move_absolute(&mut self, x: i32, y: i32) -> Result<()> {
+            self.calls.push(format!("mouse_move_absolute({x}, {y})"));
+            self.cursor_x = x;
+            self.cursor_y = y;
+            Ok(())
+        }
+
+        fn emit_mouse_press(&mut self, button: MouseButton) -> Result<()> {
+            self.calls.push(format!("mouse_press({button:?})"));
+            Ok(())
+        }
+
+        fn emit_mouse_release(&mut self, button: MouseButton) -> Result<()> {
+            self.calls.push(format!("mouse_release({button:?})"));
+            Ok(())
+        }
+
+        fn emit_scroll(&mut self, dx: f32, dy: f32) -> Result<()> {
+            self.calls.push(format!("scroll({dx}, {dy})"));
+            Ok(())
+        }
+
+        fn emit_key_press(&mut self, key: Key) -> Result<()> {
+            self.calls.push(format!("key_press({key:?})"));
+            Ok(())
+        }
+
+        fn emit_key_release(&mut self, key: Key) -> Result<()> {
+            self.calls.push(format!("key_release({key:?})"));
+            Ok(())
+        }
+
+        fn get_cursor_position(&self) -> Result<(i32, i32)> {
+            Ok((self.cursor_x, self.cursor_y))
+        }
+
+        fn get_screen_info(&self) -> Result<ScreenInfo> {
+            Ok(ScreenInfo {
+                width: self.screen_width,
+                height: self.screen_height,
+                active_monitor: 0,
+                monitor_count: 1,
+            })
+        }
+    }
+
+    // ── get_cursor_state tests ──────────────────────────────────────────
+
+    #[test]
+    fn cursor_state_velocity_from_position_change() {
+        let platform = MockPlatform::new(200, 400, 1000, 1000);
+        let prev = CursorState {
+            x: 0.1, // 100/1000
+            y: 0.2, // 200/1000
+            velocity_x: 0.0,
+            velocity_y: 0.0,
+            button_held: false,
+        };
+
+        let state = platform.get_cursor_state(Some(&prev), 1.0).unwrap();
+
+        // norm_x = 200/1000 = 0.2, velocity_x = (0.2 - 0.1) / 1.0 = 0.1
+        assert!((state.velocity_x - 0.1).abs() < 1e-5);
+        // norm_y = 400/1000 = 0.4, velocity_y = (0.4 - 0.2) / 1.0 = 0.2
+        assert!((state.velocity_y - 0.2).abs() < 1e-5);
+    }
+
+    #[test]
+    fn cursor_state_no_previous_gives_zero_velocity() {
+        let platform = MockPlatform::new(500, 500, 1000, 1000);
+
+        let state = platform.get_cursor_state(None, 1.0).unwrap();
+
+        assert!((state.velocity_x).abs() < 1e-5);
+        assert!((state.velocity_y).abs() < 1e-5);
+        assert!((state.x - 0.5).abs() < 1e-5);
+        assert!((state.y - 0.5).abs() < 1e-5);
+    }
+
+    #[test]
+    fn cursor_state_zero_dt_gives_zero_velocity() {
+        let platform = MockPlatform::new(200, 400, 1000, 1000);
+        let prev = CursorState {
+            x: 0.1,
+            y: 0.2,
+            velocity_x: 5.0,
+            velocity_y: 5.0,
+            button_held: false,
+        };
+
+        let state = platform.get_cursor_state(Some(&prev), 0.0).unwrap();
+
+        assert!((state.velocity_x).abs() < 1e-5);
+        assert!((state.velocity_y).abs() < 1e-5);
+    }
+
+    // ── PlatformExt tests ───────────────────────────────────────────────
+
+    #[test]
+    fn emit_double_click_records_two_press_release_pairs() {
+        let mut platform = MockPlatform::new(0, 0, 1920, 1080);
+
+        platform.emit_double_click(MouseButton::Left).unwrap();
+
+        assert_eq!(
+            platform.calls,
+            vec![
+                "mouse_press(Left)",
+                "mouse_release(Left)",
+                "mouse_press(Left)",
+                "mouse_release(Left)",
+            ]
+        );
+    }
+
+    #[test]
+    fn move_and_click_records_move_then_click() {
+        let mut platform = MockPlatform::new(0, 0, 1920, 1080);
+
+        platform
+            .move_and_click(100, 200, MouseButton::Left)
+            .unwrap();
+
+        assert_eq!(
+            platform.calls,
+            vec![
+                "mouse_move_absolute(100, 200)",
+                "mouse_press(Left)",
+                "mouse_release(Left)",
+            ]
+        );
+    }
+
+    #[test]
+    fn is_cursor_in_bounds_inside() {
+        let platform = MockPlatform::new(500, 500, 1920, 1080);
+        assert!(platform.is_cursor_in_bounds().unwrap());
+    }
+
+    #[test]
+    fn is_cursor_in_bounds_at_edge_width() {
+        // x == width is out of bounds (valid range is 0..width-1)
+        let platform = MockPlatform::new(1920, 500, 1920, 1080);
+        assert!(!platform.is_cursor_in_bounds().unwrap());
+    }
+
+    #[test]
+    fn is_cursor_in_bounds_at_edge_height() {
+        let platform = MockPlatform::new(500, 1080, 1920, 1080);
+        assert!(!platform.is_cursor_in_bounds().unwrap());
+    }
+
+    #[test]
+    fn is_cursor_in_bounds_negative_coords() {
+        let platform = MockPlatform::new(-1, 500, 1920, 1080);
+        assert!(!platform.is_cursor_in_bounds().unwrap());
+
+        let platform = MockPlatform::new(500, -1, 1920, 1080);
+        assert!(!platform.is_cursor_in_bounds().unwrap());
+    }
+
+    // ── PermissionHint constructor tests ────────────────────────────────
+
+    #[test]
+    fn permission_hint_linux_uinput() {
+        let hint = PermissionHint::linux_uinput();
+        assert!(
+            hint.message.contains("uinput"),
+            "expected 'uinput' in message: {}",
+            hint.message
+        );
+        assert!(hint.suggested_command.is_some());
+    }
+
+    #[test]
+    fn permission_hint_macos_accessibility() {
+        let hint = PermissionHint::macos_accessibility();
+        assert!(
+            hint.message.contains("Accessibility"),
+            "expected 'Accessibility' in message: {}",
+            hint.message
+        );
+    }
+
+    #[test]
+    fn permission_hint_windows_admin() {
+        let hint = PermissionHint::windows_admin();
+        assert!(
+            hint.message.contains("elevated"),
+            "expected 'elevated' in message: {}",
+            hint.message
+        );
+    }
+}
