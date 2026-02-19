@@ -1061,5 +1061,4 @@ mod tests {
                 .quality_critical_threshold
         );
     }
-
 }

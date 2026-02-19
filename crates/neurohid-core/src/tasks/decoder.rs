@@ -132,7 +132,10 @@ pub struct DecoderTask {
 }
 
 impl DecoderTask {
-    #[expect(clippy::too_many_arguments, reason = "task constructor wires all channel endpoints")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "task constructor wires all channel endpoints"
+    )]
     pub fn new(
         config: DecoderConfig,
         feature_rx: mpsc::Receiver<FeatureVector>,
@@ -163,7 +166,10 @@ impl DecoderTask {
     }
 
     #[cfg(test)]
-    #[expect(clippy::too_many_arguments, reason = "test constructor with injectable loader")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "test constructor with injectable loader"
+    )]
     fn new_with_loader(
         config: DecoderConfig,
         feature_rx: mpsc::Receiver<FeatureVector>,

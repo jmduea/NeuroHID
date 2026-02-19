@@ -89,12 +89,9 @@ impl MacOSPlatform {
         // TCC database.  The `CFDictionaryRef` we pass is valid for the duration
         // of the call and we do not retain any pointer afterward.
         extern "C" {
-            fn AXIsProcessTrustedWithOptions(
-                options: core_foundation::base::CFTypeRef,
-            ) -> bool;
+            fn AXIsProcessTrustedWithOptions(options: core_foundation::base::CFTypeRef) -> bool;
         }
-        let trusted =
-            unsafe { AXIsProcessTrustedWithOptions(options.as_CFTypeRef()) };
+        let trusted = unsafe { AXIsProcessTrustedWithOptions(options.as_CFTypeRef()) };
 
         if trusted {
             Ok(())

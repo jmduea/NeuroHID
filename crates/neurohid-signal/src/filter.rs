@@ -206,7 +206,10 @@ impl FilterConfig {
 pub struct FilterChain {
     /// `channel_sections[ch]` is the ordered list of biquad sections for that channel.
     channel_sections: Vec<Vec<Biquad>>,
-    #[expect(dead_code, reason = "retained for filter introspection and reconfiguration")]
+    #[expect(
+        dead_code,
+        reason = "retained for filter introspection and reconfiguration"
+    )]
     config: FilterConfig,
     channel_count: usize,
 }
