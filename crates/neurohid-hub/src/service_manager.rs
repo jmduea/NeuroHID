@@ -92,13 +92,9 @@ impl ServiceManager {
 
     /// Synchronize manager mode/endpoint from latest config.
     pub fn configure(&mut self, config: &SystemConfig) {
-        let mut service_config = config.service.clone();
-        for warning in service_config.apply_legacy_ipc_aliases() {
-            tracing::warn!("{warning}");
-        }
         let next_mode = config.service.runtime_mode.clone();
-        let next_ipc_mode = service_config.ipc_mode;
-        let next_ipc_endpoint = service_config.ipc_endpoint;
+        let next_ipc_mode = config.service.ipc_mode.clone();
+        let next_ipc_endpoint = config.service.ipc_endpoint.clone();
 
         if self.runtime_mode != next_mode {
             if self.runtime_mode == ServiceRuntimeMode::Embedded {
@@ -1102,7 +1098,7 @@ mod tests {
     use neurohid_ipc::{IpcConfig, IpcServer, IpcTransport};
     use neurohid_types::{
         ControlRpcRequestV3, ControlRpcResponseV3, IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3,
-        config::{ControlTransport, DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig},
+        config::{DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig},
         control::{
             ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload,
             ControlSnapshot, RuntimeModeState,
@@ -1178,9 +1174,8 @@ mod tests {
         let mut manager = ServiceManager::new();
         let mut config = SystemConfig::default();
         config.service.runtime_mode = ServiceRuntimeMode::External;
-        config.service.control_transport = ControlTransport::TcpLoopback;
-        config.service.control_host = "127.0.0.1".to_string();
-        config.service.control_port = control_port;
+        config.service.ipc_mode = IpcMode::TcpLoopback;
+        config.service.ipc_endpoint = format!("127.0.0.1:{control_port}");
 
         manager.configure(&config);
         manager.start(&runtime, config, None, None);
@@ -1242,8 +1237,6 @@ mod tests {
         config.service.ipc_simulation_enabled = false;
         config.service.ipc_mode = IpcMode::LocalSocket;
         config.service.ipc_endpoint = unique_pipe_name("neurohid_ipc_test");
-        config.service.control_transport = ControlTransport::NamedPipe;
-        config.service.control_pipe_name = config.service.ipc_endpoint.clone();
         config.service.ml_stall_timeout_ms = 120;
         config.service.ml_heartbeat_interval_ms = 50;
 
@@ -1342,8 +1335,8 @@ mod tests {
         let mut manager = ServiceManager::new();
         let mut config = SystemConfig::default();
         config.service.runtime_mode = ServiceRuntimeMode::External;
-        config.service.control_transport = ControlTransport::NamedPipe;
-        config.service.control_pipe_name = pipe_name;
+        config.service.ipc_mode = IpcMode::LocalSocket;
+        config.service.ipc_endpoint = pipe_name;
 
         manager.configure(&config);
         manager.start(&runtime, config, None, None);

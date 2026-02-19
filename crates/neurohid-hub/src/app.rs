@@ -155,14 +155,28 @@ impl HubApp {
             .await
             .map_err(|e| anyhow::anyhow!("Config load failed: {}", e))?;
 
+        let mut needs_save = false;
+
         if !config.service.auto_start {
             config.service.auto_start = true;
-            if let Err(error) = config_store.save(&config).await {
-                tracing::warn!(
-                    error = %error,
-                    "Failed to persist migrated service auto-start default"
-                );
-            }
+            needs_save = true;
+        }
+
+        let legacy_warnings = config.service.apply_legacy_ipc_aliases();
+        for warning in &legacy_warnings {
+            tracing::warn!("{warning}");
+        }
+        if !legacy_warnings.is_empty() {
+            needs_save = true;
+        }
+
+        if needs_save
+            && let Err(error) = config_store.save(&config).await
+        {
+            tracing::warn!(
+                error = %error,
+                "Failed to persist migrated config defaults"
+            );
         }
 
         let profiles = profile_store.list_profiles().await.unwrap_or_default();
