@@ -331,7 +331,21 @@ class Decoder:
         """Save the decoder to a file."""
         torch.save(
             {
-                "config": self.config,
+                "config": {
+                    "input_dim": self.config.input_dim,
+                    "hidden_dims": self.config.hidden_dims,
+                    "continuous_action_dim": self.config.continuous_action_dim,
+                    "discrete_action_count": self.config.discrete_action_count,
+                    "learning_rate": self.config.learning_rate,
+                    "gamma": self.config.gamma,
+                    "gae_lambda": self.config.gae_lambda,
+                    "clip_epsilon": self.config.clip_epsilon,
+                    "entropy_coef": self.config.entropy_coef,
+                    "value_coef": self.config.value_coef,
+                    "max_grad_norm": self.config.max_grad_norm,
+                    "batch_size": self.config.batch_size,
+                    "update_epochs": self.config.update_epochs,
+                },
                 "policy_state": self.policy.state_dict(),
                 "optimizer_state": self.optimizer.state_dict(),
             },
@@ -341,8 +355,9 @@ class Decoder:
     @classmethod
     def load(cls, path: str) -> "Decoder":
         """Load a decoder from a file."""
-        checkpoint = torch.load(path)
-        decoder = cls(checkpoint["config"])
+        checkpoint = torch.load(path, weights_only=True)
+        config = DecoderConfig(**checkpoint["config"])
+        decoder = cls(config)
         decoder.policy.load_state_dict(checkpoint["policy_state"])
         decoder.optimizer.load_state_dict(checkpoint["optimizer_state"])
         return decoder

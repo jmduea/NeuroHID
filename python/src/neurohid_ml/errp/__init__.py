@@ -380,26 +380,24 @@ class ErrPDetector:
 
     def save(self, path: str):
         """Save the calibrated detector to a file."""
-        import pickle
+        import joblib
 
-        with open(path, "wb") as f:
-            pickle.dump(
-                {
-                    "config": self.config,
-                    "scaler": self.scaler,
-                    "classifier": self.classifier,
-                    "is_calibrated": self.is_calibrated,
-                },
-                f,
-            )
+        joblib.dump(
+            {
+                "config": self.config,
+                "scaler": self.scaler,
+                "classifier": self.classifier,
+                "is_calibrated": self.is_calibrated,
+            },
+            path,
+        )
 
     @classmethod
     def load(cls, path: str) -> "ErrPDetector":
         """Load a calibrated detector from a file."""
-        import pickle
+        import joblib
 
-        with open(path, "rb") as f:
-            data = pickle.load(f)
+        data = joblib.load(path)
 
         detector = cls(data["config"])
         detector.scaler = data["scaler"]
