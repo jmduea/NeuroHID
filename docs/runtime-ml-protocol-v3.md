@@ -34,13 +34,13 @@ Request envelope:
 
 - `channel = "control.rpc"`
 - `msg_type = "request"`
-- `payload` shape: `ControlRpcRequestV3` (`request_id`, `command`)
+- `payload` shape: `ControlRpcRequest` (`request_id`, `command`)
 
 Response envelope:
 
 - `channel = "control.rpc"`
 - `msg_type = "response"`
-- `payload` shape: `ControlRpcResponseV3` (`request_id`, `payload`)
+- `payload` shape: `ControlRpcResponse` (`request_id`, `payload`)
 
 Response payload variants:
 
@@ -79,7 +79,7 @@ The runtime replies with:
 
 - `channel = "runtime.events"`
 - `msg_type = "event"`
-- `payload` shape: `RuntimeEventV3`
+- `payload` shape: `RuntimeEvent`
 
 `poll` request payload:
 
@@ -97,7 +97,7 @@ The runtime replies with:
 - optional `include_snapshot: bool` (default `true`)
 - optional `include_capabilities: bool` (default `true`)
 
-Typed payload contract: `RuntimeEventsSubscribeV3`.
+Typed payload contract: `RuntimeEventsSubscribe`.
 
 Replay/resume lifecycle semantics:
 
@@ -142,8 +142,8 @@ Current runtime event families:
 Capabilities payload (`type = "capabilities"`):
 
 - `observation_schema_version: u16`
-- `channels: IpcChannelV3[]`
-- `components: RuntimeComponentCapabilityV3[]`
+- `channels: IpcChannel[]`
+- `components: RuntimeComponentCapability[]`
   - `name: string`
   - `available: bool`
   - `unavailable_reason?: string`

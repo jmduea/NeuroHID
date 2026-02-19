@@ -119,8 +119,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stream Metadata grid now uses explicit battery/connected status chips for faster row-level health scanning while preserving compact table density
 - Repo automation routing was consolidated to existing agent inventory with writer-owned documentation freshness, completion-finisher as a completion checkpoint, and default multi-agent coordination for execution flows
 - Rust automation guidance now uses tiered canonical grounding (Rust Book, Rust Reference, Cargo Book, Effective Rust) for disputed or safety-critical semantics
+- Unified IPC protocol types: removed all `V2`/`V3` suffixes (`ControlRpcRequestV3` → `ControlRpcRequest`, `RuntimePayloadV2` → `RuntimePayload`, etc.); protocol version is now encoded only in the envelope `v` field
+- Removed dead `DeviceType` variants (`EmotivInsight`, `EmotivEpocPlus`, `EmotivEpocX`, `Muse2`) from the types crate and all match arms
+- Removed legacy config fields from `ServiceConfig` (`auto_start`, `ipc_simulation_enabled`, etc.) and corresponding CLI flags
+- Hub FFT Plot and Time Series widgets now resolve sample rate from discovered stream metadata instead of using hardcoded 128 Hz
+- macOS platform `get_cursor_position()` and `get_screen_info()` now use `enigo` APIs instead of stubs/hardcoded values; `check_accessibility_permission()` implemented using `AXIsProcessTrustedWithOptions`
+- Removed commented-out `CGEvent`/`CGDisplay` code blocks from macOS platform module
+- Python `Decoder` class docstring and `_ppo_update()` now clearly document that the training loop is a simplified REINFORCE prototype, not full PPO
+- Security: `torch.load()` now uses `weights_only=True`; ErrP serialization migrated from `pickle` to `joblib`
+- Cleaned up `#[allow(dead_code)]` and clippy suppression annotations across Rust crates
+- Refactored `&Box<dyn DeviceProvider>` to `&dyn DeviceProvider` in device module
+- Removed `mss` optional dependency from `neurohid-platform`
+- Updated `docs/runtime-ml-protocol-v3.md` type references to match suffix-free code names
+- Removed stale `_bmad/` directory reference from `docs/source-tree-analysis.md`
 
 ### Removed
 
+- `docs/runtime-ml-protocol-v2.md` — deprecated V2 protocol document superseded by v3
+- Merged `ipc_v2.rs` and `ipc_v3.rs` into unified `ipc.rs` in `neurohid-types`
 - Legacy `.github/agents/**` directory and file-path based agent routing infrastructure; BMAD-native agent IDs and `_bmad/neurohid/workflows/neurohid-phase-workflow/workflow.md` are now authoritative
 - Legacy in-tree Emotiv integration path (replaced by dedicated `emotiv-cortex-v2` and `emotiv-cortex-cli` crates in `https://github.com/jmduea/emotiv-cortex-rs`)

@@ -23,8 +23,7 @@ neurohid/
 │   ├── tests/
 │   └── notebooks/
 ├── .github/workflows/
-├── docs/
-└── _bmad/
+└── docs/
 ```
 
 ## Critical Folders and Purpose
