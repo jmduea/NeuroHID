@@ -32,8 +32,12 @@ class ControlClientTests(unittest.TestCase):
             autospec=True,
             return_value=(OSError("boom"), None),
         ):
-            with self.assertRaisesRegex(_control.NotebookError, "unable to reach NeuroHID"):
-                client._request_endpoint('{"request_id":null,"command":{"type":"snapshot"}}\n')
+            with self.assertRaisesRegex(
+                _control.NotebookError, "unable to reach NeuroHID"
+            ):
+                client._request_endpoint(
+                    '{"request_id":null,"command":{"type":"snapshot"}}\n'
+                )
 
     def test_eligible_eeg_stream_filter(self) -> None:
         self.assertTrue(

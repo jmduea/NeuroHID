@@ -14,6 +14,8 @@ from neurohid_ml.ipc import NeuroHidIpcClient, events_to_dataframe, observation_
 from neurohid_ml.ipc_constants import (
     CANONICAL_IPC_MODE,
     CANONICAL_LOCAL_ENDPOINT,
+)
+from neurohid_ml.ipc_constants import (
     parse_tcp_endpoint as _parse_tcp_endpoint,
 )
 
@@ -58,10 +60,14 @@ class NeuroHidControlClient:
         return snapshot
 
     def set_output_enabled(self, enabled: bool) -> dict[str, Any]:
-        return self.send_command({"type": "set_output_enabled", "enabled": bool(enabled)})
+        return self.send_command(
+            {"type": "set_output_enabled", "enabled": bool(enabled)}
+        )
 
     def set_learning_enabled(self, enabled: bool) -> dict[str, Any]:
-        return self.send_command({"type": "set_learning_enabled", "enabled": bool(enabled)})
+        return self.send_command(
+            {"type": "set_learning_enabled", "enabled": bool(enabled)}
+        )
 
     def set_fallback_policy(self, policy: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(policy, dict):
@@ -90,10 +96,14 @@ class NeuroHidControlClient:
         return self.send_command({"type": "rescan_streams"})
 
     def connect_stream(self, stream_id: str) -> dict[str, Any]:
-        return self.send_command({"type": "connect_stream", "stream_id": str(stream_id)})
+        return self.send_command(
+            {"type": "connect_stream", "stream_id": str(stream_id)}
+        )
 
     def disconnect_stream(self, stream_id: str) -> dict[str, Any]:
-        return self.send_command({"type": "disconnect_stream", "stream_id": str(stream_id)})
+        return self.send_command(
+            {"type": "disconnect_stream", "stream_id": str(stream_id)}
+        )
 
     def ensure_connected_stream(self, *, rescan: bool = True) -> str | None:
         if rescan:
@@ -129,7 +139,9 @@ class NeuroHidControlClient:
             try:
                 decoded = json.loads(response_payload)
             except json.JSONDecodeError as error:
-                raise NotebookError(f"invalid control response payload: {error}") from error
+                raise NotebookError(
+                    f"invalid control response payload: {error}"
+                ) from error
             if isinstance(decoded, dict) and isinstance(decoded.get("payload"), dict):
                 response_payload = decoded.get("payload", {})
             elif isinstance(decoded, dict):
@@ -139,7 +151,9 @@ class NeuroHidControlClient:
         response = {"payload": response_payload}
         response_payload = response.get("payload", {})
         if response_payload.get("type") == "error":
-            raise NotebookError(response_payload.get("message", "unknown control error"))
+            raise NotebookError(
+                response_payload.get("message", "unknown control error")
+            )
         return response
 
     def endpoint_label(self) -> str:
@@ -248,7 +262,8 @@ class NeuroHidControlClient:
                 exit_code = process.poll()
                 if exit_code is not None:
                     errors.append(
-                        " ".join(command) + f" (exited immediately with code {exit_code})"
+                        " ".join(command)
+                        + f" (exited immediately with code {exit_code})"
                     )
                     continue
                 self._service_process = process
@@ -256,7 +271,9 @@ class NeuroHidControlClient:
             except OSError as error:
                 errors.append(f"{' '.join(command)} ({error})")
 
-        raise NotebookError("failed to auto-start neurohid service: " + "; ".join(errors))
+        raise NotebookError(
+            "failed to auto-start neurohid service: " + "; ".join(errors)
+        )
 
     def _service_launch_commands(self) -> list[tuple[list[str], str | None]]:
         if self.service_launch_command:
@@ -370,6 +387,8 @@ def _spawn_background_process(
         create_new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
         detached_process = getattr(subprocess, "DETACHED_PROCESS", 0)
         create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        kwargs["creationflags"] = create_new_process_group | detached_process | create_no_window
+        kwargs["creationflags"] = (
+            create_new_process_group | detached_process | create_no_window
+        )
 
     return subprocess.Popen(command, **kwargs)

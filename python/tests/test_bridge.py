@@ -119,7 +119,9 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
 
 class BridgeConfigTests(unittest.TestCase):
     def test_tcp_mode_resolves_endpoint(self) -> None:
-        config = _bridge.IpcConfig(ipc_mode="tcp_loopback", ipc_endpoint="127.0.0.1:47384")
+        config = _bridge.IpcConfig(
+            ipc_mode="tcp_loopback", ipc_endpoint="127.0.0.1:47384"
+        )
         self.assertEqual(config.ipc_mode, "tcp_loopback")
         self.assertEqual(config.ipc_endpoint, "127.0.0.1:47384")
 

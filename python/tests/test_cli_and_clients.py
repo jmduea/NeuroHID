@@ -51,7 +51,9 @@ class CliAndClientTests(unittest.TestCase):
             autospec=True,
             side_effect=lambda _self, _payload: fake_request(_payload),
         ):
-            response = client.send_command({"type": "set_output_enabled", "enabled": True})
+            response = client.send_command(
+                {"type": "set_output_enabled", "enabled": True}
+            )
             self.assertEqual(response["payload"]["type"], "ack")
 
     def test_parse_args_control_subcommand(self) -> None:
