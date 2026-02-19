@@ -13,6 +13,7 @@ from neurohid_ml.ipc_constants import (
     CANONICAL_LOCAL_ENDPOINT,
     CANONICAL_TCP_HOST,
     CANONICAL_TCP_PORT,
+    parse_tcp_endpoint as _parse_tcp_endpoint,
 )
 
 ipckit: Any
@@ -23,29 +24,6 @@ except Exception:  # pragma: no cover - optional dependency at import time
 
 
 IPC_PROTOCOL_V3 = 3
-
-
-def _parse_tcp_endpoint(endpoint: str) -> tuple[str, int]:
-    value = endpoint.strip()
-    if not value:
-        raise RuntimeError("ipc_endpoint must not be empty for tcp_loopback mode")
-    host, sep, port_raw = value.rpartition(":")
-    if sep == "":
-        raise RuntimeError(f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port")
-    host = host.strip() or "127.0.0.1"
-    if host.startswith("[") and host.endswith("]"):
-        host = host[1:-1].strip() or "127.0.0.1"
-    try:
-        port = int(port_raw)
-    except ValueError as error:
-        raise RuntimeError(
-            f"invalid tcp_loopback ipc_endpoint '{endpoint}': invalid port '{port_raw}'"
-        ) from error
-    if port <= 0 or port > 65_535:
-        raise RuntimeError(
-            f"invalid tcp_loopback ipc_endpoint '{endpoint}': port {port} out of range"
-        )
-    return host, port
 
 
 def _read_exact(reader: Any, size: int) -> bytes:

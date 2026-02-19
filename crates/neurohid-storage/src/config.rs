@@ -74,3 +74,116 @@ impl ConfigStore {
         Ok(config)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::ConfigStore;
+    use crate::DataPaths;
+    use neurohid_types::config::SystemConfig;
+
+    fn make_store(root: std::path::PathBuf) -> ConfigStore {
+        let paths = DataPaths::new(Some(root)).unwrap();
+        ConfigStore::new(paths)
+    }
+
+    #[tokio::test]
+    async fn load_returns_default_when_file_missing() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+
+        let config = store.load().await.unwrap();
+        // Verify it matches Default
+        assert_eq!(config.signal.notch_filter_hz, SystemConfig::default().signal.notch_filter_hz);
+        assert_eq!(config.service.auto_start, SystemConfig::default().service.auto_start);
+    }
+
+    #[tokio::test]
+    async fn save_then_load_roundtrip() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+
+        let mut config = SystemConfig::default();
+        config.signal.notch_filter_hz = 50.0;
+        config.service.log_level = "debug".to_string();
+
+        store.save(&config).await.unwrap();
+        let loaded = store.load().await.unwrap();
+
+        assert_eq!(loaded.signal.notch_filter_hz, 50.0);
+        assert_eq!(loaded.service.log_level, "debug");
+    }
+
+    #[tokio::test]
+    async fn save_creates_toml_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+
+        store.save(&SystemConfig::default()).await.unwrap();
+
+        let config_path = tmp.path().join("config.toml");
+        assert!(config_path.exists());
+
+        let contents = std::fs::read_to_string(&config_path).unwrap();
+        assert!(contents.contains("[signal]"), "TOML should contain signal section");
+        assert!(contents.contains("[service]"), "TOML should contain service section");
+    }
+
+    #[tokio::test]
+    async fn update_modifies_and_persists() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+
+        // First save a default config
+        store.save(&SystemConfig::default()).await.unwrap();
+
+        // Update a field
+        let updated = store
+            .update(|cfg| {
+                cfg.signal.bandpass_low_hz = 1.0;
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(updated.signal.bandpass_low_hz, 1.0);
+
+        // Re-load and verify persistence
+        let loaded = store.load().await.unwrap();
+        assert_eq!(loaded.signal.bandpass_low_hz, 1.0);
+    }
+
+    #[tokio::test]
+    async fn update_on_missing_file_creates_from_default() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+
+        let result = store
+            .update(|cfg| {
+                cfg.signal.notch_filter_hz = 50.0;
+            })
+            .await
+            .unwrap();
+
+        assert_eq!(result.signal.notch_filter_hz, 50.0);
+        // Other fields should be default
+        assert_eq!(
+            result.signal.bandpass_high_hz,
+            SystemConfig::default().signal.bandpass_high_hz
+        );
+    }
+
+    #[tokio::test]
+    async fn multiple_saves_overwrite() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+
+        let mut config = SystemConfig::default();
+        config.signal.notch_filter_hz = 50.0;
+        store.save(&config).await.unwrap();
+
+        config.signal.notch_filter_hz = 60.0;
+        store.save(&config).await.unwrap();
+
+        let loaded = store.load().await.unwrap();
+        assert_eq!(loaded.signal.notch_filter_hz, 60.0);
+    }
+}

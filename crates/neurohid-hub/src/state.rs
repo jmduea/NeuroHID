@@ -6,136 +6,15 @@
 use neurohid_storage::{ConfigStore, ProfileStore};
 use neurohid_types::{
     config::SystemConfig,
-    control::RuntimeModeState,
-    device::DiscoveredStream,
+    control::ControlSnapshot,
     profile::{ProfileId, ProfileMetadata},
 };
 
-/// Snapshot of the running service state, updated each frame from
-/// `Arc<RwLock<ServiceState>>` via non-blocking `try_read()`.
+/// Type alias for the canonical runtime snapshot.
 ///
-/// This is distinct from `neurohid_core::service::ServiceState` (runtime-owned)
-/// and `neurohid_types::config::ServiceState` (serializable IPC type).
-#[derive(Debug, Clone)]
-pub struct ServiceSnapshot {
-    pub running: bool,
-    pub device_connected: bool,
-    pub device_name: Option<String>,
-    /// Battery level of connected device(s), if reported.
-    pub device_battery: Option<u8>,
-    pub signal_quality: f32,
-    pub actions_emitted: u64,
-    pub errors_detected: u64,
-    pub uptime_secs: u64,
-    pub ipc_connected: bool,
-    pub ipc_simulated: bool,
-    pub learning_enabled: bool,
-    pub ml_bridge_connected: bool,
-    pub ml_bridge_stalled: bool,
-    pub runtime_mode_state: RuntimeModeState,
-    pub enabled_capabilities: Vec<String>,
-    pub limited_capabilities_message: Option<String>,
-    pub fallback_model_kind: Option<String>,
-    pub trainer_replay_size: Option<u64>,
-    pub trainer_step: Option<u64>,
-    pub trainer_policy_loss: Option<f32>,
-    pub trainer_value_loss: Option<f32>,
-    pub trainer_entropy: Option<f32>,
-    pub trainer_last_error: Option<String>,
-    pub candidate_promotions_succeeded: u64,
-    pub candidate_promotions_rejected: u64,
-    pub candidate_last_outcome: Option<String>,
-    pub ml_protocol_version: Option<u16>,
-    pub calibration_mode: bool,
-    pub output_enabled: bool,
-    pub profile_ready: bool,
-    pub decoder_ready: bool,
-    pub decoder_model_version: Option<String>,
-    pub signal_latency_last_us: u64,
-    pub signal_latency_p95_us: u64,
-    pub decode_latency_last_us: u64,
-    pub decode_latency_p95_us: u64,
-    pub action_latency_last_us: u64,
-    pub action_latency_p95_us: u64,
-    pub latency_degraded: bool,
-    pub latency_alert_message: Option<String>,
-    pub active_profile_name: Option<String>,
-    /// If a service task failed at runtime, (task_name, error_message).
-    pub task_error: Option<(String, String)>,
-    /// LSL streams discovered on the network.
-    pub discovered_streams: Vec<DiscoveredStream>,
-    /// Streams currently routed to EEG feature extraction.
-    pub routed_eeg_streams: u64,
-    /// Streams currently routed to motion handling.
-    pub routed_motion_streams: u64,
-    /// Streams currently routed to auxiliary handling.
-    pub routed_auxiliary_streams: u64,
-    /// Streams currently routed as unknown.
-    pub routed_unknown_streams: u64,
-    /// Whether pipeline integrity is currently degraded.
-    pub pipeline_integrity_degraded: bool,
-    /// Count of integrity issues recorded by runtime stages.
-    pub integrity_issue_count: u64,
-    /// Human-readable stage health summary.
-    pub stage_health_summary: Option<String>,
-}
-
-impl Default for ServiceSnapshot {
-    fn default() -> Self {
-        Self {
-            running: false,
-            device_connected: false,
-            device_name: None,
-            device_battery: None,
-            signal_quality: 0.0,
-            actions_emitted: 0,
-            errors_detected: 0,
-            uptime_secs: 0,
-            ipc_connected: false,
-            ipc_simulated: false,
-            learning_enabled: true,
-            ml_bridge_connected: false,
-            ml_bridge_stalled: false,
-            runtime_mode_state: RuntimeModeState::Degraded,
-            enabled_capabilities: Vec::new(),
-            limited_capabilities_message: None,
-            fallback_model_kind: None,
-            trainer_replay_size: None,
-            trainer_step: None,
-            trainer_policy_loss: None,
-            trainer_value_loss: None,
-            trainer_entropy: None,
-            trainer_last_error: None,
-            candidate_promotions_succeeded: 0,
-            candidate_promotions_rejected: 0,
-            candidate_last_outcome: None,
-            ml_protocol_version: None,
-            calibration_mode: false,
-            output_enabled: true,
-            profile_ready: false,
-            decoder_ready: false,
-            decoder_model_version: None,
-            signal_latency_last_us: 0,
-            signal_latency_p95_us: 0,
-            decode_latency_last_us: 0,
-            decode_latency_p95_us: 0,
-            action_latency_last_us: 0,
-            action_latency_p95_us: 0,
-            latency_degraded: false,
-            latency_alert_message: None,
-            active_profile_name: None,
-            task_error: None,
-            discovered_streams: Vec::new(),
-            routed_eeg_streams: 0,
-            routed_motion_streams: 0,
-            routed_auxiliary_streams: 0,
-            routed_unknown_streams: 0,
-            pipeline_integrity_degraded: false,
-            integrity_issue_count: 0,
-            stage_health_summary: None,
-        }
-    }
-}
+/// Previously a standalone struct with fields duplicated from
+/// [`ControlSnapshot`]. Now unified to eliminate field-drift risk.
+pub type ServiceSnapshot = ControlSnapshot;
 
 /// Central hub state.
 pub struct HubState {

@@ -219,7 +219,9 @@ impl FeatureExtractor {
         // ── 2. Time-domain features (40) ─────────────────────────────────
 
         for ch in 0..nc {
-            let data = window.channel(ch).unwrap();
+            let data = window.channel(ch).ok_or_else(|| {
+                SignalError::FeatureExtractionFailed(format!("missing channel {ch}"))
+            })?;
             let stats = time_domain_stats(data);
             values.extend_from_slice(&stats);
 
@@ -244,8 +246,14 @@ impl FeatureExtractor {
         // 3a. Pairwise correlations — C(n,2) = 10 for n=5
         for i in 0..nc {
             for j in (i + 1)..nc {
-                let corr =
-                    pearson_correlation(window.channel(i).unwrap(), window.channel(j).unwrap());
+                let corr = pearson_correlation(
+                    window.channel(i).ok_or_else(|| {
+                        SignalError::FeatureExtractionFailed(format!("missing channel {i}"))
+                    })?,
+                    window.channel(j).ok_or_else(|| {
+                        SignalError::FeatureExtractionFailed(format!("missing channel {j}"))
+                    })?,
+                );
                 values.push(corr);
                 if self.config.emit_labels {
                     labels.push(format!("corr_ch{i}_ch{j}"));

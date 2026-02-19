@@ -27,7 +27,7 @@ use neurohid_types::{
     ControlRpcRequestV3, ControlRpcResponseV3, IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3,
     RuntimeEventV3, RuntimeEventsSubscribeV3,
     config::{IpcMode, SystemConfig},
-    control::{ControlCommand, ControlRequest, ControlResponse, ControlSnapshot},
+    control::{ControlCommand, ControlRequest, ControlResponse},
     observability::{self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent},
     profile::ProfileId,
 };
@@ -901,7 +901,7 @@ fn handle_control_request_envelope(
             .get("family")
             .and_then(serde_json::Value::as_str)
             .unwrap_or("snapshot");
-        let snapshot = ControlSnapshot::from(runtime.snapshot());
+        let snapshot = runtime.snapshot();
         let event = match family {
             "snapshot" => RuntimeEventV3::Snapshot {
                 snapshot: snapshot.clone(),
@@ -1100,7 +1100,7 @@ async fn handle_runtime_events_subscription(
             &runtime_events_state,
             &request_id,
             &session_id,
-            build_runtime_capabilities_event(&ControlSnapshot::from(runtime.snapshot())),
+            build_runtime_capabilities_event(&runtime.snapshot()),
             &filter,
             &mut emitted,
         )
@@ -1108,7 +1108,7 @@ async fn handle_runtime_events_subscription(
     }
 
     if request.include_snapshot {
-        let snapshot = ControlSnapshot::from(runtime.snapshot());
+        let snapshot = runtime.snapshot();
         emit_runtime_event(
             connection,
             &runtime_events_state,
@@ -1329,7 +1329,7 @@ async fn handle_runtime_events_subscription(
                 }
             }
             _ = snapshot_tick.tick() => {
-                let snapshot = ControlSnapshot::from(runtime.snapshot());
+                let snapshot = runtime.snapshot();
                 emit_runtime_event(
                     connection,
                     &runtime_events_state,

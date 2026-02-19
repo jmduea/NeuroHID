@@ -378,6 +378,123 @@ impl Default for CalibrationPanel {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_panel_starts_at_welcome_screen() {
+        let panel = CalibrationPanel::new();
+        assert_eq!(panel.screen, Screen::Welcome);
+    }
+
+    #[test]
+    fn new_panel_has_zero_signal_quality() {
+        let panel = CalibrationPanel::new();
+        assert_eq!(panel.signal_quality, 0.0);
+    }
+
+    #[test]
+    fn new_panel_has_no_game_instances() {
+        let panel = CalibrationPanel::new();
+        assert!(panel.grid_maze.is_none());
+        assert!(panel.target_tracking.is_none());
+    }
+
+    #[test]
+    fn new_panel_has_no_quality_data() {
+        let panel = CalibrationPanel::new();
+        assert!(panel.maze_quality.is_none());
+        assert!(panel.tracking_quality.is_none());
+    }
+
+    #[test]
+    fn default_matches_new() {
+        let a = CalibrationPanel::new();
+        let b = CalibrationPanel::default();
+        assert_eq!(a.screen, b.screen);
+        assert_eq!(a.signal_quality, b.signal_quality);
+    }
+
+    #[test]
+    fn set_signal_quality_updates_value() {
+        let mut panel = CalibrationPanel::new();
+        panel.set_signal_quality(0.85);
+        assert!((panel.signal_quality - 0.85).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn set_signal_quality_can_be_zero() {
+        let mut panel = CalibrationPanel::new();
+        panel.set_signal_quality(0.75);
+        panel.set_signal_quality(0.0);
+        assert_eq!(panel.signal_quality, 0.0);
+    }
+
+    #[test]
+    fn calibration_quality_struct_fields() {
+        let quality = CalibrationQuality {
+            correct_trials: 35,
+            error_trials: 15,
+            avg_tracking_error: 0.042,
+            perturbation_count: 20,
+        };
+        assert_eq!(quality.correct_trials, 35);
+        assert_eq!(quality.error_trials, 15);
+        assert!((quality.avg_tracking_error - 0.042).abs() < 1e-6);
+        assert_eq!(quality.perturbation_count, 20);
+    }
+
+    #[test]
+    fn calibration_quality_clone() {
+        let quality = CalibrationQuality {
+            correct_trials: 10,
+            error_trials: 5,
+            avg_tracking_error: 0.1,
+            perturbation_count: 3,
+        };
+        let cloned = quality.clone();
+        assert_eq!(quality, cloned);
+    }
+
+    #[test]
+    fn calibration_panel_result_in_progress() {
+        let result = CalibrationPanelResult::InProgress;
+        assert_eq!(result, CalibrationPanelResult::InProgress);
+    }
+
+    #[test]
+    fn calibration_panel_result_cancelled() {
+        let result = CalibrationPanelResult::Cancelled;
+        assert_eq!(result, CalibrationPanelResult::Cancelled);
+    }
+
+    #[test]
+    fn calibration_panel_result_completed_carries_quality() {
+        let quality = CalibrationQuality {
+            correct_trials: 35,
+            error_trials: 15,
+            avg_tracking_error: 0.05,
+            perturbation_count: 20,
+        };
+        let result = CalibrationPanelResult::Completed(quality.clone());
+        assert_eq!(result, CalibrationPanelResult::Completed(quality));
+    }
+
+    #[test]
+    fn calibration_panel_result_variants_not_equal() {
+        assert_ne!(CalibrationPanelResult::InProgress, CalibrationPanelResult::Cancelled);
+    }
+
+    #[test]
+    fn screen_variants_are_distinct() {
+        assert_ne!(Screen::Welcome, Screen::Wizard);
+        assert_ne!(Screen::Wizard, Screen::GridMaze);
+        assert_ne!(Screen::GridMaze, Screen::TargetTracking);
+        assert_ne!(Screen::TargetTracking, Screen::Complete);
+    }
+}
+
 fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool, variant: ButtonVariant) -> bool {
     if !enabled {
         return ui.add_enabled(false, egui::Button::new(label)).clicked();

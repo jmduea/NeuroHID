@@ -145,6 +145,63 @@ pub struct ControlSnapshot {
     pub stage_health_summary: Option<String>,
 }
 
+impl Default for ControlSnapshot {
+    fn default() -> Self {
+        Self {
+            running: false,
+            uptime_secs: 0,
+            calibration_mode: false,
+            output_enabled: true,
+            profile_ready: false,
+            decoder_ready: false,
+            decoder_model_version: None,
+            active_profile_name: None,
+            device_name: None,
+            device_battery: None,
+            signal_quality: 0.0,
+            signal_latency_last_us: 0,
+            signal_latency_p95_us: 0,
+            decode_latency_last_us: 0,
+            decode_latency_p95_us: 0,
+            action_latency_last_us: 0,
+            action_latency_p95_us: 0,
+            latency_degraded: false,
+            latency_alert_message: None,
+            actions_emitted: 0,
+            errors_detected: 0,
+            ipc_connected: false,
+            ipc_simulated: false,
+            learning_enabled: true,
+            ml_bridge_connected: false,
+            ml_bridge_stalled: false,
+            runtime_mode_state: RuntimeModeState::Degraded,
+            enabled_capabilities: Vec::new(),
+            limited_capabilities_message: None,
+            fallback_model_kind: None,
+            trainer_replay_size: None,
+            trainer_step: None,
+            trainer_policy_loss: None,
+            trainer_value_loss: None,
+            trainer_entropy: None,
+            trainer_last_error: None,
+            candidate_promotions_succeeded: 0,
+            candidate_promotions_rejected: 0,
+            candidate_last_outcome: None,
+            ml_protocol_version: None,
+            device_connected: false,
+            task_error: None,
+            discovered_streams: Vec::new(),
+            routed_eeg_streams: 0,
+            routed_motion_streams: 0,
+            routed_auxiliary_streams: 0,
+            routed_unknown_streams: 0,
+            pipeline_integrity_degraded: false,
+            integrity_issue_count: 0,
+            stage_health_summary: None,
+        }
+    }
+}
+
 /// Response emitted by control servers.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ControlResponse {

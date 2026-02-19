@@ -16,10 +16,9 @@ use neurohid_types::{
     action::Action,
     config::{SignalConfig, SystemConfig},
     control::{
-        ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, RuntimeModeState,
+        ControlCommand, ControlRequest, ControlResponse, ControlSnapshot,
         TrainerSnapshot,
     },
-    device::DiscoveredStream,
     error::{Error, Result},
     event::StreamMarker,
     ipc_v3::RuntimeEventV3,
@@ -100,117 +99,11 @@ pub enum RuntimeCommand {
     SetSignalConfig { signal: SignalConfig },
 }
 
-/// Snapshot of runtime state for host applications.
-#[derive(Debug, Clone)]
-pub struct RuntimeSnapshot {
-    pub running: bool,
-    pub uptime_secs: u64,
-    pub calibration_mode: bool,
-    pub output_enabled: bool,
-    pub profile_ready: bool,
-    pub decoder_ready: bool,
-    pub decoder_model_version: Option<String>,
-    pub active_profile_name: Option<String>,
-    pub device_name: Option<String>,
-    pub device_battery: Option<u8>,
-    pub signal_quality: f32,
-    pub decode_latency_last_us: u64,
-    pub decode_latency_p95_us: u64,
-    pub signal_latency_last_us: u64,
-    pub signal_latency_p95_us: u64,
-    pub action_latency_last_us: u64,
-    pub action_latency_p95_us: u64,
-    pub latency_degraded: bool,
-    pub latency_alert_message: Option<String>,
-    pub actions_emitted: u64,
-    pub errors_detected: u64,
-    pub device_connected: bool,
-    pub ipc_connected: bool,
-    pub ipc_simulated: bool,
-    pub task_error: Option<(String, String)>,
-    pub discovered_streams: Vec<DiscoveredStream>,
-    pub routed_eeg_streams: u64,
-    pub routed_motion_streams: u64,
-    pub routed_auxiliary_streams: u64,
-    pub routed_unknown_streams: u64,
-    pub pipeline_integrity_degraded: bool,
-    pub integrity_issue_count: u64,
-    pub stage_health_summary: Option<String>,
-    pub learning_enabled: bool,
-    pub ml_bridge_connected: bool,
-    pub ml_bridge_stalled: bool,
-    pub runtime_mode_state: RuntimeModeState,
-    pub enabled_capabilities: Vec<String>,
-    pub limited_capabilities_message: Option<String>,
-    pub fallback_model_kind: Option<String>,
-    pub trainer_replay_size: Option<u64>,
-    pub trainer_step: Option<u64>,
-    pub trainer_policy_loss: Option<f32>,
-    pub trainer_value_loss: Option<f32>,
-    pub trainer_entropy: Option<f32>,
-    pub trainer_last_error: Option<String>,
-    pub candidate_promotions_succeeded: u64,
-    pub candidate_promotions_rejected: u64,
-    pub candidate_last_outcome: Option<String>,
-    pub ml_protocol_version: Option<u16>,
-}
-
-impl Default for RuntimeSnapshot {
-    fn default() -> Self {
-        Self {
-            running: false,
-            uptime_secs: 0,
-            calibration_mode: false,
-            output_enabled: true,
-            profile_ready: false,
-            decoder_ready: false,
-            decoder_model_version: None,
-            active_profile_name: None,
-            device_name: None,
-            device_battery: None,
-            signal_quality: 0.0,
-            decode_latency_last_us: 0,
-            decode_latency_p95_us: 0,
-            signal_latency_last_us: 0,
-            signal_latency_p95_us: 0,
-            action_latency_last_us: 0,
-            action_latency_p95_us: 0,
-            latency_degraded: false,
-            latency_alert_message: None,
-            actions_emitted: 0,
-            errors_detected: 0,
-            device_connected: false,
-            ipc_connected: false,
-            ipc_simulated: false,
-            task_error: None,
-            discovered_streams: vec![],
-            routed_eeg_streams: 0,
-            routed_motion_streams: 0,
-            routed_auxiliary_streams: 0,
-            routed_unknown_streams: 0,
-            pipeline_integrity_degraded: false,
-            integrity_issue_count: 0,
-            stage_health_summary: None,
-            learning_enabled: true,
-            ml_bridge_connected: false,
-            ml_bridge_stalled: false,
-            runtime_mode_state: RuntimeModeState::Degraded,
-            enabled_capabilities: Vec::new(),
-            limited_capabilities_message: None,
-            fallback_model_kind: None,
-            trainer_replay_size: None,
-            trainer_step: None,
-            trainer_policy_loss: None,
-            trainer_value_loss: None,
-            trainer_entropy: None,
-            trainer_last_error: None,
-            candidate_promotions_succeeded: 0,
-            candidate_promotions_rejected: 0,
-            candidate_last_outcome: None,
-            ml_protocol_version: None,
-        }
-    }
-}
+/// Type alias for the canonical runtime snapshot.
+///
+/// Previously a standalone struct with fields duplicated from
+/// [`ControlSnapshot`]. Now unified to eliminate field-drift risk.
+pub type RuntimeSnapshot = ControlSnapshot;
 
 /// Handle to a running managed runtime.
 pub struct RuntimeHandle {
@@ -448,11 +341,11 @@ impl RuntimeIpcHandle {
     /// Read a non-blocking runtime snapshot.
     pub fn snapshot(&self) -> RuntimeSnapshot {
         let Ok(state) = self.state.try_read() else {
-            return RuntimeSnapshot::default();
+            return ControlSnapshot::default();
         };
         let uptime_secs = state.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0);
 
-        RuntimeSnapshot {
+        ControlSnapshot {
             running: state.active,
             uptime_secs,
             calibration_mode: state.calibration_mode,
@@ -541,7 +434,7 @@ impl RuntimeIpcHandle {
         let request_id = request.request_id.clone();
         match request.command {
             ControlCommand::Snapshot => {
-                ControlResponse::snapshot(request_id, ControlSnapshot::from(self.snapshot()))
+                ControlResponse::snapshot(request_id, self.snapshot())
             }
             ControlCommand::Shutdown => match self.command(RuntimeCommand::Stop) {
                 Ok(()) => ControlResponse::ack(request_id),
@@ -625,62 +518,7 @@ impl RuntimeIpcHandle {
     }
 }
 
-impl From<RuntimeSnapshot> for ControlSnapshot {
-    fn from(value: RuntimeSnapshot) -> Self {
-        Self {
-            running: value.running,
-            uptime_secs: value.uptime_secs,
-            calibration_mode: value.calibration_mode,
-            output_enabled: value.output_enabled,
-            profile_ready: value.profile_ready,
-            decoder_ready: value.decoder_ready,
-            decoder_model_version: value.decoder_model_version,
-            active_profile_name: value.active_profile_name,
-            device_name: value.device_name,
-            device_battery: value.device_battery,
-            signal_quality: value.signal_quality,
-            signal_latency_last_us: value.signal_latency_last_us,
-            signal_latency_p95_us: value.signal_latency_p95_us,
-            decode_latency_last_us: value.decode_latency_last_us,
-            decode_latency_p95_us: value.decode_latency_p95_us,
-            action_latency_last_us: value.action_latency_last_us,
-            action_latency_p95_us: value.action_latency_p95_us,
-            latency_degraded: value.latency_degraded,
-            latency_alert_message: value.latency_alert_message,
-            actions_emitted: value.actions_emitted,
-            errors_detected: value.errors_detected,
-            ipc_connected: value.ipc_connected,
-            ipc_simulated: value.ipc_simulated,
-            learning_enabled: value.learning_enabled,
-            ml_bridge_connected: value.ml_bridge_connected,
-            ml_bridge_stalled: value.ml_bridge_stalled,
-            runtime_mode_state: value.runtime_mode_state,
-            enabled_capabilities: value.enabled_capabilities,
-            limited_capabilities_message: value.limited_capabilities_message,
-            fallback_model_kind: value.fallback_model_kind,
-            trainer_replay_size: value.trainer_replay_size,
-            trainer_step: value.trainer_step,
-            trainer_policy_loss: value.trainer_policy_loss,
-            trainer_value_loss: value.trainer_value_loss,
-            trainer_entropy: value.trainer_entropy,
-            trainer_last_error: value.trainer_last_error,
-            candidate_promotions_succeeded: value.candidate_promotions_succeeded,
-            candidate_promotions_rejected: value.candidate_promotions_rejected,
-            candidate_last_outcome: value.candidate_last_outcome,
-            ml_protocol_version: value.ml_protocol_version,
-            device_connected: value.device_connected,
-            task_error: value.task_error,
-            discovered_streams: value.discovered_streams,
-            routed_eeg_streams: value.routed_eeg_streams,
-            routed_motion_streams: value.routed_motion_streams,
-            routed_auxiliary_streams: value.routed_auxiliary_streams,
-            routed_unknown_streams: value.routed_unknown_streams,
-            pipeline_integrity_degraded: value.pipeline_integrity_degraded,
-            integrity_issue_count: value.integrity_issue_count,
-            stage_health_summary: value.stage_health_summary,
-        }
-    }
-}
+
 
 #[cfg(test)]
 mod tests {

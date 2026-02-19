@@ -131,8 +131,9 @@ impl SampleBatch {
         if self.samples.len() < 2 {
             return 0;
         }
-        let first = self.samples.first().unwrap().system_timestamp;
-        let last = self.samples.last().unwrap().system_timestamp;
+        // Length checked above — first()/last() are infallible here.
+        let first = self.samples.first().expect("len >= 2").system_timestamp;
+        let last = self.samples.last().expect("len >= 2").system_timestamp;
         last - first
     }
 

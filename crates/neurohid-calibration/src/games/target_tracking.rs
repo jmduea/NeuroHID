@@ -356,6 +356,249 @@ impl Default for TargetTrackingGame {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // --- Construction tests ---
+
+    #[test]
+    fn new_game_has_correct_defaults() {
+        let game = TargetTrackingGame::new();
+        assert_eq!(game.cursor_pos, (0.5, 0.5));
+        assert_eq!(game.target_pos, (0.5, 0.5));
+        assert_eq!(game.game_duration, 120.0);
+        assert_eq!(game.elapsed_time, 0.0);
+        assert_eq!(game.perturbation_count, 0);
+        assert_eq!(game.total_error, 0.0);
+        assert_eq!(game.error_samples, 0);
+        assert_eq!(game.phase, GamePhase::Instructions);
+        assert!(!game.perturbation_active);
+    }
+
+    #[test]
+    fn default_matches_new() {
+        let a = TargetTrackingGame::new();
+        let b = TargetTrackingGame::default();
+        assert_eq!(a.cursor_pos, b.cursor_pos);
+        assert_eq!(a.game_duration, b.game_duration);
+        assert_eq!(a.perturbation_count, b.perturbation_count);
+    }
+
+    // --- Target movement tests ---
+
+    #[test]
+    fn update_target_moves_position() {
+        let mut game = TargetTrackingGame::new();
+        let initial = game.target_pos;
+        game.update_target(0.1);
+        assert_ne!(game.target_pos, initial);
+    }
+
+    #[test]
+    fn update_target_bounces_off_right_edge() {
+        let mut game = TargetTrackingGame::new();
+        game.target_pos = (0.91, 0.5);
+        game.target_velocity = (0.2, 0.05);
+        game.update_target(0.1);
+        // Velocity x should have flipped sign
+        assert!(game.target_velocity.0 < 0.0);
+    }
+
+    #[test]
+    fn update_target_bounces_off_left_edge() {
+        let mut game = TargetTrackingGame::new();
+        game.target_pos = (0.09, 0.5);
+        game.target_velocity = (-0.2, 0.05);
+        game.update_target(0.1);
+        assert!(game.target_velocity.0 > 0.0);
+    }
+
+    #[test]
+    fn update_target_bounces_off_bottom_edge() {
+        let mut game = TargetTrackingGame::new();
+        game.target_pos = (0.5, 0.91);
+        game.target_velocity = (0.05, 0.2);
+        game.update_target(0.1);
+        assert!(game.target_velocity.1 < 0.0);
+    }
+
+    #[test]
+    fn update_target_bounces_off_top_edge() {
+        let mut game = TargetTrackingGame::new();
+        game.target_pos = (0.5, 0.09);
+        game.target_velocity = (0.05, -0.2);
+        game.update_target(0.1);
+        assert!(game.target_velocity.1 > 0.0);
+    }
+
+    #[test]
+    fn update_target_clamps_speed_upper_bound() {
+        let mut game = TargetTrackingGame::new();
+        game.target_velocity = (0.5, 0.5);
+        game.update_target(0.01);
+        let speed =
+            (game.target_velocity.0.powi(2) + game.target_velocity.1.powi(2)).sqrt();
+        assert!(speed <= 0.21, "speed {speed} exceeds max");
+    }
+
+    // --- Cursor movement tests ---
+
+    #[test]
+    fn update_cursor_moves_toward_target() {
+        let mut game = TargetTrackingGame::new();
+        game.cursor_pos = (0.2, 0.2);
+        game.target_pos = (0.8, 0.8);
+        game.perturbation_active = false;
+        game.update_cursor(0.1);
+        // Cursor should have moved closer to target
+        assert!(game.cursor_pos.0 > 0.2);
+        assert!(game.cursor_pos.1 > 0.2);
+    }
+
+    #[test]
+    fn update_cursor_clamps_to_bounds() {
+        let mut game = TargetTrackingGame::new();
+        game.cursor_pos = (0.99, 0.99);
+        game.target_pos = (1.5, 1.5); // well outside
+        game.perturbation_active = false;
+        game.update_cursor(1.0);
+        assert!(game.cursor_pos.0 <= 1.0);
+        assert!(game.cursor_pos.1 <= 1.0);
+    }
+
+    #[test]
+    fn update_cursor_clamps_lower_bound() {
+        let mut game = TargetTrackingGame::new();
+        game.cursor_pos = (0.01, 0.01);
+        game.target_pos = (-0.5, -0.5);
+        game.perturbation_active = false;
+        game.update_cursor(1.0);
+        assert!(game.cursor_pos.0 >= 0.0);
+        assert!(game.cursor_pos.1 >= 0.0);
+    }
+
+    // --- Perturbation tests ---
+
+    #[test]
+    fn update_perturbations_triggers_at_scheduled_time() {
+        let mut game = TargetTrackingGame::new();
+        game.elapsed_time = 3.0; // equals next_perturbation_time
+        game.update_perturbations();
+        assert!(game.perturbation_active);
+        assert_eq!(game.perturbation_count, 1);
+    }
+
+    #[test]
+    fn update_perturbations_does_not_trigger_early() {
+        let mut game = TargetTrackingGame::new();
+        game.elapsed_time = 2.0; // before next_perturbation_time (3.0)
+        game.update_perturbations();
+        assert!(!game.perturbation_active);
+        assert_eq!(game.perturbation_count, 0);
+    }
+
+    #[test]
+    fn update_perturbations_ends_after_duration() {
+        let mut game = TargetTrackingGame::new();
+        // Trigger perturbation
+        game.elapsed_time = 3.0;
+        game.update_perturbations();
+        assert!(game.perturbation_active);
+
+        // Advance past perturbation end time (0.3s duration)
+        game.elapsed_time = 3.4;
+        game.update_perturbations();
+        assert!(!game.perturbation_active);
+    }
+
+    #[test]
+    fn update_perturbations_does_not_double_trigger() {
+        let mut game = TargetTrackingGame::new();
+        game.elapsed_time = 3.0;
+        game.update_perturbations();
+        assert_eq!(game.perturbation_count, 1);
+
+        // Still active — should not trigger again
+        game.elapsed_time = 3.1;
+        game.update_perturbations();
+        assert_eq!(game.perturbation_count, 1);
+    }
+
+    #[test]
+    fn update_perturbations_schedules_next() {
+        let mut game = TargetTrackingGame::new();
+        game.elapsed_time = 3.0;
+        game.update_perturbations();
+        // next_perturbation_time should be 2-5s after current time
+        assert!(game.next_perturbation_time >= 5.0); // 3.0 + 2.0
+        assert!(game.next_perturbation_time <= 8.0); // 3.0 + 5.0
+    }
+
+    // --- Error tracking tests ---
+
+    #[test]
+    fn calculate_error_accumulates_samples() {
+        let mut game = TargetTrackingGame::new();
+        game.cursor_pos = (0.5, 0.5);
+        game.target_pos = (0.5, 0.5);
+        game.calculate_error();
+        assert_eq!(game.error_samples, 1);
+        assert_eq!(game.total_error, 0.0);
+    }
+
+    #[test]
+    fn calculate_error_measures_distance() {
+        let mut game = TargetTrackingGame::new();
+        game.cursor_pos = (0.0, 0.0);
+        game.target_pos = (0.3, 0.4);
+        game.calculate_error();
+        let expected = (0.3_f32.powi(2) + 0.4_f32.powi(2)).sqrt(); // 0.5
+        assert!((game.total_error - expected).abs() < 1e-6);
+    }
+
+    #[test]
+    fn calculate_error_accumulates_across_samples() {
+        let mut game = TargetTrackingGame::new();
+        game.cursor_pos = (0.0, 0.0);
+        game.target_pos = (0.3, 0.4);
+        game.calculate_error();
+        game.calculate_error();
+        assert_eq!(game.error_samples, 2);
+        let expected = (0.3_f32.powi(2) + 0.4_f32.powi(2)).sqrt() * 2.0;
+        assert!((game.total_error - expected).abs() < 1e-6);
+    }
+
+    // --- Quality metrics tests ---
+
+    #[test]
+    fn quality_metrics_zero_when_no_samples() {
+        let game = TargetTrackingGame::new();
+        let (avg_error, count) = game.quality_metrics();
+        assert_eq!(avg_error, 0.0);
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn quality_metrics_returns_average_error() {
+        let mut game = TargetTrackingGame::new();
+        game.total_error = 2.0;
+        game.error_samples = 4;
+        game.perturbation_count = 7;
+        let (avg_error, count) = game.quality_metrics();
+        assert!((avg_error - 0.5).abs() < 1e-6);
+        assert_eq!(count, 7);
+    }
+
+    // --- Phase transition tests ---
+
+    #[test]
+    fn game_starts_in_instructions_phase() {
+        let game = TargetTrackingGame::new();
+        assert_eq!(game.phase, GamePhase::Instructions);
+    }
+}
+
 fn action_button(ui: &mut egui::Ui, label: &str, enabled: bool, variant: ButtonVariant) -> bool {
     if !enabled {
         return ui.add_enabled(false, egui::Button::new(label)).clicked();

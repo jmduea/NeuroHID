@@ -18,7 +18,7 @@ use neurohid_types::{
         FallbackPolicy, IpcMode, ServiceConfig, ServiceRuntimeMode, SignalConfig, SystemConfig,
     },
     control::{
-        ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
+        ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload,
         TrainerSnapshot,
     },
     profile::ProfileId,
@@ -155,7 +155,7 @@ impl ServiceManager {
                 match self.send_control_request(ControlRequest::new(ControlCommand::Snapshot)) {
                     Ok(response) => match response.payload {
                         ControlResponsePayload::Snapshot { snapshot } => {
-                            self.cached_snapshot = Self::snapshot_from_control(snapshot);
+                            self.cached_snapshot = snapshot;
                             self.last_error = None;
                             tracing::info!(
                                 endpoint = %self.control_endpoint_label(),
@@ -748,7 +748,7 @@ impl ServiceManager {
 
         match event {
             RuntimeEventV3::Snapshot { snapshot } => {
-                stream_state.latest_snapshot = Some(Self::snapshot_from_control(snapshot));
+                stream_state.latest_snapshot = Some(snapshot);
                 stream_state.last_error = None;
             }
             RuntimeEventV3::TrainerSnapshot { snapshot } => {
@@ -823,7 +823,7 @@ impl ServiceManager {
         match self.send_control_request(ControlRequest::new(ControlCommand::Snapshot)) {
             Ok(response) => match response.payload {
                 ControlResponsePayload::Snapshot { snapshot } => {
-                    self.cached_snapshot = Self::snapshot_from_control(snapshot);
+                    self.cached_snapshot = snapshot;
                     self.last_error = None;
                     if let Ok(mut state) = self.external_event_state.lock() {
                         state.latest_snapshot = Some(self.cached_snapshot.clone());
@@ -1022,61 +1022,6 @@ impl ServiceManager {
             ControlCommand::TrainerSnapshot => "trainer_snapshot",
             ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
             ControlCommand::SetSignalConfig { .. } => "set_signal_config",
-        }
-    }
-
-    fn snapshot_from_control(snapshot: ControlSnapshot) -> ServiceSnapshot {
-        ServiceSnapshot {
-            running: snapshot.running,
-            device_name: snapshot.device_name,
-            device_battery: snapshot.device_battery,
-            device_connected: snapshot.device_connected,
-            signal_quality: snapshot.signal_quality,
-            actions_emitted: snapshot.actions_emitted,
-            errors_detected: snapshot.errors_detected,
-            uptime_secs: snapshot.uptime_secs,
-            ipc_connected: snapshot.ipc_connected,
-            ipc_simulated: snapshot.ipc_simulated,
-            learning_enabled: snapshot.learning_enabled,
-            ml_bridge_connected: snapshot.ml_bridge_connected,
-            ml_bridge_stalled: snapshot.ml_bridge_stalled,
-            runtime_mode_state: snapshot.runtime_mode_state,
-            enabled_capabilities: snapshot.enabled_capabilities,
-            limited_capabilities_message: snapshot.limited_capabilities_message,
-            fallback_model_kind: snapshot.fallback_model_kind,
-            trainer_replay_size: snapshot.trainer_replay_size,
-            trainer_step: snapshot.trainer_step,
-            trainer_policy_loss: snapshot.trainer_policy_loss,
-            trainer_value_loss: snapshot.trainer_value_loss,
-            trainer_entropy: snapshot.trainer_entropy,
-            trainer_last_error: snapshot.trainer_last_error,
-            candidate_promotions_succeeded: snapshot.candidate_promotions_succeeded,
-            candidate_promotions_rejected: snapshot.candidate_promotions_rejected,
-            candidate_last_outcome: snapshot.candidate_last_outcome,
-            ml_protocol_version: snapshot.ml_protocol_version,
-            calibration_mode: snapshot.calibration_mode,
-            output_enabled: snapshot.output_enabled,
-            profile_ready: snapshot.profile_ready,
-            decoder_ready: snapshot.decoder_ready,
-            decoder_model_version: snapshot.decoder_model_version,
-            latency_degraded: snapshot.latency_degraded,
-            latency_alert_message: snapshot.latency_alert_message,
-            active_profile_name: snapshot.active_profile_name,
-            signal_latency_last_us: snapshot.signal_latency_last_us,
-            signal_latency_p95_us: snapshot.signal_latency_p95_us,
-            decode_latency_last_us: snapshot.decode_latency_last_us,
-            decode_latency_p95_us: snapshot.decode_latency_p95_us,
-            action_latency_last_us: snapshot.action_latency_last_us,
-            action_latency_p95_us: snapshot.action_latency_p95_us,
-            task_error: snapshot.task_error,
-            discovered_streams: snapshot.discovered_streams,
-            routed_eeg_streams: snapshot.routed_eeg_streams,
-            routed_motion_streams: snapshot.routed_motion_streams,
-            routed_auxiliary_streams: snapshot.routed_auxiliary_streams,
-            routed_unknown_streams: snapshot.routed_unknown_streams,
-            pipeline_integrity_degraded: snapshot.pipeline_integrity_degraded,
-            integrity_issue_count: snapshot.integrity_issue_count,
-            stage_health_summary: snapshot.stage_health_summary,
         }
     }
 

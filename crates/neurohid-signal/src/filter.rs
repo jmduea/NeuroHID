@@ -4,6 +4,8 @@
 //!
 //! 1. **Highpass** (0.5 Hz, 2nd order Butterworth) — removes baseline drift
 //! 2. **Notch** (50 or 60 Hz, Q=30) — removes power line interference
+//!    (Note: at 128 Hz sample rate the 60 Hz notch sits at 94% of Nyquist;
+//!    bilinear-transform warping limits rejection depth at this ratio.)
 //! 3. **Lowpass** (45 Hz, 2nd order Butterworth) — removes muscle artifact
 //!
 //! All filters are implemented as cascaded second-order sections (biquads)
