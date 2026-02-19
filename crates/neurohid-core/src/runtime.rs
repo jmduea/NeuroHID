@@ -3,10 +3,17 @@
 //! Stable facade for embedding the NeuroHID runtime in first-party or
 //! third-party applications.
 
-use tokio::sync::broadcast;
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
+use tokio::sync::{broadcast, mpsc};
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
+    IpcEnvelopeV3,
+    action::Action,
     config::{SignalConfig, SystemConfig},
     control::{
         ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, RuntimeModeState,
@@ -14,10 +21,14 @@ use neurohid_types::{
     },
     device::DiscoveredStream,
     error::{Error, Result},
+    event::StreamMarker,
+    ipc_v3::RuntimeEventV3,
     profile::ProfileId,
+    signal::{FeatureVector, Sample},
 };
 
-use crate::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
+use crate::service::{DeviceCommand, NeuroHidService, ServiceHandle, ServiceState, SignalCommand};
+use crate::tasks::TrainerIngressEvent;
 
 /// Builder for a managed runtime instance.
 pub struct RuntimeBuilder {
@@ -206,32 +217,185 @@ pub struct RuntimeHandle {
     handle: ServiceHandle,
 }
 
+/// Cloneable runtime facade used by IPC/control servers.
+#[derive(Clone)]
+pub struct RuntimeIpcHandle {
+    state: Arc<tokio::sync::RwLock<ServiceState>>,
+    shutdown_tx: broadcast::Sender<()>,
+    device_command_tx: mpsc::Sender<DeviceCommand>,
+    signal_command_tx: mpsc::Sender<SignalCommand>,
+    decoder_command_tx: mpsc::Sender<crate::service::DecoderCommand>,
+    calibration_mode: Arc<AtomicBool>,
+    output_enabled: Arc<AtomicBool>,
+    sample_broadcast_tx: broadcast::Sender<Sample>,
+    feature_broadcast_tx: broadcast::Sender<FeatureVector>,
+    action_broadcast_tx: broadcast::Sender<Action>,
+    marker_broadcast_tx: broadcast::Sender<StreamMarker>,
+    runtime_event_broadcast_tx: broadcast::Sender<RuntimeEventV3>,
+    trainer_ingress_tx: mpsc::Sender<TrainerIngressEvent>,
+    trainer_egress_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<IpcEnvelopeV3>>>,
+}
+
 impl RuntimeHandle {
+    /// Build a cloneable runtime facade suitable for concurrent IPC tasks.
+    pub fn ipc_handle(&self) -> RuntimeIpcHandle {
+        RuntimeIpcHandle {
+            state: Arc::clone(&self.handle.state),
+            shutdown_tx: self.handle.shutdown_tx.clone(),
+            device_command_tx: self.handle.device_command_tx.clone(),
+            signal_command_tx: self.handle.signal_command_tx.clone(),
+            decoder_command_tx: self.handle.decoder_command_tx.clone(),
+            calibration_mode: Arc::clone(&self.handle.calibration_mode),
+            output_enabled: Arc::clone(&self.handle.output_enabled),
+            sample_broadcast_tx: self.handle.sample_broadcast_tx.clone(),
+            feature_broadcast_tx: self.handle.feature_broadcast_tx.clone(),
+            action_broadcast_tx: self.handle.action_broadcast_tx.clone(),
+            marker_broadcast_tx: self.handle.marker_broadcast_tx.clone(),
+            runtime_event_broadcast_tx: self.handle.runtime_event_broadcast_tx.clone(),
+            trainer_ingress_tx: self.handle.trainer_ingress_tx.clone(),
+            trainer_egress_rx: Arc::clone(&self.handle.trainer_egress_rx),
+        }
+    }
+
+    /// Subscribe to live runtime sample stream.
+    pub fn subscribe_samples(&self) -> broadcast::Receiver<Sample> {
+        self.ipc_handle().subscribe_samples()
+    }
+
+    /// Subscribe to live runtime feature stream.
+    pub fn subscribe_features(&self) -> broadcast::Receiver<FeatureVector> {
+        self.ipc_handle().subscribe_features()
+    }
+
+    /// Subscribe to live runtime action stream.
+    pub fn subscribe_actions(&self) -> broadcast::Receiver<Action> {
+        self.ipc_handle().subscribe_actions()
+    }
+
+    /// Subscribe to runtime marker/event annotations.
+    pub fn subscribe_markers(&self) -> broadcast::Receiver<StreamMarker> {
+        self.ipc_handle().subscribe_markers()
+    }
+
+    /// Send a command to the runtime.
+    pub fn command(&self, command: RuntimeCommand) -> Result<()> {
+        self.ipc_handle().command(command)
+    }
+
+    /// Read a non-blocking runtime snapshot.
+    pub fn snapshot(&self) -> RuntimeSnapshot {
+        self.ipc_handle().snapshot()
+    }
+
+    /// Build trainer bridge snapshot from current runtime state.
+    pub fn trainer_snapshot(&self) -> TrainerSnapshot {
+        self.ipc_handle().trainer_snapshot()
+    }
+
+    /// Handle one serialized control request and emit a serialized response.
+    pub fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
+        self.ipc_handle().dispatch_control_request(request)
+    }
+
+    /// Wait for runtime termination.
+    pub async fn wait(self) -> Result<()> {
+        self.handle
+            .join_handle
+            .await
+            .map_err(|e| Error::Internal(format!("runtime join failed: {e}")))?
+    }
+}
+
+impl RuntimeIpcHandle {
+    /// Subscribe to live runtime sample stream.
+    pub fn subscribe_samples(&self) -> broadcast::Receiver<Sample> {
+        self.sample_broadcast_tx.subscribe()
+    }
+
+    /// Subscribe to live runtime feature stream.
+    pub fn subscribe_features(&self) -> broadcast::Receiver<FeatureVector> {
+        self.feature_broadcast_tx.subscribe()
+    }
+
+    /// Subscribe to live runtime action stream.
+    pub fn subscribe_actions(&self) -> broadcast::Receiver<Action> {
+        self.action_broadcast_tx.subscribe()
+    }
+
+    /// Subscribe to runtime marker/event annotations.
+    pub fn subscribe_markers(&self) -> broadcast::Receiver<StreamMarker> {
+        self.marker_broadcast_tx.subscribe()
+    }
+
+    /// Subscribe to runtime bridge-derived events (decision/ErrP/integrity stream).
+    pub fn subscribe_runtime_bridge_events(&self) -> broadcast::Receiver<RuntimeEventV3> {
+        self.runtime_event_broadcast_tx.subscribe()
+    }
+
+    /// Notify trainer transport connection with the resolved session id.
+    pub async fn trainer_connected(&self, session_id: String) -> Result<()> {
+        self.trainer_ingress_tx
+            .send(TrainerIngressEvent::Connected { session_id })
+            .await
+            .map_err(|error| {
+                Error::Internal(format!(
+                    "failed to forward trainer connected event: {error}"
+                ))
+            })
+    }
+
+    /// Forward one trainer-stream envelope into the runtime bridge engine.
+    pub async fn trainer_send_envelope(&self, envelope: IpcEnvelopeV3) -> Result<()> {
+        self.trainer_ingress_tx
+            .send(TrainerIngressEvent::Envelope(envelope))
+            .await
+            .map_err(|error| {
+                Error::Internal(format!(
+                    "failed to forward trainer envelope to runtime: {error}"
+                ))
+            })
+    }
+
+    /// Notify trainer transport disconnection.
+    pub async fn trainer_disconnected(&self) -> Result<()> {
+        self.trainer_ingress_tx
+            .send(TrainerIngressEvent::Disconnected)
+            .await
+            .map_err(|error| {
+                Error::Internal(format!(
+                    "failed to forward trainer disconnected event: {error}"
+                ))
+            })
+    }
+
+    /// Receive one trainer-stream envelope produced by the runtime bridge engine.
+    pub async fn recv_trainer_envelope(&self) -> Option<IpcEnvelopeV3> {
+        let mut rx = self.trainer_egress_rx.lock().await;
+        rx.recv().await
+    }
+
     /// Send a command to the runtime.
     pub fn command(&self, command: RuntimeCommand) -> Result<()> {
         match command {
             RuntimeCommand::Start => Ok(()),
             RuntimeCommand::Stop => {
-                let _ = self.handle.shutdown_tx.send(());
+                let _ = self.shutdown_tx.send(());
                 Ok(())
             }
             RuntimeCommand::RescanStreams => {
-                self.handle
-                    .device_command_tx
+                self.device_command_tx
                     .try_send(DeviceCommand::Rescan)
                     .map_err(|e| Error::Internal(format!("failed to send rescan command: {e}")))?;
                 Ok(())
             }
             RuntimeCommand::ConnectStream { stream_id } => {
-                self.handle
-                    .device_command_tx
+                self.device_command_tx
                     .try_send(DeviceCommand::Connect(stream_id))
                     .map_err(|e| Error::Internal(format!("failed to send connect command: {e}")))?;
                 Ok(())
             }
             RuntimeCommand::DisconnectStream { stream_id } => {
-                self.handle
-                    .device_command_tx
+                self.device_command_tx
                     .try_send(DeviceCommand::Disconnect(stream_id))
                     .map_err(|e| {
                         Error::Internal(format!("failed to send disconnect command: {e}"))
@@ -239,24 +403,39 @@ impl RuntimeHandle {
                 Ok(())
             }
             RuntimeCommand::ToggleCalibration { enabled } => {
-                self.handle.set_calibration_mode(enabled);
+                self.calibration_mode.store(enabled, Ordering::Relaxed);
+                if let Ok(mut state) = self.state.try_write() {
+                    state.calibration_mode = enabled;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.calibration_mode = enabled;
+                }
                 Ok(())
             }
             RuntimeCommand::ToggleOutput { enabled } => {
-                self.handle.set_output_enabled(enabled);
+                self.output_enabled.store(enabled, Ordering::Relaxed);
+                if let Ok(mut state) = self.state.try_write() {
+                    state.output_enabled = enabled;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.output_enabled = enabled;
+                }
                 Ok(())
             }
             RuntimeCommand::ReloadModel => {
-                self.handle.reload_model();
+                let _ = self
+                    .decoder_command_tx
+                    .try_send(crate::service::DecoderCommand::ReloadModel);
                 Ok(())
             }
             RuntimeCommand::PromoteCandidateModel => {
-                self.handle.promote_candidate_model();
+                let _ = self
+                    .decoder_command_tx
+                    .try_send(crate::service::DecoderCommand::PromoteCandidateModel);
                 Ok(())
             }
             RuntimeCommand::SetSignalConfig { signal } => {
-                self.handle
-                    .signal_command_tx
+                self.signal_command_tx
                     .try_send(SignalCommand::UpdateConfig(signal))
                     .map_err(|e| {
                         Error::Internal(format!("failed to send signal config command: {e}"))
@@ -268,7 +447,7 @@ impl RuntimeHandle {
 
     /// Read a non-blocking runtime snapshot.
     pub fn snapshot(&self) -> RuntimeSnapshot {
-        let Ok(state) = self.handle.state.try_read() else {
+        let Ok(state) = self.state.try_read() else {
             return RuntimeSnapshot::default();
         };
         let uptime_secs = state.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0);
@@ -327,6 +506,36 @@ impl RuntimeHandle {
         }
     }
 
+    /// Build trainer bridge snapshot from current runtime state.
+    pub fn trainer_snapshot(&self) -> TrainerSnapshot {
+        let snap = self.snapshot();
+        TrainerSnapshot {
+            trainer_connected: snap.ml_bridge_connected,
+            trainer_state: if snap.ml_bridge_stalled {
+                "stalled".to_string()
+            } else if snap.ml_bridge_connected {
+                "connected".to_string()
+            } else {
+                "disconnected".to_string()
+            },
+            replay_size: snap.trainer_replay_size.unwrap_or(0),
+            training_step: snap.trainer_step.unwrap_or(0),
+            last_heartbeat_us: self.last_ml_heartbeat_us(),
+            last_error: snap
+                .trainer_last_error
+                .clone()
+                .or_else(|| snap.task_error.map(|(_, e)| e)),
+            protocol_version: snap.ml_protocol_version,
+        }
+    }
+
+    fn last_ml_heartbeat_us(&self) -> Option<i64> {
+        if let Ok(state) = self.state.try_read() {
+            return state.ml_bridge_last_heartbeat_us;
+        }
+        None
+    }
+
     /// Handle one serialized control request and emit a serialized response.
     pub fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
         let request_id = request.request_id.clone();
@@ -377,37 +586,33 @@ impl RuntimeHandle {
                 }
             }
             ControlCommand::SetLearningEnabled { enabled } => {
-                self.handle.set_learning_enabled(enabled);
+                if let Ok(mut state) = self.state.try_write() {
+                    state.learning_enabled = enabled;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.learning_enabled = enabled;
+                }
                 ControlResponse::ack(request_id)
             }
             ControlCommand::MlBridgeReconnect => {
-                self.handle.ml_bridge_reconnect();
+                if let Ok(mut state) = self.state.try_write() {
+                    state.ml_bridge_stalled = false;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.ml_bridge_stalled = false;
+                }
                 ControlResponse::ack(request_id)
             }
             ControlCommand::TrainerSnapshot => {
-                let snap = self.snapshot();
-                let trainer = TrainerSnapshot {
-                    trainer_connected: snap.ml_bridge_connected,
-                    trainer_state: if snap.ml_bridge_stalled {
-                        "stalled".to_string()
-                    } else if snap.ml_bridge_connected {
-                        "connected".to_string()
-                    } else {
-                        "disconnected".to_string()
-                    },
-                    replay_size: snap.trainer_replay_size.unwrap_or(0),
-                    training_step: snap.trainer_step.unwrap_or(0),
-                    last_heartbeat_us: self.handle.last_ml_heartbeat_us(),
-                    last_error: snap
-                        .trainer_last_error
-                        .clone()
-                        .or_else(|| snap.task_error.map(|(_, e)| e)),
-                    protocol_version: snap.ml_protocol_version,
-                };
-                ControlResponse::trainer_snapshot(request_id, trainer)
+                ControlResponse::trainer_snapshot(request_id, self.trainer_snapshot())
             }
             ControlCommand::SetFallbackPolicy { policy } => {
-                self.handle.set_fallback_policy(policy);
+                if let Ok(mut state) = self.state.try_write() {
+                    state.fallback_policy = policy;
+                } else if tokio::runtime::Handle::try_current().is_err() {
+                    let mut state = self.state.blocking_write();
+                    state.fallback_policy = policy;
+                }
                 ControlResponse::ack(request_id)
             }
             ControlCommand::SetSignalConfig { signal } => {
@@ -417,14 +622,6 @@ impl RuntimeHandle {
                 }
             }
         }
-    }
-
-    /// Wait for runtime termination.
-    pub async fn wait(self) -> Result<()> {
-        self.handle
-            .join_handle
-            .await
-            .map_err(|e| Error::Internal(format!("runtime join failed: {e}")))?
     }
 }
 

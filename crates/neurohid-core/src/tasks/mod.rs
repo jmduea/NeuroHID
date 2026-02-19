@@ -19,7 +19,9 @@ mod outlet;
 mod session_logger;
 mod signal;
 
+use neurohid_types::IpcEnvelopeV3;
 use neurohid_types::{Timestamp, action::Action};
+use tokio::sync::mpsc;
 
 /// Decoder-emitted event forwarded to the runtime ML bridge.
 #[derive(Debug, Clone)]
@@ -32,6 +34,20 @@ pub struct DecisionEventRecord {
     pub signal_quality: f32,
     pub decoder_model_version: Option<String>,
     pub stream_id: Option<String>,
+}
+
+/// Trainer ingress events injected by the unified IPC server.
+#[derive(Debug, Clone)]
+pub enum TrainerIngressEvent {
+    Connected { session_id: String },
+    Envelope(IpcEnvelopeV3),
+    Disconnected,
+}
+
+/// In-process channels connecting service IPC transport and trainer protocol engine.
+pub struct TrainerBridgeChannels {
+    pub ingress_tx: mpsc::Sender<TrainerIngressEvent>,
+    pub egress_rx: mpsc::Receiver<IpcEnvelopeV3>,
 }
 
 pub use action::ActionTask;

@@ -46,14 +46,25 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     bridge = subparsers.add_parser("bridge", help="run the realtime IPC bridge")
     bridge.add_argument(
+        "--ipc-mode",
+        choices=["local_socket", "tcp_loopback"],
+        default="local_socket",
+        help="canonical bridge IPC mode",
+    )
+    bridge.add_argument(
+        "--ipc-endpoint",
+        default="neurohid.control.v3",
+        help="canonical bridge endpoint path/name or host:port",
+    )
+    bridge.add_argument(
         "--transport",
         choices=["named_pipe", "tcp_loopback"],
         default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
-        help="bridge transport mode (named_pipe is default on Windows)",
+        help="legacy bridge transport alias (prefer --ipc-mode/--ipc-endpoint)",
     )
-    bridge.add_argument("--host", default="127.0.0.1")
-    bridge.add_argument("--port", type=int, default=47384)
-    bridge.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v2")
+    bridge.add_argument("--host", default="127.0.0.1", help="legacy alias")
+    bridge.add_argument("--port", type=int, default=47384, help="legacy alias")
+    bridge.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v3", help="legacy alias")
 
     control = subparsers.add_parser(
         "control",
@@ -68,6 +79,9 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "set_learning_enabled",
             "set_fallback_policy",
             "ml_bridge_reconnect",
+            "daemon_start",
+            "daemon_stop",
+            "daemon_status",
             "reload_model",
             "promote_candidate_model",
             "rescan_streams",
@@ -87,11 +101,22 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         "--transport",
         choices=["tcp", "pipe"],
         default="tcp",
-        help="control transport mode",
+        help="legacy control transport mode alias (prefer --ipc-mode/--ipc-endpoint)",
+    )
+    control.add_argument(
+        "--ipc-mode",
+        choices=["local_socket", "tcp_loopback"],
+        default="local_socket",
+        help="canonical control IPC mode",
+    )
+    control.add_argument(
+        "--ipc-endpoint",
+        default=r"\\.\pipe\neurohid.control.v3" if os.name == "nt" else "neurohid.control.v3",
+        help="canonical IPC endpoint path/name or loopback address",
     )
     control.add_argument("--host", default="127.0.0.1")
     control.add_argument("--port", type=int, default=47385)
-    control.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.control.v2")
+    control.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.control.v3")
     control.add_argument(
         "--service-bin",
         default="neurohid-service",
@@ -106,22 +131,63 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
 
     telemetry_read = subparsers.add_parser(
         "telemetry-read",
-        help="read framed runtime-ml telemetry envelopes",
+        help="read runtime.events IPC envelopes",
     )
     telemetry_read.add_argument(
         "--transport",
         choices=["named_pipe", "tcp_loopback"],
         default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
-        help="telemetry transport mode",
+        help="legacy telemetry transport mode alias (prefer --ipc-mode/--ipc-endpoint)",
+    )
+    telemetry_read.add_argument(
+        "--ipc-mode",
+        choices=["local_socket", "tcp_loopback"],
+        default="local_socket",
+        help="canonical runtime.events IPC mode",
+    )
+    telemetry_read.add_argument(
+        "--ipc-endpoint",
+        default=r"\\.\pipe\neurohid.control.v3" if os.name == "nt" else "neurohid.control.v3",
+        help="canonical IPC endpoint path/name or loopback address",
     )
     telemetry_read.add_argument("--host", default="127.0.0.1")
-    telemetry_read.add_argument("--port", type=int, default=47384)
-    telemetry_read.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v2")
+    telemetry_read.add_argument("--port", type=int, default=47385)
+    telemetry_read.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.control.v3")
     telemetry_read.add_argument(
         "--max-messages",
         type=int,
         default=1,
         help="number of envelopes to print before exiting",
+    )
+    telemetry_read.add_argument(
+        "--family",
+        action="append",
+        default=[],
+        help="runtime.events family filter (repeatable)",
+    )
+    telemetry_read.add_argument(
+        "--resume-from-seq",
+        type=int,
+        default=None,
+        help="resume stream from this sequence id when supported",
+    )
+    telemetry_read.add_argument(
+        "--sample-every",
+        type=int,
+        default=1,
+        help="downsample sample events by keeping every Nth message",
+    )
+    telemetry_read.add_argument(
+        "--max-duration-ms",
+        type=int,
+        default=None,
+        help="request stream closure after N ms",
+    )
+    telemetry_read.add_argument(
+        "--snapshot-interval-ms",
+        type=int,
+        default=1000,
+        help="snapshot cadence for subscription streams",
     )
 
     trainer = subparsers.add_parser(
@@ -445,6 +511,8 @@ def _run_control(args: argparse.Namespace) -> None:
         control_port=args.port,
         control_transport=args.transport,
         control_pipe_name=args.pipe_name,
+        ipc_mode=args.ipc_mode,
+        ipc_endpoint=args.ipc_endpoint,
         service_bin=args.service_bin,
         auto_start_service=args.auto_start_service,
     )
@@ -479,6 +547,15 @@ def _run_control(args: argparse.Namespace) -> None:
     if args.action == "ml_bridge_reconnect":
         print(json.dumps(client.reconnect_bridge(), indent=2, sort_keys=True))
         return
+    if args.action == "daemon_start":
+        print(json.dumps(client.daemon_start(), indent=2, sort_keys=True))
+        return
+    if args.action == "daemon_stop":
+        print(json.dumps(client.daemon_stop(), indent=2, sort_keys=True))
+        return
+    if args.action == "daemon_status":
+        print(json.dumps(client.daemon_status(), indent=2, sort_keys=True))
+        return
     if args.action == "reload_model":
         print(json.dumps(client.reload_model(), indent=2, sort_keys=True))
         return
@@ -509,12 +586,21 @@ def _run_telemetry_read(args: argparse.Namespace) -> None:
     from neurohid_ml.telemetry import NeuroHidTelemetryClient
 
     client = NeuroHidTelemetryClient(
+        ipc_mode=args.ipc_mode,
+        ipc_endpoint=args.ipc_endpoint,
         transport=args.transport,
         host=args.host,
         port=args.port,
         pipe_name=args.pipe_name,
     )
-    for message in client.iter_messages(max_messages=max(args.max_messages, 0)):
+    for message in client.iter_messages(
+        max_messages=max(args.max_messages, 0),
+        families=args.family or None,
+        resume_from_seq=args.resume_from_seq,
+        sample_every=max(args.sample_every, 1),
+        max_duration_ms=args.max_duration_ms,
+        snapshot_interval_ms=max(args.snapshot_interval_ms, 100),
+    ):
         print(json.dumps(message, indent=2, sort_keys=True))
 
 
@@ -526,6 +612,8 @@ def main(argv: Sequence[str] | None = None) -> None:
 
         asyncio.run(
             bridge_main_async(
+                ipc_mode=args.ipc_mode,
+                ipc_endpoint=args.ipc_endpoint,
                 host=args.host,
                 port=args.port,
                 transport=args.transport,

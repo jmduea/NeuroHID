@@ -1,4 +1,4 @@
-//! Runtime ML bridge task (protocol v2).
+//! Runtime ML bridge task (protocol v3).
 
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
@@ -10,15 +10,16 @@ use tokio::fs;
 use tokio::sync::{RwLock, broadcast, mpsc};
 
 use neurohid_ipc::{
-    AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2, IpcConfig,
-    IpcServer, IpcTransport, ProtocolErrorV2, RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2,
-    RuntimeMlKindV2, RuntimeMlRoleV2, RuntimeTelemetryV2, SessionBoundaryEventV2,
-    SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
+    AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2,
+    IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3, ProtocolErrorV2, RuntimeMlRoleV2,
+    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
+    TrainerStreamKindV3,
 };
 use neurohid_types::{
     control::RuntimeModeState,
     error::{Error, IpcError, Result},
     event::{MarkerPayload, MarkerType, StreamMarker},
+    ipc_v3::RuntimeEventV3,
     observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
     profile::ProfileId,
     reward::{ErrPConfig, ErrPResult, SignalQuality},
@@ -26,7 +27,7 @@ use neurohid_types::{
 };
 
 use crate::service::{DecoderCommand, IntegrityStage, ServiceState};
-use crate::tasks::DecisionEventRecord;
+use crate::tasks::{DecisionEventRecord, TrainerIngressEvent};
 
 const REAL_MESSAGE_POLL_MS: u64 = 25;
 const SIMULATED_CONNECT_DELAY_MS: u64 = 100;
@@ -83,11 +84,14 @@ pub struct IpcTask {
     decision_rx: mpsc::Receiver<DecisionEventRecord>,
     errp_tx: mpsc::Sender<ErrPResult>,
     sample_rx: mpsc::Receiver<Sample>,
+    trainer_ingress_rx: mpsc::Receiver<TrainerIngressEvent>,
+    trainer_egress_tx: mpsc::Sender<IpcEnvelopeV3>,
     errp_config: ErrPConfig,
     state: Arc<RwLock<ServiceState>>,
     marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
     profile_store: Option<ProfileStore>,
     decoder_command_tx: Option<mpsc::Sender<DecoderCommand>>,
+    runtime_event_tx: Option<broadcast::Sender<RuntimeEventV3>>,
     send_sequence: u64,
     session_id: String,
     dropped_messages: u64,
@@ -109,11 +113,14 @@ impl IpcTask {
         decision_rx: mpsc::Receiver<DecisionEventRecord>,
         errp_tx: mpsc::Sender<ErrPResult>,
         sample_rx: mpsc::Receiver<Sample>,
+        trainer_ingress_rx: mpsc::Receiver<TrainerIngressEvent>,
+        trainer_egress_tx: mpsc::Sender<IpcEnvelopeV3>,
         errp_config: ErrPConfig,
         state: Arc<RwLock<ServiceState>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
         profile_store: Option<ProfileStore>,
         decoder_command_tx: Option<mpsc::Sender<DecoderCommand>>,
+        runtime_event_tx: Option<broadcast::Sender<RuntimeEventV3>>,
         observability: ObservabilityConfig,
     ) -> Self {
         Self {
@@ -121,11 +128,14 @@ impl IpcTask {
             decision_rx,
             errp_tx,
             sample_rx,
+            trainer_ingress_rx,
+            trainer_egress_tx,
             errp_config,
             state,
             marker_broadcast_tx,
             profile_store,
             decoder_command_tx,
+            runtime_event_tx,
             send_sequence: 0,
             session_id: neurohid_types::now_micros().to_string(),
             dropped_messages: 0,
@@ -153,7 +163,7 @@ impl IpcTask {
         let result = if self.config.ipc_simulation_enabled {
             self.run_simulated(&mut shutdown).await
         } else {
-            self.run_real_bridge(&mut shutdown).await
+            self.run_channel_bridge(&mut shutdown).await
         };
 
         self.set_connection_state(false, false, false).await;
@@ -181,58 +191,66 @@ impl IpcTask {
             details,
             "IPC integrity check failed"
         );
+
+        self.emit_runtime_event(RuntimeEventV3::IntegrityIssue {
+            issue: issue.to_string(),
+            details: details.to_string(),
+        });
     }
 
-    async fn run_real_bridge(&mut self, shutdown: &mut broadcast::Receiver<()>) -> Result<()> {
-        let transport = match self.config.ml_transport {
-            neurohid_types::config::MlTransport::NamedPipe => IpcTransport::NamedPipe,
-            neurohid_types::config::MlTransport::TcpLoopback => IpcTransport::TcpLoopback,
-        };
-        let server = IpcServer::new(IpcConfig {
-            transport,
-            address: format!("127.0.0.1:{}", self.config.ipc_port),
-            pipe_name: self.config.ml_pipe_name.clone(),
-            ..IpcConfig::default()
-        })
-        .await?;
-
+    async fn run_channel_bridge(&mut self, shutdown: &mut broadcast::Receiver<()>) -> Result<()> {
         loop {
-            tracing::info!(endpoint = %server.endpoint(), "Waiting for trainer bridge to connect");
-
-            let connection = tokio::select! {
+            tracing::info!("Waiting for trainer bridge channel connection");
+            let ingress = tokio::select! {
                 _ = shutdown.recv() => {
                     tracing::info!("IPC task received shutdown signal");
                     return Ok(());
                 }
-                result = server.accept() => result?,
+                ingress = self.trainer_ingress_rx.recv() => ingress,
             };
 
-            self.set_connection_state(true, false, false).await;
-            self.last_recv_sequence = None;
-            self.note_heartbeat().await;
-            self.send_hello(&connection).await?;
-            self.send_session_boundary_start(&connection).await?;
-            tracing::info!("Trainer bridge connected");
+            match ingress {
+                Some(TrainerIngressEvent::Connected { session_id }) => {
+                    self.session_id = session_id;
+                    self.set_connection_state(true, false, false).await;
+                    self.last_recv_sequence = None;
+                    self.note_heartbeat().await;
+                    self.send_hello().await?;
+                    self.send_session_boundary_start().await?;
+                    tracing::info!(session_id = %self.session_id, "Trainer bridge connected");
 
-            let run_result = self.run_connected_loop(connection, shutdown).await;
-            self.set_connection_state(false, false, false).await;
-            self.pending_errp_windows.clear();
+                    let run_result = self.run_connected_loop(shutdown).await;
+                    self.set_connection_state(false, false, false).await;
+                    self.pending_errp_windows.clear();
 
-            match run_result {
-                Ok(()) => return Ok(()),
-                Err(err) if is_connection_lost_error(&err) => {
-                    tracing::warn!("Trainer bridge disconnected; waiting for reconnect");
+                    match run_result {
+                        Ok(true) => return Ok(()),
+                        Ok(false) => {
+                            tracing::info!("Trainer bridge disconnected");
+                        }
+                        Err(err) if is_connection_lost_error(&err) => {
+                            tracing::warn!("Trainer bridge disconnected; waiting for reconnect");
+                        }
+                        Err(err) => return Err(err),
+                    }
                 }
-                Err(err) => return Err(err),
+                Some(TrainerIngressEvent::Envelope(_)) => {
+                    tracing::warn!(
+                        "Trainer envelope received before connection event; dropping message"
+                    );
+                }
+                Some(TrainerIngressEvent::Disconnected) => {
+                    tracing::debug!("Received trainer disconnected event while idle");
+                }
+                None => {
+                    tracing::info!("Trainer ingress channel closed; stopping IPC task");
+                    return Ok(());
+                }
             }
         }
     }
 
-    async fn run_connected_loop(
-        &mut self,
-        connection: neurohid_ipc::server::IpcConnection,
-        shutdown: &mut broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run_connected_loop(&mut self, shutdown: &mut broadcast::Receiver<()>) -> Result<bool> {
         let mut poll = tokio::time::interval(Duration::from_millis(REAL_MESSAGE_POLL_MS));
         let mut heartbeat_tick =
             tokio::time::interval(Duration::from_millis(self.config.ml_heartbeat_interval_ms));
@@ -245,12 +263,11 @@ impl IpcTask {
                 _ = shutdown.recv() => {
                     tracing::info!("IPC task received shutdown signal");
                     let shutdown_payload = ShutdownV2 { reason: "runtime_shutdown".to_string() };
-                    let msg = self.build_envelope(RuntimeMlKindV2::Shutdown, &shutdown_payload)?;
-                    let _ = connection.send(msg).await;
-                    break;
+                    let msg = self.build_envelope(TrainerStreamKindV3::Shutdown, &shutdown_payload)?;
+                    let _ = self.send_trainer_envelope(msg).await;
+                    return Ok(true);
                 }
                 _ = poll.tick() => {
-                    self.drain_trainer_messages(&connection).await?;
                     let since_last = last_msg_at.elapsed().as_millis() as u64;
                     if since_last > self.config.ml_stall_timeout_ms {
                         let was_stalled = self
@@ -268,16 +285,16 @@ impl IpcTask {
                         }
                         self.set_stalled(true).await;
                     }
-                    self.emit_due_errp_windows(&connection, None).await?;
-                    self.publish_runtime_telemetry(&connection).await?;
+                    self.emit_due_errp_windows(None).await?;
+                    self.publish_runtime_telemetry().await?;
                 }
                 _ = heartbeat_tick.tick() => {
                     let ping = neurohid_ipc::PingV2 {
                         ping_id: format!("ping_{}", self.send_sequence.saturating_add(1)),
                         timestamp_us: neurohid_types::now_micros(),
                     };
-                    let msg = self.build_envelope(RuntimeMlKindV2::Ping, &ping)?;
-                    connection.send(msg).await?;
+                    let msg = self.build_envelope(TrainerStreamKindV3::Ping, &ping)?;
+                    self.send_trainer_envelope(msg).await?;
                 }
                 decision = self.decision_rx.recv() => {
                     let Some(decision) = decision else {
@@ -297,24 +314,36 @@ impl IpcTask {
                             "IPC received decision event"
                         );
                     }
-                    self.send_decision_event_real(&connection, decision).await?;
+                    self.send_decision_event_real(decision).await?;
                 }
                 sample = self.sample_rx.recv() => {
                     if let Some(sample) = sample {
                         let sample_timestamp = sample.device_timestamp.unwrap_or(sample.system_timestamp);
                         self.record_runtime_sample(sample);
-                        self.emit_due_errp_windows(&connection, Some(sample_timestamp)).await?;
+                        self.emit_due_errp_windows(Some(sample_timestamp)).await?;
                     }
                 }
-                recv = connection.recv() => {
-                    let message = recv?;
-                    last_msg_at = Instant::now();
-                    self.handle_trainer_message(message).await?;
+                ingress = self.trainer_ingress_rx.recv() => {
+                    match ingress {
+                        Some(TrainerIngressEvent::Envelope(message)) => {
+                            last_msg_at = Instant::now();
+                            self.handle_trainer_message(message).await?;
+                        }
+                        Some(TrainerIngressEvent::Disconnected) => break,
+                        Some(TrainerIngressEvent::Connected { session_id }) => {
+                            tracing::warn!(
+                                session_id = %session_id,
+                                "Trainer reconnected while prior session active; replacing session id"
+                            );
+                            self.session_id = session_id;
+                        }
+                        None => break,
+                    }
                 }
             }
         }
 
-        Ok(())
+        Ok(false)
     }
 
     async fn run_simulated(&mut self, shutdown: &mut broadcast::Receiver<()>) -> Result<()> {
@@ -354,19 +383,9 @@ impl IpcTask {
         Ok(())
     }
 
-    async fn drain_trainer_messages(
-        &mut self,
-        connection: &neurohid_ipc::server::IpcConnection,
-    ) -> Result<()> {
-        while let Some(msg) = connection.try_recv()? {
-            self.handle_trainer_message(msg).await?;
-        }
-        Ok(())
-    }
-
-    async fn send_hello(&mut self, connection: &neurohid_ipc::server::IpcConnection) -> Result<()> {
+    async fn send_hello(&mut self) -> Result<()> {
         let hello = HelloV2 {
-            protocol: "neurohid_runtime_ml_v2".to_string(),
+            protocol: "neurohid_runtime_ml_v3".to_string(),
             role: RuntimeMlRoleV2::Runtime,
             capabilities: vec![
                 "errp_window_stream".to_string(),
@@ -379,28 +398,21 @@ impl IpcTask {
             trainer_name: None,
             trainer_version: None,
         };
-        let msg = self.build_envelope(RuntimeMlKindV2::Hello, &hello)?;
-        connection.send(msg).await
+        let msg = self.build_envelope(TrainerStreamKindV3::Hello, &hello)?;
+        self.send_trainer_envelope(msg).await
     }
 
-    async fn send_session_boundary_start(
-        &mut self,
-        connection: &neurohid_ipc::server::IpcConnection,
-    ) -> Result<()> {
+    async fn send_session_boundary_start(&mut self) -> Result<()> {
         let boundary = SessionBoundaryV2 {
             event: SessionBoundaryEventV2::Start,
             reason: "runtime_boot".to_string(),
             started_at_us: neurohid_types::now_micros(),
         };
-        let msg = self.build_envelope(RuntimeMlKindV2::SessionBoundary, &boundary)?;
-        connection.send(msg).await
+        let msg = self.build_envelope(TrainerStreamKindV3::SessionBoundary, &boundary)?;
+        self.send_trainer_envelope(msg).await
     }
 
-    async fn send_decision_event_real(
-        &mut self,
-        connection: &neurohid_ipc::server::IpcConnection,
-        decision: DecisionEventRecord,
-    ) -> Result<()> {
+    async fn send_decision_event_real(&mut self, decision: DecisionEventRecord) -> Result<()> {
         if let Some(tx) = &self.marker_broadcast_tx {
             let marker = StreamMarker::now(MarkerType::ErrpWindowStart).with_payload(
                 MarkerPayload::ErrpWindow {
@@ -426,8 +438,11 @@ impl IpcTask {
             decoder_model_version: decision.decoder_model_version,
             stream_id: decision.stream_id,
         };
-        let msg = self.build_envelope(RuntimeMlKindV2::DecisionEvent, &payload)?;
-        connection.send(msg).await?;
+        let msg = self.build_envelope(TrainerStreamKindV3::DecisionEvent, &payload)?;
+        self.send_trainer_envelope(msg).await?;
+        self.emit_runtime_event(RuntimeEventV3::DecisionEvent {
+            event: payload.clone(),
+        });
         if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
             tracing::debug!(
                 event = obs::event::IPC_DECISION_SENT,
@@ -438,13 +453,10 @@ impl IpcTask {
             );
         }
         self.queue_errp_window(decision_id, timestamp_us, stream_id, signal_quality);
-        self.emit_due_errp_windows(connection, None).await
+        self.emit_due_errp_windows(None).await
     }
 
-    async fn publish_runtime_telemetry(
-        &mut self,
-        connection: &neurohid_ipc::server::IpcConnection,
-    ) -> Result<()> {
+    async fn publish_runtime_telemetry(&mut self) -> Result<()> {
         let state = self.state.read().await;
         let telemetry = RuntimeTelemetryV2 {
             signal_latency_p95_us: state.signal_latency_p95_us,
@@ -455,8 +467,8 @@ impl IpcTask {
             dropped_ml_messages: self.dropped_messages,
         };
         drop(state);
-        let msg = self.build_envelope(RuntimeMlKindV2::RuntimeTelemetry, &telemetry)?;
-        connection.send(msg).await?;
+        let msg = self.build_envelope(TrainerStreamKindV3::RuntimeTelemetry, &telemetry)?;
+        self.send_trainer_envelope(msg).await?;
 
         self.telemetry_frames_sent = self.telemetry_frames_sent.saturating_add(1);
         if self
@@ -478,14 +490,21 @@ impl IpcTask {
         Ok(())
     }
 
-    async fn handle_trainer_message(&mut self, message: RuntimeMlEnvelopeV2) -> Result<()> {
+    async fn handle_trainer_message(&mut self, message: IpcEnvelopeV3) -> Result<()> {
         self.note_heartbeat().await;
         self.set_stalled(false).await;
 
-        if message.v != RUNTIME_ML_PROTOCOL_V2 {
+        if message.v != IPC_PROTOCOL_V3 {
             tracing::warn!(
                 version = message.v,
-                "Received incompatible ML protocol version (expected v2)"
+                "Received incompatible ML protocol version (expected v3)"
+            );
+            return Ok(());
+        }
+        if message.channel != IpcChannelV3::TrainerStream {
+            tracing::trace!(
+                channel = ?message.channel,
+                "Ignoring message on non-trainer channel in trainer task"
             );
             return Ok(());
         }
@@ -510,8 +529,13 @@ impl IpcTask {
         }
         self.last_recv_sequence = Some(recv_seq);
 
-        match message.kind {
-            RuntimeMlKindV2::Hello => {
+        let Some(kind) = TrainerStreamKindV3::from_msg_type(&message.msg_type) else {
+            tracing::trace!(msg_type = %message.msg_type, "Ignoring unsupported trainer msg_type");
+            return Ok(());
+        };
+
+        match kind {
+            TrainerStreamKindV3::Hello => {
                 let hello: HelloV2 = message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 let mut state = self.state.write().await;
                 state.ml_protocol_version = Some(message.v);
@@ -520,7 +544,7 @@ impl IpcTask {
                     tracing::warn!("ML hello role is not trainer");
                 }
             }
-            RuntimeMlKindV2::ErrpResult => {
+            TrainerStreamKindV3::ErrpResult => {
                 let mut payload: ErrpResultV2 =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 if !payload.error_probability.is_finite() {
@@ -544,6 +568,9 @@ impl IpcTask {
                 payload.error_probability = payload.error_probability.clamp(0.0, 1.0);
                 payload.classification_confidence =
                     payload.classification_confidence.clamp(0.0, 1.0);
+                self.emit_runtime_event(RuntimeEventV3::ErrpResult {
+                    result: payload.clone(),
+                });
 
                 if let Some(tx) = &self.marker_broadcast_tx {
                     let marker = StreamMarker::now(MarkerType::ErrpWindowResult).with_payload(
@@ -573,7 +600,7 @@ impl IpcTask {
                     tracing::warn!("ErrP receiver dropped");
                 }
             }
-            RuntimeMlKindV2::TrainerStatus => {
+            TrainerStreamKindV3::TrainerStatus => {
                 let status: TrainerStatusV2 =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 let mut state = self.state.write().await;
@@ -584,7 +611,7 @@ impl IpcTask {
                 state.trainer_entropy = status.entropy;
                 state.trainer_last_error = status.last_error;
             }
-            RuntimeMlKindV2::CandidateModelReady => {
+            TrainerStreamKindV3::CandidateModelReady => {
                 let candidate: CandidateModelReadyV2 =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 if !self.state.read().await.learning_enabled {
@@ -675,13 +702,13 @@ impl IpcTask {
                     "Candidate model ready notification processed"
                 );
             }
-            RuntimeMlKindV2::Pong => {
+            TrainerStreamKindV3::Pong => {
                 tracing::trace!("Received trainer pong");
             }
-            RuntimeMlKindV2::Ack => {
+            TrainerStreamKindV3::Ack => {
                 let _: AckV2 = message.decode_payload().map_err(IpcError::InvalidMessage)?;
             }
-            RuntimeMlKindV2::Error => {
+            TrainerStreamKindV3::Error => {
                 let err: ProtocolErrorV2 =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 tracing::warn!(recoverable = err.recoverable, code = %err.code, "Trainer error: {}", err.message);
@@ -690,7 +717,7 @@ impl IpcTask {
                 }
             }
             _ => {
-                tracing::trace!(kind = ?message.kind, "Ignoring unsupported trainer message kind");
+                tracing::trace!(kind = ?kind, "Ignoring unsupported trainer message kind");
             }
         }
 
@@ -761,11 +788,7 @@ impl IpcTask {
         }
     }
 
-    async fn emit_due_errp_windows(
-        &mut self,
-        connection: &neurohid_ipc::server::IpcConnection,
-        latest_sample_timestamp: Option<i64>,
-    ) -> Result<()> {
+    async fn emit_due_errp_windows(&mut self, latest_sample_timestamp: Option<i64>) -> Result<()> {
         let watermark = latest_sample_timestamp.unwrap_or_else(neurohid_types::now_micros);
 
         while let Some(next) = self.pending_errp_windows.front() {
@@ -781,8 +804,11 @@ impl IpcTask {
                 break;
             };
             let payload = self.build_errp_window_payload(&pending);
-            let msg = self.build_envelope(RuntimeMlKindV2::ErrpWindow, &payload)?;
-            connection.send(msg).await?;
+            let msg = self.build_envelope(TrainerStreamKindV3::ErrpWindow, &payload)?;
+            self.send_trainer_envelope(msg).await?;
+            self.emit_runtime_event(RuntimeEventV3::ErrpWindow {
+                window: payload.clone(),
+            });
         }
 
         Ok(())
@@ -1044,14 +1070,34 @@ impl IpcTask {
         Ok(())
     }
 
+    async fn send_trainer_envelope(&self, envelope: IpcEnvelopeV3) -> Result<()> {
+        self.trainer_egress_tx
+            .send(envelope)
+            .await
+            .map_err(|_| IpcError::ConnectionLost.into())
+    }
+
+    fn emit_runtime_event(&self, event: RuntimeEventV3) {
+        if let Some(tx) = &self.runtime_event_tx {
+            let _ = tx.send(event);
+        }
+    }
+
     fn build_envelope<T: serde::Serialize>(
         &mut self,
-        kind: RuntimeMlKindV2,
+        kind: TrainerStreamKindV3,
         payload: &T,
-    ) -> Result<RuntimeMlEnvelopeV2> {
+    ) -> Result<IpcEnvelopeV3> {
         self.send_sequence = self.send_sequence.saturating_add(1);
-        RuntimeMlEnvelopeV2::new(kind, self.send_sequence, self.session_id.clone(), payload)
-            .map_err(|e| IpcError::InvalidMessage(e).into())
+        IpcEnvelopeV3::new(
+            IpcChannelV3::TrainerStream,
+            kind.as_msg_type(),
+            self.send_sequence,
+            None,
+            Some(self.session_id.clone()),
+            payload,
+        )
+        .map_err(|e| IpcError::InvalidMessage(e).into())
     }
 
     async fn set_connection_state(&self, connected: bool, simulated: bool, stalled: bool) {

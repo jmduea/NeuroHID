@@ -4,12 +4,16 @@ from __future__ import annotations
 
 import json
 import os
-import socket
 import subprocess
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
+
+from neurohid_ml.ipc import NeuroHidIpcClient, events_to_dataframe, observation_to_numpy
+
+DEFAULT_CONTROL_PIPE_NAME = r"\\.\pipe\neurohid.control.v3"
+DEFAULT_CONTROL_SOCKET_ENDPOINT = "neurohid.control.v3"
 
 
 class NotebookError(RuntimeError):
@@ -23,7 +27,9 @@ class NeuroHidControlClient:
     control_host: str = "127.0.0.1"
     control_port: int = 47385
     control_transport: str = "tcp"
-    control_pipe_name: str = r"\\.\pipe\neurohid.control.v2"
+    control_pipe_name: str = DEFAULT_CONTROL_PIPE_NAME
+    ipc_mode: str | None = "local_socket"
+    ipc_endpoint: str = DEFAULT_CONTROL_SOCKET_ENDPOINT
     service_bin: str = "neurohid-service"
     auto_start_service: bool = True
     service_launch_command: str | None = None
@@ -66,6 +72,15 @@ class NeuroHidControlClient:
 
     def reconnect_bridge(self) -> dict[str, Any]:
         return self.send_command({"type": "ml_bridge_reconnect"})
+
+    def daemon_start(self) -> dict[str, Any]:
+        return self._run_daemon_command("start")
+
+    def daemon_stop(self) -> dict[str, Any]:
+        return self._run_daemon_command("stop")
+
+    def daemon_status(self) -> dict[str, Any]:
+        return self._run_daemon_command("status")
 
     def reload_model(self) -> dict[str, Any]:
         return self.send_command({"type": "reload_model"})
@@ -111,33 +126,59 @@ class NeuroHidControlClient:
         return None
 
     def send_command(self, command: dict[str, Any]) -> dict[str, Any]:
-        request = {
-            "request_id": None,
-            "command": command,
-        }
-
-        payload = json.dumps(request) + "\n"
-        data = self._request_endpoint(payload)
-
-        if not data:
-            raise NotebookError("empty response from NeuroHID control endpoint")
-
-        response = json.loads(data)
+        response_payload = self._request_endpoint(command)
+        if isinstance(response_payload, str):
+            try:
+                decoded = json.loads(response_payload)
+            except json.JSONDecodeError as error:
+                raise NotebookError(f"invalid control response payload: {error}") from error
+            if isinstance(decoded, dict) and isinstance(decoded.get("payload"), dict):
+                response_payload = decoded.get("payload", {})
+            elif isinstance(decoded, dict):
+                response_payload = decoded
+            else:
+                raise NotebookError("invalid control response payload: expected object")
+        response = {"payload": response_payload}
         response_payload = response.get("payload", {})
         if response_payload.get("type") == "error":
             raise NotebookError(response_payload.get("message", "unknown control error"))
         return response
 
     def endpoint_label(self) -> str:
-        transport = self.control_transport.strip().lower()
-        if transport == "pipe":
-            return self.control_pipe_name
-        return f"{self.control_host}:{self.control_port}"
+        return self._build_ipc_client().endpoint_label()
 
-    def _request_endpoint(self, payload: str) -> str:
-        first_error, data = self._try_configured_endpoint(payload)
-        if data is not None:
-            return data
+    def subscribe_events(
+        self,
+        *,
+        max_messages: int | None = None,
+        families: list[str] | None = None,
+        resume_from_seq: int | None = None,
+        sample_every: int = 1,
+        max_duration_ms: int | None = None,
+        snapshot_interval_ms: int = 1_000,
+        prefer_stream: bool = True,
+    ) -> Iterator[dict[str, Any]]:
+        ipc = self._build_ipc_client()
+        return ipc.iter_runtime_events(
+            max_messages=max_messages,
+            families=families,
+            resume_from_seq=resume_from_seq,
+            sample_every=sample_every,
+            max_duration_ms=max_duration_ms,
+            snapshot_interval_ms=snapshot_interval_ms,
+            prefer_stream=prefer_stream,
+        )
+
+    def observation_to_numpy(self, event_payload: dict[str, Any]) -> Any:
+        return observation_to_numpy(event_payload)
+
+    def events_to_dataframe(self, events: list[dict[str, Any]]) -> Any:
+        return events_to_dataframe(events)
+
+    def _request_endpoint(self, command: dict[str, Any]) -> dict[str, Any]:
+        first_error, response = self._try_configured_endpoint(command)
+        if response is not None:
+            return response
 
         service_start_error: str | None = None
         service_start_attempted = False
@@ -151,9 +192,9 @@ class NeuroHidControlClient:
 
             if started:
                 time.sleep(max(self.service_start_wait_secs, 0.0))
-                first_error, data = self._try_configured_endpoint(payload)
-                if data is not None:
-                    return data
+                first_error, response = self._try_configured_endpoint(command)
+                if response is not None:
+                    return response
 
         error_suffix = f" ({first_error})" if first_error is not None else ""
         startup_suffix = ""
@@ -170,55 +211,47 @@ class NeuroHidControlClient:
             f"{self.endpoint_label()}{error_suffix}. "
             "Ensure `neurohid` or `neurohid-service --foreground` is running, "
             "or pass an explicit endpoint via "
-            "NeuroHidControlClient(control_transport=..., "
-            "control_port/control_pipe_name=...)."
+            "NeuroHidControlClient(ipc_mode=..., ipc_endpoint=...)."
             f"{startup_suffix}"
         )
 
-    def _try_configured_endpoint(self, payload: str) -> tuple[Exception | None, str | None]:
+    def _try_configured_endpoint(
+        self, command: dict[str, Any]
+    ) -> tuple[Exception | None, dict[str, Any] | None]:
         first_error: Exception | None = None
-        transport = self.control_transport.strip().lower()
-
-        if transport == "pipe":
-            if os.name != "nt":
-                raise NotebookError("control_transport='pipe' is only supported on Windows")
-            try:
-                data = _request_named_pipe(payload, self.control_pipe_name)
-                return first_error, data
-            except OSError as error:
-                if first_error is None:
-                    first_error = error
-                return first_error, None
-
         try:
-            data = self._request_once(payload, self.control_port)
-            return first_error, data
-        except (TimeoutError, OSError) as error:
+            ipc = self._build_ipc_client()
+            response = ipc.send_control_command(command)
+            return first_error, response
+        except Exception as error:  # noqa: BLE001
             if first_error is None:
                 first_error = error
             return first_error, None
 
-    def _request_once(self, payload: str, port: int) -> str:
-        retries = max(self.connect_retries, 0)
-        attempt = 0
-        last_error: Exception | None = None
-        while attempt <= retries:
-            try:
-                with socket.create_connection(
-                    (self.control_host, port),
-                    timeout=self.connect_timeout_secs,
-                ) as conn:
-                    conn.sendall(payload.encode("utf-8"))
-                    conn.settimeout(self.read_timeout_secs)
-                    return _read_line(conn)
-            except (TimeoutError, OSError) as error:
-                last_error = error
-                attempt += 1
-                if attempt <= retries:
-                    time.sleep(0.15)
+    def _build_ipc_client(self) -> NeuroHidIpcClient:
+        mode = (self.ipc_mode or "").strip().lower()
+        if not mode:
+            transport = self.control_transport.strip().lower()
+            if transport == "pipe":
+                mode = "local_socket"
+            elif transport in {"tcp", "tcp_loopback"}:
+                mode = "tcp_loopback"
+            else:
+                mode = "local_socket"
 
-        assert last_error is not None
-        raise last_error
+        endpoint = self.ipc_endpoint
+        if mode == "local_socket":
+            if self.control_transport.strip().lower() == "pipe" and self.control_pipe_name:
+                endpoint = self.control_pipe_name
+        return NeuroHidIpcClient(
+            ipc_mode=mode,
+            ipc_endpoint=endpoint,
+            host=self.control_host,
+            port=self.control_port,
+            connect_timeout_secs=self.connect_timeout_secs,
+            read_timeout_secs=self.read_timeout_secs,
+            connect_retries=self.connect_retries,
+        )
 
     def _start_service_background(self) -> bool:
         if self._service_process is not None and self._service_process.poll() is None:
@@ -250,69 +283,73 @@ class NeuroHidControlClient:
         repo_root_path = Path(__file__).resolve().parents[3]
         binary_name = "neurohid-service.exe" if os.name == "nt" else "neurohid-service"
         built_binary_path = repo_root_path / "target" / "debug" / binary_name
+        port_override = self._daemon_control_port_override()
 
-        commands: list[tuple[list[str], str | None]] = [
-            (
-                [
-                    self.service_bin,
-                    "--foreground",
-                    "--control-port",
-                    str(self.control_port),
-                ],
-                None,
-            )
-        ]
+        foreground_cmd = [self.service_bin, "--foreground"]
+        if port_override is not None:
+            foreground_cmd.extend(["--control-port", str(port_override)])
+
+        commands: list[tuple[list[str], str | None]] = [(foreground_cmd, None)]
 
         if built_binary_path.exists():
+            built_cmd = [str(built_binary_path), "--foreground"]
+            if port_override is not None:
+                built_cmd.extend(["--control-port", str(port_override)])
             commands.append(
                 (
-                    [
-                        str(built_binary_path),
-                        "--foreground",
-                        "--control-port",
-                        str(self.control_port),
-                    ],
+                    built_cmd,
                     str(repo_root_path),
                 )
             )
 
+        cargo_cmd = [
+            "cargo",
+            "run",
+            "--bin",
+            "neurohid-service",
+            "--",
+            "--foreground",
+        ]
+        if port_override is not None:
+            cargo_cmd.extend(["--control-port", str(port_override)])
+
         commands.append(
             (
-                [
-                    "cargo",
-                    "run",
-                    "--bin",
-                    "neurohid-service",
-                    "--",
-                    "--foreground",
-                    "--control-port",
-                    str(self.control_port),
-                ],
+                cargo_cmd,
                 str(repo_root_path),
             )
         )
         return commands
 
+    def _run_daemon_command(self, command: str) -> dict[str, Any]:
+        cmd = [self.service_bin, "daemon", command]
+        port_override = self._daemon_control_port_override()
+        if port_override is not None:
+            cmd.extend(["--control-port", str(port_override)])
+        completed = subprocess.run(cmd, check=False, text=True, capture_output=True)
+        if completed.returncode != 0:
+            details = ""
+            if completed.stdout:
+                details += f"\nstdout:\n{completed.stdout}"
+            if completed.stderr:
+                details += f"\nstderr:\n{completed.stderr}"
+            raise NotebookError(
+                f"daemon command failed ({completed.returncode}): {' '.join(cmd)}{details}"
+            )
+        return {
+            "payload": {
+                "type": "daemon_status",
+                "command": command,
+                "stdout": completed.stdout.strip(),
+                "stderr": completed.stderr.strip(),
+            }
+        }
 
-def _request_named_pipe(payload: str, pipe_name: str) -> str:
-    with open(pipe_name, "r+b", buffering=0) as pipe:
-        pipe.write(payload.encode("utf-8"))
-        return _read_line(pipe)
-
-
-def _read_line(conn: Any) -> str:
-    chunks: list[bytes] = []
-    while True:
-        if hasattr(conn, "recv"):
-            byte = conn.recv(1)
-        else:
-            byte = conn.read(1)
-        if not byte:
-            break
-        if byte == b"\n":
-            break
-        chunks.append(byte)
-    return b"".join(chunks).decode("utf-8", errors="replace").strip()
+    def _daemon_control_port_override(self) -> int | None:
+        ipc = self._build_ipc_client()
+        if ipc.ipc_mode.strip().lower() != "tcp_loopback":
+            return None
+        return int(self.control_port)
 
 
 def _is_eligible_eeg_stream(stream: dict[str, Any]) -> bool:
@@ -347,10 +384,9 @@ def _spawn_background_process(
     }
 
     if os.name == "nt":
-        kwargs["creationflags"] = (
-            subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NO_WINDOW
-        )
+        create_new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        detached_process = getattr(subprocess, "DETACHED_PROCESS", 0)
+        create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        kwargs["creationflags"] = create_new_process_group | detached_process | create_no_window
 
     return subprocess.Popen(command, **kwargs)

@@ -173,6 +173,51 @@ jobs:
           name: python-coverage
           fail_ci_if_error: false
 
+  ipc-compat-matrix:
+    name: IPC Compat Matrix
+    needs: determine-impact
+    if: needs.determine-impact.outputs.protocol == 'true' || github.event_name == 'push'
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            transport: tcp_loopback
+            runner: [self-hosted, linux, neurohid-ci]
+          - platform: linux
+            transport: local_socket
+            runner: [self-hosted, linux, neurohid-ci]
+          - platform: windows
+            transport: tcp_loopback
+            runner: [self-hosted, windows, neurohid-ci]
+          - platform: windows
+            transport: local_socket
+            runner: [self-hosted, windows, neurohid-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Python dependencies
+        run: uv sync --directory python --extra dev
+      - name: Rust transport smoke (tcp_loopback)
+        if: matrix.transport == 'tcp_loopback'
+        run: cargo test -p neurohid-ipc explicit_tcp_transport_roundtrips_messages -- --nocapture
+      - name: Rust transport smoke (local_socket)
+        if: matrix.transport == 'local_socket'
+        run: cargo test -p neurohid-ipc explicit_local_socket_transport_roundtrips_messages -- --nocapture
+      - name: Unified service multiplexing smoke
+        run: cargo test -p neurohid --bin neurohid-service runtime_events_subscription_does_not_block_control_rpc -- --nocapture
+      - name: Python IPC surface smoke
+        run: >
+          uv run --project python python -m unittest
+          python/tests/test_control_client.py
+          python/tests/test_bridge.py
+
   rust-coverage:
     name: Rust Coverage
     needs: determine-impact

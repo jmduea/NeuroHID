@@ -29,6 +29,7 @@ pub mod device;
 pub mod error;
 pub mod event;
 pub mod ipc_v2;
+pub mod ipc_v3;
 pub mod learning;
 pub mod model;
 pub mod observability;
@@ -50,6 +51,11 @@ pub use ipc_v2::{
     AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2, PingV2,
     PongV2, ProtocolErrorV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2,
     RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
+};
+pub use ipc_v3::{
+    ControlRpcRequestV3, ControlRpcResponsePayloadV3, ControlRpcResponseV3, IPC_PROTOCOL_V3,
+    IpcChannelV3, IpcEnvelopeV3, RuntimeComponentCapabilityV3, RuntimeEventV3,
+    RuntimeEventsSubscribeV3, TrainerStreamKindV3, TrainerStreamPayloadV3,
 };
 pub use learning::{
     CandidateGuardrails, CandidateModelMetrics, TrainingEpisode, TrainingSessionLog,

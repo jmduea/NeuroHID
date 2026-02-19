@@ -3,19 +3,19 @@
 //! Manages runtime lifecycle and control for the hub.
 //! Supports both embedded runtime hosting and optional external runtime control.
 
-use std::io::{BufRead, BufReader, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, watch};
 
 use neurohid_core::service::{DeviceCommand, NeuroHidService, ServiceHandle, SignalCommand};
+use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport, send_control_request_blocking};
 use neurohid_storage::ProfileStore;
 use neurohid_types::observability::{self as obs, EmitGate, ObservabilityComponent};
 use neurohid_types::{
+    IpcChannelV3, IpcEnvelopeV3, RuntimeEventV3, RuntimeEventsSubscribeV3,
     config::{
-        ControlTransport, FallbackPolicy, ServiceConfig, ServiceRuntimeMode, SignalConfig,
-        SystemConfig,
+        FallbackPolicy, IpcMode, ServiceConfig, ServiceRuntimeMode, SignalConfig, SystemConfig,
     },
     control::{
         ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
@@ -28,12 +28,21 @@ use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
 
 const EXTERNAL_SNAPSHOT_POLL_INTERVAL: Duration = Duration::from_millis(250);
-const EXTERNAL_CONNECT_TIMEOUT: Duration = Duration::from_millis(120);
-const EXTERNAL_IO_TIMEOUT: Duration = Duration::from_millis(250);
-#[cfg(windows)]
-const EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS: usize = 6;
-#[cfg(windows)]
-const EXTERNAL_NAMED_PIPE_RETRY_BASE_DELAY: Duration = Duration::from_millis(40);
+const EXTERNAL_EVENT_STREAM_STALE_TIMEOUT: Duration = Duration::from_secs(2);
+const EXTERNAL_EVENT_RECONNECT_BASE: Duration = Duration::from_millis(250);
+const EXTERNAL_EVENT_RECONNECT_MAX: Duration = Duration::from_secs(5);
+const EXTERNAL_CONNECT_TIMEOUT_MS: u64 = 120;
+const EXTERNAL_IO_TIMEOUT_MS: u64 = 250;
+
+#[derive(Debug, Clone, Default)]
+struct ExternalEventState {
+    latest_snapshot: Option<ServiceSnapshot>,
+    last_seq: Option<u64>,
+    replay_miss: bool,
+    stream_connected: bool,
+    last_event_at: Option<Instant>,
+    last_error: Option<String>,
+}
 
 /// Manages service/runtime lifecycle for the hub.
 pub struct ServiceManager {
@@ -44,10 +53,12 @@ pub struct ServiceManager {
     /// Cached snapshot from the last successful read.
     cached_snapshot: ServiceSnapshot,
     runtime_mode: ServiceRuntimeMode,
-    external_control_transport: ControlTransport,
-    external_control_endpoint: String,
-    external_control_pipe_name: String,
+    external_ipc_mode: IpcMode,
+    external_ipc_endpoint: String,
     last_external_poll: Option<Instant>,
+    external_event_state: Arc<StdMutex<ExternalEventState>>,
+    external_event_task: Option<tokio::task::JoinHandle<()>>,
+    external_event_stop_tx: Option<watch::Sender<bool>>,
     control_emit_gate: std::sync::Mutex<EmitGate>,
 }
 
@@ -66,13 +77,12 @@ impl ServiceManager {
             bus_connected: false,
             cached_snapshot: ServiceSnapshot::default(),
             runtime_mode: service_defaults.runtime_mode,
-            external_control_transport: service_defaults.control_transport,
-            external_control_endpoint: format!(
-                "{}:{}",
-                service_defaults.control_host, service_defaults.control_port
-            ),
-            external_control_pipe_name: service_defaults.control_pipe_name,
+            external_ipc_mode: service_defaults.ipc_mode,
+            external_ipc_endpoint: service_defaults.ipc_endpoint,
             last_external_poll: None,
+            external_event_state: Arc::new(StdMutex::new(ExternalEventState::default())),
+            external_event_task: None,
+            external_event_stop_tx: None,
             control_emit_gate: std::sync::Mutex::new(EmitGate::new(
                 service_defaults
                     .observability
@@ -83,33 +93,31 @@ impl ServiceManager {
 
     /// Synchronize manager mode/endpoint from latest config.
     pub fn configure(&mut self, config: &SystemConfig) {
+        let mut service_config = config.service.clone();
+        for warning in service_config.apply_legacy_ipc_aliases() {
+            tracing::warn!("{warning}");
+        }
         let next_mode = config.service.runtime_mode.clone();
-        let host = if config.service.control_host.trim().is_empty() {
-            "127.0.0.1"
-        } else {
-            config.service.control_host.trim()
-        };
-        let next_endpoint = format!("{}:{}", host, config.service.control_port);
-        let next_transport = config.service.control_transport.clone();
-        let next_pipe_name = config.service.control_pipe_name.clone();
+        let next_ipc_mode = service_config.ipc_mode;
+        let next_ipc_endpoint = service_config.ipc_endpoint;
 
         if self.runtime_mode != next_mode {
             if self.runtime_mode == ServiceRuntimeMode::Embedded {
                 self.stop_embedded();
             } else {
                 self.cached_snapshot = ServiceSnapshot::default();
+                self.stop_external_event_worker();
             }
             self.last_external_poll = None;
         }
 
-        if self.external_control_endpoint != next_endpoint
-            || self.external_control_transport != next_transport
-            || self.external_control_pipe_name != next_pipe_name
+        if self.external_ipc_endpoint != next_ipc_endpoint
+            || self.external_ipc_mode != next_ipc_mode
         {
-            self.external_control_endpoint = next_endpoint;
-            self.external_control_transport = next_transport;
-            self.external_control_pipe_name = next_pipe_name;
+            self.external_ipc_endpoint = next_ipc_endpoint;
+            self.external_ipc_mode = next_ipc_mode;
             self.last_external_poll = None;
+            self.stop_external_event_worker();
             if self.runtime_mode == ServiceRuntimeMode::External {
                 self.cached_snapshot = ServiceSnapshot::default();
             }
@@ -137,11 +145,13 @@ impl ServiceManager {
         self.configure(&config);
         match self.runtime_mode {
             ServiceRuntimeMode::Embedded => {
+                self.stop_external_event_worker();
                 self.start_embedded(runtime, config, profile_store, profile_id)
             }
             ServiceRuntimeMode::External => {
                 self.stop_embedded();
                 self.last_external_poll = None;
+                self.start_external_event_worker(runtime);
                 match self.send_control_request(ControlRequest::new(ControlCommand::Snapshot)) {
                     Ok(response) => match response.payload {
                         ControlResponsePayload::Snapshot { snapshot } => {
@@ -190,6 +200,7 @@ impl ServiceManager {
             ServiceRuntimeMode::Embedded => self.stop_embedded(),
             ServiceRuntimeMode::External => {
                 self.stop_embedded();
+                self.stop_external_event_worker();
                 match self.send_control_request(ControlRequest::new(ControlCommand::Shutdown)) {
                     Ok(response) => match response.payload {
                         ControlResponsePayload::Ack => {
@@ -695,8 +706,112 @@ impl ServiceManager {
         snap
     }
 
+    fn start_external_event_worker(&mut self, runtime: &tokio::runtime::Runtime) {
+        self.stop_external_event_worker();
+
+        let endpoint = self.control_endpoint_label();
+        let config = self.external_control_ipc_config();
+        let state = Arc::clone(&self.external_event_state);
+        let (stop_tx, stop_rx) = watch::channel(false);
+        self.external_event_stop_tx = Some(stop_tx);
+        self.external_event_task = Some(runtime.spawn(async move {
+            run_external_event_worker(config, state, stop_rx).await;
+            tracing::info!(endpoint = %endpoint, "external runtime.events worker stopped");
+        }));
+    }
+
+    fn stop_external_event_worker(&mut self) {
+        if let Some(stop_tx) = self.external_event_stop_tx.take() {
+            let _ = stop_tx.send(true);
+        }
+        if let Some(task) = self.external_event_task.take() {
+            task.abort();
+        }
+        if let Ok(mut state) = self.external_event_state.lock() {
+            state.stream_connected = false;
+            state.last_event_at = None;
+            state.last_error = None;
+        }
+    }
+
+    fn apply_external_runtime_event(
+        state: &Arc<StdMutex<ExternalEventState>>,
+        seq: u64,
+        event: RuntimeEventV3,
+    ) {
+        let Ok(mut stream_state) = state.lock() else {
+            return;
+        };
+        stream_state.last_seq = Some(seq);
+        stream_state.last_event_at = Some(Instant::now());
+        stream_state.stream_connected = true;
+
+        match event {
+            RuntimeEventV3::Snapshot { snapshot } => {
+                stream_state.latest_snapshot = Some(Self::snapshot_from_control(snapshot));
+                stream_state.last_error = None;
+            }
+            RuntimeEventV3::TrainerSnapshot { snapshot } => {
+                if let Some(cached) = stream_state.latest_snapshot.as_mut() {
+                    cached.ml_bridge_connected = snapshot.trainer_connected;
+                    cached.trainer_replay_size = Some(snapshot.replay_size);
+                    cached.trainer_step = Some(snapshot.training_step);
+                    cached.trainer_last_error = snapshot.last_error.clone();
+                    cached.ml_protocol_version = snapshot.protocol_version;
+                }
+            }
+            RuntimeEventV3::TrainerStatus { status } => {
+                if let Some(cached) = stream_state.latest_snapshot.as_mut() {
+                    cached.trainer_replay_size = Some(status.replay_size);
+                    cached.trainer_step = Some(status.training_step);
+                    cached.trainer_policy_loss = status.policy_loss;
+                    cached.trainer_value_loss = status.value_loss;
+                    cached.trainer_entropy = status.entropy;
+                    cached.trainer_last_error = status.last_error.clone();
+                    cached.ml_bridge_connected = status.state != "disconnected";
+                    cached.ml_bridge_stalled = status.state == "stalled";
+                }
+            }
+            RuntimeEventV3::RuntimeTelemetry { telemetry } => {
+                if let Some(cached) = stream_state.latest_snapshot.as_mut() {
+                    cached.signal_latency_p95_us = telemetry.signal_latency_p95_us;
+                    cached.decode_latency_p95_us = telemetry.decode_latency_p95_us;
+                    cached.action_latency_p95_us = telemetry.action_latency_p95_us;
+                    cached.integrity_issue_count = telemetry.dropped_ml_messages;
+                }
+            }
+            RuntimeEventV3::Lifecycle { state, detail, .. } => {
+                if state == "replay_miss" {
+                    stream_state.replay_miss = true;
+                    stream_state.last_error = Some(format!(
+                        "runtime.events replay_miss; fallback snapshot polling enabled: {detail}"
+                    ));
+                } else if state == "replay_resumed" {
+                    stream_state.replay_miss = false;
+                    stream_state.last_error = None;
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn snapshot_external(&mut self) -> ServiceSnapshot {
         let now = Instant::now();
+        if let Ok(state) = self.external_event_state.lock() {
+            let stream_fresh = state
+                .last_event_at
+                .is_some_and(|ts| now.duration_since(ts) <= EXTERNAL_EVENT_STREAM_STALE_TIMEOUT);
+            if state.stream_connected
+                && !state.replay_miss
+                && stream_fresh
+                && let Some(snapshot) = state.latest_snapshot.clone()
+            {
+                self.cached_snapshot = snapshot.clone();
+                self.last_error = state.last_error.clone();
+                return snapshot;
+            }
+        }
+
         if let Some(last_poll) = self.last_external_poll
             && now.duration_since(last_poll) < EXTERNAL_SNAPSHOT_POLL_INTERVAL
         {
@@ -710,6 +825,11 @@ impl ServiceManager {
                 ControlResponsePayload::Snapshot { snapshot } => {
                     self.cached_snapshot = Self::snapshot_from_control(snapshot);
                     self.last_error = None;
+                    if let Ok(mut state) = self.external_event_state.lock() {
+                        state.latest_snapshot = Some(self.cached_snapshot.clone());
+                        state.replay_miss = false;
+                        state.last_error = None;
+                    }
                 }
                 ControlResponsePayload::Error { message } => {
                     self.set_last_error(format!(
@@ -720,6 +840,9 @@ impl ServiceManager {
                         task_error: Some(("control".to_string(), message)),
                         ..ServiceSnapshot::default()
                     };
+                    if let Ok(mut state) = self.external_event_state.lock() {
+                        state.last_error = self.last_error.clone();
+                    }
                 }
                 ControlResponsePayload::Ack => {
                     self.set_last_error(format!(
@@ -727,6 +850,9 @@ impl ServiceManager {
                         endpoint
                     ));
                     self.cached_snapshot = ServiceSnapshot::default();
+                    if let Ok(mut state) = self.external_event_state.lock() {
+                        state.last_error = self.last_error.clone();
+                    }
                 }
                 ControlResponsePayload::TrainerSnapshot { .. } => {
                     self.set_last_error(format!(
@@ -734,6 +860,9 @@ impl ServiceManager {
                         endpoint
                     ));
                     self.cached_snapshot = ServiceSnapshot::default();
+                    if let Ok(mut state) = self.external_event_state.lock() {
+                        state.last_error = self.last_error.clone();
+                    }
                 }
             },
             Err(error) => {
@@ -745,6 +874,9 @@ impl ServiceManager {
                     task_error: Some(("control".to_string(), error)),
                     ..ServiceSnapshot::default()
                 };
+                if let Ok(mut state) = self.external_event_state.lock() {
+                    state.last_error = self.last_error.clone();
+                }
             }
         }
 
@@ -799,15 +931,14 @@ impl ServiceManager {
                 decision_id = obs::field::UNKNOWN,
                 stream_id = obs::field::UNKNOWN,
                 command,
-                transport = ?self.external_control_transport,
+                mode = ?self.external_ipc_mode,
                 "Sending external control request"
             );
         }
 
-        let response = match self.external_control_transport {
-            ControlTransport::NamedPipe => self.send_control_request_named_pipe(request),
-            ControlTransport::TcpLoopback => self.send_control_request_tcp(request),
-        };
+        let config = self.external_control_ipc_config();
+        let response = send_control_request_blocking(config, request, "hub-control", 1)
+            .map_err(|error| format!("external control request failed: {}", error));
 
         match &response {
             Ok(ok) => {
@@ -847,139 +978,23 @@ impl ServiceManager {
             .unwrap_or(true)
     }
 
-    fn send_control_request_tcp(&self, request: ControlRequest) -> Result<ControlResponse, String> {
-        let mut addrs = self
-            .external_control_endpoint
-            .to_socket_addrs()
-            .map_err(|e| {
-                format!(
-                    "invalid control endpoint '{}': {}",
-                    self.external_control_endpoint, e
-                )
-            })?;
-
-        let Some(addr) = addrs.next() else {
-            return Err(format!(
-                "control endpoint '{}' did not resolve to a socket address",
-                self.external_control_endpoint
-            ));
+    fn external_control_ipc_config(&self) -> IpcConfig {
+        let transport = match self.external_ipc_mode {
+            IpcMode::LocalSocket => IpcTransport::LocalSocket,
+            IpcMode::TcpLoopback => IpcTransport::TcpLoopback,
         };
-
-        let mut stream = TcpStream::connect_timeout(&addr, EXTERNAL_CONNECT_TIMEOUT)
-            .map_err(|e| format!("connect failed: {}", e))?;
-        stream
-            .set_read_timeout(Some(EXTERNAL_IO_TIMEOUT))
-            .map_err(|e| format!("failed to set read timeout: {}", e))?;
-        stream
-            .set_write_timeout(Some(EXTERNAL_IO_TIMEOUT))
-            .map_err(|e| format!("failed to set write timeout: {}", e))?;
-
-        let payload = serde_json::to_string(&request)
-            .map_err(|e| format!("failed to encode request payload: {}", e))?;
-        stream
-            .write_all(payload.as_bytes())
-            .map_err(|e| format!("failed to write request payload: {}", e))?;
-        stream
-            .write_all(b"\n")
-            .map_err(|e| format!("failed to terminate request line: {}", e))?;
-        stream
-            .flush()
-            .map_err(|e| format!("failed to flush request payload: {}", e))?;
-
-        let mut reader = BufReader::new(stream);
-        let mut line = String::new();
-        reader
-            .read_line(&mut line)
-            .map_err(|e| format!("failed to read response payload: {}", e))?;
-
-        if line.trim().is_empty() {
-            return Err("received empty response from control endpoint".to_string());
-        }
-
-        serde_json::from_str::<ControlResponse>(line.trim())
-            .map_err(|e| format!("failed to decode control response: {}", e))
-    }
-
-    fn send_control_request_named_pipe(
-        &self,
-        request: ControlRequest,
-    ) -> Result<ControlResponse, String> {
-        #[cfg(windows)]
-        {
-            let payload = serde_json::to_string(&request)
-                .map_err(|e| format!("failed to encode request payload: {}", e))?;
-            let mut last_error = None;
-
-            for attempt in 0..EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS {
-                let open_result = std::fs::OpenOptions::new()
-                    .read(true)
-                    .write(true)
-                    .open(&self.external_control_pipe_name);
-
-                let mut stream = match open_result {
-                    Ok(stream) => stream,
-                    Err(error) => {
-                        last_error = Some(error.to_string());
-                        if !named_pipe_retryable_error(&error)
-                            || attempt + 1 >= EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS
-                        {
-                            break;
-                        }
-
-                        let backoff = named_pipe_backoff_delay(attempt);
-                        std::thread::sleep(backoff);
-                        continue;
-                    }
-                };
-
-                if let Err(error) = stream.write_all(payload.as_bytes()) {
-                    last_error = Some(format!("failed to write request payload: {}", error));
-                    continue;
-                }
-                if let Err(error) = stream.write_all(b"\n") {
-                    last_error = Some(format!("failed to terminate request line: {}", error));
-                    continue;
-                }
-                if let Err(error) = stream.flush() {
-                    last_error = Some(format!("failed to flush request payload: {}", error));
-                    continue;
-                }
-
-                let mut reader = BufReader::new(stream);
-                let mut line = String::new();
-                if let Err(error) = reader.read_line(&mut line) {
-                    last_error = Some(format!("failed to read response payload: {}", error));
-                    continue;
-                }
-
-                if line.trim().is_empty() {
-                    last_error = Some("received empty response from control endpoint".to_string());
-                    continue;
-                }
-
-                return serde_json::from_str::<ControlResponse>(line.trim())
-                    .map_err(|e| format!("failed to decode control response: {}", e));
-            }
-
-            Err(format!(
-                "failed to open control named pipe '{}' after {} attempts: {}",
-                self.external_control_pipe_name,
-                EXTERNAL_NAMED_PIPE_CONNECT_ATTEMPTS,
-                last_error.unwrap_or_else(|| "unknown error".to_string())
-            ))
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = request;
-            Err("named-pipe control transport is only supported on Windows".to_string())
+        IpcConfig {
+            transport,
+            endpoint: self.external_ipc_endpoint.clone(),
+            connect_timeout_ms: EXTERNAL_CONNECT_TIMEOUT_MS,
+            send_timeout_ms: EXTERNAL_IO_TIMEOUT_MS,
+            recv_timeout_ms: EXTERNAL_IO_TIMEOUT_MS,
+            ..IpcConfig::default()
         }
     }
 
     fn control_endpoint_label(&self) -> String {
-        match self.external_control_transport {
-            ControlTransport::NamedPipe => self.external_control_pipe_name.clone(),
-            ControlTransport::TcpLoopback => self.external_control_endpoint.clone(),
-        }
+        self.external_ipc_endpoint.clone()
     }
 
     fn control_response_kind(payload: &ControlResponsePayload) -> &'static str {
@@ -1073,41 +1088,168 @@ impl ServiceManager {
     }
 }
 
-#[cfg(windows)]
-fn named_pipe_retryable_error(error: &std::io::Error) -> bool {
-    matches!(
-        error.raw_os_error(),
-        Some(2)  // ERROR_FILE_NOT_FOUND
-            | Some(121) // ERROR_SEM_TIMEOUT
-            | Some(231) // ERROR_PIPE_BUSY
-    )
+async fn run_external_event_worker(
+    config: IpcConfig,
+    state: Arc<StdMutex<ExternalEventState>>,
+    mut stop_rx: watch::Receiver<bool>,
+) {
+    let mut reconnect_delay = EXTERNAL_EVENT_RECONNECT_BASE;
+    loop {
+        if *stop_rx.borrow() {
+            break;
+        }
+
+        let resume_from_seq = state
+            .lock()
+            .ok()
+            .and_then(|guard| guard.last_seq.map(|seq| seq.saturating_add(1)));
+
+        let mut client = IpcClient::new(config.clone());
+        if let Err(error) = client.connect().await {
+            set_external_event_stream_error(&state, format!("connect failed: {error}"));
+            if sleep_external_reconnect(reconnect_delay, &mut stop_rx).await {
+                break;
+            }
+            reconnect_delay = (reconnect_delay * 2).min(EXTERNAL_EVENT_RECONNECT_MAX);
+            continue;
+        }
+
+        let subscribe = RuntimeEventsSubscribeV3 {
+            families: vec![
+                "snapshot".to_string(),
+                "trainer_snapshot".to_string(),
+                "trainer_status".to_string(),
+                "runtime_telemetry".to_string(),
+                "decision_event".to_string(),
+                "errp_window".to_string(),
+                "errp_result".to_string(),
+                "integrity_issue".to_string(),
+                "lifecycle".to_string(),
+            ],
+            include_snapshot: true,
+            include_capabilities: false,
+            max_events: None,
+            max_duration_ms: None,
+            resume_from_seq,
+            sample_every: 1,
+            snapshot_interval_ms: 1_000,
+        };
+        let subscribe_envelope = match IpcEnvelopeV3::new(
+            IpcChannelV3::RuntimeEvents,
+            "subscribe",
+            1,
+            None,
+            Some("hub-external-runtime-events".to_string()),
+            &subscribe,
+        ) {
+            Ok(envelope) => envelope,
+            Err(error) => {
+                set_external_event_stream_error(
+                    &state,
+                    format!("failed to encode runtime.events subscribe envelope: {error}"),
+                );
+                let _ = client.disconnect().await;
+                break;
+            }
+        };
+        if let Err(error) = client.send(subscribe_envelope).await {
+            set_external_event_stream_error(&state, format!("subscribe send failed: {error}"));
+            let _ = client.disconnect().await;
+            if sleep_external_reconnect(reconnect_delay, &mut stop_rx).await {
+                break;
+            }
+            reconnect_delay = (reconnect_delay * 2).min(EXTERNAL_EVENT_RECONNECT_MAX);
+            continue;
+        }
+
+        reconnect_delay = EXTERNAL_EVENT_RECONNECT_BASE;
+        if let Ok(mut stream_state) = state.lock() {
+            stream_state.stream_connected = true;
+            stream_state.last_error = None;
+        }
+
+        loop {
+            tokio::select! {
+                changed = stop_rx.changed() => {
+                    let stop_requested = changed.is_ok() && *stop_rx.borrow();
+                    if stop_requested {
+                        let _ = client.disconnect().await;
+                        return;
+                    }
+                }
+                incoming = client.recv() => {
+                    let envelope = match incoming {
+                        Ok(envelope) => envelope,
+                        Err(error) => {
+                            set_external_event_stream_error(
+                                &state,
+                                format!("stream receive failed: {error}"),
+                            );
+                            break;
+                        }
+                    };
+
+                    if envelope.channel != IpcChannelV3::RuntimeEvents || envelope.msg_type != "event" {
+                        continue;
+                    }
+
+                    let seq = envelope.seq;
+                    match envelope.decode_payload::<RuntimeEventV3>() {
+                        Ok(event) => ServiceManager::apply_external_runtime_event(&state, seq, event),
+                        Err(error) => {
+                            set_external_event_stream_error(
+                                &state,
+                                format!("runtime.events payload decode failed: {error}"),
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        let _ = client.disconnect().await;
+        if sleep_external_reconnect(reconnect_delay, &mut stop_rx).await {
+            break;
+        }
+        reconnect_delay = (reconnect_delay * 2).min(EXTERNAL_EVENT_RECONNECT_MAX);
+    }
 }
 
-#[cfg(windows)]
-fn named_pipe_backoff_delay(attempt: usize) -> Duration {
-    let shift = attempt.min(4) as u32;
-    EXTERNAL_NAMED_PIPE_RETRY_BASE_DELAY.saturating_mul(1u32 << shift)
+async fn sleep_external_reconnect(delay: Duration, stop_rx: &mut watch::Receiver<bool>) -> bool {
+    tokio::select! {
+        _ = tokio::time::sleep(delay) => false,
+        changed = stop_rx.changed() => changed.is_ok() && *stop_rx.borrow(),
+    }
+}
+
+fn set_external_event_stream_error(state: &Arc<StdMutex<ExternalEventState>>, message: String) {
+    if let Ok(mut stream_state) = state.lock() {
+        stream_state.stream_connected = false;
+        stream_state.last_error = Some(message);
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::io::{BufRead, BufReader, Write};
+    use std::io::{Read, Write};
     use std::net::{TcpListener, TcpStream};
     use std::thread;
     use std::time::{Duration, Instant};
 
+    use neurohid_core::tasks::TrainerIngressEvent;
     #[cfg(windows)]
-    use neurohid_ipc::{HelloV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2};
+    use neurohid_ipc::{HelloV2, RuntimeMlRoleV2, TrainerStreamKindV3};
     use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport};
     use neurohid_types::{
-        config::{ControlTransport, DeviceBackend, MlTransport, ServiceRuntimeMode, SystemConfig},
+        ControlRpcRequestV3, ControlRpcResponseV3, IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3,
+        config::{ControlTransport, DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig},
         control::{
             ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload,
             ControlSnapshot, RuntimeModeState,
         },
     };
     #[cfg(windows)]
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader as AsyncBufReader};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
     #[cfg(windows)]
     use tokio::net::windows::named_pipe::ServerOptions;
 
@@ -1125,8 +1267,8 @@ mod tests {
         let mut config = SystemConfig::default();
         config.device.backend = DeviceBackend::Mock;
         config.service.ipc_simulation_enabled = false;
-        config.service.ml_transport = MlTransport::TcpLoopback;
-        config.service.ipc_port = allocate_test_port();
+        config.service.ipc_mode = IpcMode::TcpLoopback;
+        config.service.ipc_endpoint = format!("127.0.0.1:{}", allocate_test_port());
 
         manager.start(&runtime, config.clone(), None, None);
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| snap.running);
@@ -1135,17 +1277,30 @@ mod tests {
         assert!(!initial.ipc_connected);
         assert!(!initial.ipc_simulated);
 
-        let mut client = runtime.block_on(connect_test_client(config.service.ipc_port));
+        let trainer_ingress = manager
+            .handle
+            .as_ref()
+            .expect("embedded runtime handle should be available")
+            .trainer_ingress_tx
+            .clone();
+        runtime.block_on(async {
+            trainer_ingress
+                .send(TrainerIngressEvent::Connected {
+                    session_id: "hub-test-trainer".to_string(),
+                })
+                .await
+                .expect("trainer connect event should send");
+        });
 
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             snap.ipc_connected && !snap.ipc_simulated
         });
 
         runtime.block_on(async {
-            client
-                .disconnect()
+            trainer_ingress
+                .send(TrainerIngressEvent::Disconnected)
                 .await
-                .expect("disconnect should succeed");
+                .expect("trainer disconnect event should send");
         });
 
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
@@ -1212,8 +1367,8 @@ mod tests {
         let mut config = SystemConfig::default();
         config.device.backend = DeviceBackend::Mock;
         config.service.ipc_simulation_enabled = true;
-        config.service.ml_transport = MlTransport::TcpLoopback;
-        config.service.ipc_port = allocate_test_port();
+        config.service.ipc_mode = IpcMode::TcpLoopback;
+        config.service.ipc_endpoint = format!("127.0.0.1:{}", allocate_test_port());
 
         manager.start(&runtime, config, None, None);
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
@@ -1235,8 +1390,8 @@ mod tests {
         let mut config = SystemConfig::default();
         config.device.backend = DeviceBackend::Mock;
         config.service.ipc_simulation_enabled = false;
-        config.service.ml_transport = MlTransport::NamedPipe;
-        config.service.ml_pipe_name = unique_pipe_name("neurohid_ml_test");
+        config.service.ipc_mode = IpcMode::LocalSocket;
+        config.service.ipc_endpoint = unique_pipe_name("neurohid_ipc_test");
         config.service.ml_stall_timeout_ms = 120;
         config.service.ml_heartbeat_interval_ms = 50;
 
@@ -1244,7 +1399,7 @@ mod tests {
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| snap.running);
 
         let mut client =
-            runtime.block_on(connect_test_named_pipe_client(&config.service.ml_pipe_name));
+            runtime.block_on(connect_test_named_pipe_client(&config.service.ipc_endpoint));
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             snap.ipc_connected && snap.ml_bridge_connected
         });
@@ -1254,7 +1409,7 @@ mod tests {
 
         runtime.block_on(async {
             let hello = HelloV2 {
-                protocol: "neurohid_runtime_ml_v2".to_string(),
+                protocol: "neurohid_runtime_ml_v3".to_string(),
                 role: RuntimeMlRoleV2::Trainer,
                 capabilities: vec!["errp_result".to_string()],
                 profile_id: None,
@@ -1264,10 +1419,12 @@ mod tests {
                 trainer_name: Some("test-trainer".to_string()),
                 trainer_version: Some("0.0.0".to_string()),
             };
-            let envelope = RuntimeMlEnvelopeV2::new(
-                RuntimeMlKindV2::Hello,
+            let envelope = IpcEnvelopeV3::new(
+                IpcChannelV3::TrainerStream,
+                TrainerStreamKindV3::Hello.as_msg_type(),
                 1,
-                "named-pipe-test".to_string(),
+                None,
+                Some("named-pipe-test".to_string()),
                 &hello,
             )
             .expect("hello envelope should encode");
@@ -1291,7 +1448,7 @@ mod tests {
         });
 
         let mut reconnect_client =
-            runtime.block_on(connect_test_named_pipe_client(&config.service.ml_pipe_name));
+            runtime.block_on(connect_test_named_pipe_client(&config.service.ipc_endpoint));
         wait_for_snapshot(&mut manager, Duration::from_secs(2), |snap| {
             snap.ipc_connected
         });
@@ -1365,32 +1522,11 @@ mod tests {
         }
     }
 
-    async fn connect_test_client(port: u16) -> IpcClient {
-        let mut client = IpcClient::new(IpcConfig {
-            transport: IpcTransport::TcpLoopback,
-            address: format!("127.0.0.1:{port}"),
-            connect_timeout_ms: 250,
-            ..IpcConfig::default()
-        });
-
-        let start = tokio::time::Instant::now();
-        loop {
-            match client.connect().await {
-                Ok(()) => return client,
-                Err(err) if start.elapsed() < Duration::from_secs(2) => {
-                    tracing::debug!(%err, "Waiting for service IPC server");
-                    tokio::time::sleep(Duration::from_millis(25)).await;
-                }
-                Err(err) => panic!("client failed to connect: {err}"),
-            }
-        }
-    }
-
     #[cfg(windows)]
     async fn connect_test_named_pipe_client(pipe_name: &str) -> IpcClient {
         let mut client = IpcClient::new(IpcConfig {
-            transport: IpcTransport::NamedPipe,
-            pipe_name: pipe_name.to_string(),
+            transport: IpcTransport::LocalSocket,
+            endpoint: pipe_name.to_string(),
             connect_timeout_ms: 250,
             ..IpcConfig::default()
         });
@@ -1471,7 +1607,7 @@ mod tests {
                             candidate_last_outcome: Some(
                                 "candidate promotion accepted".to_string(),
                             ),
-                            ml_protocol_version: Some(2),
+                            ml_protocol_version: Some(3),
                             device_connected: true,
                             task_error: None,
                             discovered_streams: vec![],
@@ -1505,7 +1641,7 @@ mod tests {
                             training_step: 33,
                             last_heartbeat_us: Some(1),
                             last_error: None,
-                            protocol_version: Some(2),
+                            protocol_version: Some(3),
                         },
                     ),
                     ControlCommand::SetLearningEnabled { .. }
@@ -1549,21 +1685,23 @@ mod tests {
                         .await
                         .expect("named-pipe control server connect should succeed");
 
-                    let (read_half, mut write_half) = tokio::io::split(server);
-                    let mut reader = AsyncBufReader::new(read_half);
-                    let mut line = String::new();
+                    let (mut read_half, mut write_half) = tokio::io::split(server);
 
                     loop {
-                        line.clear();
-                        let read = reader
-                            .read_line(&mut line)
-                            .await
-                            .expect("named-pipe control read should succeed");
-                        if read == 0 {
-                            break;
-                        }
-
-                        let parsed: Result<ControlRequest, _> = serde_json::from_str(line.trim());
+                        let envelope = match read_control_envelope_async(&mut read_half).await {
+                            Some(envelope) => envelope,
+                            None => break,
+                        };
+                        let parsed = if envelope.v == IPC_PROTOCOL_V3
+                            && envelope.channel == IpcChannelV3::ControlRpc
+                            && envelope.msg_type == "request"
+                        {
+                            envelope
+                                .decode_payload::<ControlRpcRequestV3>()
+                                .map(ControlRequest::from)
+                        } else {
+                            Err("invalid control envelope channel/msg_type".to_string())
+                        };
                         let response = match parsed {
                             Ok(request) => match request.command {
                                 ControlCommand::Snapshot => ControlResponse::snapshot(
@@ -1614,7 +1752,7 @@ mod tests {
                                         candidate_last_outcome: Some(
                                             "candidate promotion accepted".to_string(),
                                         ),
-                                        ml_protocol_version: Some(2),
+                                        ml_protocol_version: Some(3),
                                         device_connected: true,
                                         task_error: None,
                                         discovered_streams: vec![],
@@ -1655,7 +1793,7 @@ mod tests {
                                             training_step: 33,
                                             last_heartbeat_us: Some(1),
                                             last_error: None,
-                                            protocol_version: Some(2),
+                                            protocol_version: Some(3),
                                         },
                                     )
                                 }
@@ -1669,24 +1807,13 @@ mod tests {
                             },
                             Err(error) => ControlResponse::error(
                                 None,
-                                format!("invalid request payload: {}", error),
+                                format!("invalid control request payload: {}", error),
                             ),
                         };
 
-                        let payload = serde_json::to_string(&response)
-                            .expect("named-pipe control response should serialize");
-                        write_half
-                            .write_all(payload.as_bytes())
+                        write_control_response_async(&mut write_half, &response)
                             .await
                             .expect("named-pipe control response write should succeed");
-                        write_half
-                            .write_all(b"\n")
-                            .await
-                            .expect("named-pipe control response newline should succeed");
-                        write_half
-                            .flush()
-                            .await
-                            .expect("named-pipe control response flush should succeed");
 
                         if !running {
                             return;
@@ -1698,29 +1825,134 @@ mod tests {
     }
 
     fn read_control_request(stream: &TcpStream) -> ControlRequest {
-        let mut line = String::new();
-        let mut reader = BufReader::new(
-            stream
-                .try_clone()
-                .expect("mock stream clone should succeed"),
+        let mut reader = stream
+            .try_clone()
+            .expect("mock stream clone should succeed");
+        let envelope = read_control_envelope_sync(&mut reader)
+            .expect("mock control request should be readable")
+            .expect("mock control request should not be empty");
+        assert_eq!(
+            envelope.v, IPC_PROTOCOL_V3,
+            "mock control request should use ipc v3"
         );
-        reader
-            .read_line(&mut line)
-            .expect("mock control request should be readable");
-        serde_json::from_str(line.trim()).expect("mock control request should parse")
+        assert_eq!(
+            envelope.channel,
+            IpcChannelV3::ControlRpc,
+            "mock control request should target control.rpc channel"
+        );
+        assert_eq!(
+            envelope.msg_type, "request",
+            "mock control request should be request msg_type"
+        );
+        let request_v3 = envelope
+            .decode_payload::<ControlRpcRequestV3>()
+            .expect("mock control request payload should parse");
+        ControlRequest::from(request_v3)
     }
 
     fn write_control_response(stream: &mut TcpStream, response: &ControlResponse) {
-        let payload = serde_json::to_string(response).expect("mock control response should encode");
-        stream
-            .write_all(payload.as_bytes())
-            .expect("mock control response write should succeed");
-        stream
-            .write_all(b"\n")
-            .expect("mock control response newline should write");
-        stream
+        let response_payload = ControlRpcResponseV3::from(response.clone());
+        let envelope = IpcEnvelopeV3::new(
+            IpcChannelV3::ControlRpc,
+            "response",
+            1,
+            response.request_id.clone(),
+            Some("mock-control".to_string()),
+            &response_payload,
+        )
+        .expect("mock control response should encode");
+        write_control_envelope_sync(stream, &envelope).expect("mock control response should write");
+    }
+
+    fn read_control_envelope_sync<R>(reader: &mut R) -> Result<Option<IpcEnvelopeV3>, String>
+    where
+        R: Read,
+    {
+        let mut len_buf = [0_u8; 4];
+        match reader.read_exact(&mut len_buf) {
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+            Err(error) => return Err(format!("failed to read control frame length: {}", error)),
+        }
+        let frame_len = u32::from_le_bytes(len_buf) as usize;
+        if frame_len == 0 {
+            return Ok(None);
+        }
+        let mut payload = vec![0_u8; frame_len];
+        reader
+            .read_exact(&mut payload)
+            .map_err(|e| format!("failed to read control frame payload: {}", e))?;
+        let envelope = serde_json::from_slice::<IpcEnvelopeV3>(&payload)
+            .map_err(|e| format!("failed to decode control envelope: {}", e))?;
+        Ok(Some(envelope))
+    }
+
+    fn write_control_envelope_sync<W>(
+        writer: &mut W,
+        envelope: &IpcEnvelopeV3,
+    ) -> Result<(), String>
+    where
+        W: Write,
+    {
+        let payload = serde_json::to_vec(envelope)
+            .map_err(|e| format!("failed to encode control envelope: {}", e))?;
+        let frame_len = payload.len() as u32;
+        writer
+            .write_all(&frame_len.to_le_bytes())
+            .map_err(|e| format!("failed to write control frame length: {}", e))?;
+        writer
+            .write_all(&payload)
+            .map_err(|e| format!("failed to write control frame payload: {}", e))?;
+        writer
             .flush()
-            .expect("mock control response flush should succeed");
+            .map_err(|e| format!("failed to flush control frame payload: {}", e))?;
+        Ok(())
+    }
+
+    #[cfg(windows)]
+    async fn read_control_envelope_async<R>(reader: &mut R) -> Option<IpcEnvelopeV3>
+    where
+        R: tokio::io::AsyncRead + Unpin,
+    {
+        let mut len_buf = [0_u8; 4];
+        if reader.read_exact(&mut len_buf).await.is_err() {
+            return None;
+        }
+        let frame_len = u32::from_le_bytes(len_buf) as usize;
+        if frame_len == 0 {
+            return None;
+        }
+        let mut payload = vec![0_u8; frame_len];
+        if reader.read_exact(&mut payload).await.is_err() {
+            return None;
+        }
+        serde_json::from_slice::<IpcEnvelopeV3>(&payload).ok()
+    }
+
+    #[cfg(windows)]
+    async fn write_control_response_async<W>(
+        writer: &mut W,
+        response: &ControlResponse,
+    ) -> Result<(), std::io::Error>
+    where
+        W: tokio::io::AsyncWrite + Unpin,
+    {
+        let response_payload = ControlRpcResponseV3::from(response.clone());
+        let envelope = IpcEnvelopeV3::new(
+            IpcChannelV3::ControlRpc,
+            "response",
+            1,
+            response.request_id.clone(),
+            Some("mock-control".to_string()),
+            &response_payload,
+        )
+        .map_err(std::io::Error::other)?;
+        let payload = serde_json::to_vec(&envelope).map_err(std::io::Error::other)?;
+        let frame_len = payload.len() as u32;
+        writer.write_all(&frame_len.to_le_bytes()).await?;
+        writer.write_all(&payload).await?;
+        writer.flush().await?;
+        Ok(())
     }
 
     fn allocate_test_port() -> u16 {

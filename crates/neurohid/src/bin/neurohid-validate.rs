@@ -1,8 +1,6 @@
 //! Validation harness for NeuroHID runtime matrix checks.
 
 use std::fs;
-use std::io::{BufRead, BufReader, Write};
-use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::thread;
@@ -10,10 +8,12 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-
-use neurohid_types::config::{
-    ControlTransport, DeviceBackend, MlTransport, ServiceRuntimeMode, SystemConfig,
+use neurohid_ipc::{
+    IpcConfig as RuntimeIpcConfig, IpcTransport as RuntimeIpcTransport,
+    send_control_request_blocking,
 };
+
+use neurohid_types::config::{DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig};
 use neurohid_types::control::{
     ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
     RuntimeModeState,
@@ -210,7 +210,11 @@ impl ServiceProcess {
         let config_path = if let Some(path) = explicit_config {
             path.to_path_buf()
         } else {
-            let config = build_config(launch.ipc_simulation_enabled, launch.fallback_enabled);
+            let config = build_config(
+                launch.ipc_simulation_enabled,
+                launch.fallback_enabled,
+                launch.control_port,
+            );
             write_temp_config(&config, launch.name)?
         };
         let generated_config = explicit_config.is_none().then_some(config_path.clone());
@@ -680,13 +684,17 @@ fn case_status_label(status: CaseStatus) -> &'static str {
     }
 }
 
-fn build_config(ipc_simulation_enabled: bool, fallback_enabled: bool) -> SystemConfig {
+fn build_config(
+    ipc_simulation_enabled: bool,
+    fallback_enabled: bool,
+    control_port: u16,
+) -> SystemConfig {
     let mut config = SystemConfig::default();
     config.device.backend = DeviceBackend::Mock;
     config.action.enabled = false;
     config.service.runtime_mode = ServiceRuntimeMode::Embedded;
-    config.service.control_transport = ControlTransport::TcpLoopback;
-    config.service.ml_transport = MlTransport::TcpLoopback;
+    config.service.ipc_mode = IpcMode::TcpLoopback;
+    config.service.ipc_endpoint = format!("127.0.0.1:{control_port}");
     config.service.ipc_simulation_enabled = ipc_simulation_enabled;
     config.service.fallback_policy.enabled = fallback_enabled;
     config
@@ -726,35 +734,16 @@ fn send_control_command(port: u16, command: ControlCommand) -> Result<()> {
 }
 
 fn send_control_request(port: u16, request: ControlRequest) -> Result<ControlResponse> {
-    let mut stream = TcpStream::connect(("127.0.0.1", port))
-        .with_context(|| format!("failed to connect control endpoint 127.0.0.1:{port}"))?;
-    stream
-        .set_read_timeout(Some(Duration::from_millis(1200)))
-        .context("failed to set read timeout")?;
-    stream
-        .set_write_timeout(Some(Duration::from_millis(1200)))
-        .context("failed to set write timeout")?;
-
-    let payload = serde_json::to_string(&request).context("failed to serialize control request")?;
-    stream
-        .write_all(payload.as_bytes())
-        .context("failed to write control payload")?;
-    stream
-        .write_all(b"\n")
-        .context("failed to write control newline")?;
-    stream.flush().context("failed to flush control stream")?;
-
-    let mut line = String::new();
-    let mut reader = BufReader::new(stream);
-    reader
-        .read_line(&mut line)
-        .context("failed to read control response")?;
-    if line.trim().is_empty() {
-        bail!("empty control response");
-    }
-
-    serde_json::from_str::<ControlResponse>(line.trim())
-        .context("failed to decode control response json")
+    let config = RuntimeIpcConfig {
+        transport: RuntimeIpcTransport::TcpLoopback,
+        endpoint: format!("127.0.0.1:{port}"),
+        connect_timeout_ms: 1_200,
+        send_timeout_ms: 1_200,
+        recv_timeout_ms: 1_200,
+        ..RuntimeIpcConfig::default()
+    };
+    send_control_request_blocking(config, request, "validate-cli", 1)
+        .map_err(|error| anyhow::anyhow!("failed to send control request: {}", error))
 }
 
 #[cfg(target_os = "linux")]

@@ -29,21 +29,19 @@ cargo run --release -p neurohid --bin neurohid-service
 
 ## Transport Configuration
 
-Named-pipe transports are Windows-focused. On Linux/macOS, use TCP loopback for both control and
-ML bridge endpoints:
+IPC v3 uses a single local-only endpoint for `control.rpc`, `trainer.stream`, and `runtime.events`.
+Named/local-socket transports are Windows-focused. On Linux/macOS, use loopback TCP:
 
 ```toml
 [service]
-control_transport = "tcp_loopback"
-control_port = 47385
-ml_transport = "tcp_loopback"
-ipc_port = 47384
+ipc_mode = "tcp_loopback"
+ipc_endpoint = "127.0.0.1:47385"
 ```
 
-Run the Python bridge against the configured transport:
+Run the Python bridge against the same canonical endpoint:
 
 ```bash
-uv run --directory python neurohid-ml bridge --transport tcp_loopback --port 47384
+uv run --directory python neurohid-ml bridge --ipc-mode tcp_loopback --ipc-endpoint 127.0.0.1:47385
 ```
 
 ## IPC and Bridge Mode
@@ -61,12 +59,27 @@ Optional control endpoint exposure:
 cargo run --release -p neurohid --bin neurohid-service -- --control-port 47801
 ```
 
-Control requests are line-delimited JSON with `neurohid_types::control::ControlRequest` shape.
-Example:
+Control requests use framed IPC v3 envelopes on the `control.rpc` channel.
+Example request envelope:
 
 ```json
-{"request_id":"1","command":{"type":"snapshot"}}
+{
+  "v": 3,
+  "channel": "control.rpc",
+  "msg_type": "request",
+  "seq": 1,
+  "request_id": "1",
+  "sent_at_us": 1739596800000000,
+  "payload": {
+    "request_id": "1",
+    "command": {"type": "snapshot"}
+  }
+}
 ```
+
+`runtime.events` supports resume/replay with bounded retention (`10_000` events or `120s`) and
+structured replay miss signaling (`requested_seq`, `replay_window_start_seq`,
+`replay_window_end_seq`). Clients should treat `state="replay_miss"` as a required resync trigger.
 
 ## Observability and Tracing
 

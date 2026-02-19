@@ -1,7 +1,7 @@
-"""Runtime ML bridge (protocol v2) for NeuroHID.
+"""Runtime ML bridge (protocol v3) for NeuroHID.
 
 This module implements the trainer-side endpoint for the NeuroHID runtime ML
-protocol v2. On Windows it defaults to named pipes; on non-Windows it defaults
+protocol v3. On Windows it defaults to named pipes; on non-Windows it defaults
 to TCP loopback for development.
 """
 
@@ -13,6 +13,7 @@ import json
 import os
 import struct
 import time
+import warnings
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, BinaryIO, Optional
@@ -21,9 +22,16 @@ import numpy as np
 
 from neurohid_ml.errp import ErrPConfig, ErrPDetector
 
-RUNTIME_ML_PROTOCOL_V2 = 2
+ipckit: Any
+try:
+    import ipckit  # type: ignore[import-not-found]
+except Exception:  # pragma: no cover - optional dependency
+    ipckit = None
+
+IPC_PROTOCOL_V3 = 3
 DEFAULT_IPC_PORT = 47_384
-DEFAULT_PIPE_NAME = r"\\.\pipe\neurohid.ml.v2"
+DEFAULT_IPC_ENDPOINT = "neurohid.control.v3"
+DEFAULT_PIPE_NAME = r"\\.\pipe\neurohid.ml.v3"
 DEFAULT_HOST = "127.0.0.1"
 
 
@@ -38,12 +46,14 @@ class IpcTransport(str, Enum):
 class IpcConfig:
     """Configuration for trainer<->runtime ML bridge connectivity."""
 
+    ipc_mode: str | None = "local_socket"
+    ipc_endpoint: str = DEFAULT_IPC_ENDPOINT
     transport: IpcTransport | str = (
         IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK
-    )
+    )  # Legacy alias.
     host: str = DEFAULT_HOST
     port: int = DEFAULT_IPC_PORT
-    pipe_name: str = DEFAULT_PIPE_NAME
+    pipe_name: str = DEFAULT_PIPE_NAME  # Legacy alias.
     connect_timeout_sec: float = 5.0
     recv_timeout_sec: float = 0.2
     auto_reconnect: bool = True
@@ -52,8 +62,80 @@ class IpcConfig:
     heartbeat_interval_sec: float = 0.5
 
     def __post_init__(self) -> None:
+        mode = (self.ipc_mode or "").strip().lower()
+        transport_raw = self.transport.value if isinstance(self.transport, IpcTransport) else str(
+            self.transport
+        ).strip().lower()
+        if not mode:
+            if transport_raw in {"named_pipe", "pipe", "local_socket"}:
+                mode = "local_socket"
+            elif transport_raw in {"tcp", "tcp_loopback"}:
+                mode = "tcp_loopback"
+            else:
+                mode = "local_socket"
+        if mode not in {"local_socket", "tcp_loopback"}:
+            raise RuntimeError(f"unsupported ipc_mode '{self.ipc_mode}'")
+
+        endpoint = self.ipc_endpoint.strip()
+        if not endpoint:
+            if mode == "tcp_loopback":
+                endpoint = f"{self.host}:{self.port}"
+            else:
+                endpoint = self.pipe_name or DEFAULT_IPC_ENDPOINT
+
+        if mode == "tcp_loopback":
+            if ":" not in endpoint:
+                warnings.warn(
+                    "bridge host/port aliases are deprecated; prefer ipc_endpoint='host:port'",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                endpoint = f"{self.host}:{self.port}"
+            host, port = _parse_tcp_endpoint(endpoint)
+            self.host = host
+            self.port = port
+            self.transport = IpcTransport.TCP_LOOPBACK
+        else:
+            if endpoint == DEFAULT_IPC_ENDPOINT and self.pipe_name != DEFAULT_PIPE_NAME:
+                warnings.warn(
+                    "bridge pipe_name alias is deprecated; prefer ipc_endpoint",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                endpoint = self.pipe_name
+            self.pipe_name = endpoint
+            self.transport = IpcTransport.NAMED_PIPE
+
+        self.ipc_mode = mode
+        self.ipc_endpoint = endpoint
+
         if isinstance(self.transport, str):
             self.transport = IpcTransport(self.transport)
+
+
+def _parse_tcp_endpoint(endpoint: str) -> tuple[str, int]:
+    value = endpoint.strip()
+    if not value:
+        raise RuntimeError("ipc_endpoint must not be empty for tcp_loopback mode")
+    host, sep, port_raw = value.rpartition(":")
+    if sep == "":
+        raise RuntimeError(
+            f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port"
+        )
+    host = host.strip() or DEFAULT_HOST
+    if host.startswith("[") and host.endswith("]"):
+        host = host[1:-1].strip() or DEFAULT_HOST
+    try:
+        port = int(port_raw)
+    except ValueError as error:
+        raise RuntimeError(
+            f"invalid tcp_loopback ipc_endpoint '{endpoint}': invalid port '{port_raw}'"
+        ) from error
+    if port <= 0 or port > 65_535:
+        raise RuntimeError(
+            f"invalid tcp_loopback ipc_endpoint '{endpoint}': port {port} out of range"
+        )
+    return host, port
 
 
 @dataclass
@@ -99,13 +181,14 @@ def _bernoulli_entropy(probability: float) -> float:
 
 
 class IpcClient:
-    """Trainer-side IPC client with v2 envelope framing."""
+    """Trainer-side IPC client with v3 envelope framing."""
 
     def __init__(self, config: IpcConfig):
         self.config = config
         self.reader: Optional[asyncio.StreamReader] = None
         self.writer: Optional[asyncio.StreamWriter] = None
         self.pipe: Optional[BinaryIO] = None
+        self.ipc_channel: Any | None = None
         self.connected = False
         self.sequence = 0
 
@@ -113,7 +196,7 @@ class IpcClient:
         """Connect to runtime bridge endpoint."""
 
         try:
-            if self.config.transport == IpcTransport.TCP_LOOPBACK:
+            if self.config.ipc_mode == "tcp_loopback":
                 reader, writer = await asyncio.wait_for(
                     asyncio.open_connection(self.config.host, self.config.port),
                     timeout=self.config.connect_timeout_sec,
@@ -127,12 +210,20 @@ class IpcClient:
 
                     sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             else:
-                if os.name != "nt":
-                    raise RuntimeError("named_pipe transport is only supported on Windows hosts")
-                self.pipe = await asyncio.wait_for(
-                    asyncio.to_thread(self._open_named_pipe_blocking),
-                    timeout=self.config.connect_timeout_sec,
-                )
+                if ipckit is not None:
+                    self.ipc_channel = await asyncio.wait_for(
+                        asyncio.to_thread(ipckit.IpcChannel.connect, self.config.ipc_endpoint),
+                        timeout=self.config.connect_timeout_sec,
+                    )
+                else:
+                    if os.name != "nt":
+                        raise RuntimeError(
+                            "named_pipe transport is only supported on Windows hosts"
+                        )
+                    self.pipe = await asyncio.wait_for(
+                        asyncio.to_thread(self._open_named_pipe_blocking),
+                        timeout=self.config.connect_timeout_sec,
+                    )
 
             self.connected = True
             return True
@@ -143,6 +234,7 @@ class IpcClient:
             self.reader = None
             self.writer = None
             self.pipe = None
+            self.ipc_channel = None
             return False
 
     async def disconnect(self) -> None:
@@ -154,6 +246,13 @@ class IpcClient:
         self.writer = None
         self.reader = None
 
+        if self.ipc_channel is not None:
+            channel = self.ipc_channel
+            self.ipc_channel = None
+            close_fn = getattr(channel, "close", None)
+            if callable(close_fn):
+                await asyncio.to_thread(close_fn)
+
         if self.pipe is not None:
             pipe = self.pipe
             self.pipe = None
@@ -162,15 +261,17 @@ class IpcClient:
         self.connected = False
 
     async def send_envelope(self, kind: str, session_id: str, payload: dict[str, Any]) -> None:
-        """Send one protocol v2 envelope to runtime."""
+        """Send one protocol v3 envelope to runtime."""
 
         self.sequence += 1
         envelope = {
-            "v": RUNTIME_ML_PROTOCOL_V2,
-            "kind": kind,
+            "v": IPC_PROTOCOL_V3,
+            "channel": "trainer.stream",
+            "msg_type": kind,
             "seq": self.sequence,
             "sent_at_us": now_micros(),
             "session_id": session_id,
+            "request_id": None,
             "payload": payload,
         }
         await self._send_raw_message(envelope)
@@ -182,7 +283,7 @@ class IpcClient:
             return None
 
         try:
-            if self.config.transport == IpcTransport.TCP_LOOPBACK:
+            if self.config.ipc_mode == "tcp_loopback":
                 if self.reader is None:
                     return None
                 length_buf = await asyncio.wait_for(
@@ -191,6 +292,14 @@ class IpcClient:
                 length = struct.unpack("<I", length_buf)[0]
                 body = await self.reader.readexactly(length)
             else:
+                if self.ipc_channel is not None:
+                    decoded = await asyncio.wait_for(
+                        asyncio.to_thread(self.ipc_channel.recv_json),
+                        timeout=self.config.recv_timeout_sec,
+                    )
+                    if isinstance(decoded, dict):
+                        return decoded
+                    return None
                 if self.pipe is None:
                     return None
                 # Named pipe reads are performed on a worker thread and may block
@@ -212,9 +321,7 @@ class IpcClient:
             return None
 
     def endpoint_label(self) -> str:
-        if self.config.transport == IpcTransport.NAMED_PIPE:
-            return self.config.pipe_name
-        return f"{self.config.host}:{self.config.port}"
+        return self.config.ipc_endpoint
 
     async def _send_raw_message(self, message: dict[str, Any]) -> None:
         if not self.connected:
@@ -223,11 +330,15 @@ class IpcClient:
         payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
         frame = struct.pack("<I", len(payload)) + payload
 
-        if self.config.transport == IpcTransport.TCP_LOOPBACK:
+        if self.config.ipc_mode == "tcp_loopback":
             if self.writer is None:
                 raise ConnectionError("TCP writer unavailable")
             self.writer.write(frame)
             await self.writer.drain()
+            return
+
+        if self.ipc_channel is not None:
+            await asyncio.to_thread(self.ipc_channel.send_json, message)
             return
 
         if self.pipe is None:
@@ -243,12 +354,14 @@ class IpcClient:
         while time.monotonic() < deadline:
             try:
                 # Unbuffered read/write binary mode works for byte-stream pipes.
-                return open(self.config.pipe_name, "r+b", buffering=0)
+                return open(self.config.ipc_endpoint, "r+b", buffering=0)
             except OSError as error:
                 last_error = error
                 time.sleep(0.1)
 
-        raise TimeoutError(f"timed out opening named pipe {self.config.pipe_name}: {last_error}")
+        raise TimeoutError(
+            f"timed out opening named pipe {self.config.ipc_endpoint}: {last_error}"
+        )
 
     def _pipe_read_exact(self, size: int) -> bytes:
         if self.pipe is None:
@@ -264,7 +377,7 @@ class IpcClient:
 
 
 class BridgeSession:
-    """Stateful protocol v2 bridge session handler."""
+    """Stateful protocol v3 bridge session handler."""
 
     def __init__(self, client: IpcClient):
         self.client = client
@@ -296,18 +409,21 @@ class BridgeSession:
         """Handle one runtime->trainer envelope. Returns True to stop session."""
 
         version = int(envelope.get("v", 0))
-        if version != RUNTIME_ML_PROTOCOL_V2:
+        if version != IPC_PROTOCOL_V3:
             await self.send_protocol_error(
                 code="unsupported_version",
                 message=(
                     f"runtime sent unsupported protocol version {version}; "
-                    f"expected {RUNTIME_ML_PROTOCOL_V2}"
+                    f"expected {IPC_PROTOCOL_V3}"
                 ),
                 recoverable=True,
             )
             return False
 
-        kind = str(envelope.get("kind", ""))
+        channel = str(envelope.get("channel", ""))
+        if channel and channel != "trainer.stream":
+            return False
+        kind = str(envelope.get("msg_type", envelope.get("kind", "")))
         payload = envelope.get("payload")
         if not isinstance(payload, dict):
             payload = {}
@@ -434,7 +550,7 @@ class BridgeSession:
             kind="hello",
             session_id=self.session_id,
             payload={
-                "protocol": "neurohid_runtime_ml_v2",
+                "protocol": "neurohid_runtime_ml_v3",
                 "role": "trainer",
                 "capabilities": [
                     "errp_result",
@@ -506,6 +622,8 @@ class BridgeSession:
 
 
 async def main_async(
+    ipc_mode: str | None = "local_socket",
+    ipc_endpoint: str = DEFAULT_IPC_ENDPOINT,
     host: str = DEFAULT_HOST,
     port: int = DEFAULT_IPC_PORT,
     transport: str | IpcTransport | None = None,
@@ -514,6 +632,8 @@ async def main_async(
     """Run reconnecting trainer bridge loop."""
 
     config = IpcConfig(
+        ipc_mode=ipc_mode,
+        ipc_endpoint=ipc_endpoint,
         host=host,
         port=port,
         pipe_name=pipe_name,
@@ -552,21 +672,35 @@ async def main_async(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="NeuroHID runtime ML bridge (v2)")
+    parser = argparse.ArgumentParser(description="NeuroHID runtime ML bridge (v3)")
+    parser.add_argument(
+        "--ipc-mode",
+        choices=["local_socket", "tcp_loopback"],
+        default="local_socket",
+        help="canonical IPC mode (preferred)",
+    )
+    parser.add_argument(
+        "--ipc-endpoint",
+        default=DEFAULT_IPC_ENDPOINT,
+        help="canonical endpoint path/name or host:port (preferred)",
+    )
     parser.add_argument(
         "--transport",
         choices=[transport.value for transport in IpcTransport],
         default=(
             IpcTransport.NAMED_PIPE.value if os.name == "nt" else IpcTransport.TCP_LOOPBACK.value
         ),
+        help="legacy transport alias (prefer --ipc-mode/--ipc-endpoint)",
     )
-    parser.add_argument("--host", default=DEFAULT_HOST)
-    parser.add_argument("--port", type=int, default=DEFAULT_IPC_PORT)
-    parser.add_argument("--pipe-name", default=DEFAULT_PIPE_NAME)
+    parser.add_argument("--host", default=DEFAULT_HOST, help="legacy alias")
+    parser.add_argument("--port", type=int, default=DEFAULT_IPC_PORT, help="legacy alias")
+    parser.add_argument("--pipe-name", default=DEFAULT_PIPE_NAME, help="legacy alias")
 
     args = parser.parse_args()
     asyncio.run(
         main_async(
+            ipc_mode=args.ipc_mode,
+            ipc_endpoint=args.ipc_endpoint,
             host=args.host,
             port=args.port,
             transport=args.transport,

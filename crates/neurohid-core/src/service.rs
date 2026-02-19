@@ -7,16 +7,18 @@
 
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use tokio::sync::{RwLock, broadcast, mpsc};
+use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
+    IpcEnvelopeV3,
     action::Action,
     config::{DecoderConfig, FallbackPolicy, LatencyAlertConfig, SignalConfig, SystemConfig},
     control::RuntimeModeState,
     device::DiscoveredStream,
     error::Result,
     event::StreamMarker,
+    ipc_v3::RuntimeEventV3,
     profile::ProfileId,
     signal::{FeatureVector, Sample},
 };
@@ -77,7 +79,7 @@ pub enum DecoderCommand {
 
 use crate::tasks::{
     ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask,
-    LatencyAlertMonitorTask, OutletTask, SessionLoggerTask, SignalTask,
+    LatencyAlertMonitorTask, OutletTask, SessionLoggerTask, SignalTask, TrainerIngressEvent,
 };
 
 /// The main service that coordinates all NeuroHID operations.
@@ -521,21 +523,41 @@ pub struct ServiceHandle {
     /// Broadcast receiver for ALL live EEG samples (for visualization widgets).
     /// Unlike `calibration_sample_rx`, this always produces values.
     pub sample_broadcast_rx: broadcast::Receiver<Sample>,
+    /// Broadcast sender for live EEG samples (for resubscribe-capable clones).
+    pub sample_broadcast_tx: broadcast::Sender<Sample>,
 
     /// Broadcast receiver for extracted feature vectors (for visualization widgets).
     pub feature_broadcast_rx: broadcast::Receiver<FeatureVector>,
+    /// Broadcast sender for extracted feature vectors (for resubscribe-capable clones).
+    pub feature_broadcast_tx: broadcast::Sender<FeatureVector>,
 
     /// Broadcast receiver for decoded actions (for visualization widgets).
     pub action_broadcast_rx: broadcast::Receiver<Action>,
+    /// Broadcast sender for decoded actions (for resubscribe-capable clones).
+    pub action_broadcast_tx: broadcast::Sender<Action>,
 
     /// Broadcast receiver for marker/event annotations.
     pub marker_broadcast_rx: broadcast::Receiver<StreamMarker>,
+    /// Broadcast sender for marker/event annotations (for resubscribe-capable clones).
+    pub marker_broadcast_tx: broadcast::Sender<StreamMarker>,
 
     /// Send commands to the SignalTask (e.g. runtime filter updates).
     pub signal_command_tx: mpsc::Sender<SignalCommand>,
 
     /// Send commands to the DecoderTask (reload model, switch profile).
     pub decoder_command_tx: mpsc::Sender<DecoderCommand>,
+
+    /// In-process trainer ingress channel (transport -> IPC task protocol engine).
+    pub trainer_ingress_tx: mpsc::Sender<TrainerIngressEvent>,
+
+    /// In-process trainer egress channel (IPC task protocol engine -> transport).
+    pub trainer_egress_rx: Arc<Mutex<mpsc::Receiver<IpcEnvelopeV3>>>,
+
+    /// Broadcast receiver for runtime bridge-derived events.
+    pub runtime_event_broadcast_rx: broadcast::Receiver<RuntimeEventV3>,
+
+    /// Broadcast sender for runtime bridge-derived events (for resubscribe-capable clones).
+    pub runtime_event_broadcast_tx: broadcast::Sender<RuntimeEventV3>,
 }
 
 impl NeuroHidService {
@@ -595,12 +617,23 @@ impl NeuroHidService {
         let (decoder_cmd_tx, decoder_cmd_rx) = mpsc::channel::<DecoderCommand>(16);
         let decoder_cmd_tx_for_run_inner = decoder_cmd_tx.clone();
 
+        // In-process trainer bridge channels (transport owned by service binary).
+        let (trainer_ingress_tx, trainer_ingress_rx) = mpsc::channel::<TrainerIngressEvent>(1024);
+        let (trainer_egress_tx, trainer_egress_rx) = mpsc::channel::<IpcEnvelopeV3>(1024);
+
         // Broadcast channels for live data visualization in the hub.
         // These fan-out to multiple widget subscribers.
         let (sample_broadcast_tx, sample_broadcast_rx) = broadcast::channel::<Sample>(512);
         let (feature_broadcast_tx, feature_broadcast_rx) = broadcast::channel::<FeatureVector>(128);
         let (action_broadcast_tx, action_broadcast_rx) = broadcast::channel::<Action>(128);
         let (marker_broadcast_tx, marker_broadcast_rx) = broadcast::channel::<StreamMarker>(256);
+        let (runtime_event_broadcast_tx, runtime_event_broadcast_rx) =
+            broadcast::channel::<RuntimeEventV3>(512);
+        let sample_broadcast_tx_for_handle = sample_broadcast_tx.clone();
+        let feature_broadcast_tx_for_handle = feature_broadcast_tx.clone();
+        let action_broadcast_tx_for_handle = action_broadcast_tx.clone();
+        let marker_broadcast_tx_for_handle = marker_broadcast_tx.clone();
+        let runtime_event_broadcast_tx_for_handle = runtime_event_broadcast_tx.clone();
 
         let join_handle = tokio::spawn(async move {
             self.run_inner(
@@ -615,6 +648,9 @@ impl NeuroHidService {
                 Some(feature_broadcast_tx),
                 Some(action_broadcast_tx),
                 Some(marker_broadcast_tx),
+                Some(trainer_ingress_rx),
+                Some(trainer_egress_tx),
+                Some(runtime_event_broadcast_tx),
             )
             .await
         });
@@ -628,11 +664,19 @@ impl NeuroHidService {
             output_enabled: output_flag,
             device_command_tx: device_cmd_tx,
             sample_broadcast_rx,
+            sample_broadcast_tx: sample_broadcast_tx_for_handle,
             feature_broadcast_rx,
+            feature_broadcast_tx: feature_broadcast_tx_for_handle,
             action_broadcast_rx,
+            action_broadcast_tx: action_broadcast_tx_for_handle,
             marker_broadcast_rx,
+            marker_broadcast_tx: marker_broadcast_tx_for_handle,
             signal_command_tx: signal_cmd_tx,
             decoder_command_tx: decoder_cmd_tx,
+            trainer_ingress_tx,
+            trainer_egress_rx: Arc::new(Mutex::new(trainer_egress_rx)),
+            runtime_event_broadcast_rx,
+            runtime_event_broadcast_tx: runtime_event_broadcast_tx_for_handle,
         }
     }
 
@@ -649,6 +693,9 @@ impl NeuroHidService {
             None,
             Some(decoder_cmd_tx),
             Some(decoder_cmd_rx),
+            None,
+            None,
+            None,
             None,
             None,
             None,
@@ -675,6 +722,9 @@ impl NeuroHidService {
         feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
         action_broadcast_tx: Option<broadcast::Sender<Action>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
+        trainer_ingress_rx: Option<mpsc::Receiver<TrainerIngressEvent>>,
+        trainer_egress_tx: Option<mpsc::Sender<IpcEnvelopeV3>>,
+        runtime_event_broadcast_tx: Option<broadcast::Sender<RuntimeEventV3>>,
     ) -> Result<()> {
         tracing::info!("Starting service tasks");
 
@@ -853,6 +903,14 @@ impl NeuroHidService {
         let profile_store_for_ipc = self.profile_store.clone();
         let decoder_command_tx_for_ipc = decoder_command_tx.clone();
         let ipc_observability = observability_config.clone();
+        let trainer_ingress_rx_for_ipc = trainer_ingress_rx.unwrap_or_else(|| {
+            let (_tx, rx) = mpsc::channel::<TrainerIngressEvent>(1);
+            rx
+        });
+        let trainer_egress_tx_for_ipc = trainer_egress_tx.unwrap_or_else(|| {
+            let (tx, _rx) = mpsc::channel::<IpcEnvelopeV3>(1);
+            tx
+        });
         let mut ipc_handle = tokio::spawn(async move {
             tracing::info!("IPC task starting");
             let task = IpcTask::new(
@@ -860,11 +918,14 @@ impl NeuroHidService {
                 decision_event_rx,
                 errp_tx,
                 errp_sample_rx,
+                trainer_ingress_rx_for_ipc,
+                trainer_egress_tx_for_ipc,
                 self.config.errp.clone(),
                 state_ipc,
                 marker_tx_for_ipc,
                 profile_store_for_ipc,
                 decoder_command_tx_for_ipc,
+                runtime_event_broadcast_tx,
                 ipc_observability,
             );
             task.run(shutdown_ipc).await
@@ -919,7 +980,7 @@ impl NeuroHidService {
             state.ml_bridge_connected = false;
             state.ml_bridge_stalled = false;
             state.ml_bridge_last_heartbeat_us = None;
-            state.ml_protocol_version = Some(2);
+            state.ml_protocol_version = Some(3);
             state.trainer_replay_size = None;
             state.trainer_step = None;
             state.trainer_policy_loss = None;
