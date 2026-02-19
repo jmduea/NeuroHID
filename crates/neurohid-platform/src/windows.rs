@@ -63,9 +63,9 @@ impl Platform for WindowsPlatform {
     }
 
     fn check_input_permissions(&self) -> Result<()> {
-        // On Windows, we can almost always send input
-        // The main issue is elevated apps, which we can't easily detect
-        // For now, just return success and let failures happen at runtime
+        // Windows SendInput works for any process at the same or lower
+        // privilege level.  There is no reliable pre-flight check for UIPI
+        // or elevation mismatches — failures surface at emit time.
         Ok(())
     }
 
