@@ -13,7 +13,7 @@ use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle};
 use neurohid_storage::ProfileStore;
 use neurohid_types::observability::{self as obs, EmitGate, ObservabilityComponent};
 use neurohid_types::{
-    IpcChannelV3, IpcEnvelopeV3, RuntimeEventV3, RuntimeEventsSubscribeV3,
+    IpcChannel, IpcEnvelope, RuntimeEvent, RuntimeEventsSubscribe,
     config::{
         FallbackPolicy, IpcMode, ServiceConfig, ServiceRuntimeMode, SignalConfig, SystemConfig,
     },
@@ -646,7 +646,7 @@ impl ServiceManager {
     fn apply_external_runtime_event(
         state: &Arc<StdMutex<ExternalEventState>>,
         seq: u64,
-        event: RuntimeEventV3,
+        event: RuntimeEvent,
     ) {
         let Ok(mut stream_state) = state.lock() else {
             return;
@@ -656,11 +656,11 @@ impl ServiceManager {
         stream_state.stream_connected = true;
 
         match event {
-            RuntimeEventV3::Snapshot { snapshot } => {
+            RuntimeEvent::Snapshot { snapshot } => {
                 stream_state.latest_snapshot = Some(snapshot);
                 stream_state.last_error = None;
             }
-            RuntimeEventV3::TrainerSnapshot { snapshot } => {
+            RuntimeEvent::TrainerSnapshot { snapshot } => {
                 if let Some(cached) = stream_state.latest_snapshot.as_mut() {
                     cached.ml_bridge_connected = snapshot.trainer_connected;
                     cached.trainer_replay_size = Some(snapshot.replay_size);
@@ -669,7 +669,7 @@ impl ServiceManager {
                     cached.ml_protocol_version = snapshot.protocol_version;
                 }
             }
-            RuntimeEventV3::TrainerStatus { status } => {
+            RuntimeEvent::TrainerStatus { status } => {
                 if let Some(cached) = stream_state.latest_snapshot.as_mut() {
                     cached.trainer_replay_size = Some(status.replay_size);
                     cached.trainer_step = Some(status.training_step);
@@ -681,7 +681,7 @@ impl ServiceManager {
                     cached.ml_bridge_stalled = status.state == "stalled";
                 }
             }
-            RuntimeEventV3::RuntimeTelemetry { telemetry } => {
+            RuntimeEvent::RuntimeTelemetry { telemetry } => {
                 if let Some(cached) = stream_state.latest_snapshot.as_mut() {
                     cached.signal_latency_p95_us = telemetry.signal_latency_p95_us;
                     cached.decode_latency_p95_us = telemetry.decode_latency_p95_us;
@@ -689,7 +689,7 @@ impl ServiceManager {
                     cached.integrity_issue_count = telemetry.dropped_ml_messages;
                 }
             }
-            RuntimeEventV3::Lifecycle { state, detail, .. } => {
+            RuntimeEvent::Lifecycle { state, detail, .. } => {
                 if state == "replay_miss" {
                     stream_state.replay_miss = true;
                     stream_state.last_error = Some(format!(
@@ -968,7 +968,7 @@ async fn run_external_event_worker(
             continue;
         }
 
-        let subscribe = RuntimeEventsSubscribeV3 {
+        let subscribe = RuntimeEventsSubscribe {
             families: vec![
                 "snapshot".to_string(),
                 "trainer_snapshot".to_string(),
@@ -988,8 +988,8 @@ async fn run_external_event_worker(
             sample_every: 1,
             snapshot_interval_ms: 1_000,
         };
-        let subscribe_envelope = match IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let subscribe_envelope = match IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -1043,12 +1043,12 @@ async fn run_external_event_worker(
                         }
                     };
 
-                    if envelope.channel != IpcChannelV3::RuntimeEvents || envelope.msg_type != "event" {
+                    if envelope.channel != IpcChannel::RuntimeEvents || envelope.msg_type != "event" {
                         continue;
                     }
 
                     let seq = envelope.seq;
-                    match envelope.decode_payload::<RuntimeEventV3>() {
+                    match envelope.decode_payload::<RuntimeEvent>() {
                         Ok(event) => ServiceManager::apply_external_runtime_event(&state, seq, event),
                         Err(error) => {
                             set_external_event_stream_error(
@@ -1093,11 +1093,11 @@ mod tests {
     use super::ServiceManager;
     use crate::state::ServiceSnapshot;
     #[cfg(windows)]
-    use neurohid_ipc::{HelloV2, RuntimeMlRoleV2, TrainerStreamKindV3};
+    use neurohid_ipc::{Hello, RuntimeMlRole, TrainerStreamKind};
     #[cfg(windows)]
     use neurohid_ipc::{IpcConfig, IpcServer, IpcTransport};
     use neurohid_types::{
-        ControlRpcRequestV3, ControlRpcResponseV3, IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3,
+        ControlRpcRequest, ControlRpcResponse, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
         config::{DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig},
         control::{
             ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload,
@@ -1262,9 +1262,9 @@ mod tests {
         });
 
         runtime.block_on(async {
-            let hello = HelloV2 {
+            let hello = Hello {
                 protocol: "neurohid_runtime_ml_v3".to_string(),
-                role: RuntimeMlRoleV2::Trainer,
+                role: RuntimeMlRole::Trainer,
                 capabilities: vec!["errp_result".to_string()],
                 profile_id: None,
                 feature_schema_version: None,
@@ -1273,9 +1273,9 @@ mod tests {
                 trainer_name: Some("test-trainer".to_string()),
                 trainer_version: Some("0.0.0".to_string()),
             };
-            let envelope = IpcEnvelopeV3::new(
-                IpcChannelV3::TrainerStream,
-                TrainerStreamKindV3::Hello.as_msg_type(),
+            let envelope = IpcEnvelope::new(
+                IpcChannel::TrainerStream,
+                TrainerStreamKind::Hello.as_msg_type(),
                 1,
                 None,
                 Some("named-pipe-test".to_string()),
@@ -1531,12 +1531,12 @@ mod tests {
                             Ok(envelope) => envelope,
                             Err(_) => break,
                         };
-                        let parsed = if envelope.v == IPC_PROTOCOL_V3
-                            && envelope.channel == IpcChannelV3::ControlRpc
+                        let parsed = if envelope.v == IPC_PROTOCOL_VERSION
+                            && envelope.channel == IpcChannel::ControlRpc
                             && envelope.msg_type == "request"
                         {
                             envelope
-                                .decode_payload::<ControlRpcRequestV3>()
+                                .decode_payload::<ControlRpcRequest>()
                                 .map(ControlRequest::from)
                         } else {
                             Err("invalid control envelope channel/msg_type".to_string())
@@ -1650,9 +1650,9 @@ mod tests {
                             ),
                         };
 
-                        let response_payload = ControlRpcResponseV3::from(response.clone());
-                        let response_envelope = IpcEnvelopeV3::new(
-                            IpcChannelV3::ControlRpc,
+                        let response_payload = ControlRpcResponse::from(response.clone());
+                        let response_envelope = IpcEnvelope::new(
+                            IpcChannel::ControlRpc,
                             "response",
                             envelope.seq.saturating_add(1),
                             response.request_id.clone(),
@@ -1683,12 +1683,12 @@ mod tests {
             .expect("mock control request should be readable")
             .expect("mock control request should not be empty");
         assert_eq!(
-            envelope.v, IPC_PROTOCOL_V3,
+            envelope.v, IPC_PROTOCOL_VERSION,
             "mock control request should use ipc v3"
         );
         assert_eq!(
             envelope.channel,
-            IpcChannelV3::ControlRpc,
+            IpcChannel::ControlRpc,
             "mock control request should target control.rpc channel"
         );
         assert_eq!(
@@ -1696,15 +1696,15 @@ mod tests {
             "mock control request should be request msg_type"
         );
         let request_v3 = envelope
-            .decode_payload::<ControlRpcRequestV3>()
+            .decode_payload::<ControlRpcRequest>()
             .expect("mock control request payload should parse");
         ControlRequest::from(request_v3)
     }
 
     fn write_control_response(stream: &mut TcpStream, response: &ControlResponse) {
-        let response_payload = ControlRpcResponseV3::from(response.clone());
-        let envelope = IpcEnvelopeV3::new(
-            IpcChannelV3::ControlRpc,
+        let response_payload = ControlRpcResponse::from(response.clone());
+        let envelope = IpcEnvelope::new(
+            IpcChannel::ControlRpc,
             "response",
             1,
             response.request_id.clone(),
@@ -1715,7 +1715,7 @@ mod tests {
         write_control_envelope_sync(stream, &envelope).expect("mock control response should write");
     }
 
-    fn read_control_envelope_sync<R>(reader: &mut R) -> Result<Option<IpcEnvelopeV3>, String>
+    fn read_control_envelope_sync<R>(reader: &mut R) -> Result<Option<IpcEnvelope>, String>
     where
         R: Read,
     {
@@ -1733,15 +1733,12 @@ mod tests {
         reader
             .read_exact(&mut payload)
             .map_err(|e| format!("failed to read control frame payload: {}", e))?;
-        let envelope = serde_json::from_slice::<IpcEnvelopeV3>(&payload)
+        let envelope = serde_json::from_slice::<IpcEnvelope>(&payload)
             .map_err(|e| format!("failed to decode control envelope: {}", e))?;
         Ok(Some(envelope))
     }
 
-    fn write_control_envelope_sync<W>(
-        writer: &mut W,
-        envelope: &IpcEnvelopeV3,
-    ) -> Result<(), String>
+    fn write_control_envelope_sync<W>(writer: &mut W, envelope: &IpcEnvelope) -> Result<(), String>
     where
         W: Write,
     {

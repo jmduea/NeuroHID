@@ -10,15 +10,14 @@ pub mod server;
 
 pub use broker::{BrokerCounters, BrokerError, IpcBroker, TrainerSessionGuard};
 pub use protocol::{
-    AckV2, BrokerConfig, CandidateModelReadyV2, ChannelPolicy, ControlRpcRequestV3,
-    ControlRpcResponsePayloadV3, ControlRpcResponseV3, DEFAULT_CONTROL_SOCKET_ENDPOINT,
-    DEFAULT_IPC_PORT, DEFAULT_IPC_SOCKET_ENDPOINT, DEFAULT_RUNTIME_SOCKET_ENDPOINT,
-    DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2, IPC_PROTOCOL_V3, IpcChannelV3, IpcConfig,
-    IpcEnvelopeV3, IpcTransport, PingV2, PongV2, ProtocolErrorV2, QueueOverflowPolicy,
-    RuntimeComponentCapabilityV3, RuntimeEventV3, RuntimeEventsSubscribeV3, RuntimeMlRoleV2,
-    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
-    TrainerStreamKindV3, TrainerStreamPayloadV3, default_control_endpoint, default_ipc_endpoint,
-    default_loopback_endpoint, default_runtime_endpoint,
+    Ack, BrokerConfig, CandidateModelReady, ChannelPolicy, ControlRpcRequest, ControlRpcResponse,
+    ControlRpcResponsePayload, DEFAULT_CONTROL_SOCKET_ENDPOINT, DEFAULT_IPC_PORT,
+    DEFAULT_IPC_SOCKET_ENDPOINT, DEFAULT_RUNTIME_SOCKET_ENDPOINT, DecisionEvent, ErrpResult,
+    ErrpWindow, Hello, IPC_PROTOCOL_VERSION, IpcChannel, IpcConfig, IpcEnvelope, IpcTransport,
+    Ping, Pong, ProtocolError, QueueOverflowPolicy, RuntimeComponentCapability, RuntimeEvent,
+    RuntimeEventsSubscribe, RuntimeMlRole, RuntimeTelemetry, SessionBoundary, SessionBoundaryEvent,
+    Shutdown, TrainerStatus, TrainerStreamKind, TrainerStreamPayload, default_control_endpoint,
+    default_ipc_endpoint, default_loopback_endpoint, default_runtime_endpoint,
 };
 
 pub use client::{

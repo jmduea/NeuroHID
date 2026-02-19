@@ -6,7 +6,7 @@ use ipckit::AsyncLocalSocketListener;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{Mutex, mpsc};
 
-use crate::protocol::{IpcConfig, IpcEnvelopeV3, IpcTransport};
+use crate::protocol::{IpcConfig, IpcEnvelope, IpcTransport};
 use neurohid_types::error::{IpcError, Result};
 
 enum ServerBackend {
@@ -85,13 +85,13 @@ impl IpcServer {
 /// Active IPC connection.
 #[derive(Clone)]
 pub struct IpcConnection {
-    tx: mpsc::Sender<IpcEnvelopeV3>,
-    rx: Arc<Mutex<mpsc::Receiver<IpcEnvelopeV3>>>,
+    tx: mpsc::Sender<IpcEnvelope>,
+    rx: Arc<Mutex<mpsc::Receiver<IpcEnvelope>>>,
 }
 
 impl IpcConnection {
     /// Send one envelope to the peer.
-    pub async fn send(&self, message: IpcEnvelopeV3) -> Result<()> {
+    pub async fn send(&self, message: IpcEnvelope) -> Result<()> {
         self.tx
             .send(message)
             .await
@@ -100,7 +100,7 @@ impl IpcConnection {
     }
 
     /// Receive one envelope from the peer.
-    pub async fn recv(&self) -> Result<IpcEnvelopeV3> {
+    pub async fn recv(&self) -> Result<IpcEnvelope> {
         let mut rx = self.rx.lock().await;
         rx.recv()
             .await
@@ -108,7 +108,7 @@ impl IpcConnection {
     }
 
     /// Try receiving without blocking.
-    pub fn try_recv(&self) -> Result<Option<IpcEnvelopeV3>> {
+    pub fn try_recv(&self) -> Result<Option<IpcEnvelope>> {
         match self.rx.try_lock() {
             Ok(mut rx) => match rx.try_recv() {
                 Ok(msg) => Ok(Some(msg)),
@@ -136,8 +136,8 @@ where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (read_half, write_half) = tokio::io::split(stream);
-    let (write_tx, mut write_rx) = mpsc::channel::<IpcEnvelopeV3>(channel_capacity);
-    let (read_tx, read_rx) = mpsc::channel::<IpcEnvelopeV3>(channel_capacity);
+    let (write_tx, mut write_rx) = mpsc::channel::<IpcEnvelope>(channel_capacity);
+    let (read_tx, read_rx) = mpsc::channel::<IpcEnvelope>(channel_capacity);
 
     tokio::spawn(async move {
         let mut writer = write_half;
@@ -186,7 +186,7 @@ where
                 break;
             }
 
-            match serde_json::from_slice::<IpcEnvelopeV3>(&message_buf) {
+            match serde_json::from_slice::<IpcEnvelope>(&message_buf) {
                 Ok(message) => {
                     if read_tx.send(message).await.is_err() {
                         break;
@@ -217,7 +217,7 @@ fn map_ipckit_error(error: ipckit::IpcError) -> neurohid_types::error::Error {
 #[cfg(test)]
 mod tests {
     use crate::client::IpcClient;
-    use crate::protocol::{IpcChannelV3, IpcEnvelopeV3, PingV2, TrainerStreamKindV3};
+    use crate::protocol::{IpcChannel, IpcEnvelope, Ping, TrainerStreamKind};
 
     use super::{IpcConfig, IpcServer, IpcTransport};
 
@@ -256,13 +256,13 @@ mod tests {
             .await
             .expect("client connect should succeed");
 
-        let ping = PingV2 {
+        let ping = Ping {
             ping_id: "test-ping".to_string(),
             timestamp_us: 123,
         };
-        let envelope = IpcEnvelopeV3::new(
-            IpcChannelV3::TrainerStream,
-            TrainerStreamKindV3::Ping.as_msg_type(),
+        let envelope = IpcEnvelope::new(
+            IpcChannel::TrainerStream,
+            TrainerStreamKind::Ping.as_msg_type(),
             1,
             None,
             Some("test-session".to_string()),
@@ -316,13 +316,13 @@ mod tests {
             .await
             .expect("client connect should succeed");
 
-        let ping = PingV2 {
+        let ping = Ping {
             ping_id: "test-local".to_string(),
             timestamp_us: 456,
         };
-        let envelope = IpcEnvelopeV3::new(
-            IpcChannelV3::TrainerStream,
-            TrainerStreamKindV3::Ping.as_msg_type(),
+        let envelope = IpcEnvelope::new(
+            IpcChannel::TrainerStream,
+            TrainerStreamKind::Ping.as_msg_type(),
             1,
             None,
             Some("session-local".to_string()),

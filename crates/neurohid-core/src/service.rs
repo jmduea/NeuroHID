@@ -11,14 +11,14 @@ use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    IpcEnvelopeV3,
+    IpcEnvelope,
     action::Action,
     config::{DecoderConfig, FallbackPolicy, LatencyAlertConfig, SignalConfig, SystemConfig},
     control::RuntimeModeState,
     device::DiscoveredStream,
     error::Result,
     event::StreamMarker,
-    ipc_v3::RuntimeEventV3,
+    ipc::RuntimeEvent,
     profile::ProfileId,
     signal::{FeatureVector, Sample},
 };
@@ -551,13 +551,13 @@ pub struct ServiceHandle {
     pub trainer_ingress_tx: mpsc::Sender<TrainerIngressEvent>,
 
     /// In-process trainer egress channel (IPC task protocol engine -> transport).
-    pub trainer_egress_rx: Arc<Mutex<mpsc::Receiver<IpcEnvelopeV3>>>,
+    pub trainer_egress_rx: Arc<Mutex<mpsc::Receiver<IpcEnvelope>>>,
 
     /// Broadcast receiver for runtime bridge-derived events.
-    pub runtime_event_broadcast_rx: broadcast::Receiver<RuntimeEventV3>,
+    pub runtime_event_broadcast_rx: broadcast::Receiver<RuntimeEvent>,
 
     /// Broadcast sender for runtime bridge-derived events (for resubscribe-capable clones).
-    pub runtime_event_broadcast_tx: broadcast::Sender<RuntimeEventV3>,
+    pub runtime_event_broadcast_tx: broadcast::Sender<RuntimeEvent>,
 }
 
 impl NeuroHidService {
@@ -619,7 +619,7 @@ impl NeuroHidService {
 
         // In-process trainer bridge channels (transport owned by service binary).
         let (trainer_ingress_tx, trainer_ingress_rx) = mpsc::channel::<TrainerIngressEvent>(1024);
-        let (trainer_egress_tx, trainer_egress_rx) = mpsc::channel::<IpcEnvelopeV3>(1024);
+        let (trainer_egress_tx, trainer_egress_rx) = mpsc::channel::<IpcEnvelope>(1024);
 
         // Broadcast channels for live data visualization in the hub.
         // These fan-out to multiple widget subscribers.
@@ -628,7 +628,7 @@ impl NeuroHidService {
         let (action_broadcast_tx, action_broadcast_rx) = broadcast::channel::<Action>(128);
         let (marker_broadcast_tx, marker_broadcast_rx) = broadcast::channel::<StreamMarker>(256);
         let (runtime_event_broadcast_tx, runtime_event_broadcast_rx) =
-            broadcast::channel::<RuntimeEventV3>(512);
+            broadcast::channel::<RuntimeEvent>(512);
         let sample_broadcast_tx_for_handle = sample_broadcast_tx.clone();
         let feature_broadcast_tx_for_handle = feature_broadcast_tx.clone();
         let action_broadcast_tx_for_handle = action_broadcast_tx.clone();
@@ -723,8 +723,8 @@ impl NeuroHidService {
         action_broadcast_tx: Option<broadcast::Sender<Action>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
         trainer_ingress_rx: Option<mpsc::Receiver<TrainerIngressEvent>>,
-        trainer_egress_tx: Option<mpsc::Sender<IpcEnvelopeV3>>,
-        runtime_event_broadcast_tx: Option<broadcast::Sender<RuntimeEventV3>>,
+        trainer_egress_tx: Option<mpsc::Sender<IpcEnvelope>>,
+        runtime_event_broadcast_tx: Option<broadcast::Sender<RuntimeEvent>>,
     ) -> Result<()> {
         tracing::info!("Starting service tasks");
 
@@ -908,7 +908,7 @@ impl NeuroHidService {
             rx
         });
         let trainer_egress_tx_for_ipc = trainer_egress_tx.unwrap_or_else(|| {
-            let (tx, _rx) = mpsc::channel::<IpcEnvelopeV3>(1);
+            let (tx, _rx) = mpsc::channel::<IpcEnvelope>(1);
             tx
         });
         let mut ipc_handle = tokio::spawn(async move {

@@ -12,13 +12,13 @@ use tokio::sync::{broadcast, mpsc};
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    IpcEnvelopeV3,
+    IpcEnvelope,
     action::Action,
     config::{FallbackPolicy, SignalConfig, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, TrainerSnapshot},
     error::{Error, Result},
     event::StreamMarker,
-    ipc_v3::RuntimeEventV3,
+    ipc::RuntimeEvent,
     profile::ProfileId,
     signal::{FeatureVector, Sample},
 };
@@ -147,9 +147,9 @@ pub struct RuntimeIpcHandle {
     feature_broadcast_tx: broadcast::Sender<FeatureVector>,
     action_broadcast_tx: broadcast::Sender<Action>,
     marker_broadcast_tx: broadcast::Sender<StreamMarker>,
-    runtime_event_broadcast_tx: broadcast::Sender<RuntimeEventV3>,
+    runtime_event_broadcast_tx: broadcast::Sender<RuntimeEvent>,
     trainer_ingress_tx: mpsc::Sender<TrainerIngressEvent>,
-    trainer_egress_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<IpcEnvelopeV3>>>,
+    trainer_egress_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<IpcEnvelope>>>,
 }
 
 impl RuntimeHandle {
@@ -244,7 +244,7 @@ impl RuntimeIpcHandle {
     }
 
     /// Subscribe to runtime bridge-derived events (decision/ErrP/integrity stream).
-    pub fn subscribe_runtime_bridge_events(&self) -> broadcast::Receiver<RuntimeEventV3> {
+    pub fn subscribe_runtime_bridge_events(&self) -> broadcast::Receiver<RuntimeEvent> {
         self.runtime_event_broadcast_tx.subscribe()
     }
 
@@ -261,7 +261,7 @@ impl RuntimeIpcHandle {
     }
 
     /// Forward one trainer-stream envelope into the runtime bridge engine.
-    pub async fn trainer_send_envelope(&self, envelope: IpcEnvelopeV3) -> Result<()> {
+    pub async fn trainer_send_envelope(&self, envelope: IpcEnvelope) -> Result<()> {
         self.trainer_ingress_tx
             .send(TrainerIngressEvent::Envelope(envelope))
             .await
@@ -285,7 +285,7 @@ impl RuntimeIpcHandle {
     }
 
     /// Receive one trainer-stream envelope produced by the runtime bridge engine.
-    pub async fn recv_trainer_envelope(&self) -> Option<IpcEnvelopeV3> {
+    pub async fn recv_trainer_envelope(&self) -> Option<IpcEnvelope> {
         let mut rx = self.trainer_egress_rx.lock().await;
         rx.recv().await
     }

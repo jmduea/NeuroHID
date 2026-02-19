@@ -1,4 +1,4 @@
-"""Unified IPC v3 transport helpers for NeuroHID Python clients."""
+"""Unified IPC transport helpers for NeuroHID Python clients."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ except Exception:  # pragma: no cover - optional dependency at import time
     ipckit = None
 
 
-IPC_PROTOCOL_V3 = 3
+IPC_PROTOCOL_VERSION = 3
 
 
 def _read_exact(reader: Any, size: int) -> bytes:
@@ -143,7 +143,7 @@ def events_to_dataframe(events: Sequence[dict[str, Any]]) -> Any:
 
 @dataclass(slots=True)
 class NeuroHidIpcClient:
-    """Unified IPC v3 client supporting local-socket and TCP loopback modes."""
+    """Unified IPC client supporting local-socket and TCP loopback modes."""
 
     ipc_mode: str = CANONICAL_IPC_MODE
     ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
@@ -184,7 +184,7 @@ class NeuroHidIpcClient:
         request_id: str | None = None,
     ) -> dict[str, Any]:
         return {
-            "v": IPC_PROTOCOL_V3,
+            "v": IPC_PROTOCOL_VERSION,
             "channel": channel,
             "msg_type": msg_type,
             "seq": 1,

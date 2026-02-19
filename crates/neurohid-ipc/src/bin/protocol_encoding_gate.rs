@@ -5,9 +5,8 @@ use anyhow::{Context, Result};
 use prost::Message;
 
 use neurohid_types::action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement};
-use neurohid_types::ipc_v2::{
-    DecisionEventV2, ErrpWindowV2, RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2, RuntimeMlKindV2,
-    TrainerStatusV2,
+use neurohid_types::ipc::{
+    DecisionEvent, ErrpWindow, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope, TrainerStatus,
 };
 use neurohid_types::now_micros;
 
@@ -173,7 +172,7 @@ fn main() -> Result<()> {
 
     run_warmup(&json_samples, &proto_samples)?;
 
-    let json_stats = bench_json_v2(&json_samples, BENCH_ITERATIONS)?;
+    let json_stats = bench_json(&json_samples, BENCH_ITERATIONS)?;
     let protobuf_stats = bench_protobuf(&proto_samples, BENCH_ITERATIONS)?;
     let decision = evaluate_gate(json_stats, protobuf_stats);
 
@@ -181,8 +180,8 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn build_sample_messages() -> Result<(Vec<RuntimeMlEnvelopeV2>, Vec<ProtoEnvelope>)> {
-    let session_id = "bench_session_v2";
+fn build_sample_messages() -> Result<(Vec<IpcEnvelope>, Vec<ProtoEnvelope>)> {
+    let session_id = "bench_session";
     let mut json_samples = Vec::new();
     let mut proto_samples = Vec::new();
 
@@ -201,10 +200,7 @@ fn build_sample_messages() -> Result<(Vec<RuntimeMlEnvelopeV2>, Vec<ProtoEnvelop
     Ok((json_samples, proto_samples))
 }
 
-fn build_decision_event_sample(
-    seq: u64,
-    session_id: &str,
-) -> Result<(RuntimeMlEnvelopeV2, ProtoEnvelope)> {
+fn build_decision_event_sample(seq: u64, session_id: &str) -> Result<(IpcEnvelope, ProtoEnvelope)> {
     let timestamp_us = now_micros();
     let decision_id = format!("dec_{seq}");
     let feature_values: Vec<f32> = (0..64)
@@ -235,7 +231,7 @@ fn build_decision_event_sample(
     action.confidence = 0.84;
     action.decision_id = Some(decision_id.clone());
 
-    let payload = DecisionEventV2 {
+    let payload = DecisionEvent {
         decision_id: decision_id.clone(),
         timestamp_us,
         feature_values: feature_values.clone(),
@@ -246,12 +242,19 @@ fn build_decision_event_sample(
         stream_id: Some("eeg_primary".to_string()),
     };
 
-    let json = RuntimeMlEnvelopeV2::new(RuntimeMlKindV2::DecisionEvent, seq, session_id, &payload)
-        .map_err(anyhow::Error::msg)
-        .context("failed to build JSON decision_event envelope")?;
+    let json = IpcEnvelope::new(
+        IpcChannel::TrainerStream,
+        "decision_event",
+        seq,
+        None,
+        Some(session_id.to_string()),
+        &payload,
+    )
+    .map_err(anyhow::Error::msg)
+    .context("failed to build JSON decision_event envelope")?;
 
     let proto = ProtoEnvelope {
-        v: RUNTIME_ML_PROTOCOL_V2 as u32,
+        v: IPC_PROTOCOL_VERSION as u32,
         kind: KIND_DECISION_EVENT,
         seq,
         sent_at_us: json.sent_at_us,
@@ -271,10 +274,7 @@ fn build_decision_event_sample(
     Ok((json, proto))
 }
 
-fn build_errp_window_sample(
-    seq: u64,
-    session_id: &str,
-) -> Result<(RuntimeMlEnvelopeV2, ProtoEnvelope)> {
+fn build_errp_window_sample(seq: u64, session_id: &str) -> Result<(IpcEnvelope, ProtoEnvelope)> {
     let action_timestamp_us = now_micros();
     let channel_labels = ["TP9", "AF7", "AF8", "TP10", "REF"]
         .iter()
@@ -291,7 +291,7 @@ fn build_errp_window_sample(
         })
         .collect();
 
-    let payload = ErrpWindowV2 {
+    let payload = ErrpWindow {
         decision_id: "dec_1".to_string(),
         action_timestamp_us,
         window_start_us: action_timestamp_us + 200_000,
@@ -302,12 +302,19 @@ fn build_errp_window_sample(
         signal_quality: 0.76,
     };
 
-    let json = RuntimeMlEnvelopeV2::new(RuntimeMlKindV2::ErrpWindow, seq, session_id, &payload)
-        .map_err(anyhow::Error::msg)
-        .context("failed to build JSON errp_window envelope")?;
+    let json = IpcEnvelope::new(
+        IpcChannel::TrainerStream,
+        "errp_window",
+        seq,
+        None,
+        Some(session_id.to_string()),
+        &payload,
+    )
+    .map_err(anyhow::Error::msg)
+    .context("failed to build JSON errp_window envelope")?;
 
     let proto = ProtoEnvelope {
-        v: RUNTIME_ML_PROTOCOL_V2 as u32,
+        v: IPC_PROTOCOL_VERSION as u32,
         kind: KIND_ERRP_WINDOW,
         seq,
         sent_at_us: json.sent_at_us,
@@ -330,11 +337,8 @@ fn build_errp_window_sample(
     Ok((json, proto))
 }
 
-fn build_trainer_status_sample(
-    seq: u64,
-    session_id: &str,
-) -> Result<(RuntimeMlEnvelopeV2, ProtoEnvelope)> {
-    let payload = TrainerStatusV2 {
+fn build_trainer_status_sample(seq: u64, session_id: &str) -> Result<(IpcEnvelope, ProtoEnvelope)> {
+    let payload = TrainerStatus {
         state: "training".to_string(),
         replay_size: 4_096,
         training_step: 12_345,
@@ -344,12 +348,19 @@ fn build_trainer_status_sample(
         last_error: None,
     };
 
-    let json = RuntimeMlEnvelopeV2::new(RuntimeMlKindV2::TrainerStatus, seq, session_id, &payload)
-        .map_err(anyhow::Error::msg)
-        .context("failed to build JSON trainer_status envelope")?;
+    let json = IpcEnvelope::new(
+        IpcChannel::TrainerStream,
+        "trainer_status",
+        seq,
+        None,
+        Some(session_id.to_string()),
+        &payload,
+    )
+    .map_err(anyhow::Error::msg)
+    .context("failed to build JSON trainer_status envelope")?;
 
     let proto = ProtoEnvelope {
-        v: RUNTIME_ML_PROTOCOL_V2 as u32,
+        v: IPC_PROTOCOL_VERSION as u32,
         kind: KIND_TRAINER_STATUS,
         seq,
         sent_at_us: json.sent_at_us,
@@ -401,13 +412,13 @@ fn mouse_button_name(button: MouseButton) -> String {
     }
 }
 
-fn run_warmup(json_samples: &[RuntimeMlEnvelopeV2], proto_samples: &[ProtoEnvelope]) -> Result<()> {
-    let _ = bench_json_v2(json_samples, WARMUP_ITERATIONS)?;
+fn run_warmup(json_samples: &[IpcEnvelope], proto_samples: &[ProtoEnvelope]) -> Result<()> {
+    let _ = bench_json(json_samples, WARMUP_ITERATIONS)?;
     let _ = bench_protobuf(proto_samples, WARMUP_ITERATIONS)?;
     Ok(())
 }
 
-fn bench_json_v2(samples: &[RuntimeMlEnvelopeV2], iterations: usize) -> Result<BenchStats> {
+fn bench_json(samples: &[IpcEnvelope], iterations: usize) -> Result<BenchStats> {
     let mut encoded_messages = Vec::with_capacity(iterations);
     let mut total_bytes = 0usize;
 
@@ -422,8 +433,7 @@ fn bench_json_v2(samples: &[RuntimeMlEnvelopeV2], iterations: usize) -> Result<B
 
     let decode_start = Instant::now();
     for bytes in &encoded_messages {
-        let decoded: RuntimeMlEnvelopeV2 =
-            serde_json::from_slice(bytes).context("JSON decode failed")?;
+        let decoded: IpcEnvelope = serde_json::from_slice(bytes).context("JSON decode failed")?;
         black_box(decoded);
     }
     let decode_elapsed = decode_start.elapsed();
@@ -495,13 +505,13 @@ fn relative_reduction(baseline: f64, candidate: f64) -> f64 {
 }
 
 fn print_report(json: BenchStats, proto: BenchStats, decision: GateDecision) {
-    println!("NeuroHID Runtime ML v2 Protocol Encoding Gate");
+    println!("NeuroHID Runtime ML Protocol Encoding Gate");
     println!(
         "Iterations: {} (warmup {})",
         BENCH_ITERATIONS, WARMUP_ITERATIONS
     );
     println!();
-    println!("JSON v2:");
+    println!("JSON:");
     println!("  encode: {:>10.1} ns/msg", json.avg_encode_ns);
     println!("  decode: {:>10.1} ns/msg", json.avg_decode_ns);
     println!("  size:   {:>10.1} bytes/msg", json.avg_size_bytes);

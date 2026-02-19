@@ -24,8 +24,8 @@ use neurohid_ipc::{
 };
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    ControlRpcRequestV3, ControlRpcResponseV3, IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3,
-    RuntimeEventV3, RuntimeEventsSubscribeV3,
+    ControlRpcRequest, ControlRpcResponse, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
+    RuntimeEvent, RuntimeEventsSubscribe,
     config::{IpcMode, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse},
     observability::{self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent},
@@ -625,7 +625,7 @@ async fn handle_ipc_client_connection(
             }
         };
 
-        if request_envelope.channel == IpcChannelV3::RuntimeEvents
+        if request_envelope.channel == IpcChannel::RuntimeEvents
             && request_envelope.msg_type == "subscribe"
         {
             handle_runtime_events_subscription(
@@ -639,7 +639,7 @@ async fn handle_ipc_client_connection(
             break;
         }
 
-        if request_envelope.channel == IpcChannelV3::TrainerStream {
+        if request_envelope.channel == IpcChannel::TrainerStream {
             handle_trainer_stream_connection(
                 connection_id,
                 &connection,
@@ -664,9 +664,9 @@ async fn handle_ipc_client_connection(
             Ok(()) => {}
             Err(RuntimeBrokerError::QueueFull { .. }) => {
                 control_response_seq = control_response_seq.saturating_add(1);
-                let queue_full_envelope = IpcEnvelopeV3 {
-                    v: IPC_PROTOCOL_V3,
-                    channel: IpcChannelV3::ControlRpc,
+                let queue_full_envelope = IpcEnvelope {
+                    v: IPC_PROTOCOL_VERSION,
+                    channel: IpcChannel::ControlRpc,
                     msg_type: "error".to_string(),
                     seq: control_response_seq,
                     request_id: None,
@@ -708,9 +708,9 @@ async fn handle_trainer_stream_connection(
     connection: &RuntimeIpcConnection,
     runtime: &RuntimeIpcHandle,
     broker: &RuntimeIpcBroker,
-    first_envelope: IpcEnvelopeV3,
+    first_envelope: IpcEnvelope,
 ) -> anyhow::Result<()> {
-    if first_envelope.channel != IpcChannelV3::TrainerStream {
+    if first_envelope.channel != IpcChannel::TrainerStream {
         return Err(anyhow::anyhow!(
             "trainer bridge received non-trainer first envelope"
         ));
@@ -723,9 +723,9 @@ async fn handle_trainer_stream_connection(
     let trainer_guard = match broker.open_trainer_stream(requested_session_id.clone()) {
         Ok(guard) => guard,
         Err(RuntimeBrokerError::TrainerBusy { active_session_id }) => {
-            let busy = IpcEnvelopeV3 {
-                v: IPC_PROTOCOL_V3,
-                channel: IpcChannelV3::TrainerStream,
+            let busy = IpcEnvelope {
+                v: IPC_PROTOCOL_VERSION,
+                channel: IpcChannel::TrainerStream,
                 msg_type: "error".to_string(),
                 seq: first_envelope.seq.saturating_add(1),
                 request_id: first_envelope.request_id.clone(),
@@ -773,7 +773,7 @@ async fn handle_trainer_stream_connection(
                     Ok(envelope) => envelope,
                     Err(_) => break Ok(()),
                 };
-                if envelope.channel != IpcChannelV3::TrainerStream {
+                if envelope.channel != IpcChannel::TrainerStream {
                     break Err(anyhow::anyhow!(
                         "trainer stream received mixed channel {:?}; only trainer.stream is allowed",
                         envelope.channel
@@ -807,19 +807,19 @@ async fn handle_trainer_stream_connection(
 }
 
 fn handle_control_request_envelope(
-    envelope: IpcEnvelopeV3,
+    envelope: IpcEnvelope,
     runtime: &RuntimeIpcHandle,
     control_gate: &StdMutex<EmitGate>,
     response_seq: &mut u64,
-) -> (IpcEnvelopeV3, bool) {
+) -> (IpcEnvelope, bool) {
     let request_id = envelope.request_id.clone();
     let started = Instant::now();
     *response_seq = response_seq.saturating_add(1);
 
-    if envelope.channel == IpcChannelV3::ControlRpc {
+    if envelope.channel == IpcChannel::ControlRpc {
         let request_payload = if envelope.msg_type == "request" {
             envelope
-                .decode_payload::<ControlRpcRequestV3>()
+                .decode_payload::<ControlRpcRequest>()
                 .map_err(|e| format!("invalid control request payload: {}", e))
         } else {
             Err("invalid control envelope channel/msg_type".to_string())
@@ -866,18 +866,18 @@ fn handle_control_request_envelope(
             Err(error) => (ControlResponse::error(request_id.clone(), error), false),
         };
 
-        let response_v3 = ControlRpcResponseV3::from(response);
-        let envelope = IpcEnvelopeV3::new(
-            IpcChannelV3::ControlRpc,
+        let response_v3 = ControlRpcResponse::from(response);
+        let envelope = IpcEnvelope::new(
+            IpcChannel::ControlRpc,
             "response",
             *response_seq,
             request_id,
             Some("runtime-control".to_string()),
             &response_v3,
         )
-        .unwrap_or_else(|error| IpcEnvelopeV3 {
-            v: IPC_PROTOCOL_V3,
-            channel: IpcChannelV3::ControlRpc,
+        .unwrap_or_else(|error| IpcEnvelope {
+            v: IPC_PROTOCOL_VERSION,
+            channel: IpcChannel::ControlRpc,
             msg_type: "response".to_string(),
             seq: *response_seq,
             request_id: None,
@@ -893,7 +893,7 @@ fn handle_control_request_envelope(
         return (envelope, should_shutdown);
     }
 
-    if envelope.channel == IpcChannelV3::RuntimeEvents
+    if envelope.channel == IpcChannel::RuntimeEvents
         && matches!(envelope.msg_type.as_str(), "poll" | "request")
     {
         let family = envelope
@@ -903,20 +903,20 @@ fn handle_control_request_envelope(
             .unwrap_or("snapshot");
         let snapshot = runtime.snapshot();
         let event = match family {
-            "snapshot" => RuntimeEventV3::Snapshot {
+            "snapshot" => RuntimeEvent::Snapshot {
                 snapshot: snapshot.clone(),
             },
-            "trainer_snapshot" => RuntimeEventV3::TrainerSnapshot {
+            "trainer_snapshot" => RuntimeEvent::TrainerSnapshot {
                 snapshot: runtime.trainer_snapshot(),
             },
-            "trainer_status" => RuntimeEventV3::TrainerStatus {
+            "trainer_status" => RuntimeEvent::TrainerStatus {
                 status: build_runtime_trainer_status(&snapshot),
             },
-            "runtime_telemetry" => RuntimeEventV3::RuntimeTelemetry {
+            "runtime_telemetry" => RuntimeEvent::RuntimeTelemetry {
                 telemetry: build_runtime_telemetry(&snapshot),
             },
             "capabilities" => build_runtime_capabilities_event(&snapshot),
-            other => RuntimeEventV3::Lifecycle {
+            other => RuntimeEvent::Lifecycle {
                 state: "error".to_string(),
                 detail: format!("unsupported runtime.events family '{}'", other),
                 requested_seq: None,
@@ -924,17 +924,17 @@ fn handle_control_request_envelope(
                 replay_window_end_seq: None,
             },
         };
-        let response = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let response = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "event",
             *response_seq,
             request_id,
             Some("runtime-events".to_string()),
             &event,
         )
-        .unwrap_or_else(|error| IpcEnvelopeV3 {
-            v: IPC_PROTOCOL_V3,
-            channel: IpcChannelV3::RuntimeEvents,
+        .unwrap_or_else(|error| IpcEnvelope {
+            v: IPC_PROTOCOL_VERSION,
+            channel: IpcChannel::RuntimeEvents,
             msg_type: "error".to_string(),
             seq: *response_seq,
             request_id: None,
@@ -947,8 +947,8 @@ fn handle_control_request_envelope(
         return (response, false);
     }
 
-    let error = IpcEnvelopeV3 {
-        v: IPC_PROTOCOL_V3,
+    let error = IpcEnvelope {
+        v: IPC_PROTOCOL_VERSION,
         channel: envelope.channel,
         msg_type: "error".to_string(),
         seq: *response_seq,
@@ -973,10 +973,10 @@ async fn handle_runtime_events_subscription(
     connection: &RuntimeIpcConnection,
     runtime: &RuntimeIpcHandle,
     broker: &RuntimeIpcBroker,
-    envelope: IpcEnvelopeV3,
+    envelope: IpcEnvelope,
     runtime_events_state: Arc<Mutex<RuntimeEventsState>>,
 ) -> anyhow::Result<()> {
-    let request = serde_json::from_value::<RuntimeEventsSubscribeV3>(envelope.payload.clone())
+    let request = serde_json::from_value::<RuntimeEventsSubscribe>(envelope.payload.clone())
         .unwrap_or_default();
     let filter = RuntimeEventsFilter::from_request(&request);
     let request_id = envelope.request_id.clone();
@@ -1050,7 +1050,7 @@ async fn handle_runtime_events_subscription(
                 &runtime_events_state,
                 &request_id,
                 &session_id,
-                RuntimeEventV3::Lifecycle {
+                RuntimeEvent::Lifecycle {
                     state: "replay_resumed".to_string(),
                     detail: format!("resumed from seq {}", resume_from_seq),
                     requested_seq: Some(resume_from_seq),
@@ -1080,7 +1080,7 @@ async fn handle_runtime_events_subscription(
                 &runtime_events_state,
                 &request_id,
                 &session_id,
-                RuntimeEventV3::Lifecycle {
+                RuntimeEvent::Lifecycle {
                     state: "replay_miss".to_string(),
                     detail,
                     requested_seq: Some(resume_from_seq),
@@ -1114,7 +1114,7 @@ async fn handle_runtime_events_subscription(
             &runtime_events_state,
             &request_id,
             &session_id,
-            RuntimeEventV3::Snapshot {
+            RuntimeEvent::Snapshot {
                 snapshot: snapshot.clone(),
             },
             &filter,
@@ -1126,7 +1126,7 @@ async fn handle_runtime_events_subscription(
             &runtime_events_state,
             &request_id,
             &session_id,
-            RuntimeEventV3::TrainerSnapshot {
+            RuntimeEvent::TrainerSnapshot {
                 snapshot: runtime.trainer_snapshot(),
             },
             &filter,
@@ -1151,7 +1151,7 @@ async fn handle_runtime_events_subscription(
                                 &runtime_events_state,
                                 &request_id,
                                 &session_id,
-                                RuntimeEventV3::Sample { sample },
+                                RuntimeEvent::Sample { sample },
                                 &filter,
                                 &mut emitted,
                             )
@@ -1165,8 +1165,8 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::BackpressureDrop {
-                                channel: IpcChannelV3::RuntimeEvents,
+                            RuntimeEvent::BackpressureDrop {
+                                channel: IpcChannel::RuntimeEvents,
                                 dropped: skipped,
                                 reason: "sample stream lagged".to_string(),
                             },
@@ -1186,7 +1186,7 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::FeatureFrame {
+                            RuntimeEvent::FeatureFrame {
                                 feature: feature.clone(),
                             },
                             &filter,
@@ -1199,7 +1199,7 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::ObservationFrame { observation },
+                            RuntimeEvent::ObservationFrame { observation },
                             &filter,
                             &mut emitted,
                         )
@@ -1212,8 +1212,8 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::BackpressureDrop {
-                                channel: IpcChannelV3::RuntimeEvents,
+                            RuntimeEvent::BackpressureDrop {
+                                channel: IpcChannel::RuntimeEvents,
                                 dropped: skipped,
                                 reason: "feature stream lagged".to_string(),
                             },
@@ -1234,7 +1234,7 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::ActionEmitted { action },
+                            RuntimeEvent::ActionEmitted { action },
                             &filter,
                             &mut emitted,
                         )
@@ -1247,8 +1247,8 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::BackpressureDrop {
-                                channel: IpcChannelV3::RuntimeEvents,
+                            RuntimeEvent::BackpressureDrop {
+                                channel: IpcChannel::RuntimeEvents,
                                 dropped: skipped,
                                 reason: "action stream lagged".to_string(),
                             },
@@ -1268,7 +1268,7 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::Marker { marker },
+                            RuntimeEvent::Marker { marker },
                             &filter,
                             &mut emitted,
                         )
@@ -1281,8 +1281,8 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::BackpressureDrop {
-                                channel: IpcChannelV3::RuntimeEvents,
+                            RuntimeEvent::BackpressureDrop {
+                                channel: IpcChannel::RuntimeEvents,
                                 dropped: skipped,
                                 reason: "marker stream lagged".to_string(),
                             },
@@ -1315,8 +1315,8 @@ async fn handle_runtime_events_subscription(
                             &runtime_events_state,
                             &request_id,
                             &session_id,
-                            RuntimeEventV3::BackpressureDrop {
-                                channel: IpcChannelV3::RuntimeEvents,
+                            RuntimeEvent::BackpressureDrop {
+                                channel: IpcChannel::RuntimeEvents,
                                 dropped: skipped,
                                 reason: "runtime.events broker subscriber lagged".to_string(),
                             },
@@ -1335,7 +1335,7 @@ async fn handle_runtime_events_subscription(
                     &runtime_events_state,
                     &request_id,
                     &session_id,
-                    RuntimeEventV3::Snapshot {
+                    RuntimeEvent::Snapshot {
                         snapshot: snapshot.clone(),
                     },
                     &filter,
@@ -1347,7 +1347,7 @@ async fn handle_runtime_events_subscription(
                     &runtime_events_state,
                     &request_id,
                     &session_id,
-                    RuntimeEventV3::TrainerStatus {
+                    RuntimeEvent::TrainerStatus {
                         status: build_runtime_trainer_status(&snapshot),
                     },
                     &filter,
@@ -1359,7 +1359,7 @@ async fn handle_runtime_events_subscription(
                     &runtime_events_state,
                     &request_id,
                     &session_id,
-                    RuntimeEventV3::RuntimeTelemetry {
+                    RuntimeEvent::RuntimeTelemetry {
                         telemetry: build_runtime_telemetry(&snapshot),
                     },
                     &filter,
@@ -1382,7 +1382,7 @@ async fn handle_runtime_events_subscription(
         &runtime_events_state,
         &request_id,
         &session_id,
-        RuntimeEventV3::Lifecycle {
+        RuntimeEvent::Lifecycle {
             state: "subscription_closed".to_string(),
             detail: close_detail.to_string(),
             requested_seq: None,
@@ -1402,7 +1402,7 @@ async fn emit_runtime_event(
     runtime_events_state: &Arc<Mutex<RuntimeEventsState>>,
     request_id: &Option<String>,
     session_id: &str,
-    event: RuntimeEventV3,
+    event: RuntimeEvent,
     filter: &RuntimeEventsFilter,
     emitted: &mut u64,
 ) -> anyhow::Result<()> {
@@ -1426,9 +1426,9 @@ async fn emit_runtime_event(
         return Ok(());
     }
 
-    let envelope = IpcEnvelopeV3 {
-        v: IPC_PROTOCOL_V3,
-        channel: IpcChannelV3::RuntimeEvents,
+    let envelope = IpcEnvelope {
+        v: IPC_PROTOCOL_VERSION,
+        channel: IpcChannel::RuntimeEvents,
         msg_type: "event".to_string(),
         seq,
         request_id: request_id.clone(),
@@ -1459,9 +1459,9 @@ async fn emit_runtime_event_replay(
     let payload = serde_json::to_value(&item.event).map_err(|error| {
         anyhow::anyhow!("failed to encode replay runtime event payload: {}", error)
     })?;
-    let envelope = IpcEnvelopeV3 {
-        v: IPC_PROTOCOL_V3,
-        channel: IpcChannelV3::RuntimeEvents,
+    let envelope = IpcEnvelope {
+        v: IPC_PROTOCOL_VERSION,
+        channel: IpcChannel::RuntimeEvents,
         msg_type: "event".to_string(),
         seq: item.seq,
         request_id: request_id.clone(),
@@ -1946,7 +1946,7 @@ mod tests {
             seq,
             sent_at_us,
             family: "lifecycle",
-            event: RuntimeEventV3::Lifecycle {
+            event: RuntimeEvent::Lifecycle {
                 state: "test".to_string(),
                 detail: "test".to_string(),
                 requested_seq: None,
@@ -2091,8 +2091,8 @@ mod tests {
             .connect()
             .await
             .expect("events client should connect");
-        let subscribe = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let subscribe = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -2115,7 +2115,7 @@ mod tests {
             .await
             .expect("events stream should produce a message")
             .expect("events receive should succeed");
-        assert_eq!(first_event.channel, IpcChannelV3::RuntimeEvents);
+        assert_eq!(first_event.channel, IpcChannel::RuntimeEvents);
 
         let mut control_client = RuntimeIpcClient::new(server_config);
         control_client
@@ -2186,8 +2186,8 @@ mod tests {
             .connect()
             .await
             .expect("first trainer client should connect");
-        let hello = IpcEnvelopeV3::new(
-            IpcChannelV3::TrainerStream,
+        let hello = IpcEnvelope::new(
+            IpcChannel::TrainerStream,
             "hello",
             1,
             None,
@@ -2208,15 +2208,15 @@ mod tests {
             .await
             .expect("first trainer should receive bootstrap response")
             .expect("first trainer receive should succeed");
-        assert_eq!(first_response.channel, IpcChannelV3::TrainerStream);
+        assert_eq!(first_response.channel, IpcChannel::TrainerStream);
 
         let mut second_client = RuntimeIpcClient::new(server_config);
         second_client
             .connect()
             .await
             .expect("second trainer client should connect");
-        let second_hello = IpcEnvelopeV3::new(
-            IpcChannelV3::TrainerStream,
+        let second_hello = IpcEnvelope::new(
+            IpcChannel::TrainerStream,
             "hello",
             1,
             None,
@@ -2237,7 +2237,7 @@ mod tests {
             .recv()
             .await
             .expect("second trainer should receive busy error");
-        assert_eq!(busy.channel, IpcChannelV3::TrainerStream);
+        assert_eq!(busy.channel, IpcChannel::TrainerStream);
         assert_eq!(busy.msg_type, "error");
         assert_eq!(
             busy.payload.get("code").and_then(serde_json::Value::as_str),
@@ -2287,8 +2287,8 @@ mod tests {
             .connect()
             .await
             .expect("seed client should connect");
-        let seed_subscribe = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let seed_subscribe = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -2318,8 +2318,8 @@ mod tests {
             .connect()
             .await
             .expect("resume client should connect");
-        let resume_subscribe = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let resume_subscribe = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -2344,7 +2344,7 @@ mod tests {
                 .await
                 .expect("resume subscriber should receive events")
                 .expect("resume subscriber recv should succeed");
-            if envelope.channel != IpcChannelV3::RuntimeEvents || envelope.msg_type != "event" {
+            if envelope.channel != IpcChannel::RuntimeEvents || envelope.msg_type != "event" {
                 continue;
             }
             if envelope
@@ -2428,8 +2428,8 @@ mod tests {
 
         let mut client = RuntimeIpcClient::new(server_config);
         client.connect().await.expect("client should connect");
-        let subscribe = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let subscribe = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -2452,7 +2452,7 @@ mod tests {
             .await
             .expect("replay-miss subscriber should receive lifecycle")
             .expect("replay-miss recv should succeed");
-        assert_eq!(envelope.channel, IpcChannelV3::RuntimeEvents);
+        assert_eq!(envelope.channel, IpcChannel::RuntimeEvents);
         assert_eq!(envelope.msg_type, "event");
         assert_eq!(
             envelope
@@ -2517,8 +2517,8 @@ mod tests {
         let broker = RuntimeIpcBroker::new(broker_config);
         let runtime_events_state = Arc::new(Mutex::new(RuntimeEventsState::default()));
 
-        let subscribe = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let subscribe = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -2541,7 +2541,7 @@ mod tests {
                         Ok(Ok(envelope)) => envelope,
                         _ => break,
                     };
-                if envelope.channel != IpcChannelV3::RuntimeEvents || envelope.msg_type != "event" {
+                if envelope.channel != IpcChannel::RuntimeEvents || envelope.msg_type != "event" {
                     continue;
                 }
 
@@ -2591,7 +2591,7 @@ mod tests {
             tokio::spawn(async move {
                 tokio::time::sleep(Duration::from_millis(25)).await;
                 for seq in 0..5_000_u64 {
-                    let _ = broker.publish_runtime_event(RuntimeEventV3::Lifecycle {
+                    let _ = broker.publish_runtime_event(RuntimeEvent::Lifecycle {
                         state: "burst".to_string(),
                         detail: seq.to_string(),
                         requested_seq: None,
@@ -2669,7 +2669,7 @@ mod tests {
                     seq,
                     sent_at_us: now.saturating_add(offset as i64),
                     family: "lifecycle",
-                    event: RuntimeEventV3::Lifecycle {
+                    event: RuntimeEvent::Lifecycle {
                         state: "seed".to_string(),
                         detail: format!("seed-{seq}"),
                         requested_seq: None,
@@ -2689,8 +2689,8 @@ mod tests {
             .accept()
             .await
             .expect("server should accept hit client");
-        let hit_subscribe = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let hit_subscribe = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -2754,8 +2754,8 @@ mod tests {
             .accept()
             .await
             .expect("server should accept miss client");
-        let miss_subscribe = IpcEnvelopeV3::new(
-            IpcChannelV3::RuntimeEvents,
+        let miss_subscribe = IpcEnvelope::new(
+            IpcChannel::RuntimeEvents,
             "subscribe",
             1,
             None,
@@ -2827,7 +2827,7 @@ mod tests {
         snapshot.ml_bridge_connected = false;
         snapshot.ml_bridge_stalled = false;
 
-        let RuntimeEventV3::Capabilities { components, .. } =
+        let RuntimeEvent::Capabilities { components, .. } =
             build_runtime_capabilities_event(&snapshot)
         else {
             panic!("expected capabilities event");
@@ -2860,7 +2860,7 @@ mod tests {
         snapshot.ml_bridge_connected = true;
         snapshot.ml_bridge_stalled = false;
 
-        let RuntimeEventV3::Capabilities { components, .. } =
+        let RuntimeEvent::Capabilities { components, .. } =
             build_runtime_capabilities_event(&snapshot)
         else {
             panic!("expected capabilities event");

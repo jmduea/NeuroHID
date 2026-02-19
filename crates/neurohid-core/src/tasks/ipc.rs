@@ -10,16 +10,15 @@ use tokio::fs;
 use tokio::sync::{RwLock, broadcast, mpsc};
 
 use neurohid_ipc::{
-    AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2,
-    IPC_PROTOCOL_V3, IpcChannelV3, IpcEnvelopeV3, ProtocolErrorV2, RuntimeMlRoleV2,
-    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
-    TrainerStreamKindV3,
+    Ack, CandidateModelReady, DecisionEvent, ErrpResult, ErrpWindow, Hello, IPC_PROTOCOL_VERSION,
+    IpcChannel, IpcEnvelope, ProtocolError, RuntimeMlRole, RuntimeTelemetry, SessionBoundary,
+    SessionBoundaryEvent, Shutdown, TrainerStatus, TrainerStreamKind,
 };
 use neurohid_types::{
     control::RuntimeModeState,
     error::{Error, IpcError, Result},
     event::{MarkerPayload, MarkerType, StreamMarker},
-    ipc_v3::RuntimeEventV3,
+    ipc::RuntimeEvent,
     observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
     profile::ProfileId,
     reward::{ErrPConfig, ErrPResult, SignalQuality},
@@ -85,13 +84,13 @@ pub struct IpcTask {
     errp_tx: mpsc::Sender<ErrPResult>,
     sample_rx: mpsc::Receiver<Sample>,
     trainer_ingress_rx: mpsc::Receiver<TrainerIngressEvent>,
-    trainer_egress_tx: mpsc::Sender<IpcEnvelopeV3>,
+    trainer_egress_tx: mpsc::Sender<IpcEnvelope>,
     errp_config: ErrPConfig,
     state: Arc<RwLock<ServiceState>>,
     marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
     profile_store: Option<ProfileStore>,
     decoder_command_tx: Option<mpsc::Sender<DecoderCommand>>,
-    runtime_event_tx: Option<broadcast::Sender<RuntimeEventV3>>,
+    runtime_event_tx: Option<broadcast::Sender<RuntimeEvent>>,
     send_sequence: u64,
     session_id: String,
     dropped_messages: u64,
@@ -114,13 +113,13 @@ impl IpcTask {
         errp_tx: mpsc::Sender<ErrPResult>,
         sample_rx: mpsc::Receiver<Sample>,
         trainer_ingress_rx: mpsc::Receiver<TrainerIngressEvent>,
-        trainer_egress_tx: mpsc::Sender<IpcEnvelopeV3>,
+        trainer_egress_tx: mpsc::Sender<IpcEnvelope>,
         errp_config: ErrPConfig,
         state: Arc<RwLock<ServiceState>>,
         marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
         profile_store: Option<ProfileStore>,
         decoder_command_tx: Option<mpsc::Sender<DecoderCommand>>,
-        runtime_event_tx: Option<broadcast::Sender<RuntimeEventV3>>,
+        runtime_event_tx: Option<broadcast::Sender<RuntimeEvent>>,
         observability: ObservabilityConfig,
     ) -> Self {
         Self {
@@ -192,7 +191,7 @@ impl IpcTask {
             "IPC integrity check failed"
         );
 
-        self.emit_runtime_event(RuntimeEventV3::IntegrityIssue {
+        self.emit_runtime_event(RuntimeEvent::IntegrityIssue {
             issue: issue.to_string(),
             details: details.to_string(),
         });
@@ -262,8 +261,8 @@ impl IpcTask {
             tokio::select! {
                 _ = shutdown.recv() => {
                     tracing::info!("IPC task received shutdown signal");
-                    let shutdown_payload = ShutdownV2 { reason: "runtime_shutdown".to_string() };
-                    let msg = self.build_envelope(TrainerStreamKindV3::Shutdown, &shutdown_payload)?;
+                    let shutdown_payload = Shutdown { reason: "runtime_shutdown".to_string() };
+                    let msg = self.build_envelope(TrainerStreamKind::Shutdown, &shutdown_payload)?;
                     let _ = self.send_trainer_envelope(msg).await;
                     return Ok(true);
                 }
@@ -289,11 +288,11 @@ impl IpcTask {
                     self.publish_runtime_telemetry().await?;
                 }
                 _ = heartbeat_tick.tick() => {
-                    let ping = neurohid_ipc::PingV2 {
+                    let ping = neurohid_ipc::Ping {
                         ping_id: format!("ping_{}", self.send_sequence.saturating_add(1)),
                         timestamp_us: neurohid_types::now_micros(),
                     };
-                    let msg = self.build_envelope(TrainerStreamKindV3::Ping, &ping)?;
+                    let msg = self.build_envelope(TrainerStreamKind::Ping, &ping)?;
                     self.send_trainer_envelope(msg).await?;
                 }
                 decision = self.decision_rx.recv() => {
@@ -384,9 +383,9 @@ impl IpcTask {
     }
 
     async fn send_hello(&mut self) -> Result<()> {
-        let hello = HelloV2 {
+        let hello = Hello {
             protocol: "neurohid_runtime_ml_v3".to_string(),
-            role: RuntimeMlRoleV2::Runtime,
+            role: RuntimeMlRole::Runtime,
             capabilities: vec![
                 "errp_window_stream".to_string(),
                 "candidate_guarded_promotion".to_string(),
@@ -398,17 +397,17 @@ impl IpcTask {
             trainer_name: None,
             trainer_version: None,
         };
-        let msg = self.build_envelope(TrainerStreamKindV3::Hello, &hello)?;
+        let msg = self.build_envelope(TrainerStreamKind::Hello, &hello)?;
         self.send_trainer_envelope(msg).await
     }
 
     async fn send_session_boundary_start(&mut self) -> Result<()> {
-        let boundary = SessionBoundaryV2 {
-            event: SessionBoundaryEventV2::Start,
+        let boundary = SessionBoundary {
+            event: SessionBoundaryEvent::Start,
             reason: "runtime_boot".to_string(),
             started_at_us: neurohid_types::now_micros(),
         };
-        let msg = self.build_envelope(TrainerStreamKindV3::SessionBoundary, &boundary)?;
+        let msg = self.build_envelope(TrainerStreamKind::SessionBoundary, &boundary)?;
         self.send_trainer_envelope(msg).await
     }
 
@@ -428,7 +427,7 @@ impl IpcTask {
         let signal_quality = decision.signal_quality;
         let stream_id = decision.stream_id.clone();
 
-        let payload = DecisionEventV2 {
+        let payload = DecisionEvent {
             decision_id: decision_id.clone(),
             timestamp_us: decision.timestamp_us,
             feature_values: decision.feature_values,
@@ -438,9 +437,9 @@ impl IpcTask {
             decoder_model_version: decision.decoder_model_version,
             stream_id: decision.stream_id,
         };
-        let msg = self.build_envelope(TrainerStreamKindV3::DecisionEvent, &payload)?;
+        let msg = self.build_envelope(TrainerStreamKind::DecisionEvent, &payload)?;
         self.send_trainer_envelope(msg).await?;
-        self.emit_runtime_event(RuntimeEventV3::DecisionEvent {
+        self.emit_runtime_event(RuntimeEvent::DecisionEvent {
             event: payload.clone(),
         });
         if tracing::enabled!(tracing::Level::DEBUG) && self.emit_gate.allow_debug() {
@@ -458,7 +457,7 @@ impl IpcTask {
 
     async fn publish_runtime_telemetry(&mut self) -> Result<()> {
         let state = self.state.read().await;
-        let telemetry = RuntimeTelemetryV2 {
+        let telemetry = RuntimeTelemetry {
             signal_latency_p95_us: state.signal_latency_p95_us,
             decode_latency_p95_us: state.decode_latency_p95_us,
             action_latency_p95_us: state.action_latency_p95_us,
@@ -467,7 +466,7 @@ impl IpcTask {
             dropped_ml_messages: self.dropped_messages,
         };
         drop(state);
-        let msg = self.build_envelope(TrainerStreamKindV3::RuntimeTelemetry, &telemetry)?;
+        let msg = self.build_envelope(TrainerStreamKind::RuntimeTelemetry, &telemetry)?;
         self.send_trainer_envelope(msg).await?;
 
         self.telemetry_frames_sent = self.telemetry_frames_sent.saturating_add(1);
@@ -490,18 +489,18 @@ impl IpcTask {
         Ok(())
     }
 
-    async fn handle_trainer_message(&mut self, message: IpcEnvelopeV3) -> Result<()> {
+    async fn handle_trainer_message(&mut self, message: IpcEnvelope) -> Result<()> {
         self.note_heartbeat().await;
         self.set_stalled(false).await;
 
-        if message.v != IPC_PROTOCOL_V3 {
+        if message.v != IPC_PROTOCOL_VERSION {
             tracing::warn!(
                 version = message.v,
                 "Received incompatible ML protocol version (expected v3)"
             );
             return Ok(());
         }
-        if message.channel != IpcChannelV3::TrainerStream {
+        if message.channel != IpcChannel::TrainerStream {
             tracing::trace!(
                 channel = ?message.channel,
                 "Ignoring message on non-trainer channel in trainer task"
@@ -529,23 +528,23 @@ impl IpcTask {
         }
         self.last_recv_sequence = Some(recv_seq);
 
-        let Some(kind) = TrainerStreamKindV3::from_msg_type(&message.msg_type) else {
+        let Some(kind) = TrainerStreamKind::from_msg_type(&message.msg_type) else {
             tracing::trace!(msg_type = %message.msg_type, "Ignoring unsupported trainer msg_type");
             return Ok(());
         };
 
         match kind {
-            TrainerStreamKindV3::Hello => {
-                let hello: HelloV2 = message.decode_payload().map_err(IpcError::InvalidMessage)?;
+            TrainerStreamKind::Hello => {
+                let hello: Hello = message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 let mut state = self.state.write().await;
                 state.ml_protocol_version = Some(message.v);
                 state.ml_bridge_connected = true;
-                if hello.role != RuntimeMlRoleV2::Trainer {
+                if hello.role != RuntimeMlRole::Trainer {
                     tracing::warn!("ML hello role is not trainer");
                 }
             }
-            TrainerStreamKindV3::ErrpResult => {
-                let mut payload: ErrpResultV2 =
+            TrainerStreamKind::ErrpResult => {
+                let mut payload: ErrpResult =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 if !payload.error_probability.is_finite() {
                     self.record_integrity_issue(
@@ -568,7 +567,7 @@ impl IpcTask {
                 payload.error_probability = payload.error_probability.clamp(0.0, 1.0);
                 payload.classification_confidence =
                     payload.classification_confidence.clamp(0.0, 1.0);
-                self.emit_runtime_event(RuntimeEventV3::ErrpResult {
+                self.emit_runtime_event(RuntimeEvent::ErrpResult {
                     result: payload.clone(),
                 });
 
@@ -600,8 +599,8 @@ impl IpcTask {
                     tracing::warn!("ErrP receiver dropped");
                 }
             }
-            TrainerStreamKindV3::TrainerStatus => {
-                let status: TrainerStatusV2 =
+            TrainerStreamKind::TrainerStatus => {
+                let status: TrainerStatus =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 let mut state = self.state.write().await;
                 state.trainer_replay_size = Some(status.replay_size);
@@ -611,8 +610,8 @@ impl IpcTask {
                 state.trainer_entropy = status.entropy;
                 state.trainer_last_error = status.last_error;
             }
-            TrainerStreamKindV3::CandidateModelReady => {
-                let candidate: CandidateModelReadyV2 =
+            TrainerStreamKind::CandidateModelReady => {
+                let candidate: CandidateModelReady =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 if !self.state.read().await.learning_enabled {
                     tracing::info!(
@@ -702,14 +701,14 @@ impl IpcTask {
                     "Candidate model ready notification processed"
                 );
             }
-            TrainerStreamKindV3::Pong => {
+            TrainerStreamKind::Pong => {
                 tracing::trace!("Received trainer pong");
             }
-            TrainerStreamKindV3::Ack => {
-                let _: AckV2 = message.decode_payload().map_err(IpcError::InvalidMessage)?;
+            TrainerStreamKind::Ack => {
+                let _: Ack = message.decode_payload().map_err(IpcError::InvalidMessage)?;
             }
-            TrainerStreamKindV3::Error => {
-                let err: ProtocolErrorV2 =
+            TrainerStreamKind::Error => {
+                let err: ProtocolError =
                     message.decode_payload().map_err(IpcError::InvalidMessage)?;
                 tracing::warn!(recoverable = err.recoverable, code = %err.code, "Trainer error: {}", err.message);
                 if !err.recoverable {
@@ -804,9 +803,9 @@ impl IpcTask {
                 break;
             };
             let payload = self.build_errp_window_payload(&pending);
-            let msg = self.build_envelope(TrainerStreamKindV3::ErrpWindow, &payload)?;
+            let msg = self.build_envelope(TrainerStreamKind::ErrpWindow, &payload)?;
             self.send_trainer_envelope(msg).await?;
-            self.emit_runtime_event(RuntimeEventV3::ErrpWindow {
+            self.emit_runtime_event(RuntimeEvent::ErrpWindow {
                 window: payload.clone(),
             });
         }
@@ -814,7 +813,7 @@ impl IpcTask {
         Ok(())
     }
 
-    fn build_errp_window_payload(&self, pending: &PendingErrpWindow) -> ErrpWindowV2 {
+    fn build_errp_window_payload(&self, pending: &PendingErrpWindow) -> ErrpWindow {
         let stream_key = pending
             .stream_id
             .as_deref()
@@ -841,7 +840,7 @@ impl IpcTask {
             .map(|ch| format!("ch{}", ch + 1))
             .collect();
 
-        ErrpWindowV2 {
+        ErrpWindow {
             decision_id: pending.decision_id.clone(),
             action_timestamp_us: pending.action_timestamp_us,
             window_start_us: pending.window_start_us,
@@ -900,7 +899,7 @@ impl IpcTask {
 
     async fn validate_candidate_notification(
         &self,
-        candidate: &CandidateModelReadyV2,
+        candidate: &CandidateModelReady,
     ) -> std::result::Result<PathBuf, String> {
         if candidate.profile_id.trim().is_empty() {
             return Err("profile_id must not be empty".to_string());
@@ -1012,7 +1011,7 @@ impl IpcTask {
     async fn validate_candidate_artifact_files(
         &self,
         artifact_dir: &Path,
-        candidate: &CandidateModelReadyV2,
+        candidate: &CandidateModelReady,
     ) -> std::result::Result<(), String> {
         let model_path = artifact_dir.join("decoder_candidate.onnx");
         let manifest_path = artifact_dir.join("decoder_candidate_manifest.json");
@@ -1070,14 +1069,14 @@ impl IpcTask {
         Ok(())
     }
 
-    async fn send_trainer_envelope(&self, envelope: IpcEnvelopeV3) -> Result<()> {
+    async fn send_trainer_envelope(&self, envelope: IpcEnvelope) -> Result<()> {
         self.trainer_egress_tx
             .send(envelope)
             .await
             .map_err(|_| IpcError::ConnectionLost.into())
     }
 
-    fn emit_runtime_event(&self, event: RuntimeEventV3) {
+    fn emit_runtime_event(&self, event: RuntimeEvent) {
         if let Some(tx) = &self.runtime_event_tx {
             let _ = tx.send(event);
         }
@@ -1085,12 +1084,12 @@ impl IpcTask {
 
     fn build_envelope<T: serde::Serialize>(
         &mut self,
-        kind: TrainerStreamKindV3,
+        kind: TrainerStreamKind,
         payload: &T,
-    ) -> Result<IpcEnvelopeV3> {
+    ) -> Result<IpcEnvelope> {
         self.send_sequence = self.send_sequence.saturating_add(1);
-        IpcEnvelopeV3::new(
-            IpcChannelV3::TrainerStream,
+        IpcEnvelope::new(
+            IpcChannel::TrainerStream,
             kind.as_msg_type(),
             self.send_sequence,
             None,

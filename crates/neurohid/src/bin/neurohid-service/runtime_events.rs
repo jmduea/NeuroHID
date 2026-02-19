@@ -1,8 +1,8 @@
 use std::collections::{HashSet, VecDeque};
 
 use neurohid_types::{
-    RuntimeComponentCapabilityV3, RuntimeEventV3, RuntimeEventsSubscribeV3, RuntimeTelemetryV2,
-    TrainerStatusV2,
+    RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe, RuntimeTelemetry,
+    TrainerStatus,
     control::ControlSnapshot,
     observation::{CursorState, Observation, ScreenInfo},
 };
@@ -15,7 +15,7 @@ pub(super) struct RuntimeEventsReplayItem {
     pub(super) seq: u64,
     pub(super) sent_at_us: i64,
     pub(super) family: &'static str,
-    pub(super) event: RuntimeEventV3,
+    pub(super) event: RuntimeEvent,
 }
 
 #[derive(Debug, Default, Clone)]
@@ -82,7 +82,7 @@ pub(super) struct RuntimeEventsFilter {
 }
 
 impl RuntimeEventsFilter {
-    pub(super) fn from_request(request: &RuntimeEventsSubscribeV3) -> Self {
+    pub(super) fn from_request(request: &RuntimeEventsSubscribe) -> Self {
         if request.families.is_empty() {
             return Self { families: None };
         }
@@ -160,29 +160,29 @@ impl RuntimeObservationState {
     }
 }
 
-pub(super) fn runtime_event_family(event: &RuntimeEventV3) -> &'static str {
+pub(super) fn runtime_event_family(event: &RuntimeEvent) -> &'static str {
     match event {
-        RuntimeEventV3::Snapshot { .. } => "snapshot",
-        RuntimeEventV3::TrainerSnapshot { .. } => "trainer_snapshot",
-        RuntimeEventV3::TrainerStatus { .. } => "trainer_status",
-        RuntimeEventV3::RuntimeTelemetry { .. } => "runtime_telemetry",
-        RuntimeEventV3::Sample { .. } => "sample",
-        RuntimeEventV3::FeatureFrame { .. } => "feature_frame",
-        RuntimeEventV3::ActionEmitted { .. } => "action_emitted",
-        RuntimeEventV3::Marker { .. } => "marker",
-        RuntimeEventV3::ObservationFrame { .. } => "observation_frame",
-        RuntimeEventV3::DecisionEvent { .. } => "decision_event",
-        RuntimeEventV3::ErrpWindow { .. } => "errp_window",
-        RuntimeEventV3::ErrpResult { .. } => "errp_result",
-        RuntimeEventV3::IntegrityIssue { .. } => "integrity_issue",
-        RuntimeEventV3::Lifecycle { .. } => "lifecycle",
-        RuntimeEventV3::BackpressureDrop { .. } => "backpressure_drop",
-        RuntimeEventV3::Capabilities { .. } => "capabilities",
+        RuntimeEvent::Snapshot { .. } => "snapshot",
+        RuntimeEvent::TrainerSnapshot { .. } => "trainer_snapshot",
+        RuntimeEvent::TrainerStatus { .. } => "trainer_status",
+        RuntimeEvent::RuntimeTelemetry { .. } => "runtime_telemetry",
+        RuntimeEvent::Sample { .. } => "sample",
+        RuntimeEvent::FeatureFrame { .. } => "feature_frame",
+        RuntimeEvent::ActionEmitted { .. } => "action_emitted",
+        RuntimeEvent::Marker { .. } => "marker",
+        RuntimeEvent::ObservationFrame { .. } => "observation_frame",
+        RuntimeEvent::DecisionEvent { .. } => "decision_event",
+        RuntimeEvent::ErrpWindow { .. } => "errp_window",
+        RuntimeEvent::ErrpResult { .. } => "errp_result",
+        RuntimeEvent::IntegrityIssue { .. } => "integrity_issue",
+        RuntimeEvent::Lifecycle { .. } => "lifecycle",
+        RuntimeEvent::BackpressureDrop { .. } => "backpressure_drop",
+        RuntimeEvent::Capabilities { .. } => "capabilities",
     }
 }
 
-pub(super) fn build_runtime_telemetry(snapshot: &ControlSnapshot) -> RuntimeTelemetryV2 {
-    RuntimeTelemetryV2 {
+pub(super) fn build_runtime_telemetry(snapshot: &ControlSnapshot) -> RuntimeTelemetry {
+    RuntimeTelemetry {
         signal_latency_p95_us: snapshot.signal_latency_p95_us,
         decode_latency_p95_us: snapshot.decode_latency_p95_us,
         action_latency_p95_us: snapshot.action_latency_p95_us,
@@ -192,8 +192,8 @@ pub(super) fn build_runtime_telemetry(snapshot: &ControlSnapshot) -> RuntimeTele
     }
 }
 
-pub(super) fn build_runtime_trainer_status(snapshot: &ControlSnapshot) -> TrainerStatusV2 {
-    TrainerStatusV2 {
+pub(super) fn build_runtime_trainer_status(snapshot: &ControlSnapshot) -> TrainerStatus {
+    TrainerStatus {
         state: if snapshot.ml_bridge_stalled {
             "stalled".to_string()
         } else if snapshot.ml_bridge_connected {
@@ -210,19 +210,19 @@ pub(super) fn build_runtime_trainer_status(snapshot: &ControlSnapshot) -> Traine
     }
 }
 
-pub(super) fn build_runtime_capabilities_event(snapshot: &ControlSnapshot) -> RuntimeEventV3 {
+pub(super) fn build_runtime_capabilities_event(snapshot: &ControlSnapshot) -> RuntimeEvent {
     let runtime_ready = snapshot.running;
     let device_ready = snapshot.device_connected;
     let bridge_ready = snapshot.ml_bridge_connected && !snapshot.ml_bridge_stalled;
     let decoder_ready = snapshot.decoder_ready;
     let profile_ready = snapshot.profile_ready;
 
-    let available = |name: &str| RuntimeComponentCapabilityV3 {
+    let available = |name: &str| RuntimeComponentCapability {
         name: name.to_string(),
         available: true,
         unavailable_reason: None,
     };
-    let unavailable = |name: &str, reason: &str| RuntimeComponentCapabilityV3 {
+    let unavailable = |name: &str, reason: &str| RuntimeComponentCapability {
         name: name.to_string(),
         available: false,
         unavailable_reason: Some(reason.to_string()),
@@ -248,12 +248,12 @@ pub(super) fn build_runtime_capabilities_event(snapshot: &ControlSnapshot) -> Ru
         None
     };
 
-    RuntimeEventV3::Capabilities {
+    RuntimeEvent::Capabilities {
         observation_schema_version: 1,
         channels: vec![
-            neurohid_types::IpcChannelV3::ControlRpc,
-            neurohid_types::IpcChannelV3::TrainerStream,
-            neurohid_types::IpcChannelV3::RuntimeEvents,
+            neurohid_types::IpcChannel::ControlRpc,
+            neurohid_types::IpcChannel::TrainerStream,
+            neurohid_types::IpcChannel::RuntimeEvents,
         ],
         components: vec![
             match live_observation_reason {

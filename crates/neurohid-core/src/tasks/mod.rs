@@ -19,7 +19,7 @@ mod outlet;
 mod session_logger;
 mod signal;
 
-use neurohid_types::IpcEnvelopeV3;
+use neurohid_types::IpcEnvelope;
 use neurohid_types::{Timestamp, action::Action};
 use tokio::sync::mpsc;
 
@@ -40,14 +40,14 @@ pub struct DecisionEventRecord {
 #[derive(Debug, Clone)]
 pub enum TrainerIngressEvent {
     Connected { session_id: String },
-    Envelope(IpcEnvelopeV3),
+    Envelope(IpcEnvelope),
     Disconnected,
 }
 
 /// In-process channels connecting service IPC transport and trainer protocol engine.
 pub struct TrainerBridgeChannels {
     pub ingress_tx: mpsc::Sender<TrainerIngressEvent>,
-    pub egress_rx: mpsc::Receiver<IpcEnvelopeV3>,
+    pub egress_rx: mpsc::Receiver<IpcEnvelope>,
 }
 
 pub use action::ActionTask;

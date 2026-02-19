@@ -6,7 +6,7 @@ use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
 use crate::protocol::{
-    ControlRpcRequestV3, ControlRpcResponseV3, IpcChannelV3, IpcConfig, IpcEnvelopeV3, IpcTransport,
+    ControlRpcRequest, ControlRpcResponse, IpcChannel, IpcConfig, IpcEnvelope, IpcTransport,
 };
 use neurohid_types::control::{ControlRequest, ControlResponse};
 use neurohid_types::error::{IpcError, Result};
@@ -14,8 +14,8 @@ use neurohid_types::error::{IpcError, Result};
 /// Client used by trainer-side processes and integration tests.
 pub struct IpcClient {
     config: IpcConfig,
-    tx: Option<mpsc::Sender<IpcEnvelopeV3>>,
-    rx: Option<mpsc::Receiver<IpcEnvelopeV3>>,
+    tx: Option<mpsc::Sender<IpcEnvelope>>,
+    rx: Option<mpsc::Receiver<IpcEnvelope>>,
 }
 
 impl IpcClient {
@@ -64,7 +64,7 @@ impl IpcClient {
     }
 
     /// Send one IPC v3 envelope to the server.
-    pub async fn send(&self, message: IpcEnvelopeV3) -> Result<()> {
+    pub async fn send(&self, message: IpcEnvelope) -> Result<()> {
         let tx = self
             .tx
             .as_ref()
@@ -76,7 +76,7 @@ impl IpcClient {
     }
 
     /// Receive one IPC v3 envelope from the server.
-    pub async fn recv(&mut self) -> Result<IpcEnvelopeV3> {
+    pub async fn recv(&mut self) -> Result<IpcEnvelope> {
         let rx = self
             .rx
             .as_mut()
@@ -106,8 +106,8 @@ impl IpcClient {
         let max_message_size = self.config.max_message_size;
         let channel_capacity = self.config.channel_capacity;
 
-        let (write_tx, mut write_rx) = mpsc::channel::<IpcEnvelopeV3>(channel_capacity);
-        let (read_tx, read_rx) = mpsc::channel::<IpcEnvelopeV3>(channel_capacity);
+        let (write_tx, mut write_rx) = mpsc::channel::<IpcEnvelope>(channel_capacity);
+        let (read_tx, read_rx) = mpsc::channel::<IpcEnvelope>(channel_capacity);
 
         tokio::spawn(async move {
             let mut writer = write_half;
@@ -156,7 +156,7 @@ impl IpcClient {
                     break;
                 }
 
-                match serde_json::from_slice::<IpcEnvelopeV3>(&payload) {
+                match serde_json::from_slice::<IpcEnvelope>(&payload) {
                     Ok(message) => {
                         if read_tx.send(message).await.is_err() {
                             break;
@@ -179,9 +179,9 @@ impl IpcClient {
         seq: u64,
     ) -> Result<ControlResponse> {
         let request_id = request.request_id.clone();
-        let request_payload = ControlRpcRequestV3::from(request);
-        let envelope = IpcEnvelopeV3::new(
-            IpcChannelV3::ControlRpc,
+        let request_payload = ControlRpcRequest::from(request);
+        let envelope = IpcEnvelope::new(
+            IpcChannel::ControlRpc,
             "request",
             seq,
             request_id.clone(),
@@ -228,10 +228,10 @@ pub fn send_control_request_blocking(
 
 /// Decode a framed control response envelope into a typed payload.
 pub fn decode_control_response_envelope(
-    envelope: IpcEnvelopeV3,
+    envelope: IpcEnvelope,
     expected_request_id: &Option<String>,
 ) -> Result<ControlResponse> {
-    if envelope.channel != IpcChannelV3::ControlRpc || envelope.msg_type != "response" {
+    if envelope.channel != IpcChannel::ControlRpc || envelope.msg_type != "response" {
         return Err(IpcError::InvalidMessage(format!(
             "unexpected control response envelope channel/msg_type: {:?}/{}",
             envelope.channel, envelope.msg_type
@@ -239,7 +239,7 @@ pub fn decode_control_response_envelope(
         .into());
     }
 
-    let response_payload: ControlRpcResponseV3 = envelope
+    let response_payload: ControlRpcResponse = envelope
         .decode_payload()
         .map_err(IpcError::InvalidMessage)?;
     let response = ControlResponse::from(response_payload);

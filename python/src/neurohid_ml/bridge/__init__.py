@@ -38,7 +38,7 @@ try:
 except Exception:  # pragma: no cover - optional dependency
     ipckit = None
 
-IPC_PROTOCOL_V3 = 3
+IPC_PROTOCOL_VERSION = 3
 DEFAULT_IPC_PORT = CANONICAL_TCP_PORT
 DEFAULT_IPC_ENDPOINT = CANONICAL_LOCAL_ENDPOINT
 DEFAULT_PIPE_NAME = DEFAULT_ML_PIPE_NAME
@@ -256,7 +256,7 @@ class IpcClient:
 
         self.sequence += 1
         envelope = {
-            "v": IPC_PROTOCOL_V3,
+            "v": IPC_PROTOCOL_VERSION,
             "channel": "trainer.stream",
             "msg_type": kind,
             "seq": self.sequence,
@@ -403,12 +403,12 @@ class BridgeSession:
         """Handle one runtime->trainer envelope. Returns True to stop session."""
 
         version = int(envelope.get("v", 0))
-        if version != IPC_PROTOCOL_V3:
+        if version != IPC_PROTOCOL_VERSION:
             await self.send_protocol_error(
                 code="unsupported_version",
                 message=(
                     f"runtime sent unsupported protocol version {version}; "
-                    f"expected {IPC_PROTOCOL_V3}"
+                    f"expected {IPC_PROTOCOL_VERSION}"
                 ),
                 recoverable=True,
             )

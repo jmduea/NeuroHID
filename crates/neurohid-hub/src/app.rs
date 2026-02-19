@@ -170,9 +170,7 @@ impl HubApp {
             needs_save = true;
         }
 
-        if needs_save
-            && let Err(error) = config_store.save(&config).await
-        {
+        if needs_save && let Err(error) = config_store.save(&config).await {
             tracing::warn!(
                 error = %error,
                 "Failed to persist migrated config defaults"

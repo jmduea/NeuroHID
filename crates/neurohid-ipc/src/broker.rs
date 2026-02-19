@@ -8,23 +8,23 @@ use std::sync::{
 
 use tokio::sync::{OwnedSemaphorePermit, Semaphore, broadcast};
 
-use crate::protocol::{BrokerConfig, IpcChannelV3, QueueOverflowPolicy, RuntimeEventV3};
+use crate::protocol::{BrokerConfig, IpcChannel, QueueOverflowPolicy, RuntimeEvent};
 
 /// Broker error variants.
 #[derive(Debug, thiserror::Error)]
 pub enum BrokerError {
     #[error("{channel:?} queue is full (capacity={capacity})")]
     QueueFull {
-        channel: IpcChannelV3,
+        channel: IpcChannel,
         capacity: usize,
     },
     #[error("trainer_busy: active session is '{active_session_id}'")]
     TrainerBusy { active_session_id: String },
     #[error("broker channel is closed for {channel:?}")]
-    ChannelClosed { channel: IpcChannelV3 },
+    ChannelClosed { channel: IpcChannel },
     #[error("broker send failed for {channel:?}: {message}")]
     SendFailed {
-        channel: IpcChannelV3,
+        channel: IpcChannel,
         message: String,
     },
 }
@@ -85,7 +85,7 @@ pub struct IpcBroker {
     control_permits: Arc<Semaphore>,
     trainer_permits: Arc<Semaphore>,
     active_trainer_session: Arc<StdMutex<Option<String>>>,
-    runtime_event_tx: broadcast::Sender<RuntimeEventV3>,
+    runtime_event_tx: broadcast::Sender<RuntimeEvent>,
     counters: Arc<CounterState>,
 }
 
@@ -173,7 +173,7 @@ impl IpcBroker {
             self.active_trainer_session
                 .lock()
                 .map_err(|_| BrokerError::SendFailed {
-                    channel: IpcChannelV3::TrainerStream,
+                    channel: IpcChannel::TrainerStream,
                     message: "active trainer session lock poisoned".to_string(),
                 })?;
         if let Some(existing) = active.as_ref() {
@@ -204,13 +204,13 @@ impl IpcBroker {
     {
         let _permit = self
             .acquire_permit(
-                IpcChannelV3::ControlRpc,
+                IpcChannel::ControlRpc,
                 self.config.control,
                 Arc::clone(&self.control_permits),
             )
             .await?;
         send_op.await.map_err(|error| BrokerError::SendFailed {
-            channel: IpcChannelV3::ControlRpc,
+            channel: IpcChannel::ControlRpc,
             message: error.to_string(),
         })
     }
@@ -223,43 +223,43 @@ impl IpcBroker {
     {
         let _permit = self
             .acquire_permit(
-                IpcChannelV3::TrainerStream,
+                IpcChannel::TrainerStream,
                 self.config.trainer,
                 Arc::clone(&self.trainer_permits),
             )
             .await?;
         send_op.await.map_err(|error| BrokerError::SendFailed {
-            channel: IpcChannelV3::TrainerStream,
+            channel: IpcChannel::TrainerStream,
             message: error.to_string(),
         })
     }
 
     /// Subscribe to runtime events fan-out.
-    pub fn subscribe_runtime_events(&self) -> broadcast::Receiver<RuntimeEventV3> {
+    pub fn subscribe_runtime_events(&self) -> broadcast::Receiver<RuntimeEvent> {
         self.runtime_event_tx.subscribe()
     }
 
     /// Publish one runtime event into broker fan-out.
     pub fn publish_runtime_event(
         &self,
-        event: RuntimeEventV3,
+        event: RuntimeEvent,
     ) -> std::result::Result<usize, BrokerError> {
         self.runtime_event_tx
             .send(event)
             .map_err(|_| BrokerError::ChannelClosed {
-                channel: IpcChannelV3::RuntimeEvents,
+                channel: IpcChannel::RuntimeEvents,
             })
     }
 
     async fn acquire_permit(
         &self,
-        channel: IpcChannelV3,
+        channel: IpcChannel,
         policy: crate::protocol::ChannelPolicy,
         semaphore: Arc<Semaphore>,
     ) -> std::result::Result<OwnedSemaphorePermit, BrokerError> {
         match policy.overflow {
             QueueOverflowPolicy::RejectNew => semaphore.try_acquire_owned().map_err(|_| {
-                if channel == IpcChannelV3::ControlRpc {
+                if channel == IpcChannel::ControlRpc {
                     self.counters
                         .control_rejects
                         .fetch_add(1, Ordering::Relaxed);
@@ -273,7 +273,7 @@ impl IpcBroker {
                 if let Ok(permit) = semaphore.clone().try_acquire_owned() {
                     return Ok(permit);
                 }
-                if channel == IpcChannelV3::TrainerStream {
+                if channel == IpcChannel::TrainerStream {
                     self.counters
                         .trainer_queue_stalls
                         .fetch_add(1, Ordering::Relaxed);
