@@ -9,7 +9,6 @@ This module provides a small convenience layer for Jupyter workflows:
 
 from __future__ import annotations
 
-import os
 import subprocess
 import time
 from dataclasses import dataclass, field
@@ -20,9 +19,6 @@ from neurohid_ml.control import NeuroHidControlClient, NotebookError
 from neurohid_ml.ipc_constants import (
     CANONICAL_IPC_MODE,
     CANONICAL_LOCAL_ENDPOINT,
-    CANONICAL_TCP_HOST,
-    CANONICAL_TCP_PORT,
-    DEFAULT_CONTROL_PIPE_NAME,
 )
 from neurohid_ml.telemetry import NeuroHidTelemetryClient
 
@@ -31,11 +27,7 @@ from neurohid_ml.telemetry import NeuroHidTelemetryClient
 class NeuroHidNotebook:
     """Ergonomic API surface for Jupyter notebooks."""
 
-    control_host: str = CANONICAL_TCP_HOST
-    control_port: int = CANONICAL_TCP_PORT
-    control_transport: str = "tcp"
-    control_pipe_name: str = DEFAULT_CONTROL_PIPE_NAME
-    ipc_mode: str | None = CANONICAL_IPC_MODE
+    ipc_mode: str = CANONICAL_IPC_MODE
     ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
     service_bin: str = "neurohid-service"
     auto_start_service: bool = True
@@ -44,20 +36,12 @@ class NeuroHidNotebook:
     connect_timeout_secs: float = 1.5
     read_timeout_secs: float = 1.5
     connect_retries: int = 1
-    ml_transport: str = "named_pipe" if os.name == "nt" else "tcp_loopback"
-    ml_host: str = CANONICAL_TCP_HOST
-    ml_port: int = CANONICAL_TCP_PORT
-    ml_pipe_name: str = DEFAULT_CONTROL_PIPE_NAME
     ml_connect_timeout_secs: float = 1.5
     ml_read_timeout_secs: float = 0.2
     _control: NeuroHidControlClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
         self._control = NeuroHidControlClient(
-            control_host=self.control_host,
-            control_port=self.control_port,
-            control_transport=self.control_transport,
-            control_pipe_name=self.control_pipe_name,
             ipc_mode=self.ipc_mode,
             ipc_endpoint=self.ipc_endpoint,
             service_bin=self.service_bin,
@@ -199,12 +183,9 @@ class NeuroHidNotebook:
         return self._control.events_to_dataframe(events)
 
     def telemetry_client(self) -> NeuroHidTelemetryClient:
-        ipc = self._control._build_ipc_client()  # Compatibility shim while private helper exists.
         return NeuroHidTelemetryClient(
-            ipc_mode=ipc.ipc_mode,
-            ipc_endpoint=ipc.ipc_endpoint,
-            host=ipc.host,
-            port=ipc.port,
+            ipc_mode=self.ipc_mode,
+            ipc_endpoint=self.ipc_endpoint,
             connect_timeout_secs=self.ml_connect_timeout_secs,
             read_timeout_secs=self.ml_read_timeout_secs,
         )

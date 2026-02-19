@@ -23,7 +23,6 @@ class CliAndClientTests(unittest.TestCase):
         self.assertEqual(args.command, "bridge")
         self.assertEqual(args.ipc_mode, "local_socket")
         self.assertEqual(args.ipc_endpoint, "neurohid.control.v3")
-        self.assertEqual(args.port, 47_384)
 
     def test_control_send_command_raises_on_error_payload(self) -> None:
         client = _control.NeuroHidControlClient(auto_start_service=False)
@@ -62,19 +61,12 @@ class CliAndClientTests(unittest.TestCase):
                 "set_output_enabled",
                 "--enabled",
                 "true",
-                "--transport",
-                "tcp",
-                "--host",
-                "127.0.0.1",
-                "--port",
-                "47385",
             ]
         )
 
         self.assertEqual(args.command, "control")
         self.assertEqual(args.action, "set_output_enabled")
         self.assertTrue(args.enabled)
-        self.assertEqual(args.transport, "tcp")
 
     def test_parse_args_control_fallback_policy(self) -> None:
         policy_json = '{"enabled":true,"model_strategy":"lightweight_rust"}'
@@ -95,15 +87,12 @@ class CliAndClientTests(unittest.TestCase):
         args = _cli._parse_args(
             [
                 "telemetry-read",
-                "--transport",
-                "tcp_loopback",
                 "--max-messages",
                 "3",
             ]
         )
 
         self.assertEqual(args.command, "telemetry-read")
-        self.assertEqual(args.transport, "tcp_loopback")
         self.assertEqual(args.max_messages, 3)
 
     def test_read_framed_json_decodes_envelope(self) -> None:

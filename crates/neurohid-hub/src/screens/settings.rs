@@ -821,27 +821,20 @@ impl SettingsScreen {
 
                     if cfg.runtime_mode == neurohid_types::config::ServiceRuntimeMode::External {
                         ui.horizontal(|ui| {
-                            ui.label("Control host:");
+                            ui.label("IPC endpoint:");
                             if theme::text_input(
                                 ui,
-                                "settings_control_host",
-                                &mut cfg.control_host,
-                                "127.0.0.1",
+                                "settings_ipc_endpoint",
+                                &mut cfg.ipc_endpoint,
+                                "neurohid.control.v3",
                                 220.0,
                             ) {
                                 changed = true;
                             }
                         });
-
-                        ui.horizontal(|ui| {
-                            ui.label("Control port:");
-                            if theme::drag_value(ui, &mut cfg.control_port, 1..=65_535, 1.0, None) {
-                                changed = true;
-                            }
-                        });
                         theme::status_chip(
                             ui,
-                            "External mode requires neurohid-service --control-port",
+                            "External mode requires neurohid-service running separately",
                             theme::Intent::Warning,
                         );
                     } else {
@@ -1408,12 +1401,6 @@ impl SettingsScreen {
                         "Advanced mode uses managed Jupyter IDE settings above",
                         theme::Intent::Info,
                     );
-                    theme::status_chip(
-                        ui,
-                        "Legacy lab-kernel config remains for backward compatibility",
-                        theme::Intent::Muted,
-                    );
-
                     changed
                 });
             if changed.body_returned == Some(true) {

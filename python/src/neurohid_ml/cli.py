@@ -65,15 +65,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=CANONICAL_LOCAL_ENDPOINT,
         help="canonical bridge endpoint path/name or host:port",
     )
-    bridge.add_argument(
-        "--transport",
-        choices=["named_pipe", "tcp_loopback"],
-        default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
-        help="legacy bridge transport alias (prefer --ipc-mode/--ipc-endpoint)",
-    )
-    bridge.add_argument("--host", default=CANONICAL_TCP_HOST, help="legacy alias")
-    bridge.add_argument("--port", type=int, default=CANONICAL_TCP_PORT, help="legacy alias")
-    bridge.add_argument("--pipe-name", default=DEFAULT_ML_PIPE_NAME, help="legacy alias")
 
     control = subparsers.add_parser(
         "control",
@@ -107,12 +98,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     control.add_argument("--stream-id", type=str)
     control.add_argument(
-        "--transport",
-        choices=["tcp", "pipe"],
-        default="tcp",
-        help="legacy control transport mode alias (prefer --ipc-mode/--ipc-endpoint)",
-    )
-    control.add_argument(
         "--ipc-mode",
         choices=["local_socket", "tcp_loopback"],
         default=CANONICAL_IPC_MODE,
@@ -123,9 +108,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_CONTROL_PIPE_NAME if os.name == "nt" else CANONICAL_LOCAL_ENDPOINT,
         help="canonical IPC endpoint path/name or loopback address",
     )
-    control.add_argument("--host", default=CANONICAL_TCP_HOST)
-    control.add_argument("--port", type=int, default=CANONICAL_TCP_PORT)
-    control.add_argument("--pipe-name", default=DEFAULT_CONTROL_PIPE_NAME)
     control.add_argument(
         "--service-bin",
         default="neurohid-service",
@@ -143,12 +125,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         help="read runtime.events IPC envelopes",
     )
     telemetry_read.add_argument(
-        "--transport",
-        choices=["named_pipe", "tcp_loopback"],
-        default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
-        help="legacy telemetry transport mode alias (prefer --ipc-mode/--ipc-endpoint)",
-    )
-    telemetry_read.add_argument(
         "--ipc-mode",
         choices=["local_socket", "tcp_loopback"],
         default=CANONICAL_IPC_MODE,
@@ -159,9 +135,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
         default=DEFAULT_CONTROL_PIPE_NAME if os.name == "nt" else CANONICAL_LOCAL_ENDPOINT,
         help="canonical IPC endpoint path/name or loopback address",
     )
-    telemetry_read.add_argument("--host", default=CANONICAL_TCP_HOST)
-    telemetry_read.add_argument("--port", type=int, default=CANONICAL_TCP_PORT)
-    telemetry_read.add_argument("--pipe-name", default=DEFAULT_CONTROL_PIPE_NAME)
     telemetry_read.add_argument(
         "--max-messages",
         type=int,
@@ -516,10 +489,6 @@ def _run_control(args: argparse.Namespace) -> None:
     from neurohid_ml.control import NeuroHidControlClient
 
     client = NeuroHidControlClient(
-        control_host=args.host,
-        control_port=args.port,
-        control_transport=args.transport,
-        control_pipe_name=args.pipe_name,
         ipc_mode=args.ipc_mode,
         ipc_endpoint=args.ipc_endpoint,
         service_bin=args.service_bin,
@@ -597,10 +566,6 @@ def _run_telemetry_read(args: argparse.Namespace) -> None:
     client = NeuroHidTelemetryClient(
         ipc_mode=args.ipc_mode,
         ipc_endpoint=args.ipc_endpoint,
-        transport=args.transport,
-        host=args.host,
-        port=args.port,
-        pipe_name=args.pipe_name,
     )
     for message in client.iter_messages(
         max_messages=max(args.max_messages, 0),
@@ -623,10 +588,6 @@ def main(argv: Sequence[str] | None = None) -> None:
             bridge_main_async(
                 ipc_mode=args.ipc_mode,
                 ipc_endpoint=args.ipc_endpoint,
-                host=args.host,
-                port=args.port,
-                transport=args.transport,
-                pipe_name=args.pipe_name,
             )
         )
         return

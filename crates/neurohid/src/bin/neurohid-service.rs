@@ -229,7 +229,7 @@ async fn load_runtime_context(
         .await
         .map_err(|e| anyhow::anyhow!("Failed to initialize storage: {}", e))?;
 
-    let mut config = if let Some(config_path) = config_path_override {
+    let config = if let Some(config_path) = config_path_override {
         let config_path = PathBuf::from(config_path);
         let config_raw = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
             anyhow::anyhow!(
@@ -251,10 +251,6 @@ async fn load_runtime_context(
             .await
             .map_err(|e| anyhow::anyhow!("Failed to load configuration: {}", e))?
     };
-
-    for warning in config.service.apply_legacy_ipc_aliases() {
-        tracing::warn!("{warning}");
-    }
 
     tracing::info!("Configuration loaded");
 

@@ -6,7 +6,6 @@ import json
 import os
 import subprocess
 import time
-import warnings
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterator
@@ -15,9 +14,7 @@ from neurohid_ml.ipc import NeuroHidIpcClient, events_to_dataframe, observation_
 from neurohid_ml.ipc_constants import (
     CANONICAL_IPC_MODE,
     CANONICAL_LOCAL_ENDPOINT,
-    CANONICAL_TCP_HOST,
-    CANONICAL_TCP_PORT,
-    DEFAULT_CONTROL_PIPE_NAME,
+    parse_tcp_endpoint as _parse_tcp_endpoint,
 )
 
 
@@ -27,13 +24,9 @@ class NotebookError(RuntimeError):
 
 @dataclass(slots=True)
 class NeuroHidControlClient:
-    """Synchronous control client for NeuroHID TCP or named-pipe endpoints."""
+    """Synchronous control client for NeuroHID IPC endpoints."""
 
-    control_host: str = CANONICAL_TCP_HOST
-    control_port: int = CANONICAL_TCP_PORT
-    control_transport: str = "tcp"
-    control_pipe_name: str = DEFAULT_CONTROL_PIPE_NAME
-    ipc_mode: str | None = CANONICAL_IPC_MODE
+    ipc_mode: str = CANONICAL_IPC_MODE
     ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
     service_bin: str = "neurohid-service"
     auto_start_service: bool = True
@@ -234,45 +227,9 @@ class NeuroHidControlClient:
             return first_error, None
 
     def _build_ipc_client(self) -> NeuroHidIpcClient:
-        mode = (self.ipc_mode or "").strip().lower()
-        legacy_alias_used = False
-        if not mode:
-            transport = self.control_transport.strip().lower()
-            if transport == "pipe":
-                mode = "local_socket"
-            elif transport in {"tcp", "tcp_loopback"}:
-                mode = "tcp_loopback"
-            else:
-                mode = "local_socket"
-            legacy_alias_used = True
-
-        endpoint = self.ipc_endpoint
-        if mode == "local_socket":
-            if self.control_transport.strip().lower() == "pipe" and self.control_pipe_name:
-                endpoint = self.control_pipe_name
-                legacy_alias_used = True
-
-        if (
-            self.control_transport.strip().lower() not in {"", "tcp"}
-            or self.control_host.strip() != CANONICAL_TCP_HOST
-            or int(self.control_port) != CANONICAL_TCP_PORT
-            or self.control_pipe_name != DEFAULT_CONTROL_PIPE_NAME
-        ):
-            legacy_alias_used = True
-
-        if legacy_alias_used:
-            warnings.warn(
-                "control_transport/control_host/control_port/control_pipe_name "
-                "are deprecated aliases; prefer ipc_mode/ipc_endpoint",
-                DeprecationWarning,
-                stacklevel=2,
-            )
-
         return NeuroHidIpcClient(
-            ipc_mode=mode,
-            ipc_endpoint=endpoint,
-            host=self.control_host,
-            port=self.control_port,
+            ipc_mode=self.ipc_mode,
+            ipc_endpoint=self.ipc_endpoint,
             connect_timeout_secs=self.connect_timeout_secs,
             read_timeout_secs=self.read_timeout_secs,
             connect_retries=self.connect_retries,
@@ -374,7 +331,8 @@ class NeuroHidControlClient:
         ipc = self._build_ipc_client()
         if ipc.ipc_mode.strip().lower() != "tcp_loopback":
             return None
-        return int(self.control_port)
+        _, port = _parse_tcp_endpoint(self.ipc_endpoint)
+        return port
 
 
 def _is_eligible_eeg_stream(stream: dict[str, Any]) -> bool:

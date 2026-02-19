@@ -162,14 +162,6 @@ impl HubApp {
             needs_save = true;
         }
 
-        let legacy_warnings = config.service.apply_legacy_ipc_aliases();
-        for warning in &legacy_warnings {
-            tracing::warn!("{warning}");
-        }
-        if !legacy_warnings.is_empty() {
-            needs_save = true;
-        }
-
         if needs_save && let Err(error) = config_store.save(&config).await {
             tracing::warn!(
                 error = %error,

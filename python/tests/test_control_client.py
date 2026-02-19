@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import sys
 import unittest
-import warnings
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,25 +12,9 @@ _control = importlib.import_module("neurohid_ml.control")
 
 
 class ControlClientTests(unittest.TestCase):
-    def test_default_control_port_matches_canonical_tcp_fallback(self) -> None:
+    def test_default_ipc_endpoint_matches_canonical(self) -> None:
         client = _control.NeuroHidControlClient(auto_start_service=False)
-        self.assertEqual(client.control_port, 47_384)
-
-    def test_legacy_control_aliases_emit_deprecation_warning(self) -> None:
-        client = _control.NeuroHidControlClient(
-            auto_start_service=False,
-            ipc_mode="",
-            control_transport="pipe",
-        )
-        with warnings.catch_warnings(record=True) as captured:
-            warnings.simplefilter("always")
-            ipc = client._build_ipc_client()
-
-        self.assertEqual(ipc.ipc_mode, "local_socket")
-        self.assertTrue(
-            any("deprecated aliases" in str(item.message) for item in captured),
-            "expected deprecation warning for legacy aliases",
-        )
+        self.assertEqual(client.ipc_endpoint, "neurohid.control.v3")
 
     def test_service_launch_commands_include_cargo_fallback(self) -> None:
         client = _control.NeuroHidControlClient(auto_start_service=False)
@@ -67,7 +50,6 @@ class ControlClientTests(unittest.TestCase):
         client = _control.NeuroHidControlClient(
             auto_start_service=False,
             service_bin="svc-bin",
-            control_port=49001,
         )
         completed = _control.subprocess.CompletedProcess(
             args=["svc-bin"],

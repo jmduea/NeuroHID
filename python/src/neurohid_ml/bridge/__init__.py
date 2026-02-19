@@ -13,9 +13,7 @@ import json
 import os
 import struct
 import time
-import warnings
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, BinaryIO, Optional
 
 import numpy as np
@@ -24,9 +22,7 @@ from neurohid_ml.errp import ErrPConfig, ErrPDetector
 from neurohid_ml.ipc_constants import (
     CANONICAL_IPC_MODE,
     CANONICAL_LOCAL_ENDPOINT,
-    CANONICAL_TCP_HOST,
     CANONICAL_TCP_PORT,
-    DEFAULT_ML_PIPE_NAME,
 )
 from neurohid_ml.ipc_constants import (
     parse_tcp_endpoint as _parse_tcp_endpoint,
@@ -39,31 +35,15 @@ except Exception:  # pragma: no cover - optional dependency
     ipckit = None
 
 IPC_PROTOCOL_VERSION = 3
-DEFAULT_IPC_PORT = CANONICAL_TCP_PORT
 DEFAULT_IPC_ENDPOINT = CANONICAL_LOCAL_ENDPOINT
-DEFAULT_PIPE_NAME = DEFAULT_ML_PIPE_NAME
-DEFAULT_HOST = CANONICAL_TCP_HOST
-
-
-class IpcTransport(str, Enum):
-    """Transport mode used by the trainer bridge."""
-
-    NAMED_PIPE = "named_pipe"
-    TCP_LOOPBACK = "tcp_loopback"
 
 
 @dataclass
 class IpcConfig:
     """Configuration for trainer<->runtime ML bridge connectivity."""
 
-    ipc_mode: str | None = CANONICAL_IPC_MODE
+    ipc_mode: str = CANONICAL_IPC_MODE
     ipc_endpoint: str = DEFAULT_IPC_ENDPOINT
-    transport: IpcTransport | str = (
-        IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK
-    )  # Legacy alias.
-    host: str = DEFAULT_HOST
-    port: int = DEFAULT_IPC_PORT
-    pipe_name: str = DEFAULT_PIPE_NAME  # Legacy alias.
     connect_timeout_sec: float = 5.0
     recv_timeout_sec: float = 0.2
     auto_reconnect: bool = True
@@ -73,56 +53,12 @@ class IpcConfig:
 
     def __post_init__(self) -> None:
         mode = (self.ipc_mode or "").strip().lower()
-        transport_raw = (
-            self.transport.value
-            if isinstance(self.transport, IpcTransport)
-            else str(self.transport).strip().lower()
-        )
         if not mode:
-            if transport_raw in {"named_pipe", "pipe", "local_socket"}:
-                mode = "local_socket"
-            elif transport_raw in {"tcp", "tcp_loopback"}:
-                mode = "tcp_loopback"
-            else:
-                mode = "local_socket"
+            mode = "local_socket"
         if mode not in {"local_socket", "tcp_loopback"}:
             raise RuntimeError(f"unsupported ipc_mode '{self.ipc_mode}'")
-
-        endpoint = self.ipc_endpoint.strip()
-        if not endpoint:
-            if mode == "tcp_loopback":
-                endpoint = f"{self.host}:{self.port}"
-            else:
-                endpoint = self.pipe_name or DEFAULT_IPC_ENDPOINT
-
-        if mode == "tcp_loopback":
-            if ":" not in endpoint:
-                warnings.warn(
-                    "bridge host/port aliases are deprecated; prefer ipc_endpoint='host:port'",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                endpoint = f"{self.host}:{self.port}"
-            host, port = _parse_tcp_endpoint(endpoint)
-            self.host = host
-            self.port = port
-            self.transport = IpcTransport.TCP_LOOPBACK
-        else:
-            if endpoint == DEFAULT_IPC_ENDPOINT and self.pipe_name != DEFAULT_PIPE_NAME:
-                warnings.warn(
-                    "bridge pipe_name alias is deprecated; prefer ipc_endpoint",
-                    DeprecationWarning,
-                    stacklevel=2,
-                )
-                endpoint = self.pipe_name
-            self.pipe_name = endpoint
-            self.transport = IpcTransport.NAMED_PIPE
-
         self.ipc_mode = mode
-        self.ipc_endpoint = endpoint
-
-        if isinstance(self.transport, str):
-            self.transport = IpcTransport(self.transport)
+        self.ipc_endpoint = self.ipc_endpoint.strip() or DEFAULT_IPC_ENDPOINT
 
 
 @dataclass
@@ -184,8 +120,9 @@ class IpcClient:
 
         try:
             if self.config.ipc_mode == "tcp_loopback":
+                host, port = _parse_tcp_endpoint(self.config.ipc_endpoint)
                 reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(self.config.host, self.config.port),
+                    asyncio.open_connection(host, port),
                     timeout=self.config.connect_timeout_sec,
                 )
                 self.reader = reader
@@ -626,30 +563,14 @@ class BridgeSession:
 
 
 async def main_async(
-    ipc_mode: str | None = "local_socket",
+    ipc_mode: str = "local_socket",
     ipc_endpoint: str = DEFAULT_IPC_ENDPOINT,
-    host: str = DEFAULT_HOST,
-    port: int = DEFAULT_IPC_PORT,
-    transport: str | IpcTransport | None = None,
-    pipe_name: str = DEFAULT_PIPE_NAME,
 ) -> None:
     """Run reconnecting trainer bridge loop."""
 
     config = IpcConfig(
         ipc_mode=ipc_mode,
         ipc_endpoint=ipc_endpoint,
-        host=host,
-        port=port,
-        pipe_name=pipe_name,
-        transport=(
-            transport
-            if transport is not None
-            else (
-                IpcTransport.NAMED_PIPE
-                if os.name == "nt"
-                else IpcTransport.TCP_LOOPBACK
-            )
-        ),
     )
 
     attempts = 0
@@ -688,38 +609,19 @@ def main() -> None:
         "--ipc-mode",
         choices=["local_socket", "tcp_loopback"],
         default="local_socket",
-        help="canonical IPC mode (preferred)",
+        help="IPC mode",
     )
     parser.add_argument(
         "--ipc-endpoint",
         default=DEFAULT_IPC_ENDPOINT,
-        help="canonical endpoint path/name or host:port (preferred)",
+        help="endpoint path/name or host:port",
     )
-    parser.add_argument(
-        "--transport",
-        choices=[transport.value for transport in IpcTransport],
-        default=(
-            IpcTransport.NAMED_PIPE.value
-            if os.name == "nt"
-            else IpcTransport.TCP_LOOPBACK.value
-        ),
-        help="legacy transport alias (prefer --ipc-mode/--ipc-endpoint)",
-    )
-    parser.add_argument("--host", default=DEFAULT_HOST, help="legacy alias")
-    parser.add_argument(
-        "--port", type=int, default=DEFAULT_IPC_PORT, help="legacy alias"
-    )
-    parser.add_argument("--pipe-name", default=DEFAULT_PIPE_NAME, help="legacy alias")
 
     args = parser.parse_args()
     asyncio.run(
         main_async(
             ipc_mode=args.ipc_mode,
             ipc_endpoint=args.ipc_endpoint,
-            host=args.host,
-            port=args.port,
-            transport=args.transport,
-            pipe_name=args.pipe_name,
         )
     )
 

@@ -536,11 +536,6 @@ pub struct UiConfig {
     /// Last known detached visualization window inner size in points.
     #[serde(default)]
     pub visualization_detached_size: Option<(f32, f32)>,
-    /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
-    ///
-    /// Deprecated: retained for backward compatibility with older configs.
-    #[serde(default = "default_lab_kernel_command")]
-    pub lab_kernel_command: String,
     /// Thresholds used by Advanced-mode Problems panel device-health diagnostics.
     #[serde(default)]
     pub device_health_problems: DeviceHealthProblemConfig,
@@ -548,10 +543,6 @@ pub struct UiConfig {
 
 fn default_font_scale() -> f32 {
     1.0
-}
-
-fn default_lab_kernel_command() -> String {
-    "uv run --directory python neurohid-ml lab-kernel --stdio".to_string()
 }
 
 fn default_jupyter_bootstrap_command() -> String {
@@ -645,7 +636,6 @@ impl Default for UiConfig {
             visualization_detached: false,
             visualization_detached_pos: None,
             visualization_detached_size: None,
-            lab_kernel_command: default_lab_kernel_command(),
             device_health_problems: DeviceHealthProblemConfig::default(),
         }
     }
@@ -686,28 +676,6 @@ impl std::fmt::Display for ServiceRuntimeMode {
             ServiceRuntimeMode::External => write!(f, "External"),
         }
     }
-}
-
-/// Transport for hub/runtime control protocol.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ControlTransport {
-    /// Windows named pipe transport.
-    #[default]
-    NamedPipe,
-    /// Localhost TCP fallback for non-Windows development.
-    TcpLoopback,
-}
-
-/// Transport for runtime<->trainer ML bridge.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MlTransport {
-    /// Windows named pipe transport.
-    #[default]
-    NamedPipe,
-    /// Localhost TCP fallback for non-Windows development.
-    TcpLoopback,
 }
 
 /// Unified IPC exposure mode for service control/events endpoints.
@@ -811,36 +779,8 @@ pub struct ServiceConfig {
     #[serde(default = "default_ipc_endpoint")]
     pub ipc_endpoint: String,
 
-    /// Host used for runtime control protocol connections in external mode.
-    #[serde(default = "default_control_host")]
-    pub control_host: String,
-
-    /// Port used for runtime control protocol connections in external mode.
-    #[serde(default = "default_control_port")]
-    pub control_port: u16,
-
-    /// Transport used for runtime control protocol.
-    #[serde(default, skip_serializing)]
-    pub control_transport: ControlTransport,
-
-    /// Named pipe used for runtime control protocol.
-    #[serde(default = "default_control_pipe_name", skip_serializing)]
-    pub control_pipe_name: String,
-
     /// Whether the service should start automatically when the app launches.
     pub auto_start: bool,
-
-    /// Port for TCP localhost IPC (Python bridge communication)
-    #[serde(default = "default_legacy_ipc_port", skip_serializing)]
-    pub ipc_port: u16,
-
-    /// Transport used for runtime ML bridge communications.
-    #[serde(default, skip_serializing)]
-    pub ml_transport: MlTransport,
-
-    /// Named pipe used for runtime ML bridge communications.
-    #[serde(default = "default_ml_pipe_name", skip_serializing)]
-    pub ml_pipe_name: String,
 
     /// Whether to use the built-in simulated IPC bridge when no real
     /// Python process bridge is configured.
@@ -884,26 +824,6 @@ fn default_ipc_simulation_enabled() -> bool {
     true
 }
 
-fn default_control_host() -> String {
-    "127.0.0.1".to_string()
-}
-
-fn default_control_port() -> u16 {
-    47_385
-}
-
-fn default_legacy_ipc_port() -> u16 {
-    47_384
-}
-
-fn default_control_pipe_name() -> String {
-    r"\\.\pipe\neurohid.control.v3".to_string()
-}
-
-fn default_ml_pipe_name() -> String {
-    r"\\.\pipe\neurohid.ml.v3".to_string()
-}
-
 fn default_ipc_endpoint() -> String {
     "neurohid.control.v3".to_string()
 }
@@ -922,14 +842,7 @@ impl Default for ServiceConfig {
             runtime_mode: ServiceRuntimeMode::default(),
             ipc_mode: IpcMode::default(),
             ipc_endpoint: default_ipc_endpoint(),
-            control_host: default_control_host(),
-            control_port: default_control_port(),
-            control_transport: ControlTransport::default(),
-            control_pipe_name: default_control_pipe_name(),
             auto_start: true,
-            ipc_port: default_legacy_ipc_port(),
-            ml_transport: MlTransport::default(),
-            ml_pipe_name: default_ml_pipe_name(),
             ipc_simulation_enabled: true,
             ml_stall_timeout_ms: default_ml_stall_timeout_ms(),
             ml_heartbeat_interval_ms: default_ml_heartbeat_interval_ms(),
@@ -1014,9 +927,7 @@ impl Default for ServiceState {
 mod tests {
     use serde_json::Value;
 
-    use super::{
-        ControlTransport, IpcMode, MlTransport, ServiceConfig, UiConfig, default_ipc_endpoint,
-    };
+    use super::{ServiceConfig, UiConfig};
 
     #[test]
     fn service_config_defaults_include_observability_policy() {
@@ -1151,155 +1062,4 @@ mod tests {
         );
     }
 
-    #[test]
-    fn service_config_serialization_omits_legacy_transport_fields() {
-        let json = serde_json::to_value(ServiceConfig::default()).expect("serialize service");
-        let object = json
-            .as_object()
-            .expect("service config should serialize as object");
-        assert!(!object.contains_key("control_transport"));
-        assert!(!object.contains_key("control_pipe_name"));
-        assert!(!object.contains_key("ml_transport"));
-        assert!(!object.contains_key("ml_pipe_name"));
-        assert!(!object.contains_key("ipc_port"));
-    }
-
-    #[test]
-    fn service_config_applies_control_alias_when_unified_fields_default() {
-        let mut config = ServiceConfig {
-            ipc_mode: IpcMode::default(),
-            ipc_endpoint: default_ipc_endpoint(),
-            control_transport: ControlTransport::TcpLoopback,
-            control_host: "127.0.0.1".to_string(),
-            control_port: 49_001,
-            ..ServiceConfig::default()
-        };
-
-        let warnings = config.apply_legacy_ipc_aliases();
-        assert_eq!(config.ipc_mode, IpcMode::TcpLoopback);
-        assert_eq!(config.ipc_endpoint, "127.0.0.1:49001");
-        assert!(
-            warnings
-                .iter()
-                .any(|warning| warning.contains("legacy service.control_*"))
-        );
-    }
-
-    #[test]
-    fn service_config_applies_ml_alias_when_control_not_customized() {
-        let mut config = ServiceConfig {
-            ipc_mode: IpcMode::default(),
-            ipc_endpoint: default_ipc_endpoint(),
-            ml_transport: MlTransport::TcpLoopback,
-            ipc_port: 49_002,
-            ..ServiceConfig::default()
-        };
-
-        let warnings = config.apply_legacy_ipc_aliases();
-        assert_eq!(config.ipc_mode, IpcMode::TcpLoopback);
-        assert_eq!(config.ipc_endpoint, "127.0.0.1:49002");
-        assert!(
-            warnings
-                .iter()
-                .any(|warning| warning.contains("legacy service.ml_*"))
-        );
-    }
-
-    #[test]
-    fn service_config_ignores_legacy_aliases_when_canonical_fields_set() {
-        let mut config = ServiceConfig {
-            ipc_mode: IpcMode::TcpLoopback,
-            ipc_endpoint: "127.0.0.1:47384".to_string(),
-            control_transport: ControlTransport::NamedPipe,
-            control_pipe_name: r"\\.\pipe\legacy.control".to_string(),
-            ml_transport: MlTransport::NamedPipe,
-            ml_pipe_name: r"\\.\pipe\legacy.ml".to_string(),
-            ..ServiceConfig::default()
-        };
-
-        let warnings = config.apply_legacy_ipc_aliases();
-
-        assert_eq!(config.ipc_mode, IpcMode::TcpLoopback);
-        assert_eq!(config.ipc_endpoint, "127.0.0.1:47384");
-        assert!(warnings.iter().any(|warning| {
-            warning.contains("legacy service.control_*/service.ml_* fields are ignored")
-        }));
-    }
-}
-
-impl ServiceConfig {
-    /// Resolve legacy split transport fields into unified IPC mode/endpoint.
-    ///
-    /// Returns warning messages describing migration behavior.
-    ///
-    /// Migration policy: `service.control_*` and `service.ml_*` remain parse-compatible
-    /// aliases during the v3 stabilization window, while `service.ipc_mode` and
-    /// `service.ipc_endpoint` are canonical. When canonical fields are explicitly set,
-    /// legacy aliases are ignored and an explicit warning is returned.
-    pub fn apply_legacy_ipc_aliases(&mut self) -> Vec<String> {
-        let mut warnings = Vec::new();
-        let unified_is_default = self.ipc_mode == IpcMode::default()
-            && self.ipc_endpoint.trim() == default_ipc_endpoint();
-
-        let legacy_control_custom = self.control_transport != ControlTransport::default()
-            || self.control_host.trim() != default_control_host()
-            || self.control_port != default_control_port()
-            || self.control_pipe_name.trim() != default_control_pipe_name();
-        let legacy_ml_custom = self.ml_transport != MlTransport::default()
-            || self.ipc_port != default_legacy_ipc_port()
-            || self.ml_pipe_name.trim() != default_ml_pipe_name();
-
-        if unified_is_default {
-            if legacy_control_custom {
-                match self.control_transport {
-                    ControlTransport::NamedPipe => {
-                        self.ipc_mode = IpcMode::LocalSocket;
-                        self.ipc_endpoint = self.control_pipe_name.clone();
-                    }
-                    ControlTransport::TcpLoopback => {
-                        let host = if self.control_host.trim().is_empty() {
-                            "127.0.0.1".to_string()
-                        } else {
-                            self.control_host.trim().to_string()
-                        };
-                        self.ipc_mode = IpcMode::TcpLoopback;
-                        self.ipc_endpoint = format!("{host}:{}", self.control_port);
-                    }
-                }
-                warnings.push(
-                    "legacy service.control_* fields were mapped to service.ipc_mode/service.ipc_endpoint"
-                        .to_string(),
-                );
-            } else if legacy_ml_custom {
-                match self.ml_transport {
-                    MlTransport::NamedPipe => {
-                        self.ipc_mode = IpcMode::LocalSocket;
-                        self.ipc_endpoint = self.ml_pipe_name.clone();
-                    }
-                    MlTransport::TcpLoopback => {
-                        self.ipc_mode = IpcMode::TcpLoopback;
-                        self.ipc_endpoint = format!("127.0.0.1:{}", self.ipc_port);
-                    }
-                }
-                warnings.push(
-                    "legacy service.ml_* fields were mapped to service.ipc_mode/service.ipc_endpoint"
-                        .to_string(),
-                );
-            }
-        } else if legacy_control_custom || legacy_ml_custom {
-            warnings.push(
-                "legacy service.control_*/service.ml_* fields are ignored; using unified service.ipc_mode/service.ipc_endpoint"
-                    .to_string(),
-            );
-        }
-
-        if self.ipc_endpoint.trim().is_empty() {
-            self.ipc_endpoint = default_ipc_endpoint();
-            warnings.push(
-                "service.ipc_endpoint was empty; restored default unified endpoint".to_string(),
-            );
-        }
-
-        warnings
-    }
 }
