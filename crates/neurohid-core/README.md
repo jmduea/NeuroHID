@@ -25,7 +25,7 @@ To run the headless service:
 cargo run -p neurohid --bin neurohid-service
 ```
 
-IPC note: the core currently runs with a simulated IPC bridge by default (`service.ipc_simulation_enabled = true`). Set this flag to `false` to require a real Python bridge.
+By default the core service starts without requiring a running Python bridge. Start the Python bridge separately to enable ML-assisted decoding.
 
 ## License
 

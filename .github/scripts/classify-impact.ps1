@@ -54,7 +54,7 @@ if (-not $docs) {
 }
 
 $protocol = [bool]($changedFiles | Where-Object {
-        $_ -like 'docs/runtime-ml-protocol-v2.md' -or
+        $_ -like 'docs/protocol-and-api.md' -or
         $_ -like 'crates/neurohid-types/*' -or
         $_ -like 'crates/neurohid-ipc/*'
     } | Select-Object -First 1)

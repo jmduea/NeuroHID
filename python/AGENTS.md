@@ -48,12 +48,12 @@ uv run --project python mypy python/src
 - Runtime and operations integration context:
   [`../docs/deployment-guide.md`](../docs/deployment-guide.md)
 - Protocol contract reference:
-  [`../docs/runtime-ml-protocol-v3.md`](../docs/runtime-ml-protocol-v3.md)
+  [`../docs/protocol-and-api.md`](../docs/protocol-and-api.md)
 
 ## Completion Checklist
 
 1. Updated/added tests for behavior changes.
 2. Pytest + lint/format/type checks pass for affected scope.
 3. CLI/help text and docs updated when commands or flows change.
-4. Runtime protocol assumptions stay aligned with `runtime-ml-protocol-v3.md`.
+4. Runtime protocol assumptions stay aligned with `docs/protocol-and-api.md`.
 5. Changes are committed with a message that explains what changed and why.

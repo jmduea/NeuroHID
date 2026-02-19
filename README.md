@@ -3,113 +3,116 @@
 [![CI](https://github.com/jmduea/NeuroHID/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jmduea/NeuroHID/actions/workflows/ci.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/gh/jmduea/NeuroHID/branch/main/graph/badge.svg)](https://codecov.io/gh/jmduea/NeuroHID)
 
-**Transform consumer EEG devices into standard PC peripherals using deep reinforcement learning.**
+I built NeuroHID to control my computer with a cheap EEG headset. It reads
+brain signals, figures out what you're trying to do, and moves the mouse or
+presses keys — no special app integration needed, since it emits standard HID
+events that look like any other mouse or keyboard.
 
-NeuroHID is a local-first brain-computer interface system that decodes intent from EEG signals and
-translates it into standard mouse and keyboard actions. Applications do not need integration with
-NeuroHID; they receive normal HID input events.
+It's very much a work in progress, but I find it useful and hope others do too.
 
-## Vision
+## Why
 
-Put on a lightweight EEG headset, think about a movement, and get usable computer control through a
-standard input stack. NeuroHID is designed to continuously adapt from ongoing usage signals,
-including implicit error-related feedback, instead of relying on one-time calibration alone.
+Consumer EEG headsets are getting better and cheaper, but there's still no
+straightforward way to go from "headset on head" to "computer does the thing I
+was thinking about." NeuroHID tries to bridge that gap with a local-only system
+that adapts over time instead of relying solely on one-time calibration.
+
+## How It Works
+
+```mermaid
+flowchart LR
+  E[EEG Headset] --> R[Rust Runtime\nDevice + Signal + Action]
+  R --> H[HID Output\nMouse / Keyboard]
+  R -->|Events| P[Python ML\nDecoder + ErrP + Trainer]
+  P -->|Feedback| R
+```
+
+**Rust** handles the real-time path: reading EEG samples, filtering signals,
+extracting features, and emitting HID actions. **Python** handles the ML side:
+a simplified REINFORCE-based decoder prototype and an error-related potential
+(ErrP) classifier that provides implicit feedback — the idea being that the
+system can learn from your brain's "that wasn't right" response instead of
+needing explicit correction.
+
+The two halves talk over local IPC (named pipe on Windows, TCP loopback
+elsewhere). If Python crashes, the Rust service keeps running.
+
+### What's an ErrP?
+
+When your brain notices an unexpected or wrong outcome, it produces a
+characteristic EEG pattern called an error-related potential. NeuroHID uses
+this as a reward signal for online learning, so the decoder can improve over
+time without you clicking "wrong" buttons.
 
 ## Architecture
 
-NeuroHID uses a hybrid Rust/Python architecture:
+Hybrid Rust/Python monorepo:
+
+| Part | Stack | Location |
+|---|---|---|
+| Runtime, device backends, signal processing, HID output, GUI | Rust (edition 2024) + egui | `crates/` |
+| ML decoder, ErrP classifier, trainer, bridge, notebooks | Python ≥ 3.12 + PyTorch | `python/` |
 
 ```text
-┌─────────────────────────────────────────────────────────────────────────┐
-│                           RUST CORE SERVICE                             │
-│                     (neurohid-core + related crates)                    │
-├─────────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────┐     │
-│  │ Device       │  │ Signal       │  │ Platform (HID Emulation)   │     │
-│  │ Backends     │──│ Processing   │  │ Linux / Windows / macOS    │     │
-│  │ (LSL/Serial/ │  │ Pipeline     │  └─────────────┬──────────────┘     │
-│  │ BrainFlow/   │  │              │                │                    │
-│  │ Mock/Auto)   │  │              │                │                    │
-│  └──────┬───────┘  └──────┬───────┘                │                    │
-│         │                 │                        │                    │
-│    EEG Samples        Features                  Actions                 │
-│         │                 │                        ▲                    │
-│         ▼                 ▼                        │                    │
-│  ┌────────────────────────────────────┐    ┌───────┴────────┐           │
-│  │         Ring Buffer / State        │    │ Action Executor│           │
-│  └──────────────────┬─────────────────┘    └───────▲────────┘           │
-│                     │                              │                    │
-│                     │ IPC (Local Socket)           │                    │
-├─────────────────────┼──────────────────────────────┼────────────────────┤
-│                     │     PYTHON ML LAYER          │                    │
-├─────────────────────┼──────────────────────────────┼────────────────────┤
-│                     ▼                              │                    │
-│  ┌────────────────────────────────────┐            │                    │
-│  │           IPC Client               │            │                    │
-│  └──────────────────┬─────────────────┘            │                    │
-│                     │                              │                    │
-│         ┌───────────┴───────────┐                  │                    │
-│         ▼                       ▼                  │                    │
-│  ┌──────────────┐       ┌──────────────┐           │                    │
-│  │ ErrP Detector│       │   Decoder    │───────────┘                    │
-│  │ (Classifier) │       │ (PPO Policy) │                                │
-│  └──────────────┘       └──────────────┘                                │
-│                                                                         │
-└─────────────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│                        RUST CORE SERVICE                             │
+├──────────────────────────────────────────────────────────────────────┤
+│  Device Backends ── Signal Pipeline ── Action Executor               │
+│  (LSL/Serial/         (filter +         (mouse/keyboard              │
+│   BrainFlow/Mock)      features)         via platform HID)           │
+│         │                 │                      ▲                    │
+│    EEG Samples        Features               Actions                 │
+│         ▼                 ▼                      │                    │
+│  ┌─────────────────────────────────┐   ┌─────────┴──────────┐        │
+│  │     Ring Buffer / State         │   │  Platform Output    │        │
+│  └────────────┬────────────────────┘   └────────────────────┘        │
+│               │ IPC (local socket)                                    │
+├───────────────┼──────────────────────────────────────────────────────┤
+│               │          PYTHON ML LAYER                              │
+│               ▼                                                       │
+│  ┌──────────────┐    ┌──────────────┐                                │
+│  │ ErrP Detector │    │   Decoder    │                                │
+│  └──────────────┘    └──────────────┘                                │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why Rust + Python
+### Entry Points
 
-- Rust handles latency-critical runtime paths (device ingestion, signal transforms, HID output).
-- Python provides rapid iteration for model experimentation and training workflows.
-- The IPC boundary isolates failures and keeps runtime behavior resilient when ML components are
-  unavailable.
+```bash
+# Desktop GUI hub
+cargo run -p neurohid --bin neurohid
 
-## Key Innovations
+# Headless service
+cargo run -p neurohid --bin neurohid-service
 
-### Error-Related Potentials as Reward
+# Validation harness (soak/latency/boot matrix)
+cargo run -p neurohid --bin neurohid-validate
 
-NeuroHID uses error-related potentials (ErrPs) as implicit reinforcement signals. Instead of asking
-for explicit "correct/incorrect" feedback, the system can learn from neural responses to undesired
-output behavior.
+# Python ML bridge
+uv run --directory python neurohid-ml bridge
+```
 
-### Continuous Online Learning
+## Status
 
-Signal characteristics and interaction patterns drift over time. NeuroHID is designed for
-continuous adaptation rather than static, train-once decoding.
+Pre-production. Actively developed. The decoder is a simplified prototype,
+not a production-grade model. Optimized for local operation and
+research/developer iteration workflows.
 
-### Zero Application Integration
+## Docs
 
-NeuroHID emits standard HID events, so existing applications can be used without app-specific BCI
-integration.
+Full documentation index: [`docs/index.md`](./docs/index.md)
 
-## Status and Scope
+- [Development guide](./docs/development-guide.md) — setup, build, test, CI
+- [Deployment & operations](./docs/deployment-guide.md) — runtime modes, transport config
+- [Rust architecture](./docs/architecture-rust-core.md) — crate map and layer diagram
+- [Protocol & API reference](./docs/protocol-and-api.md) — IPC v3 contract
+- [Python package](./python/README.md) — CLI commands and ML workflows
+- [Contributing](./CONTRIBUTING.md) — how to contribute
+- [Changelog](./CHANGELOG.md)
 
-NeuroHID is an actively developed pre-production monorepo with a Rust runtime/control surface and a
-Python ML package. The project is currently optimized for local operation and research/developer
-iteration workflows.
-
-## Documentation Map
-
-- Project index: [`docs/index.md`](./docs/index.md)
-- Project overview: [`docs/project-overview.md`](./docs/project-overview.md)
-- Source tree map: [`docs/source-tree-analysis.md`](./docs/source-tree-analysis.md)
-- Rust core architecture: [`docs/architecture-rust-core.md`](./docs/architecture-rust-core.md)
-- Python ML architecture: [`docs/architecture-python-ml.md`](./docs/architecture-python-ml.md)
-- Integration architecture: [`docs/integration-architecture.md`](./docs/integration-architecture.md)
-- Development workflows: [`docs/development-guide.md`](./docs/development-guide.md)
-- Deployment/operations workflows: [`docs/deployment-guide.md`](./docs/deployment-guide.md)
-- Python package usage: [`python/README.md`](./python/README.md)
-- Contribution process: [`CONTRIBUTING.md`](./CONTRIBUTING.md)
-- Release history: [`CHANGELOG.md`](./CHANGELOG.md)
-
-## Roadmap Source of Truth
-
-Roadmap status is tracked in GitHub:
-
-- Issues: <https://github.com/jmduea/NeuroHID/issues>
-- Milestones: <https://github.com/jmduea/NeuroHID/milestones>
+Roadmap: [GitHub Issues](https://github.com/jmduea/NeuroHID/issues) and
+[Milestones](https://github.com/jmduea/NeuroHID/milestones).
 
 ## License
 
-This project is dual-licensed under MIT or Apache 2.0, your choice.
+Dual-licensed under MIT or Apache 2.0, your choice.

@@ -84,9 +84,6 @@ pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -RustScope focused -WithD
 
 # Python-only quality gates
 pwsh -File ./.github/scripts/run-agent-ready-tasks.ps1 -SkipRust -WithPython
-
-# Generate architecture index used by architecture gate
-pwsh -File ./.github/scripts/generate-architecture-index.ps1
 ```
 
 Impact-aware routing logic is implemented in `.github/scripts/classify-impact.ps1`.

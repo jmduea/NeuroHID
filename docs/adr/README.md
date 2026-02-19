@@ -9,8 +9,7 @@ An ADR is required when a PR modifies architecture-gated paths:
 - `crates/neurohid-ipc/**`
 - `crates/neurohid-storage/**`
 - `crates/neurohid-core/**`
-- `docs/SPECIFICATION.md`
-- `docs/runtime-ml-protocol-v2.md`
+- `docs/protocol-and-api.md`
 
 The CI `architecture-gate` workflow checks that the PR body references an ADR
 (e.g., `docs/adr/ADR-001-...`).

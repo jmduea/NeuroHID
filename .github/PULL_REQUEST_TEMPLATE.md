@@ -17,7 +17,6 @@
 - [ ] I evaluated whether an ADR is required.
 - [ ] If required, I linked an ADR in `docs/adr/`.
 - [ ] I ran a docs-freshness pass and resolved blockers.
-- [ ] I refreshed `docs/architecture/index.md` when architecture-gated surfaces changed.
 - [ ] I updated `docs/crate-boundaries.md` when crate ownership or dependency direction changed.
 
 ## Testing / TDD

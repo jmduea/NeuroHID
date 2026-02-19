@@ -44,13 +44,6 @@ Run the Python bridge against the same canonical endpoint:
 uv run --directory python neurohid-ml bridge --ipc-mode tcp_loopback --ipc-endpoint 127.0.0.1:47384
 ```
 
-## IPC and Bridge Mode
-
-The runtime supports both simulation and real Python bridge operation.
-
-- Default behavior: `service.ipc_simulation_enabled = true`
-- Require real bridge: set `service.ipc_simulation_enabled = false`
-
 ## Local Control Endpoint
 
 Optional control endpoint exposure:

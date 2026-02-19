@@ -16,7 +16,7 @@ The main remaining blockers are trainer transport ownership, broker-level multip
    `crates/neurohid/src/bin/neurohid-service.rs`
 3. Replay lifecycle signaling now carries structured metadata:
    `requested_seq`, `replay_window_start_seq`, `replay_window_end_seq`.
-   `crates/neurohid-types/src/ipc_v3.rs`  
+   `crates/neurohid-types/src/ipc.rs`  
    `crates/neurohid/src/bin/neurohid-service.rs`
 4. `neurohid-validate` control path now uses `neurohid-ipc` typed client helper instead of bespoke
    raw TCP framing.
@@ -40,9 +40,8 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 `python/src/neurohid_ml/notebook.py:31`  
 `python/src/neurohid_ml/telemetry.py:23`  
 `python/src/neurohid_ml/cli.py:96`
-6. v3 docs are present and v2 doc is marked deprecated.
-`docs/runtime-ml-protocol-v3.md`  
-`docs/runtime-ml-protocol-v2.md:5`
+6. v3 docs are consolidated into the protocol reference.
+`docs/protocol-and-api.md`
 
 ## Remaining Work Required (Must Complete for Original Full Replacement)
 
@@ -67,7 +66,7 @@ The main remaining blockers are trainer transport ownership, broker-level multip
 ### P0: Runtime Observation/Event Completeness
 
 1. Emit runtime-native `decision_event`, `errp_window`, `errp_result`, and `integrity_issue` events end-to-end; variants exist but are not emitted today.
-`crates/neurohid-types/src/ipc_v3.rs`  
+`crates/neurohid-types/src/ipc.rs`  
 `crates/neurohid/src/bin/neurohid-service.rs:1148`
 2. Add capability metadata/unavailable-reason semantics for optional observation components in stream payloads.
 3. Add schema/capability negotiation contract beyond current static `capabilities` payload.

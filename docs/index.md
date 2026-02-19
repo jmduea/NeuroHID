@@ -8,7 +8,7 @@
 
 ## Canonical Entry Points
 
-- Product introduction only: [`../README.md`](../README.md)
+- Product introduction: [`../README.md`](../README.md)
 - Contribution process: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
 - Development workflows and CI/automation gates: [`./development-guide.md`](./development-guide.md)
 - Deployment and operations workflows: [`./deployment-guide.md`](./deployment-guide.md)
@@ -16,15 +16,11 @@
 
 ## Architecture and System Docs
 
-- [Project Overview](./project-overview.md)
-- [Source Tree Analysis](./source-tree-analysis.md)
 - [Crate Boundaries and Placement Guide](./crate-boundaries.md)
 - [Architecture - Rust Core](./architecture-rust-core.md)
 - [Architecture - Python ML](./architecture-python-ml.md)
 - [Integration Architecture](./integration-architecture.md)
-- [API Contracts - Rust Core](./api-contracts-rust-core.md)
-- [Data Models - Rust Core](./data-models-rust-core.md)
-- [Component Inventory](./component-inventory.md)
+- [Protocol and API Reference](./protocol-and-api.md)
 
 ## Agent Onboarding Hierarchy
 
@@ -40,12 +36,11 @@ explicitly override for that subtree.
 
 - Changelog: [`../CHANGELOG.md`](../CHANGELOG.md)
 - Crate README files: `../crates/*/README.md`
-- Runtime/ML protocol contract: [`./runtime-ml-protocol-v3.md`](./runtime-ml-protocol-v3.md)
 
 ## Suggested Reading Order
 
 1. Read [`../README.md`](../README.md) for project purpose and scope.
-2. Read [`./project-overview.md`](./project-overview.md) and architecture docs.
+2. Read the architecture docs for system structure.
 3. Use [`./development-guide.md`](./development-guide.md) for local work.
 4. Use [`./deployment-guide.md`](./deployment-guide.md) for runtime/ops workflows.
 5. Follow the relevant `AGENTS.md` chain for the directory you are changing.
