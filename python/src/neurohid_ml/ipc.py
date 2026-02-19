@@ -13,6 +13,8 @@ from neurohid_ml.ipc_constants import (
     CANONICAL_LOCAL_ENDPOINT,
     CANONICAL_TCP_HOST,
     CANONICAL_TCP_PORT,
+)
+from neurohid_ml.ipc_constants import (
     parse_tcp_endpoint as _parse_tcp_endpoint,
 )
 
@@ -196,7 +198,9 @@ class NeuroHidIpcClient:
         mode = self.ipc_mode.strip().lower()
         if mode == "local_socket":
             if ipckit is None:
-                raise RuntimeError("ipckit package is required for local_socket IPC mode")
+                raise RuntimeError(
+                    "ipckit package is required for local_socket IPC mode"
+                )
             channel = ipckit.IpcChannel.connect(self.ipc_endpoint)
             channel.send_json(envelope)
             response = channel.recv_json()
@@ -304,7 +308,9 @@ class NeuroHidIpcClient:
         snapshot_interval_ms: int,
     ) -> Iterator[dict[str, Any]]:
         subscription_payload: dict[str, Any] = {
-            "families": [f for f in (families or []) if isinstance(f, str) and f.strip()],
+            "families": [
+                f for f in (families or []) if isinstance(f, str) and f.strip()
+            ],
             "include_snapshot": True,
             "include_capabilities": True,
             "sample_every": max(int(sample_every), 1),
@@ -329,7 +335,9 @@ class NeuroHidIpcClient:
 
         if mode == "local_socket":
             if ipckit is None:
-                raise RuntimeError("ipckit package is required for local_socket IPC mode")
+                raise RuntimeError(
+                    "ipckit package is required for local_socket IPC mode"
+                )
             channel = ipckit.IpcChannel.connect(self.ipc_endpoint)
             channel.send_json(envelope)
             while max_messages is None or emitted < max_messages:

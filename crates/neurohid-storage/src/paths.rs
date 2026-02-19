@@ -410,10 +410,6 @@ mod tests {
                 .profile_decoder_manifest(&id)
                 .starts_with(&profile_dir)
         );
-        assert!(
-            paths
-                .profile_sessions_dir(&id)
-                .starts_with(&profile_dir)
-        );
+        assert!(paths.profile_sessions_dir(&id).starts_with(&profile_dir));
     }
 }

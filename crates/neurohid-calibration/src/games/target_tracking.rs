@@ -437,8 +437,7 @@ mod tests {
         let mut game = TargetTrackingGame::new();
         game.target_velocity = (0.5, 0.5);
         game.update_target(0.01);
-        let speed =
-            (game.target_velocity.0.powi(2) + game.target_velocity.1.powi(2)).sqrt();
+        let speed = (game.target_velocity.0.powi(2) + game.target_velocity.1.powi(2)).sqrt();
         assert!(speed <= 0.21, "speed {speed} exceeds max");
     }
 

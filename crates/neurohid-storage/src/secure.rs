@@ -234,9 +234,7 @@ mod tests {
         let cipher = Aes256Gcm::new_from_slice(key).map_err(|e| e.to_string())?;
         let (nonce_bytes, ciphertext) = data.split_at(12);
         let nonce = Nonce::from_slice(nonce_bytes);
-        cipher
-            .decrypt(nonce, ciphertext)
-            .map_err(|e| e.to_string())
+        cipher.decrypt(nonce, ciphertext).map_err(|e| e.to_string())
     }
 
     #[test]
@@ -245,8 +243,15 @@ mod tests {
         let plaintext = b"sensitive brain signal data";
         let encrypted = encrypt_with_key(&key, plaintext);
 
-        assert_ne!(&encrypted[12..], plaintext, "ciphertext should differ from plaintext");
-        assert!(encrypted.len() > 12 + plaintext.len(), "encrypted has nonce + tag overhead");
+        assert_ne!(
+            &encrypted[12..],
+            plaintext,
+            "ciphertext should differ from plaintext"
+        );
+        assert!(
+            encrypted.len() > 12 + plaintext.len(),
+            "encrypted has nonce + tag overhead"
+        );
 
         let decrypted = decrypt_with_key(&key, &encrypted).unwrap();
         assert_eq!(decrypted, plaintext);
@@ -289,7 +294,10 @@ mod tests {
         encrypted[last] ^= 0xFF;
 
         let result = decrypt_with_key(&key, &encrypted);
-        assert!(result.is_err(), "tampered ciphertext should fail authentication");
+        assert!(
+            result.is_err(),
+            "tampered ciphertext should fail authentication"
+        );
     }
 
     #[test]
@@ -310,7 +318,10 @@ mod tests {
         let enc1 = encrypt_with_key(&key, plaintext);
         let enc2 = encrypt_with_key(&key, plaintext);
 
-        assert_ne!(enc1, enc2, "random nonce should produce different ciphertext each time");
+        assert_ne!(
+            enc1, enc2,
+            "random nonce should produce different ciphertext each time"
+        );
 
         // But both should decrypt to the same plaintext
         assert_eq!(decrypt_with_key(&key, &enc1).unwrap(), plaintext);

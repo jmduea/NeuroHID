@@ -412,7 +412,12 @@ mod tests {
 
     #[test]
     fn direction_double_opposite_is_identity() {
-        for dir in [Direction::Up, Direction::Down, Direction::Left, Direction::Right] {
+        for dir in [
+            Direction::Up,
+            Direction::Down,
+            Direction::Left,
+            Direction::Right,
+        ] {
             assert_eq!(dir.opposite().opposite(), dir);
         }
     }
@@ -449,7 +454,10 @@ mod tests {
         for _ in 0..100 {
             let goal = GridMazeGame::random_goal(5, player);
             let dist = (goal.0 - player.0).abs() + (goal.1 - player.1).abs();
-            assert!(dist >= 2, "goal {goal:?} too close to player {player:?} (dist={dist})");
+            assert!(
+                dist >= 2,
+                "goal {goal:?} too close to player {player:?} (dist={dist})"
+            );
         }
     }
 

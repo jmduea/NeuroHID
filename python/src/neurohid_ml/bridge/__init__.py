@@ -27,6 +27,8 @@ from neurohid_ml.ipc_constants import (
     CANONICAL_TCP_HOST,
     CANONICAL_TCP_PORT,
     DEFAULT_ML_PIPE_NAME,
+)
+from neurohid_ml.ipc_constants import (
     parse_tcp_endpoint as _parse_tcp_endpoint,
 )
 
@@ -197,7 +199,9 @@ class IpcClient:
             else:
                 if ipckit is not None:
                     self.ipc_channel = await asyncio.wait_for(
-                        asyncio.to_thread(ipckit.IpcChannel.connect, self.config.ipc_endpoint),
+                        asyncio.to_thread(
+                            ipckit.IpcChannel.connect, self.config.ipc_endpoint
+                        ),
                         timeout=self.config.connect_timeout_sec,
                     )
                 else:
@@ -245,7 +249,9 @@ class IpcClient:
 
         self.connected = False
 
-    async def send_envelope(self, kind: str, session_id: str, payload: dict[str, Any]) -> None:
+    async def send_envelope(
+        self, kind: str, session_id: str, payload: dict[str, Any]
+    ) -> None:
         """Send one protocol v3 envelope to runtime."""
 
         self.sequence += 1
@@ -344,7 +350,9 @@ class IpcClient:
                 last_error = error
                 time.sleep(0.1)
 
-        raise TimeoutError(f"timed out opening named pipe {self.config.ipc_endpoint}: {last_error}")
+        raise TimeoutError(
+            f"timed out opening named pipe {self.config.ipc_endpoint}: {last_error}"
+        )
 
     def _pipe_read_exact(self, size: int) -> bytes:
         if self.pipe is None:
@@ -382,7 +390,10 @@ class BridgeSession:
                     break
 
             now = time.monotonic()
-            if now - self.last_status_sent_at >= self.client.config.heartbeat_interval_sec:
+            if (
+                now - self.last_status_sent_at
+                >= self.client.config.heartbeat_interval_sec
+            ):
                 await self.send_trainer_status()
                 self.last_status_sent_at = now
 
@@ -452,7 +463,9 @@ class BridgeSession:
         decoder_confidence = float(
             np.clip(float(payload.get("decoder_confidence") or 0.0), 0.0, 1.0)
         )
-        signal_quality = float(np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0))
+        signal_quality = float(
+            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
+        )
 
         feature_values = payload.get("feature_values")
         if isinstance(feature_values, list):
@@ -477,7 +490,9 @@ class BridgeSession:
     async def handle_errp_window(self, payload: dict[str, Any]) -> None:
         decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
         action_timestamp = int(payload.get("action_timestamp_us") or now_micros())
-        signal_quality = float(np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0))
+        signal_quality = float(
+            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
+        )
 
         channels = payload.get("channel_data")
         if isinstance(channels, list) and channels:
@@ -487,7 +502,9 @@ class BridgeSession:
                     if self.errp.is_calibrated:
                         # Current detector expects [samples, channels].
                         detected = self.errp.detect(matrix.T)
-                        error_probability = float(np.clip(detected.error_probability, 0.0, 1.0))
+                        error_probability = float(
+                            np.clip(detected.error_probability, 0.0, 1.0)
+                        )
                         confidence = float(np.clip(detected.confidence, 0.0, 1.0))
                     else:
                         error_probability = 0.0
@@ -503,7 +520,9 @@ class BridgeSession:
             error_probability = 0.0
             confidence = 0.0
 
-        self.stats.value_loss = _ema(self.stats.value_loss, error_probability, alpha=0.12)
+        self.stats.value_loss = _ema(
+            self.stats.value_loss, error_probability, alpha=0.12
+        )
         self.stats.policy_loss = _ema(
             self.stats.policy_loss, max(0.0, 1.0 - confidence), alpha=0.12
         )
@@ -569,7 +588,9 @@ class BridgeSession:
             },
         )
 
-    async def send_protocol_error(self, code: str, message: str, recoverable: bool) -> None:
+    async def send_protocol_error(
+        self, code: str, message: str, recoverable: bool
+    ) -> None:
         self.stats.last_error = message
         await self.client.send_envelope(
             kind="error",
@@ -623,7 +644,11 @@ async def main_async(
         transport=(
             transport
             if transport is not None
-            else (IpcTransport.NAMED_PIPE if os.name == "nt" else IpcTransport.TCP_LOOPBACK)
+            else (
+                IpcTransport.NAMED_PIPE
+                if os.name == "nt"
+                else IpcTransport.TCP_LOOPBACK
+            )
         ),
     )
 
@@ -647,7 +672,10 @@ async def main_async(
 
         if not config.auto_reconnect:
             return
-        if config.max_reconnect_attempts > 0 and attempts >= config.max_reconnect_attempts:
+        if (
+            config.max_reconnect_attempts > 0
+            and attempts >= config.max_reconnect_attempts
+        ):
             print("Max reconnect attempts reached; exiting")
             return
 
@@ -671,12 +699,16 @@ def main() -> None:
         "--transport",
         choices=[transport.value for transport in IpcTransport],
         default=(
-            IpcTransport.NAMED_PIPE.value if os.name == "nt" else IpcTransport.TCP_LOOPBACK.value
+            IpcTransport.NAMED_PIPE.value
+            if os.name == "nt"
+            else IpcTransport.TCP_LOOPBACK.value
         ),
         help="legacy transport alias (prefer --ipc-mode/--ipc-endpoint)",
     )
     parser.add_argument("--host", default=DEFAULT_HOST, help="legacy alias")
-    parser.add_argument("--port", type=int, default=DEFAULT_IPC_PORT, help="legacy alias")
+    parser.add_argument(
+        "--port", type=int, default=DEFAULT_IPC_PORT, help="legacy alias"
+    )
     parser.add_argument("--pipe-name", default=DEFAULT_PIPE_NAME, help="legacy alias")
 
     args = parser.parse_args()

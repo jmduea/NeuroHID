@@ -483,7 +483,10 @@ mod tests {
 
     #[test]
     fn calibration_panel_result_variants_not_equal() {
-        assert_ne!(CalibrationPanelResult::InProgress, CalibrationPanelResult::Cancelled);
+        assert_ne!(
+            CalibrationPanelResult::InProgress,
+            CalibrationPanelResult::Cancelled
+        );
     }
 
     #[test]

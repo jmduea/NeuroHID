@@ -93,8 +93,14 @@ mod tests {
 
         let config = store.load().await.unwrap();
         // Verify it matches Default
-        assert_eq!(config.signal.notch_filter_hz, SystemConfig::default().signal.notch_filter_hz);
-        assert_eq!(config.service.auto_start, SystemConfig::default().service.auto_start);
+        assert_eq!(
+            config.signal.notch_filter_hz,
+            SystemConfig::default().signal.notch_filter_hz
+        );
+        assert_eq!(
+            config.service.auto_start,
+            SystemConfig::default().service.auto_start
+        );
     }
 
     #[tokio::test]
@@ -124,8 +130,14 @@ mod tests {
         assert!(config_path.exists());
 
         let contents = std::fs::read_to_string(&config_path).unwrap();
-        assert!(contents.contains("[signal]"), "TOML should contain signal section");
-        assert!(contents.contains("[service]"), "TOML should contain service section");
+        assert!(
+            contents.contains("[signal]"),
+            "TOML should contain signal section"
+        );
+        assert!(
+            contents.contains("[service]"),
+            "TOML should contain service section"
+        );
     }
 
     #[tokio::test]
