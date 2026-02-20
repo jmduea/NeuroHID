@@ -1,3 +1,9 @@
+---
+description: 
+globs: *.py
+alwaysApply: false
+---
+
 # Python Lane Agent Guide (`python/`)
 
 Root baseline from [`../AGENTS.md`](../AGENTS.md) applies here. This file adds Python-lane-specific
