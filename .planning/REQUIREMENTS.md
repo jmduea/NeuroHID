@@ -25,15 +25,15 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **PATH-01**: User can follow documented steps from "device in hand" to "decoder driving actions" using defaults and one coherent path
 - [ ] **PATH-02**: User can record/export sessions and replay or analyze them in standard formats (e.g. XDF, documented config) for reproducibility
-- [ ] **PATH-03**: Calibration and profile metadata are stored with version/identity so the same setup can be reproduced
+- [x] **PATH-03**: Calibration and profile metadata are stored with version/identity so the same setup can be reproduced
 
 ### Composable SDK / CLI / formats
 
 - [ ] **COMP-01**: Developer can drive device discovery, connection, and stream selection via public SDK API (Rust) and/or CLI
 - [ ] **COMP-02**: Developer can configure signal pipeline and decoder (e.g. model path, params) via SDK/CLI and documented config format
 - [ ] **COMP-03**: Developer can start/stop runtime and send control requests (e.g. snapshot, set output enabled) via SDK or CLI
-- [ ] **COMP-04**: Stream consumption, timestamp, and "latest sample" semantics are documented and consistent (e.g. drain-then-last for LSL)
-- [ ] **COMP-05**: Profile and config formats are versioned and have a documented compatibility policy
+- [x] **COMP-04**: Stream consumption, timestamp, and "latest sample" semantics are documented and consistent (e.g. drain-then-last for LSL)
+- [x] **COMP-05**: Profile and config formats are versioned and have a documented compatibility policy
 - [ ] **COMP-06**: User can replace any pipeline component (acquisition, signal preprocessing, decoder, or output) with a custom or third-party implementation that conforms to the published contract, and the rest of the pipeline plus control, Hub, runtime, and observability still integrate with it (no loss of ecosystem benefits)
 
 ### Extensibility
@@ -88,12 +88,12 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUNT-03 | Phase 2 | Pending |
 | PATH-01 | Phase 4 | Pending |
 | PATH-02 | Phase 4 | Pending |
-| PATH-03 | Phase 1 | Pending |
+| PATH-03 | Phase 1 | Complete |
 | COMP-01 | Phase 3 | Pending |
 | COMP-02 | Phase 3 | Pending |
 | COMP-03 | Phase 2 | Pending |
-| COMP-04 | Phase 1 | Pending |
-| COMP-05 | Phase 1 | Pending |
+| COMP-04 | Phase 1 | Complete |
+| COMP-05 | Phase 1 | Complete |
 | COMP-06 | Phase 6 | Pending |
 | EXT-01 | Phase 6 | Pending |
 | EXT-02 | Phase 6 | Pending |

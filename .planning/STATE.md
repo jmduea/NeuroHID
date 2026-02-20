@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 ## Current Position
 
 Phase: 1 of 6 (Contracts and versioned formats)
-Plan: 0 of ? in current phase
-Status: Ready to plan
-Last activity: 2026-02-20 — Roadmap created
+Plan: 3 of 3 in current phase
+Status: Plan 03 complete
+Last activity: 2026-02-20 — Plan 01-03 executed (stream semantics)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -34,6 +34,7 @@ Progress: [░░░░░░░░░░] 0%
 - Trend: —
 
 *Updated after each plan completion*
+| Phase 01-contracts-and-versioned-formats P01 | 15 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -42,7 +43,9 @@ Progress: [░░░░░░░░░░] 0%
 Decisions are logged in PROJECT.md Key Decisions table.
 Recent decisions affecting current work:
 
-- (None yet; roadmap just created)
+- (; roadmap just created)
+- [Phase 01-contracts-and-versioned-formats]: Config format version and compatibility policy in same doc as schema (config-format.md); N=2 previous versions supported
+- [Phase 01-contracts-and-versioned-formats]: Profile: calibration identity in metadata (no separate manifest) for export/import roundtrip; N=2 reader compatibility
 
 ### Pending Todos
 
@@ -55,5 +58,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Roadmap and state files written; ready for /gsd:plan-phase 1
+Stopped at: Completed 01-03-PLAN.md (stream semantics; COMP-04)
 Resume file: None
