@@ -44,7 +44,7 @@ pub use neurohid_types as types;
 pub use neurohid_signal as signal;
 
 #[cfg(feature = "device")]
-pub use neurohid_device as device;
+pub mod device;
 
 #[cfg(feature = "platform")]
 pub use neurohid_platform as platform;
@@ -417,5 +417,22 @@ mod tests {
             crate::signal::buffer::BufferConfig::default(),
         );
         let _ = (sample, buf);
+    }
+
+    // ───────────── device API (runtime + device) ─────────────
+
+    #[cfg(all(feature = "runtime", feature = "device"))]
+    mod device_api_tests {
+        use crate::device;
+
+        #[tokio::test]
+        async fn list_streams_discovery_returns_mock_streams() {
+            let provider = device::mock::MockProvider::new(device::mock::MockDeviceConfig::default())
+                .with_num_devices(2);
+            let streams = device::list_streams_discovery(&provider).await.unwrap();
+            assert_eq!(streams.len(), 2);
+            assert!(!streams[0].id.is_empty());
+            assert!(!streams[0].name.is_empty());
+        }
     }
 }
