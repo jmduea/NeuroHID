@@ -74,7 +74,7 @@ Plans:
 **Plans**: 3 plans
 
 Plans:
-- [ ] 04-01-PLAN.md — User guide with standard path section (device → decoder → run) (PATH-01)
+- [x] 04-01-PLAN.md — User guide with standard path section (device → decoder → run) (PATH-01)
 - [x] 04-02-PLAN.md — Session recording (folder layout, tap task, control/CLI) (PATH-02)
 - [ ] 04-03-PLAN.md — Export to XDF and replay (virtual source, offline run, docs) (PATH-02)
 
