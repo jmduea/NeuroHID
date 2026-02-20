@@ -10,6 +10,7 @@
 
 - Product introduction: [`../README.md`](../README.md)
 - Contribution process: [`../CONTRIBUTING.md`](../CONTRIBUTING.md)
+- **User guide: standard path and workflows:** [User guide](user-guide.md) — one path from device to decoder to actions.
 - Development workflows and CI/automation gates: [`./development-guide.md`](./development-guide.md)
 - Deployment and operations workflows: [`./deployment-guide.md`](./deployment-guide.md)
 - Python package and ML commands: [`../python/README.md`](../python/README.md)
