@@ -3075,6 +3075,7 @@ dependencies = [
  "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
+ "tempfile",
  "tokio",
 ]
 

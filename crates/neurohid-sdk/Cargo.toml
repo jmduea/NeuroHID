@@ -51,3 +51,4 @@ neurohid-hub = { path = "../neurohid-hub", optional = true }
 
 [dev-dependencies]
 tokio = { workspace = true }
+tempfile = "3.10"

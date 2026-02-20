@@ -50,6 +50,9 @@ pub mod device;
 pub use neurohid_platform as platform;
 
 #[cfg(feature = "storage")]
+pub mod config;
+
+#[cfg(feature = "storage")]
 pub use neurohid_storage as storage;
 
 #[cfg(feature = "ipc")]
@@ -274,6 +277,26 @@ mod tests {
             let _ = std::any::type_name::<storage::config::ConfigStore>();
             let _ = std::any::type_name::<storage::profile::ProfileStore>();
             let _ = std::any::type_name::<storage::secure::SecureStorage>();
+        }
+    }
+
+    #[cfg(feature = "storage")]
+    mod config_tests {
+        use crate::config;
+
+        #[tokio::test]
+        async fn config_load_save_public_api() {
+            let tmp = tempfile::tempdir().unwrap();
+            let path = tmp.path().join("config.toml");
+            let config_path = Some(path.clone());
+
+            let cfg = neurohid_types::config::SystemConfig::default();
+            config::save(config_path.clone(), &cfg).await.unwrap();
+            let loaded = config::load(config_path).await.unwrap();
+            assert_eq!(
+                loaded.format_version,
+                neurohid_types::config::CURRENT_CONFIG_FORMAT_VERSION
+            );
         }
     }
 
