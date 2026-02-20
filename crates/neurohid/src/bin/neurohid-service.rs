@@ -142,6 +142,32 @@ enum PipelineCommandCli {
     },
 }
 
+/// Record subcommand: start/stop session recording on a running service.
+#[derive(Clone, Debug, Subcommand)]
+enum RecordCommandCli {
+    /// Start session recording; uses config default path unless --output-path is set.
+    Start {
+        /// Override default recording output directory for this session.
+        #[arg(long)]
+        output_path: Option<std::path::PathBuf>,
+        /// Control endpoint address (e.g. 127.0.0.1:47384).
+        #[arg(long, default_value = "127.0.0.1:47384")]
+        endpoint: String,
+    },
+    /// Stop the current session recording.
+    Stop {
+        /// Control endpoint address (e.g. 127.0.0.1:47384).
+        #[arg(long, default_value = "127.0.0.1:47384")]
+        endpoint: String,
+    },
+    /// Print whether recording is active and current session id.
+    Status {
+        /// Control endpoint address (e.g. 127.0.0.1:47384).
+        #[arg(long, default_value = "127.0.0.1:47384")]
+        endpoint: String,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum CliCommand {
     /// Cross-platform detached daemon lifecycle commands.
@@ -171,6 +197,11 @@ enum CliCommand {
     Pipeline {
         #[command(subcommand)]
         command: PipelineCommandCli,
+    },
+    /// Start, stop, or query session recording (talks to a running service).
+    Record {
+        #[command(subcommand)]
+        command: RecordCommandCli,
     },
 }
 
@@ -294,6 +325,9 @@ async fn main() -> anyhow::Result<()> {
             }
             CliCommand::Pipeline { command } => {
                 return run_pipeline_command(command, &args).await;
+            }
+            CliCommand::Record { command } => {
+                return run_record_command(command).await;
             }
             CliCommand::Daemon { command } => return run_daemon_command(*command, &args).await,
         }
@@ -1943,6 +1977,106 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
         ControlCommand::SetSignalConfig { .. } => "set_signal_config",
         ControlCommand::StartRecording { .. } => "start_recording",
         ControlCommand::StopRecording => "stop_recording",
+    }
+}
+
+/// Run record CLI: start/stop/status session recording via control requests to a running service.
+async fn run_record_command(command: &RecordCommandCli) -> anyhow::Result<()> {
+    let config = RuntimeIpcConfig {
+        transport: RuntimeIpcTransport::TcpLoopback,
+        endpoint: String::new(),
+        ..RuntimeIpcConfig::default()
+    };
+    match command {
+        RecordCommandCli::Start { output_path, endpoint } => {
+            let config = RuntimeIpcConfig {
+                endpoint: endpoint.clone(),
+                ..config
+            };
+            let response = send_control_request_once(
+                config,
+                ControlRequest::new(ControlCommand::StartRecording {
+                    output_path: output_path.clone(),
+                }),
+                "record-start",
+                1,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+            match response.payload {
+                ControlResponsePayload::RecordingStarted {
+                    session_id,
+                    output_path: path,
+                } => {
+                    println!("session_id={}", session_id);
+                    println!("output_path={}", path);
+                    Ok(())
+                }
+                ControlResponsePayload::Error { message } => {
+                    Err(anyhow::anyhow!("start recording failed: {}", message))
+                }
+                _ => Err(anyhow::anyhow!(
+                    "start recording returned unexpected payload"
+                )),
+            }
+        }
+        RecordCommandCli::Stop { endpoint } => {
+            let config = RuntimeIpcConfig {
+                endpoint: endpoint.clone(),
+                ..config
+            };
+            let response = send_control_request_once(
+                config,
+                ControlRequest::new(ControlCommand::StopRecording),
+                "record-stop",
+                1,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+            match response.payload {
+                ControlResponsePayload::RecordingStopped { session_id } => {
+                    println!("session_id={}", session_id);
+                    Ok(())
+                }
+                ControlResponsePayload::Error { message } => {
+                    Err(anyhow::anyhow!("stop recording failed: {}", message))
+                }
+                _ => Err(anyhow::anyhow!(
+                    "stop recording returned unexpected payload"
+                )),
+            }
+        }
+        RecordCommandCli::Status { endpoint } => {
+            let config = RuntimeIpcConfig {
+                endpoint: endpoint.clone(),
+                ..config
+            };
+            let response = send_control_request_once(
+                config,
+                ControlRequest::new(ControlCommand::Snapshot),
+                "record-status",
+                1,
+            )
+            .await
+            .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+            match response.payload {
+                ControlResponsePayload::Snapshot { snapshot } => {
+                    println!(
+                        "recording_active={} current_session_id={}",
+                        snapshot.recording_active,
+                        snapshot
+                            .current_session_id
+                            .as_deref()
+                            .unwrap_or("")
+                    );
+                    Ok(())
+                }
+                ControlResponsePayload::Error { message } => {
+                    Err(anyhow::anyhow!("status failed: {}", message))
+                }
+                _ => Err(anyhow::anyhow!("status returned unexpected payload")),
+            }
+        }
     }
 }
 

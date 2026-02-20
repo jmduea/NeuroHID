@@ -106,4 +106,4 @@ Session recording is configured under `recording` (optional; defaults: no defaul
 | `max_duration_secs` | Optional cap: stop recording after this many seconds. |
 | `max_size_mb` | Optional cap: stop recording when total size reaches this many MB. |
 
-Session folder layout (per phase 4 research) is: `session_<id>/` containing `manifest.json`, `config.yaml` (config snapshot), `profile_meta.json` (or ref when profile active), `streams/` (raw per-stream or combined), and `actions.jsonl` (one JSON object per line: timestamp, action/decision_id, confidence, etc.).
+Session folder layout (per phase 4 research) is: `session_<id>/` containing `manifest.json`, `config.yaml` (config snapshot), `profile_meta.json` (or ref when profile active), `streams/` (raw per-stream or combined), and `actions.jsonl` (one JSON object per line: timestamp, action/decision_id, confidence, etc.). The recording default path can be overridden per session via CLI (e.g. `neurohid-service record start --output-path /path/to/dir`).
