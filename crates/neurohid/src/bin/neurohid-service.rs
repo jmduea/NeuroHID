@@ -2050,21 +2050,21 @@ async fn run_config_command(command: &ConfigCommandCli, args: &Args) -> anyhow::
             Ok(())
         }
         ConfigCommandCli::Validate { json } => {
-            if let Some(ref p) = config_path {
-                if !p.exists() {
-                    let msg = format!("config file not found: {}", p.display());
-                    if *json {
-                        let err = ConfigErrorJson {
-                            code: 3,
-                            message: msg.clone(),
-                            details: None,
-                        };
-                        let _ = eprintln!("{}", serde_json::to_string(&err).unwrap_or(msg));
-                    } else {
-                        eprintln!("{}", msg);
-                    }
-                    std::process::exit(3);
+            if let Some(ref p) = config_path
+                && !p.exists()
+            {
+                let msg = format!("config file not found: {}", p.display());
+                if *json {
+                    let err = ConfigErrorJson {
+                        code: 3,
+                        message: msg.clone(),
+                        details: None,
+                    };
+                    eprintln!("{}", serde_json::to_string(&err).unwrap_or(msg));
+                } else {
+                    eprintln!("{}", msg);
                 }
+                std::process::exit(3);
             }
             let result = match config_path.as_ref() {
                 Some(p) => store.load_from_path(p).await,
@@ -2080,7 +2080,7 @@ async fn run_config_command(command: &ConfigCommandCli, args: &Args) -> anyhow::
                             message: msg.clone(),
                             details: None,
                         };
-                        let _ = eprintln!("{}", serde_json::to_string(&err).unwrap_or(msg));
+                        eprintln!("{}", serde_json::to_string(&err).unwrap_or(msg));
                     } else {
                         eprintln!("{}", msg);
                     }
