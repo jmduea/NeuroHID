@@ -30,7 +30,7 @@ A single, composable path from biosignal device to actionable output — with an
 - [ ] NeuroHID Hub as IDE-like experience: extensive observability and interactivity for setting up experiments and training novel decoders
 - [ ] Standalone runtime experience: run in background with attached decoder; device streams drive actions via that decoder
 - [ ] Coherent "standard path" from device setup to decoder training to action output (documentation, defaults, polish)
-- [ ] Composable building blocks: SDK + CLI + shared formats so underlying components can be mix-and-matched by others
+- [ ] Composable building blocks: SDK + CLI + shared formats so underlying components can be mix-and-matched by others; every pipeline stage (acquisition, signal preprocessing, decoder, output) swappable with custom or third-party implementations via published contracts while retaining full ecosystem integration
 - [ ] Extensibility: design and APIs that allow other biosignal devices (beyond EEG) and other output types (beyond HID — e.g. game input, MIDI, custom)
 
 ### Out of Scope
