@@ -45,10 +45,11 @@ Plans:
   2. User can enable or disable action output (e.g. HID) via control (CLI or Hub) while the runtime is running
   3. User can get runtime status (device connected, decoder loaded, output enabled, integrity) via control without opening the Hub
   4. Developer can start/stop runtime and send control requests (e.g. snapshot, set output enabled) via SDK or CLI
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 02-01: TBD
+- [ ] 02-01-PLAN.md — Standalone service with default control endpoint and startup docs (RUNT-01)
+- [ ] 02-02-PLAN.md — Control CLI (snapshot, set-output-enabled) and docs (RUNT-02, RUNT-03, COMP-03)
 
 ### Phase 3: SDK/CLI for device and pipeline config
 **Goal**: Developer can drive device discovery and configure the signal/decoder pipeline via public API and CLI.
