@@ -14,7 +14,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Contracts and versioned formats** - Profile/config and stream semantics versioned and documented; calibration/profile metadata reproducible (2026-02-20)
 - [x] **Phase 2: Standalone runtime and control** - Run headless with profile+decoder; enable/disable output and get status via control; SDK/CLI for runtime control (completed 2026-02-20)
-- [ ] **Phase 3: SDK/CLI for device and pipeline config** - Developer drives discovery, connection, stream selection, and configures signal/decoder via SDK/CLI
+- [x] **Phase 3: SDK/CLI for device and pipeline config** - Developer drives discovery, connection, stream selection, and configures signal/decoder via SDK/CLI (completed 2026-02-20)
 - [ ] **Phase 4: Standard path and recording** - One documented path device→decoder→actions; record/export/replay in standard formats
 - [ ] **Phase 5: Hub-as-IDE** - Discover/connect, calibrate, train, visualize, and one primary workflow in the Hub
 - [ ] **Phase 6: Composable and extensible** - Replace any pipeline component via contract; add device/output types; one example plugin in CI
@@ -114,7 +114,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 |-------|----------------|--------|-----------|
 | 1. Contracts and versioned formats | 3/3 | Complete | 2026-02-20 |
 | 2. Standalone runtime and control | 2/2 | Complete    | 2026-02-20 |
-| 3. SDK/CLI for device and pipeline config | 1/2 | In Progress|  |
+| 3. SDK/CLI for device and pipeline config | 2/2 | Complete   | 2026-02-20 |
 | 4. Standard path and recording | 0/? | Not started | - |
 | 5. Hub-as-IDE | 0/? | Not started | - |
 | 6. Composable and extensible | 0/? | Not started | - |

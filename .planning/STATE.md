@@ -10,13 +10,13 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 ## Current Position
 
 Phase: 3 of 6 (SDK/CLI for device and pipeline config)
-Plan: 1 of 2 in current phase
-Current Plan: 01
+Plan: 2 of 2 in current phase
+Current Plan: 02
 Total Plans in Phase: 2
-Status: Plan 01 complete
-Last activity: 2026-02-20 — Plan 03-01 executed (SDK device API, CLI device list/connect)
+Status: Plan 02 complete
+Last activity: 2026-02-20 — Plan 03-02 executed (YAML config, SDK config API, CLI config/pipeline)
 
-Progress: [█████-----] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -39,6 +39,7 @@ Progress: [█████-----] 50%
 | Phase 01-contracts-and-versioned-formats P01 | 15 | 2 tasks | 3 files |
 | Phase 02-standalone-runtime-and-control P01 | ~15 | 2 tasks | 2 files |
 | Phase 03-sdk-cli-for-device-and-pipeline-config P01 | 25 | 2 tasks | 5 files |
+| Phase 03-sdk-cli-for-device-and-pipeline-config P02 | ~25 | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -51,6 +52,7 @@ Recent decisions affecting current work:
 - [Phase 01-contracts-and-versioned-formats]: Config format version and compatibility policy in same doc as schema (config-format.md); N=2 previous versions supported
 - [Phase 01-contracts-and-versioned-formats]: Profile: calibration identity in metadata (no separate manifest) for export/import roundtrip; N=2 reader compatibility
 - [Phase 03-sdk-cli-for-device-and-pipeline-config]: Device API in neurohid-sdk device module (list, connect_by_id, connect_by_criteria, StreamConnectionHandle); neurohid dispatches to neurohid-service for device|config|pipeline|control|daemon
+- [Phase 03-sdk-cli-for-device-and-pipeline-config]: ConfigStore YAML/TOML by path extension; SDK config::load/save; CLI config show/validate, pipeline run --dry-run; exit 3 config invalid, --json errors to stderr
 
 ### Pending Todos
 
@@ -63,5 +65,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 03-01-PLAN.md (SDK device API, CLI device list/connect, COMP-01)
+Stopped at: Completed 03-02-PLAN.md (YAML config, SDK config API, CLI config/pipeline, COMP-02)
 Resume file: None
