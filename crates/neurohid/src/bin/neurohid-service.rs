@@ -20,14 +20,15 @@ use neurohid_ipc::{
     BrokerConfig as RuntimeBrokerConfig, BrokerError as RuntimeBrokerError,
     IpcBroker as RuntimeIpcBroker, IpcConfig as RuntimeIpcConfig,
     IpcConnection as RuntimeIpcConnection, IpcServer as RuntimeIpcServer,
-    IpcTransport as RuntimeIpcTransport, send_control_request_once,
+    IpcTransport as RuntimeIpcTransport, send_control_request_blocking,
+    send_control_request_once,
 };
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     ControlRpcRequest, ControlRpcResponse, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
     RuntimeEvent, RuntimeEventsSubscribe,
     config::{IpcMode, SystemConfig},
-    control::{ControlCommand, ControlRequest, ControlResponse},
+    control::{ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload},
     observability::{self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent},
     profile::ProfileId,
 };
@@ -71,12 +72,33 @@ enum DaemonCommand {
     Status,
 }
 
+/// Control subcommand: send a single request to a running service (client-only; no runtime started).
+#[derive(Clone, Debug, Subcommand)]
+enum ControlCommandCli {
+    /// Fetch runtime status (device connected, decoder loaded, output enabled, integrity).
+    Snapshot,
+    /// Enable or disable action output (e.g. HID) while the runtime is running.
+    SetOutputEnabled {
+        /// Whether output should be enabled (true) or disabled (false).
+        #[arg(value_parser = clap::builder::BoolishValueParser::new())]
+        enabled: bool,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum CliCommand {
     /// Cross-platform detached daemon lifecycle commands.
     Daemon {
         #[arg(value_enum)]
         command: DaemonCommand,
+    },
+    /// Send control requests to a running service (snapshot, set-output-enabled). No runtime is started.
+    Control {
+        #[command(subcommand)]
+        command: ControlCommandCli,
+        /// Control endpoint address (e.g. 127.0.0.1:47384).
+        #[arg(long, default_value = "127.0.0.1:47384")]
+        endpoint: String,
     },
 }
 
@@ -181,6 +203,9 @@ async fn main() -> anyhow::Result<()> {
     }
     if let Some(command) = &args.command {
         match command {
+            CliCommand::Control { command, endpoint } => {
+                return run_control_command_sync(command, endpoint);
+            }
             CliCommand::Daemon { command } => return run_daemon_command(*command, &args).await,
         }
     }
@@ -1821,6 +1846,70 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
         ControlCommand::TrainerSnapshot => "trainer_snapshot",
         ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
         ControlCommand::SetSignalConfig { .. } => "set_signal_config",
+    }
+}
+
+/// Run control CLI: send one request to a running service and print result. Sync/blocking.
+fn run_control_command_sync(
+    command: &ControlCommandCli,
+    endpoint: &str,
+) -> anyhow::Result<()> {
+    let config = RuntimeIpcConfig {
+        transport: RuntimeIpcTransport::TcpLoopback,
+        endpoint: endpoint.to_string(),
+        ..RuntimeIpcConfig::default()
+    };
+
+    match command {
+        ControlCommandCli::Snapshot => {
+            let response = send_control_request_blocking(
+                config,
+                ControlRequest::new(ControlCommand::Snapshot),
+                "cli",
+                1,
+            )
+            .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+            match response.payload {
+                ControlResponsePayload::Snapshot { snapshot } => {
+                    println!(
+                        "device_connected={} decoder_ready={} output_enabled={} pipeline_integrity_degraded={} integrity_issue_count={}",
+                        snapshot.device_connected,
+                        snapshot.decoder_ready,
+                        snapshot.output_enabled,
+                        snapshot.pipeline_integrity_degraded,
+                        snapshot.integrity_issue_count
+                    );
+                    Ok(())
+                }
+                ControlResponsePayload::Error { message } => {
+                    Err(anyhow::anyhow!("snapshot failed: {}", message))
+                }
+                _ => Err(anyhow::anyhow!(
+                    "snapshot request returned unexpected payload"
+                )),
+            }
+        }
+        ControlCommandCli::SetOutputEnabled { enabled } => {
+            let response = send_control_request_blocking(
+                config,
+                ControlRequest::new(ControlCommand::SetOutputEnabled { enabled: *enabled }),
+                "cli",
+                1,
+            )
+            .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+            match response.payload {
+                ControlResponsePayload::Ack => {
+                    println!("output_enabled={}", enabled);
+                    Ok(())
+                }
+                ControlResponsePayload::Error { message } => {
+                    Err(anyhow::anyhow!("set_output_enabled failed: {}", message))
+                }
+                _ => Err(anyhow::anyhow!(
+                    "set_output_enabled request returned unexpected payload"
+                )),
+            }
+        }
     }
 }
 
