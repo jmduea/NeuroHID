@@ -10,6 +10,7 @@
 //! use neurohid_core::service::{NeuroHidService, ServiceHandle};
 //! ```
 
+pub mod recording;
 pub mod runtime;
 pub mod service;
 pub mod tasks;

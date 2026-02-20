@@ -15,6 +15,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+use neurohid_core::recording;
 use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle, RuntimeIpcHandle};
 use neurohid_ipc::{
     BrokerConfig as RuntimeBrokerConfig, BrokerError as RuntimeBrokerError,
@@ -142,7 +143,7 @@ enum PipelineCommandCli {
     },
 }
 
-/// Record subcommand: start/stop session recording on a running service.
+/// Record subcommand: start/stop session recording on a running service, or export offline.
 #[derive(Clone, Debug, Subcommand)]
 enum RecordCommandCli {
     /// Start session recording; uses config default path unless --output-path is set.
@@ -165,6 +166,14 @@ enum RecordCommandCli {
         /// Control endpoint address (e.g. 127.0.0.1:47384).
         #[arg(long, default_value = "127.0.0.1:47384")]
         endpoint: String,
+    },
+    /// Export a session folder to XDF 1.0 (offline; no running service required).
+    Export {
+        /// Path to the session folder (e.g. path/to/session_123).
+        session_dir: std::path::PathBuf,
+        /// Output .xdf file path.
+        #[arg(short, long)]
+        output: std::path::PathBuf,
     },
 }
 
@@ -2076,6 +2085,12 @@ async fn run_record_command(command: &RecordCommandCli) -> anyhow::Result<()> {
                 }
                 _ => Err(anyhow::anyhow!("status returned unexpected payload")),
             }
+        }
+        RecordCommandCli::Export { session_dir, output } => {
+            recording::export_session_to_xdf(&session_dir, &output)
+                .map_err(|e| anyhow::anyhow!("export failed: {}", e))?;
+            println!("Exported to {}", output.display());
+            Ok(())
         }
     }
 }
