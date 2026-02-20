@@ -71,10 +71,12 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. User can follow documented steps from "device in hand" to "decoder driving actions" using defaults and one coherent path
   2. User can record/export sessions and replay or analyze them in standard formats (e.g. XDF, documented config) for reproducibility
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 04-01: TBD
+- [ ] 04-01-PLAN.md — User guide with standard path section (device → decoder → run) (PATH-01)
+- [ ] 04-02-PLAN.md — Session recording (folder layout, tap task, control/CLI) (PATH-02)
+- [ ] 04-03-PLAN.md — Export to XDF and replay (virtual source, offline run, docs) (PATH-02)
 
 ### Phase 5: Hub-as-IDE
 **Goal**: Hub is the IDE-like place for device setup, calibration, training, visualization, and one primary workflow.
