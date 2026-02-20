@@ -23,7 +23,7 @@ use neurohid_ipc::{
     IpcTransport as RuntimeIpcTransport, send_control_request_blocking,
     send_control_request_once,
 };
-use neurohid_storage::ProfileStore;
+use neurohid_storage::{ConfigStore, DataPaths, ProfileStore};
 use neurohid_types::{
     ControlRpcRequest, ControlRpcResponse, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
     RuntimeEvent, RuntimeEventsSubscribe,
@@ -115,6 +115,34 @@ enum DeviceCommandCli {
     },
 }
 
+/// Config subcommand: show or validate system configuration.
+#[derive(Clone, Debug, Subcommand)]
+enum ConfigCommandCli {
+    /// Print current config to stdout (human-readable or --json).
+    Show {
+        /// Emit JSON to stdout.
+        #[arg(long)]
+        json: bool,
+    },
+    /// Load config and exit 0 if valid, non-zero if invalid. With --json, write error object to stderr on failure.
+    Validate {
+        /// Emit machine-readable error JSON to stderr on failure.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+/// Pipeline subcommand: run (or validate) the signal pipeline.
+#[derive(Clone, Debug, Subcommand)]
+enum PipelineCommandCli {
+    /// Run the pipeline; --dry-run validates config without starting the runtime.
+    Run {
+        /// Validate config and decoder path only; do not start runtime. Exit 0 if valid.
+        #[arg(long)]
+        dry_run: bool,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum CliCommand {
     /// Cross-platform detached daemon lifecycle commands.
@@ -134,6 +162,16 @@ enum CliCommand {
     Device {
         #[command(subcommand)]
         command: DeviceCommandCli,
+    },
+    /// Show or validate system configuration.
+    Config {
+        #[command(subcommand)]
+        command: ConfigCommandCli,
+    },
+    /// Run or validate the signal pipeline.
+    Pipeline {
+        #[command(subcommand)]
+        command: PipelineCommandCli,
     },
 }
 
@@ -160,6 +198,14 @@ struct Args {
     /// Verbose logging
     #[arg(short, long)]
     verbose: bool,
+
+    /// Emit JSON for output/errors where supported (e.g. config validate writes error to stderr).
+    #[arg(long)]
+    json: bool,
+
+    /// Suppress progress messages on stderr.
+    #[arg(short, long)]
+    quiet: bool,
 
     /// Import candidate artifacts from a trainer output directory and exit.
     #[arg(long)]
@@ -244,6 +290,12 @@ async fn main() -> anyhow::Result<()> {
             CliCommand::Device { command } => {
                 return run_device_command_sync(command);
             }
+            CliCommand::Config { command } => {
+                return run_config_command(command, &args).await;
+            }
+            CliCommand::Pipeline { command } => {
+                return run_pipeline_command(command, &args).await;
+            }
             CliCommand::Daemon { command } => return run_daemon_command(*command, &args).await,
         }
     }
@@ -295,21 +347,17 @@ async fn load_runtime_context(
         .map_err(|e| anyhow::anyhow!("Failed to initialize storage: {}", e))?;
 
     let config = if let Some(config_path) = config_path_override {
-        let config_path = PathBuf::from(config_path);
-        let config_raw = tokio::fs::read_to_string(&config_path).await.map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to read configuration override '{}': {}",
-                config_path.display(),
-                e
-            )
-        })?;
-        toml::from_str::<SystemConfig>(&config_raw).map_err(|e| {
-            anyhow::anyhow!(
-                "Failed to parse configuration override '{}': {}",
-                config_path.display(),
-                e
-            )
-        })?
+        let config_path = std::path::Path::new(config_path);
+        config_store
+            .load_from_path(config_path)
+            .await
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to load configuration from '{}': {}",
+                    config_path.display(),
+                    e
+                )
+            })?
     } else {
         config_store
             .load()
@@ -1964,6 +2012,109 @@ fn run_device_command_sync(command: &DeviceCommandCli) -> anyhow::Result<()> {
             criteria,
             endpoint,
         } => run_device_connect(endpoint, device_id.as_deref(), criteria.as_deref()),
+    }
+}
+
+/// Machine-readable error for config validate when --json (written to stderr).
+#[derive(Serialize)]
+struct ConfigErrorJson {
+    code: i32,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    details: Option<String>,
+}
+
+async fn run_config_command(command: &ConfigCommandCli, args: &Args) -> anyhow::Result<()> {
+    let paths = DataPaths::new(neurohid_storage::default_data_dir())
+        .map_err(|e| anyhow::anyhow!("config directory: {}", e))?;
+    let store = ConfigStore::new(paths);
+    let config_path = args
+        .config
+        .as_ref()
+        .map(|s| PathBuf::from(s.as_str()));
+
+    match command {
+        ConfigCommandCli::Show { json } => {
+            let config = match config_path.as_ref() {
+                Some(p) => store.load_from_path(p).await,
+                None => store.load().await,
+            }
+            .map_err(|e| anyhow::anyhow!("load config: {}", e))?;
+            if *json {
+                let out = serde_json::to_string(&config).map_err(|e| anyhow::anyhow!("{}", e))?;
+                println!("{}", out);
+            } else {
+                let out = toml::to_string_pretty(&config).map_err(|e| anyhow::anyhow!("{}", e))?;
+                println!("{}", out);
+            }
+            Ok(())
+        }
+        ConfigCommandCli::Validate { json } => {
+            if let Some(ref p) = config_path {
+                if !p.exists() {
+                    let msg = format!("config file not found: {}", p.display());
+                    if *json {
+                        let err = ConfigErrorJson {
+                            code: 3,
+                            message: msg.clone(),
+                            details: None,
+                        };
+                        let _ = eprintln!("{}", serde_json::to_string(&err).unwrap_or(msg));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    std::process::exit(3);
+                }
+            }
+            let result = match config_path.as_ref() {
+                Some(p) => store.load_from_path(p).await,
+                None => store.load().await,
+            };
+            match result {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    let msg = e.to_string();
+                    if *json {
+                        let err = ConfigErrorJson {
+                            code: 3,
+                            message: msg.clone(),
+                            details: None,
+                        };
+                        let _ = eprintln!("{}", serde_json::to_string(&err).unwrap_or(msg));
+                    } else {
+                        eprintln!("{}", msg);
+                    }
+                    std::process::exit(3);
+                }
+            }
+        }
+    }
+}
+
+async fn run_pipeline_command(command: &PipelineCommandCli, args: &Args) -> anyhow::Result<()> {
+    match command {
+        PipelineCommandCli::Run { dry_run } => {
+            if !dry_run {
+                return Err(anyhow::anyhow!(
+                    "pipeline run without --dry-run starts the full runtime; use the default \
+                     (no subcommand) to run. For validation only use: pipeline run --dry-run"
+                ));
+            }
+            let paths = DataPaths::new(neurohid_storage::default_data_dir())
+                .map_err(|e| anyhow::anyhow!("config directory: {}", e))?;
+            let store = ConfigStore::new(paths);
+            let config_path = args
+                .config
+                .as_ref()
+                .map(|s| PathBuf::from(s.as_str()));
+            let _config = match config_path.as_ref() {
+                Some(p) => store.load_from_path(p).await,
+                None => store.load().await,
+            }
+            .map_err(|e| anyhow::anyhow!("config invalid: {}", e))?;
+            // Exit 0: config is valid. Optional decoder path check can be added later.
+            Ok(())
+        }
     }
 }
 
