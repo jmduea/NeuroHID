@@ -86,6 +86,24 @@ Example request envelope:
 structured replay miss signaling (`requested_seq`, `replay_window_start_seq`,
 `replay_window_end_seq`). Clients should treat `state="replay_miss"` as a required resync trigger.
 
+## Control CLI
+
+You can get runtime status and toggle action output **without opening the Hub** by calling the
+service binary with the `control` subcommand. Developers can script control (e.g. snapshot,
+set-output-enabled) via this CLI.
+
+**Commands:**
+
+- `neurohid-service control snapshot [--endpoint ADDR]` — Print runtime status:
+  `device_connected`, `decoder_ready`, `output_enabled`, `pipeline_integrity_degraded`,
+  `integrity_issue_count`.
+- `neurohid-service control set-output-enabled <true|false> [--endpoint ADDR]` — Enable or
+  disable action output (e.g. HID) while the runtime is running.
+
+If `--endpoint` is omitted, the default is `127.0.0.1:47384` (same as the default control server
+port when the service is started without config). The control request envelope and payload
+format are described in [protocol-and-api](protocol-and-api.md).
+
 ## Observability and Tracing
 
 Runtime binaries (`neurohid`, `neurohid-service`) emit structured `tracing` logs with low-overhead
