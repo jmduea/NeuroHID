@@ -18,8 +18,8 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Standalone runtime
 
 - [x] **RUNT-01**: User can start the standalone runtime (neurohid-service or equivalent) with a chosen profile and attached decoder and have it run without the Hub GUI
-- [ ] **RUNT-02**: User can enable/disable action output (e.g. HID) via control (CLI or Hub) while the runtime is running
-- [ ] **RUNT-03**: User can get runtime status (device connected, decoder loaded, output enabled, integrity) via control without opening the Hub
+- [x] **RUNT-02**: User can enable/disable action output (e.g. HID) via control (CLI or Hub) while the runtime is running
+- [x] **RUNT-03**: User can get runtime status (device connected, decoder loaded, output enabled, integrity) via control without opening the Hub
 
 ### Standard path
 
@@ -31,7 +31,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [ ] **COMP-01**: Developer can drive device discovery, connection, and stream selection via public SDK API (Rust) and/or CLI
 - [ ] **COMP-02**: Developer can configure signal pipeline and decoder (e.g. model path, params) via SDK/CLI and documented config format
-- [ ] **COMP-03**: Developer can start/stop runtime and send control requests (e.g. snapshot, set output enabled) via SDK or CLI
+- [x] **COMP-03**: Developer can start/stop runtime and send control requests (e.g. snapshot, set output enabled) via SDK or CLI
 - [x] **COMP-04**: Stream consumption, timestamp, and "latest sample" semantics are documented and consistent (e.g. drain-then-last for LSL)
 - [x] **COMP-05**: Profile and config formats are versioned and have a documented compatibility policy
 - [ ] **COMP-06**: User can replace any pipeline component (acquisition, signal preprocessing, decoder, or output) with a custom or third-party implementation that conforms to the published contract, and the rest of the pipeline plus control, Hub, runtime, and observability still integrate with it (no loss of ecosystem benefits)
@@ -84,14 +84,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HUB-04 | Phase 5 | Pending |
 | HUB-05 | Phase 5 | Pending |
 | RUNT-01 | Phase 2 | Complete |
-| RUNT-02 | Phase 2 | Pending |
-| RUNT-03 | Phase 2 | Pending |
+| RUNT-02 | Phase 2 | Complete |
+| RUNT-03 | Phase 2 | Complete |
 | PATH-01 | Phase 4 | Pending |
 | PATH-02 | Phase 4 | Pending |
 | PATH-03 | Phase 1 | Complete |
 | COMP-01 | Phase 3 | Pending |
 | COMP-02 | Phase 3 | Pending |
-| COMP-03 | Phase 2 | Pending |
+| COMP-03 | Phase 2 | Complete |
 | COMP-04 | Phase 1 | Complete |
 | COMP-05 | Phase 1 | Complete |
 | COMP-06 | Phase 6 | Pending |

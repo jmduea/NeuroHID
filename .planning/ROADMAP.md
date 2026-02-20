@@ -13,7 +13,7 @@ This roadmap takes NeuroHID from current validated foundations (device/signal/de
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: Contracts and versioned formats** - Profile/config and stream semantics versioned and documented; calibration/profile metadata reproducible (2026-02-20)
-- [ ] **Phase 2: Standalone runtime and control** - Run headless with profile+decoder; enable/disable output and get status via control; SDK/CLI for runtime control
+- [x] **Phase 2: Standalone runtime and control** - Run headless with profile+decoder; enable/disable output and get status via control; SDK/CLI for runtime control (completed 2026-02-20)
 - [ ] **Phase 3: SDK/CLI for device and pipeline config** - Developer drives discovery, connection, stream selection, and configures signal/decoder via SDK/CLI
 - [ ] **Phase 4: Standard path and recording** - One documented path device→decoder→actions; record/export/replay in standard formats
 - [ ] **Phase 5: Hub-as-IDE** - Discover/connect, calibrate, train, visualize, and one primary workflow in the Hub
@@ -49,7 +49,7 @@ Plans:
 
 Plans:
 - [x] 02-01-PLAN.md — Standalone service with default control endpoint and startup docs (RUNT-01)
-- [ ] 02-02-PLAN.md — Control CLI (snapshot, set-output-enabled) and docs (RUNT-02, RUNT-03, COMP-03)
+- [x] 02-02-PLAN.md — Control CLI (snapshot, set-output-enabled) and docs (RUNT-02, RUNT-03, COMP-03)
 
 ### Phase 3: SDK/CLI for device and pipeline config
 **Goal**: Developer can drive device discovery and configure the signal/decoder pipeline via public API and CLI.
@@ -112,7 +112,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Contracts and versioned formats | 3/3 | Complete | 2026-02-20 |
-| 2. Standalone runtime and control | 1/2 | In progress | 2026-02-20 |
+| 2. Standalone runtime and control | 2/2 | Complete   | 2026-02-20 |
 | 3. SDK/CLI for device and pipeline config | 0/? | Not started | - |
 | 4. Standard path and recording | 0/? | Not started | - |
 | 5. Hub-as-IDE | 0/? | Not started | - |
