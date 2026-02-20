@@ -79,7 +79,8 @@ pub enum DecoderCommand {
 
 use crate::tasks::{
     ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask,
-    LatencyAlertMonitorTask, OutletTask, SessionLoggerTask, SignalTask, TrainerIngressEvent,
+    LatencyAlertMonitorTask, OutletTask, RecordingRequest, RecordingTask, SessionLoggerTask,
+    SignalTask, TrainerIngressEvent,
 };
 
 /// The main service that coordinates all NeuroHID operations.
@@ -275,6 +276,10 @@ pub struct ServiceState {
     /// Human-readable stage health summary.
     pub stage_health_summary: Option<String>,
 
+    /// Whether session recording is currently active.
+    pub recording_active: bool,
+    /// Session id of the current recording, if any.
+    pub current_session_id: Option<String>,
     // Internal per-stage integrity rollup state.
     integrity_device: IntegrityStageMetrics,
     integrity_signal: IntegrityStageMetrics,
@@ -342,6 +347,8 @@ impl Default for ServiceState {
             pipeline_integrity_degraded: false,
             integrity_issue_count: 0,
             stage_health_summary: None,
+            recording_active: false,
+            current_session_id: None,
             integrity_device: IntegrityStageMetrics::ok(),
             integrity_signal: IntegrityStageMetrics::ok(),
             integrity_decoder: IntegrityStageMetrics::ok(),
@@ -537,6 +544,9 @@ pub struct ServiceHandle {
     /// Broadcast sender for marker/event annotations (for resubscribe-capable clones).
     pub marker_broadcast_tx: broadcast::Sender<StreamMarker>,
 
+    /// Send recording commands (start/stop) and receive result via oneshot in the request.
+    pub recording_command_tx: mpsc::Sender<RecordingRequest>,
+
     /// Send commands to the SignalTask (e.g. runtime filter updates).
     pub signal_command_tx: mpsc::Sender<SignalCommand>,
 
@@ -612,6 +622,8 @@ impl NeuroHidService {
         // Channel for runtime decoder control commands from GUI/runtime API.
         let (decoder_cmd_tx, decoder_cmd_rx) = mpsc::channel::<DecoderCommand>(16);
         let decoder_cmd_tx_for_run_inner = decoder_cmd_tx.clone();
+        // Channel for recording start/stop (request + oneshot reply).
+        let (recording_cmd_tx, recording_cmd_rx) = mpsc::channel::<RecordingRequest>(16);
 
         // In-process trainer bridge channels (transport owned by service binary).
         let (trainer_ingress_tx, trainer_ingress_rx) = mpsc::channel::<TrainerIngressEvent>(1024);
@@ -647,6 +659,7 @@ impl NeuroHidService {
                 Some(trainer_ingress_rx),
                 Some(trainer_egress_tx),
                 Some(runtime_event_broadcast_tx),
+                Some(recording_cmd_rx),
             )
             .await
         });
@@ -667,6 +680,7 @@ impl NeuroHidService {
             action_broadcast_tx: action_broadcast_tx_for_handle,
             marker_broadcast_rx,
             marker_broadcast_tx: marker_broadcast_tx_for_handle,
+            recording_command_tx: recording_cmd_tx,
             signal_command_tx: signal_cmd_tx,
             decoder_command_tx: decoder_cmd_tx,
             trainer_ingress_tx,
@@ -689,6 +703,7 @@ impl NeuroHidService {
             None,
             Some(decoder_cmd_tx),
             Some(decoder_cmd_rx),
+            None,
             None,
             None,
             None,
@@ -721,6 +736,7 @@ impl NeuroHidService {
         trainer_ingress_rx: Option<mpsc::Receiver<TrainerIngressEvent>>,
         trainer_egress_tx: Option<mpsc::Sender<IpcEnvelope>>,
         runtime_event_broadcast_tx: Option<broadcast::Sender<RuntimeEvent>>,
+        recording_command_rx: Option<mpsc::Receiver<RecordingRequest>>,
     ) -> Result<()> {
         tracing::info!("Starting service tasks");
 
@@ -824,6 +840,32 @@ impl NeuroHidService {
                 );
                 task.run(shutdown_session_logger).await
             })
+        });
+
+        // Optional recording task: subscribes to sample/action broadcast, writes session folder.
+        let recording_config = self.config.recording.clone();
+        let system_config_for_recording = self.config.clone();
+        let profile_id_for_recording = self.profile_id.clone();
+        let profile_store_for_recording = self.profile_store.clone();
+        let state_for_recording = Arc::clone(&self.shared_state);
+        let shutdown_recording = self.shutdown_rx.resubscribe();
+        let mut recording_handle = recording_command_rx.and_then(|recording_cmd_rx| {
+            let sample_rx = sample_broadcast_tx.as_ref()?.subscribe();
+            let action_rx = action_broadcast_tx.as_ref()?.subscribe();
+            Some(tokio::spawn(async move {
+                tracing::info!("Recording task starting");
+                let task = RecordingTask::new(
+                    recording_config,
+                    system_config_for_recording,
+                    profile_id_for_recording,
+                    profile_store_for_recording,
+                    state_for_recording,
+                    sample_rx,
+                    action_rx,
+                    recording_cmd_rx,
+                );
+                task.run(shutdown_recording).await
+            }))
         });
 
         // Spawn the device task. This connects to the EEG device and streams
@@ -1015,6 +1057,7 @@ impl NeuroHidService {
         let mut action_done = false;
         let mut latency_monitor_done = latency_monitor_handle.is_none();
         let mut session_logger_done = session_logger_handle.is_none();
+        let mut recording_done = recording_handle.is_none();
 
         loop {
             // Non-critical optional tasks are tracked via `is_finished()` to avoid
@@ -1086,6 +1129,40 @@ impl NeuroHidService {
                     }
                 } else {
                     session_logger_done = true;
+                }
+            }
+
+            if !recording_done {
+                if let Some(handle) = recording_handle.as_mut() {
+                    if handle.is_finished() {
+                        recording_done = true;
+                        match handle.await {
+                            Ok(Ok(())) => tracing::info!("Recording task completed"),
+                            Ok(Err(e)) => {
+                                tracing::warn!("Recording task failed (non-critical): {}", e);
+                                let mut state = self.shared_state.write().await;
+                                if state.task_error.is_none() {
+                                    state.task_error = Some((
+                                        "recording".into(),
+                                        format!("{} — recording disabled", e),
+                                    ));
+                                }
+                            }
+                            Err(e) => {
+                                tracing::warn!(
+                                    "Recording task panicked (non-critical): {}",
+                                    e
+                                );
+                                let mut state = self.shared_state.write().await;
+                                if state.task_error.is_none() {
+                                    state.task_error =
+                                        Some(("recording".into(), format!("panicked: {}", e)));
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    recording_done = true;
                 }
             }
 
@@ -1216,6 +1293,11 @@ impl NeuroHidService {
         if !session_logger_done && let Some(handle) = &mut session_logger_handle {
             handle.abort();
         }
+        if !recording_done {
+            if let Some(handle) = &mut recording_handle {
+                handle.abort();
+            }
+        }
         if let Some(handle) = &mut outlet_handle {
             handle.abort();
         }
@@ -1262,6 +1344,8 @@ impl NeuroHidService {
             state.action_latency_p95_us = 0;
             state.latency_degraded = false;
             state.latency_alert_message = None;
+            state.recording_active = false;
+            state.current_session_id = None;
             for stream in &mut state.discovered_streams {
                 stream.connected = false;
             }

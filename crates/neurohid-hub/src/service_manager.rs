@@ -170,9 +170,11 @@ impl ServiceManager {
                                 self.control_endpoint_label()
                             ));
                         }
-                        ControlResponsePayload::TrainerSnapshot { .. } => {
+                        ControlResponsePayload::TrainerSnapshot { .. }
+                        | ControlResponsePayload::RecordingStarted { .. }
+                        | ControlResponsePayload::RecordingStopped { .. } => {
                             self.set_last_error(format!(
-                                "External runtime at {} returned unexpected trainer snapshot for snapshot request",
+                                "External runtime at {} returned unexpected payload for snapshot request",
                                 self.control_endpoint_label()
                             ));
                         }
@@ -216,9 +218,11 @@ impl ServiceManager {
                             self.cached_snapshot.running = false;
                             self.last_external_poll = None;
                         }
-                        ControlResponsePayload::TrainerSnapshot { .. } => {
+                        ControlResponsePayload::TrainerSnapshot { .. }
+                        | ControlResponsePayload::RecordingStarted { .. }
+                        | ControlResponsePayload::RecordingStopped { .. } => {
                             self.set_last_error(
-                                "External runtime returned unexpected trainer snapshot for shutdown".to_string(),
+                                "External runtime returned unexpected payload for shutdown".to_string(),
                             );
                         }
                     },
@@ -411,7 +415,10 @@ impl ServiceManager {
                             ));
                             None
                         }
-                        ControlResponsePayload::Ack | ControlResponsePayload::Snapshot { .. } => {
+                        ControlResponsePayload::Ack
+                        | ControlResponsePayload::Snapshot { .. }
+                        | ControlResponsePayload::RecordingStarted { .. }
+                        | ControlResponsePayload::RecordingStopped { .. } => {
                             self.set_last_error(format!(
                                 "External runtime at {} returned unexpected payload for trainer snapshot",
                                 endpoint
@@ -762,9 +769,11 @@ impl ServiceManager {
                         state.last_error = self.last_error.clone();
                     }
                 }
-                ControlResponsePayload::TrainerSnapshot { .. } => {
+                ControlResponsePayload::TrainerSnapshot { .. }
+                | ControlResponsePayload::RecordingStarted { .. }
+                | ControlResponsePayload::RecordingStopped { .. } => {
                     self.set_last_error(format!(
-                        "External runtime at {} returned unexpected trainer snapshot payload",
+                        "External runtime at {} returned unexpected payload for snapshot",
                         endpoint
                     ));
                     self.cached_snapshot = ServiceSnapshot::default();
@@ -808,7 +817,10 @@ impl ServiceManager {
                         "External runtime returned unexpected trainer snapshot payload"
                     );
                 }
-                ControlResponsePayload::Ack | ControlResponsePayload::Snapshot { .. } => {}
+                ControlResponsePayload::Ack
+                | ControlResponsePayload::Snapshot { .. }
+                | ControlResponsePayload::RecordingStarted { .. }
+                | ControlResponsePayload::RecordingStopped { .. } => {}
             },
             Err(error) => {
                 tracing::warn!(endpoint = %endpoint, "Failed to send external runtime command: {}", error);
@@ -911,6 +923,8 @@ impl ServiceManager {
             ControlResponsePayload::Snapshot { .. } => "snapshot",
             ControlResponsePayload::TrainerSnapshot { .. } => "trainer_snapshot",
             ControlResponsePayload::Error { .. } => "error",
+            ControlResponsePayload::RecordingStarted { .. } => "recording_started",
+            ControlResponsePayload::RecordingStopped { .. } => "recording_stopped",
         }
     }
 
@@ -930,6 +944,8 @@ impl ServiceManager {
             ControlCommand::TrainerSnapshot => "trainer_snapshot",
             ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
             ControlCommand::SetSignalConfig { .. } => "set_signal_config",
+            ControlCommand::StartRecording { .. } => "start_recording",
+            ControlCommand::StopRecording => "stop_recording",
         }
     }
 

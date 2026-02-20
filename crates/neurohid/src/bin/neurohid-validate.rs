@@ -725,7 +725,10 @@ fn request_snapshot(port: u16) -> Result<ControlSnapshot> {
 fn send_control_command(port: u16, command: ControlCommand) -> Result<()> {
     let response = send_control_request(port, ControlRequest::new(command))?;
     match response.payload {
-        ControlResponsePayload::Ack | ControlResponsePayload::Snapshot { .. } => Ok(()),
+        ControlResponsePayload::Ack
+        | ControlResponsePayload::Snapshot { .. }
+        | ControlResponsePayload::RecordingStarted { .. }
+        | ControlResponsePayload::RecordingStopped { .. } => Ok(()),
         ControlResponsePayload::Error { message } => bail!("control command rejected: {}", message),
         ControlResponsePayload::TrainerSnapshot { .. } => {
             bail!("control command returned unexpected trainer snapshot")

@@ -345,6 +345,11 @@ pub enum ControlRpcResponsePayload {
     Snapshot { snapshot: ControlSnapshot },
     TrainerSnapshot { snapshot: TrainerSnapshot },
     Error { message: String },
+    RecordingStarted {
+        session_id: String,
+        output_path: String,
+    },
+    RecordingStopped { session_id: String },
 }
 
 impl From<ControlResponse> for ControlRpcResponse {
@@ -374,6 +379,16 @@ impl From<ControlResponsePayload> for ControlRpcResponsePayload {
                 Self::TrainerSnapshot { snapshot }
             }
             ControlResponsePayload::Error { message } => Self::Error { message },
+            ControlResponsePayload::RecordingStarted {
+                session_id,
+                output_path,
+            } => Self::RecordingStarted {
+                session_id,
+                output_path,
+            },
+            ControlResponsePayload::RecordingStopped { session_id } => {
+                Self::RecordingStopped { session_id }
+            }
         }
     }
 }
@@ -387,6 +402,16 @@ impl From<ControlRpcResponsePayload> for ControlResponsePayload {
                 Self::TrainerSnapshot { snapshot }
             }
             ControlRpcResponsePayload::Error { message } => Self::Error { message },
+            ControlRpcResponsePayload::RecordingStarted {
+                session_id,
+                output_path,
+            } => Self::RecordingStarted {
+                session_id,
+                output_path,
+            },
+            ControlRpcResponsePayload::RecordingStopped { session_id } => {
+                Self::RecordingStopped { session_id }
+            }
         }
     }
 }

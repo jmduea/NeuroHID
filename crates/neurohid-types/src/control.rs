@@ -60,6 +60,12 @@ pub enum ControlCommand {
     SetFallbackPolicy { policy: FallbackPolicy },
     /// Replace runtime signal configuration.
     SetSignalConfig { signal: SignalConfig },
+    /// Start session recording; optional output path overrides config default.
+    StartRecording {
+        output_path: Option<std::path::PathBuf>,
+    },
+    /// Stop current session recording.
+    StopRecording,
 }
 
 /// Runtime mode classification derived from model/bridge health.
@@ -143,6 +149,12 @@ pub struct ControlSnapshot {
     pub integrity_issue_count: u64,
     #[serde(default)]
     pub stage_health_summary: Option<String>,
+    /// Whether a session recording is currently active.
+    #[serde(default)]
+    pub recording_active: bool,
+    /// Session id of the current recording, if any.
+    #[serde(default)]
+    pub current_session_id: Option<String>,
 }
 
 impl Default for ControlSnapshot {
@@ -198,6 +210,8 @@ impl Default for ControlSnapshot {
             pipeline_integrity_degraded: false,
             integrity_issue_count: 0,
             stage_health_summary: None,
+            recording_active: false,
+            current_session_id: None,
         }
     }
 }
@@ -239,6 +253,27 @@ impl ControlResponse {
             payload: ControlResponsePayload::TrainerSnapshot { snapshot },
         }
     }
+
+    pub fn recording_started(
+        request_id: Option<String>,
+        session_id: String,
+        output_path: String,
+    ) -> Self {
+        Self {
+            request_id,
+            payload: ControlResponsePayload::RecordingStarted {
+                session_id,
+                output_path,
+            },
+        }
+    }
+
+    pub fn recording_stopped(request_id: Option<String>, session_id: String) -> Self {
+        Self {
+            request_id,
+            payload: ControlResponsePayload::RecordingStopped { session_id },
+        }
+    }
 }
 
 /// Control response variants.
@@ -257,6 +292,13 @@ pub enum ControlResponsePayload {
     TrainerSnapshot { snapshot: TrainerSnapshot },
     /// Command rejected/failed.
     Error { message: String },
+    /// Recording started; includes session id and output path.
+    RecordingStarted {
+        session_id: String,
+        output_path: String,
+    },
+    /// Recording stopped; includes session id.
+    RecordingStopped { session_id: String },
 }
 
 #[cfg(test)]
@@ -336,6 +378,8 @@ mod tests {
             pipeline_integrity_degraded: false,
             integrity_issue_count: 0,
             stage_health_summary: Some("signal:ok".to_string()),
+            recording_active: false,
+            current_session_id: None,
         };
 
         let response = ControlResponse::snapshot(Some("id-1".to_string()), snapshot.clone());

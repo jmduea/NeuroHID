@@ -8,7 +8,7 @@ use std::sync::{
     atomic::{AtomicBool, Ordering},
 };
 
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, oneshot};
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
@@ -24,7 +24,7 @@ use neurohid_types::{
 };
 
 use crate::service::{DeviceCommand, NeuroHidService, ServiceHandle, ServiceState, SignalCommand};
-use crate::tasks::TrainerIngressEvent;
+use crate::tasks::{RecordingCommand, RecordingCommandResult, RecordingRequest, TrainerIngressEvent};
 
 /// Builder for a managed runtime instance.
 pub struct RuntimeBuilder {
@@ -150,6 +150,7 @@ pub struct RuntimeIpcHandle {
     runtime_event_broadcast_tx: broadcast::Sender<RuntimeEvent>,
     trainer_ingress_tx: mpsc::Sender<TrainerIngressEvent>,
     trainer_egress_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<IpcEnvelope>>>,
+    recording_command_tx: mpsc::Sender<RecordingRequest>,
 }
 
 impl RuntimeHandle {
@@ -170,6 +171,7 @@ impl RuntimeHandle {
             runtime_event_broadcast_tx: self.handle.runtime_event_broadcast_tx.clone(),
             trainer_ingress_tx: self.handle.trainer_ingress_tx.clone(),
             trainer_egress_rx: Arc::clone(&self.handle.trainer_egress_rx),
+            recording_command_tx: self.handle.recording_command_tx.clone(),
         }
     }
 
@@ -209,8 +211,8 @@ impl RuntimeHandle {
     }
 
     /// Handle one serialized control request and emit a serialized response.
-    pub fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
-        self.ipc_handle().dispatch_control_request(request)
+    pub async fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
+        self.ipc_handle().dispatch_control_request(request).await
     }
 
     /// Wait for runtime termination.
@@ -464,6 +466,8 @@ impl RuntimeIpcHandle {
             candidate_promotions_rejected: state.candidate_promotions_rejected,
             candidate_last_outcome: state.candidate_last_outcome.clone(),
             ml_protocol_version: state.ml_protocol_version,
+            recording_active: state.recording_active,
+            current_session_id: state.current_session_id.clone(),
         }
     }
 
@@ -498,7 +502,7 @@ impl RuntimeIpcHandle {
     }
 
     /// Handle one serialized control request and emit a serialized response.
-    pub fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
+    pub async fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
         let request_id = request.request_id.clone();
         match request.command {
             ControlCommand::Snapshot => ControlResponse::snapshot(request_id, self.snapshot()),
@@ -569,6 +573,63 @@ impl RuntimeIpcHandle {
                 match self.command(RuntimeCommand::SetSignalConfig { signal }) {
                     Ok(()) => ControlResponse::ack(request_id),
                     Err(error) => ControlResponse::error(request_id, error.to_string()),
+                }
+            }
+            ControlCommand::StartRecording { output_path } => {
+                let (tx, rx) = oneshot::channel();
+                let cmd = RecordingCommand::Start {
+                    output_path_override: output_path,
+                };
+                if self.recording_command_tx.send((cmd, tx)).await.is_err() {
+                    return ControlResponse::error(
+                        request_id,
+                        "recording channel closed".to_string(),
+                    );
+                }
+                match rx.await {
+                    Ok(Ok(RecordingCommandResult::Started {
+                        session_id,
+                        output_path: path,
+                    })) => ControlResponse::recording_started(request_id, session_id, path),
+                    Ok(Ok(RecordingCommandResult::Error(e))) => {
+                        ControlResponse::error(request_id, e)
+                    }
+                    Ok(Err(e)) => ControlResponse::error(request_id, e),
+                    Err(_) => ControlResponse::error(
+                        request_id,
+                        "recording response dropped".to_string(),
+                    ),
+                    _ => ControlResponse::error(
+                        request_id,
+                        "unexpected recording result".to_string(),
+                    ),
+                }
+            }
+            ControlCommand::StopRecording => {
+                let (tx, rx) = oneshot::channel();
+                let cmd = RecordingCommand::Stop;
+                if self.recording_command_tx.send((cmd, tx)).await.is_err() {
+                    return ControlResponse::error(
+                        request_id,
+                        "recording channel closed".to_string(),
+                    );
+                }
+                match rx.await {
+                    Ok(Ok(RecordingCommandResult::Stopped { session_id })) => {
+                        ControlResponse::recording_stopped(request_id, session_id)
+                    }
+                    Ok(Ok(RecordingCommandResult::Error(e))) => {
+                        ControlResponse::error(request_id, e)
+                    }
+                    Ok(Err(e)) => ControlResponse::error(request_id, e),
+                    Err(_) => ControlResponse::error(
+                        request_id,
+                        "recording response dropped".to_string(),
+                    ),
+                    _ => ControlResponse::error(
+                        request_id,
+                        "unexpected recording result".to_string(),
+                    ),
                 }
             }
         }
@@ -661,20 +722,24 @@ mod tests {
             .expect("runtime should start");
         wait_for(Duration::from_secs(3), || runtime.snapshot().running).await;
 
-        let snapshot_response = runtime.dispatch_control_request(ControlRequest {
-            request_id: Some("snap-1".to_string()),
-            command: ControlCommand::Snapshot,
-        });
+        let snapshot_response = runtime
+            .dispatch_control_request(ControlRequest {
+                request_id: Some("snap-1".to_string()),
+                command: ControlCommand::Snapshot,
+            })
+            .await;
         assert_eq!(snapshot_response.request_id.as_deref(), Some("snap-1"));
         assert!(matches!(
             snapshot_response.payload,
             ControlResponsePayload::Snapshot { .. }
         ));
 
-        let toggle_response = runtime.dispatch_control_request(ControlRequest {
-            request_id: Some("set-output".to_string()),
-            command: ControlCommand::SetOutputEnabled { enabled: false },
-        });
+        let toggle_response = runtime
+            .dispatch_control_request(ControlRequest {
+                request_id: Some("set-output".to_string()),
+                command: ControlCommand::SetOutputEnabled { enabled: false },
+            })
+            .await;
         assert_eq!(toggle_response.request_id.as_deref(), Some("set-output"));
         assert_eq!(toggle_response.payload, ControlResponsePayload::Ack);
         wait_for(Duration::from_secs(1), || {
@@ -682,19 +747,23 @@ mod tests {
         })
         .await;
 
-        let signal_response = runtime.dispatch_control_request(ControlRequest {
-            request_id: Some("set-signal".to_string()),
-            command: ControlCommand::SetSignalConfig {
-                signal: updated_signal,
-            },
-        });
+        let signal_response = runtime
+            .dispatch_control_request(ControlRequest {
+                request_id: Some("set-signal".to_string()),
+                command: ControlCommand::SetSignalConfig {
+                    signal: updated_signal,
+                },
+            })
+            .await;
         assert_eq!(signal_response.request_id.as_deref(), Some("set-signal"));
         assert_eq!(signal_response.payload, ControlResponsePayload::Ack);
 
-        let stop_response = runtime.dispatch_control_request(ControlRequest {
-            request_id: Some("shutdown".to_string()),
-            command: ControlCommand::Shutdown,
-        });
+        let stop_response = runtime
+            .dispatch_control_request(ControlRequest {
+                request_id: Some("shutdown".to_string()),
+                command: ControlCommand::Shutdown,
+            })
+            .await;
         assert_eq!(stop_response.payload, ControlResponsePayload::Ack);
         runtime.wait().await.expect("runtime should stop cleanly");
     }

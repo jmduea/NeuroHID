@@ -779,7 +779,8 @@ async fn handle_ipc_client_connection(
             &runtime,
             &control_gate,
             &mut control_response_seq,
-        );
+        )
+        .await;
         match broker
             .send_control(connection.send(response_envelope))
             .await
@@ -929,7 +930,7 @@ async fn handle_trainer_stream_connection(
     Ok(())
 }
 
-fn handle_control_request_envelope(
+async fn handle_control_request_envelope(
     envelope: IpcEnvelope,
     runtime: &RuntimeIpcHandle,
     control_gate: &StdMutex<EmitGate>,
@@ -972,7 +973,8 @@ fn handle_control_request_envelope(
                     );
                 }
                 let should_shutdown = matches!(request.command, ControlCommand::Shutdown);
-                let response = runtime.dispatch_control_request(request);
+                drop(_request_span);
+                let response = runtime.dispatch_control_request(request).await;
                 if tracing::enabled!(tracing::Level::DEBUG) && gate_allows_debug(control_gate) {
                     tracing::debug!(
                         event = obs::event::CONTROL_RESPONSE_SENT,
@@ -1863,8 +1865,10 @@ async fn daemon_stop(default_ipc: RuntimeIpcConfig) -> anyhow::Result<()> {
         neurohid_types::control::ControlResponsePayload::Error { message } => {
             Err(anyhow::anyhow!("daemon stop request rejected: {}", message))
         }
-        neurohid_types::control::ControlResponsePayload::TrainerSnapshot { .. } => Err(
-            anyhow::anyhow!("daemon stop request returned unexpected trainer_snapshot payload"),
+        neurohid_types::control::ControlResponsePayload::TrainerSnapshot { .. }
+        | neurohid_types::control::ControlResponsePayload::RecordingStarted { .. }
+        | neurohid_types::control::ControlResponsePayload::RecordingStopped { .. } => Err(
+            anyhow::anyhow!("daemon stop request returned unexpected payload"),
         ),
     }
 }
@@ -1937,6 +1941,8 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
         ControlCommand::TrainerSnapshot => "trainer_snapshot",
         ControlCommand::SetFallbackPolicy { .. } => "set_fallback_policy",
         ControlCommand::SetSignalConfig { .. } => "set_signal_config",
+        ControlCommand::StartRecording { .. } => "start_recording",
+        ControlCommand::StopRecording => "stop_recording",
     }
 }
 
