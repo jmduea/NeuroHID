@@ -27,6 +27,18 @@ To run interactively without installing a service:
 cargo run --release -p neurohid --bin neurohid-service
 ```
 
+## Standalone runtime (without Hub)
+
+You can run the standalone runtime with a chosen profile and have it run without the Hub GUI. The decoder is loaded from that profile — there is no separate "attach decoder" step; the profile implies the decoder.
+
+**Startup options:**
+
+- `--config <path>` — Optional. Path to configuration file; uses default location if omitted.
+- `--profile <name>` — Optional. Profile to use; uses default profile if omitted.
+- `--control-port <port>` — Optional. Bind the control RPC endpoint to this TCP port on 127.0.0.1.
+
+When the config does not set `service.ipc_endpoint` and `--control-port` is not passed, the service defaults to TCP **127.0.0.1:47384** for the control server. Status (snapshot) and output toggle (`set_output_enabled`) are then available without opening the Hub. See [Local Control Endpoint](#local-control-endpoint) for the request envelope format and supported commands (`snapshot`, `set_output_enabled`). Control is available for runtime status and output toggle without the Hub.
+
 ## Transport Configuration
 
 IPC v3 uses a single local-only endpoint for `control.rpc`, `trainer.stream`, and `runtime.events`.
