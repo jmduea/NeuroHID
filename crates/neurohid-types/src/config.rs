@@ -6,7 +6,7 @@
 
 use crate::{
     action::ActionSpace, device::ConnectionSettings, observability::ObservabilityConfig,
-    observation::ObservationConfig, reward::ErrPConfig,
+    observation::ObservationConfig, recording::RecordingConfig, reward::ErrPConfig,
 };
 use serde::{Deserialize, Serialize};
 
@@ -59,6 +59,10 @@ pub struct SystemConfig {
     /// Configuration for hub UI behavior and persistence.
     #[serde(default)]
     pub ui: UiConfig,
+
+    /// Configuration for session recording (default path, auto mode, caps).
+    #[serde(default)]
+    pub recording: RecordingConfig,
 }
 
 impl Default for SystemConfig {
@@ -76,6 +80,7 @@ impl Default for SystemConfig {
             outlet: OutletConfig::default(),
             service: ServiceConfig::default(),
             ui: UiConfig::default(),
+            recording: RecordingConfig::default(),
         }
     }
 }

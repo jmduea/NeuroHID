@@ -34,6 +34,7 @@ pub mod model;
 pub mod observability;
 pub mod observation;
 pub mod profile;
+pub mod recording;
 pub mod reward;
 pub mod signal;
 
@@ -60,6 +61,7 @@ pub use model::{ModelManifest, NormalizationStats};
 pub use observability::{EmitGate, EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig};
 pub use observation::{CursorState, Observation};
 pub use profile::{CalibrationState, ProfileId};
+pub use recording::{RecordingAutoMode, RecordingConfig, SessionManifest};
 pub use reward::{ErrPResult, RewardSignal, SignalQuality};
 pub use signal::{ChannelConfig, ChannelId, FeatureVector, Sample};
 

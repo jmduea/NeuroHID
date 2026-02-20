@@ -94,3 +94,16 @@ Signal preprocessing and feature extraction:
 | `feature_step_ms` | Feature extraction step (ms); affects output rate |
 | `artifact_rejection_enabled` | Whether artifact rejection is enabled |
 | `artifact_threshold_uv` | Amplitude threshold for artifact rejection (µV) |
+
+### Recording config
+
+Session recording is configured under `recording` (optional; defaults: no default path, auto off, no caps).
+
+| Field | Description |
+|-------|-------------|
+| `default_output_path` | Default directory for session folders (path string); omit for no default. |
+| `auto_mode` | `off`, `tied_to_runtime`, or `tied_to_output`. When not `off`, recording starts/stops with runtime or output. |
+| `max_duration_secs` | Optional cap: stop recording after this many seconds. |
+| `max_size_mb` | Optional cap: stop recording when total size reaches this many MB. |
+
+Session folder layout (per phase 4 research) is: `session_<id>/` containing `manifest.json`, `config.yaml` (config snapshot), `profile_meta.json` (or ref when profile active), `streams/` (raw per-stream or combined), and `actions.jsonl` (one JSON object per line: timestamp, action/decision_id, confidence, etc.).
