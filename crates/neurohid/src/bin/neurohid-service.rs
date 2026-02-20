@@ -29,6 +29,7 @@ use neurohid_types::{
     RuntimeEvent, RuntimeEventsSubscribe,
     config::{IpcMode, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload},
+    device::DiscoveredStream,
     observability::{self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent},
     profile::ProfileId,
 };
@@ -85,6 +86,35 @@ enum ControlCommandCli {
     },
 }
 
+/// Device subcommand: list discovered streams or connect by id/criteria (client-only; talks to running service).
+#[derive(Clone, Debug, Subcommand)]
+enum DeviceCommandCli {
+    /// List discovered streams (id, name, type, channels). Human-readable table by default; --json for scriptable output.
+    List {
+        /// Emit compact one-line JSON to stdout.
+        #[arg(long)]
+        json: bool,
+        /// Suppress progress messages on stderr.
+        #[arg(short, long)]
+        quiet: bool,
+        /// Control endpoint address (e.g. 127.0.0.1:47384).
+        #[arg(long, default_value = "127.0.0.1:47384")]
+        endpoint: String,
+    },
+    /// Connect to a stream by id or by criteria (e.g. first LSL stream).
+    Connect {
+        /// Stream id to connect to (from device list).
+        #[arg(long)]
+        device_id: Option<String>,
+        /// Connect to first stream matching type/criteria (e.g. LSL, EEG). Ignored if --device-id is set.
+        #[arg(long)]
+        criteria: Option<String>,
+        /// Control endpoint address (e.g. 127.0.0.1:47384).
+        #[arg(long, default_value = "127.0.0.1:47384")]
+        endpoint: String,
+    },
+}
+
 #[derive(Debug, Subcommand)]
 enum CliCommand {
     /// Cross-platform detached daemon lifecycle commands.
@@ -99,6 +129,11 @@ enum CliCommand {
         /// Control endpoint address (e.g. 127.0.0.1:47384).
         #[arg(long, default_value = "127.0.0.1:47384")]
         endpoint: String,
+    },
+    /// List or connect to biosignal streams (talks to a running service).
+    Device {
+        #[command(subcommand)]
+        command: DeviceCommandCli,
     },
 }
 
@@ -205,6 +240,9 @@ async fn main() -> anyhow::Result<()> {
         match command {
             CliCommand::Control { command, endpoint } => {
                 return run_control_command_sync(command, endpoint);
+            }
+            CliCommand::Device { command } => {
+                return run_device_command_sync(command);
             }
             CliCommand::Daemon { command } => return run_daemon_command(*command, &args).await,
         }
@@ -1910,6 +1948,138 @@ fn run_control_command_sync(
                 )),
             }
         }
+    }
+}
+
+/// Exit codes: 0 success, 1 generic error, 2 not found, 3 config invalid (documented in code).
+fn run_device_command_sync(command: &DeviceCommandCli) -> anyhow::Result<()> {
+    match command {
+        DeviceCommandCli::List {
+            json,
+            quiet,
+            endpoint,
+        } => run_device_list(endpoint, *json, *quiet),
+        DeviceCommandCli::Connect {
+            device_id,
+            criteria,
+            endpoint,
+        } => run_device_connect(endpoint, device_id.as_deref(), criteria.as_deref()),
+    }
+}
+
+fn device_ipc_config(endpoint: &str) -> RuntimeIpcConfig {
+    RuntimeIpcConfig {
+        transport: RuntimeIpcTransport::TcpLoopback,
+        endpoint: endpoint.to_string(),
+        ..RuntimeIpcConfig::default()
+    }
+}
+
+fn fetch_discovered_streams(config: &RuntimeIpcConfig) -> anyhow::Result<Vec<DiscoveredStream>> {
+    send_control_request_blocking(
+        config.clone(),
+        ControlRequest::new(ControlCommand::RescanStreams),
+        "cli",
+        1,
+    )
+    .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+    let response = send_control_request_blocking(
+        config.clone(),
+        ControlRequest::new(ControlCommand::Snapshot),
+        "cli",
+        2,
+    )
+    .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+    match response.payload {
+        ControlResponsePayload::Snapshot { snapshot } => Ok(snapshot.discovered_streams),
+        ControlResponsePayload::Error { message } => {
+            Err(anyhow::anyhow!("snapshot failed: {}", message))
+        }
+        _ => Err(anyhow::anyhow!("unexpected response payload")),
+    }
+}
+
+fn run_device_list(endpoint: &str, json: bool, quiet: bool) -> anyhow::Result<()> {
+    let config = device_ipc_config(endpoint);
+    if !quiet {
+        eprintln!("Listing streams...");
+    }
+    let streams = fetch_discovered_streams(&config)?;
+    if json {
+        let line = serde_json::to_string(&streams).map_err(|e| anyhow::anyhow!("{}", e))?;
+        println!("{}", line);
+    } else {
+        // Human-readable table: id, name, type, channels
+        println!("{:<36} {:<24} {:<12} CHANNELS", "ID", "NAME", "TYPE");
+        println!("{}", "-".repeat(80));
+        for s in &streams {
+            println!(
+                "{:<36} {:<24} {:<12} {}",
+                s.id,
+                if s.name.len() > 23 {
+                    format!("{}..", &s.name[..21])
+                } else {
+                    s.name.clone()
+                },
+                s.stream_type,
+                s.channel_count
+            );
+        }
+    }
+    Ok(())
+}
+
+fn run_device_connect(
+    endpoint: &str,
+    device_id: Option<&str>,
+    criteria: Option<&str>,
+) -> anyhow::Result<()> {
+    let config = device_ipc_config(endpoint);
+    let stream_id = match (device_id, criteria) {
+        (Some(id), _) => id.to_string(),
+        (None, Some(crit)) => {
+            let streams = fetch_discovered_streams(&config)?;
+            match streams
+                .iter()
+                .find(|s| s.stream_type.eq_ignore_ascii_case(crit) || s.id.contains(crit))
+            {
+                Some(s) => s.id.clone(),
+                None => {
+                    eprintln!("no stream matched criteria '{}'", crit);
+                    std::process::exit(2);
+                }
+            }
+        }
+        (None, None) => {
+            return Err(anyhow::anyhow!(
+                "either --device-id <id> or --criteria <type> is required"
+            ));
+        }
+    };
+    let response = send_control_request_blocking(
+        config,
+        ControlRequest::new(ControlCommand::ConnectStream {
+            stream_id: stream_id.clone(),
+        }),
+        "cli",
+        3,
+    )
+    .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
+    match response.payload {
+        ControlResponsePayload::Ack => {
+            println!("connected {}", stream_id);
+            Ok(())
+        }
+        ControlResponsePayload::Error { message } => {
+            if message.to_lowercase().contains("not found")
+                || message.to_lowercase().contains("no stream")
+            {
+                eprintln!("{}", message);
+                std::process::exit(2);
+            }
+            Err(anyhow::anyhow!("connect failed: {}", message))
+        }
+        _ => Err(anyhow::anyhow!("unexpected response payload")),
     }
 }
 

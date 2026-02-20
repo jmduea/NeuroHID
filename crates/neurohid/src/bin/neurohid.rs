@@ -48,7 +48,48 @@ fn init_hub_logger() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("Failed to initialize combined logger: {}", error))
 }
 
+const CLI_SUBCOMMANDS: &[&str] = &["device", "config", "pipeline", "control", "daemon"];
+
+/// If argv suggests a CLI subcommand (device list, control snapshot, etc.), run neurohid-service
+/// with the same args and exit with its code. No GUI or heavy init. Returns only when not dispatching.
+fn maybe_dispatch_to_service() {
+    let args: Vec<String> = std::env::args().collect();
+    if args.len() < 2 {
+        return;
+    }
+    let first = args[1].as_str();
+    if !CLI_SUBCOMMANDS.contains(&first) {
+        return;
+    }
+    let service_exe = locate_service_binary();
+    let status = std::process::Command::new(service_exe)
+        .args(args.iter().skip(1))
+        .status();
+    match status {
+        Ok(s) => std::process::exit(s.code().unwrap_or(1)),
+        Err(e) => {
+            eprintln!("neurohid: failed to run service binary: {}", e);
+            std::process::exit(1);
+        }
+    }
+}
+
+fn locate_service_binary() -> std::path::PathBuf {
+    if let Ok(exe) = std::env::current_exe() {
+        let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("."));
+        let name = if cfg!(windows) { "neurohid-service.exe" } else { "neurohid-service" };
+        let candidate = dir.join(name);
+        if candidate.exists() {
+            return candidate;
+        }
+    }
+    let name = if cfg!(windows) { "neurohid-service.exe" } else { "neurohid-service" };
+    std::path::PathBuf::from(name)
+}
+
 fn main() {
+    maybe_dispatch_to_service();
+
     init_hub_logger().expect("Failed to initialize Hub logger");
     tracing_init::init_tracing("info").expect("Failed to initialize tracing");
 
