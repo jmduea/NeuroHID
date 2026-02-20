@@ -5,18 +5,18 @@
 See: .planning/PROJECT.md (updated 2026-02-20)
 
 **Core value:** A single, composable path from biosignal device to actionable output — with an IDE-like experience for building and training decoders and a standalone runtime for using them — so that developers and power users don't have to piece together disparate libraries and tools.
-**Current focus:** Phase 3 — SDK/CLI for device and pipeline config
+**Current focus:** Phase 4 — Standard path and recording
 
 ## Current Position
 
-Phase: 3 of 6 (SDK/CLI for device and pipeline config)
-Plan: 2 of 2 in current phase
-Current Plan: 02
-Total Plans in Phase: 2
-Status: Plan 02 complete
-Last activity: 2026-02-20 — Plan 03-02 executed (YAML config, SDK config API, CLI config/pipeline)
+Phase: 4 of 6 (Standard path and recording)
+Plan: 1 of 3 in current phase
+Current Plan: 01
+Total Plans in Phase: 3
+Status: Plan 01 complete
+Last activity: 2026-02-20 — Plan 04-01 executed (user guide and standard path, PATH-01)
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 33%
 
 ## Performance Metrics
 
@@ -40,6 +40,7 @@ Progress: [██████████] 100%
 | Phase 02-standalone-runtime-and-control P01 | ~15 | 2 tasks | 2 files |
 | Phase 03-sdk-cli-for-device-and-pipeline-config P01 | 25 | 2 tasks | 5 files |
 | Phase 03-sdk-cli-for-device-and-pipeline-config P02 | ~25 | 3 tasks | 7 files |
+| Phase 04 P01 | 5min | 1 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -53,6 +54,7 @@ Recent decisions affecting current work:
 - [Phase 01-contracts-and-versioned-formats]: Profile: calibration identity in metadata (no separate manifest) for export/import roundtrip; N=2 reader compatibility
 - [Phase 03-sdk-cli-for-device-and-pipeline-config]: Device API in neurohid-sdk device module (list, connect_by_id, connect_by_criteria, StreamConnectionHandle); neurohid dispatches to neurohid-service for device|config|pipeline|control|daemon
 - [Phase 03-sdk-cli-for-device-and-pipeline-config]: ConfigStore YAML/TOML by path extension; SDK config::load/save; CLI config show/validate, pipeline run --dry-run; exit 3 config invalid, --json errors to stderr
+- [Phase 04-standard-path-and-recording]: User guide as dedicated doc (user-guide.md) with Standard path section; index links under Canonical Entry Points
 
 ### Pending Todos
 
