@@ -58,10 +58,11 @@ Plans:
 **Success Criteria** (what must be TRUE):
   1. Developer can drive device discovery, connection, and stream selection via public SDK API (Rust) and/or CLI
   2. Developer can configure signal pipeline and decoder (e.g. model path, params) via SDK/CLI and documented config format
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
-- [ ] 03-01: TBD
+- [ ] 03-01-PLAN.md — SDK device discovery/connection API and CLI device list/connect (COMP-01)
+- [ ] 03-02-PLAN.md — Config YAML + docs, SDK config API, CLI config/pipeline subcommands (COMP-02)
 
 ### Phase 4: Standard path and recording
 **Goal**: User has one coherent path from device to actions and can record/replay sessions for reproducibility.
