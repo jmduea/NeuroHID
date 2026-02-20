@@ -20,8 +20,7 @@ use neurohid_ipc::{
     BrokerConfig as RuntimeBrokerConfig, BrokerError as RuntimeBrokerError,
     IpcBroker as RuntimeIpcBroker, IpcConfig as RuntimeIpcConfig,
     IpcConnection as RuntimeIpcConnection, IpcServer as RuntimeIpcServer,
-    IpcTransport as RuntimeIpcTransport, send_control_request_blocking,
-    send_control_request_once,
+    IpcTransport as RuntimeIpcTransport, send_control_request_once,
 };
 use neurohid_storage::{ConfigStore, DataPaths, ProfileStore};
 use neurohid_types::{
@@ -184,11 +183,11 @@ struct Args {
     command: Option<CliCommand>,
 
     /// Path to configuration file (uses default location if not specified)
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     config: Option<String>,
 
     /// Profile to use (uses default profile if not specified)
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     profile: Option<String>,
 
     /// Run in foreground (don't daemonize)
@@ -200,11 +199,11 @@ struct Args {
     verbose: bool,
 
     /// Emit JSON for output/errors where supported (e.g. config validate writes error to stderr).
-    #[arg(long)]
+    #[arg(long, global = true)]
     json: bool,
 
     /// Suppress progress messages on stderr.
-    #[arg(short, long)]
+    #[arg(short, long, global = true)]
     quiet: bool,
 
     /// Import candidate artifacts from a trainer output directory and exit.
@@ -285,10 +284,10 @@ async fn main() -> anyhow::Result<()> {
     if let Some(command) = &args.command {
         match command {
             CliCommand::Control { command, endpoint } => {
-                return run_control_command_sync(command, endpoint);
+                return run_control_command(command, endpoint).await;
             }
             CliCommand::Device { command } => {
-                return run_device_command_sync(command);
+                return run_device_command(command).await;
             }
             CliCommand::Config { command } => {
                 return run_config_command(command, &args).await;
@@ -495,8 +494,11 @@ async fn run_managed_runtime(
     let runtime_ipc_handle = runtime_handle.ipc_handle();
     tracing::info!("Managed runtime started");
 
+    // Use TCP 127.0.0.1:47384 when no port given and config has empty or default endpoint
+    // (default "neurohid.control.v3" is a named socket; standalone service and CLI expect TCP).
     let effective_control_port = control_port.or_else(|| {
-        if service_config.ipc_endpoint.trim().is_empty() {
+        let ep = service_config.ipc_endpoint.trim();
+        if ep.is_empty() || ep == "neurohid.control.v3" {
             Some(DEFAULT_STANDALONE_CONTROL_PORT)
         } else {
             None
@@ -510,6 +512,9 @@ async fn run_managed_runtime(
             endpoint = %server_config.endpoint,
             "Starting unified IPC v3 server (control.rpc + runtime.events)"
         );
+        if server_config.endpoint.contains("47384") {
+            tracing::info!("Control CLI: neurohid device list / neurohid control snapshot (default --endpoint {})", server_config.endpoint);
+        }
         tokio::select! {
             result = run_ipc_control_server(
                 server_config,
@@ -1935,8 +1940,8 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
     }
 }
 
-/// Run control CLI: send one request to a running service and print result. Sync/blocking.
-fn run_control_command_sync(
+/// Run control CLI: send one request to a running service and print result.
+async fn run_control_command(
     command: &ControlCommandCli,
     endpoint: &str,
 ) -> anyhow::Result<()> {
@@ -1948,12 +1953,13 @@ fn run_control_command_sync(
 
     match command {
         ControlCommandCli::Snapshot => {
-            let response = send_control_request_blocking(
+            let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::Snapshot),
                 "cli",
                 1,
             )
+            .await
             .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
             match response.payload {
                 ControlResponsePayload::Snapshot { snapshot } => {
@@ -1976,12 +1982,13 @@ fn run_control_command_sync(
             }
         }
         ControlCommandCli::SetOutputEnabled { enabled } => {
-            let response = send_control_request_blocking(
+            let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::SetOutputEnabled { enabled: *enabled }),
                 "cli",
                 1,
             )
+            .await
             .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
             match response.payload {
                 ControlResponsePayload::Ack => {
@@ -2000,18 +2007,18 @@ fn run_control_command_sync(
 }
 
 /// Exit codes: 0 success, 1 generic error, 2 not found, 3 config invalid (documented in code).
-fn run_device_command_sync(command: &DeviceCommandCli) -> anyhow::Result<()> {
+async fn run_device_command(command: &DeviceCommandCli) -> anyhow::Result<()> {
     match command {
         DeviceCommandCli::List {
             json,
             quiet,
             endpoint,
-        } => run_device_list(endpoint, *json, *quiet),
+        } => run_device_list(endpoint, *json, *quiet).await,
         DeviceCommandCli::Connect {
             device_id,
             criteria,
             endpoint,
-        } => run_device_connect(endpoint, device_id.as_deref(), criteria.as_deref()),
+        } => run_device_connect(endpoint, device_id.as_deref(), criteria.as_deref()).await,
     }
 }
 
@@ -2126,20 +2133,22 @@ fn device_ipc_config(endpoint: &str) -> RuntimeIpcConfig {
     }
 }
 
-fn fetch_discovered_streams(config: &RuntimeIpcConfig) -> anyhow::Result<Vec<DiscoveredStream>> {
-    send_control_request_blocking(
+async fn fetch_discovered_streams(config: &RuntimeIpcConfig) -> anyhow::Result<Vec<DiscoveredStream>> {
+    send_control_request_once(
         config.clone(),
         ControlRequest::new(ControlCommand::RescanStreams),
         "cli",
         1,
     )
+    .await
     .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
-    let response = send_control_request_blocking(
+    let response = send_control_request_once(
         config.clone(),
         ControlRequest::new(ControlCommand::Snapshot),
         "cli",
         2,
     )
+    .await
     .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
     match response.payload {
         ControlResponsePayload::Snapshot { snapshot } => Ok(snapshot.discovered_streams),
@@ -2150,12 +2159,12 @@ fn fetch_discovered_streams(config: &RuntimeIpcConfig) -> anyhow::Result<Vec<Dis
     }
 }
 
-fn run_device_list(endpoint: &str, json: bool, quiet: bool) -> anyhow::Result<()> {
+async fn run_device_list(endpoint: &str, json: bool, quiet: bool) -> anyhow::Result<()> {
     let config = device_ipc_config(endpoint);
     if !quiet {
         eprintln!("Listing streams...");
     }
-    let streams = fetch_discovered_streams(&config)?;
+    let streams = fetch_discovered_streams(&config).await?;
     if json {
         let line = serde_json::to_string(&streams).map_err(|e| anyhow::anyhow!("{}", e))?;
         println!("{}", line);
@@ -2180,16 +2189,23 @@ fn run_device_list(endpoint: &str, json: bool, quiet: bool) -> anyhow::Result<()
     Ok(())
 }
 
-fn run_device_connect(
+async fn run_device_connect(
     endpoint: &str,
     device_id: Option<&str>,
     criteria: Option<&str>,
 ) -> anyhow::Result<()> {
     let config = device_ipc_config(endpoint);
+    let streams = fetch_discovered_streams(&config).await?;
     let stream_id = match (device_id, criteria) {
-        (Some(id), _) => id.to_string(),
+        (Some(id), _) => {
+            let id = id.to_string();
+            if !streams.iter().any(|s| s.id == id) {
+                eprintln!("stream not found: '{}'", id);
+                std::process::exit(2);
+            }
+            id
+        }
         (None, Some(crit)) => {
-            let streams = fetch_discovered_streams(&config)?;
             match streams
                 .iter()
                 .find(|s| s.stream_type.eq_ignore_ascii_case(crit) || s.id.contains(crit))
@@ -2207,7 +2223,7 @@ fn run_device_connect(
             ));
         }
     };
-    let response = send_control_request_blocking(
+    let response = send_control_request_once(
         config,
         ControlRequest::new(ControlCommand::ConnectStream {
             stream_id: stream_id.clone(),
@@ -2215,6 +2231,7 @@ fn run_device_connect(
         "cli",
         3,
     )
+    .await
     .map_err(|e| anyhow::anyhow!("control request failed: {}", e))?;
     match response.payload {
         ControlResponsePayload::Ack => {
