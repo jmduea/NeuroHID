@@ -53,3 +53,44 @@ format_version = 1
 ```
 
 Load/save is implemented in `crates/neurohid-storage/src/config.rs`; it serializes and deserializes `SystemConfig` including `format_version`.
+
+## File format: YAML and TOML
+
+Config files can be **YAML** (`.yaml` or `.yml`) or **TOML** (e.g. `.toml`). The same schema and `format_version` apply to both; readers detect format from the file extension. When saving, the serialization format matches the path extension (unknown or missing extension defaults to TOML).
+
+## Pipeline and decoder config scope
+
+The "signal pipeline and decoder" configuration that developers can set via SDK/CLI and this format is scoped as follows.
+
+### DecoderConfig
+
+Decoder (RL policy) configuration:
+
+| Field | Description |
+|-------|-------------|
+| `model_path` | Path to the decoder model file (e.g. relative to profile directory) |
+| `online_learning_enabled` | Whether online learning is enabled |
+| `learning_rate` | Learning rate for online updates |
+| `gamma` | Discount factor for RL |
+| `gae_lambda` | GAE lambda for PPO |
+| `update_frequency_steps` | Number of steps between policy updates |
+| `batch_size` | Batch size for updates |
+| `entropy_coef` | Entropy coefficient for exploration |
+| `value_coef` | Value function coefficient |
+| `max_grad_norm` | Maximum gradient norm for clipping |
+
+### SignalConfig
+
+Signal preprocessing and feature extraction:
+
+| Field | Description |
+|-------|-------------|
+| `buffer_size_samples` | Ring buffer size in samples |
+| `notch_filter_enabled` | Whether notch filter (powerline) is applied |
+| `notch_filter_hz` | Notch frequency (e.g. 50 or 60 Hz) |
+| `bandpass_low_hz` | Bandpass low cutoff (Hz) |
+| `bandpass_high_hz` | Bandpass high cutoff (Hz) |
+| `feature_window_ms` | Feature extraction window (ms) |
+| `feature_step_ms` | Feature extraction step (ms); affects output rate |
+| `artifact_rejection_enabled` | Whether artifact rejection is enabled |
+| `artifact_threshold_uv` | Amplitude threshold for artifact rejection (µV) |

@@ -1,6 +1,10 @@
 //! # Configuration Storage
 //!
-//! Manages the system configuration file.
+//! Manages the system configuration file. Supports both TOML and YAML;
+//! format is detected by path extension (`.yaml` or `.yml` => YAML, otherwise TOML).
+//! The same `SystemConfig` schema and `format_version` apply to both formats.
+
+use std::path::Path;
 
 use tokio::fs;
 
@@ -9,6 +13,14 @@ use neurohid_types::{
     config::SystemConfig,
     error::{Result, StorageError},
 };
+
+/// Returns true if the path has a YAML extension (`.yaml` or `.yml`).
+fn is_yaml_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("yaml") || e.eq_ignore_ascii_case("yml"))
+        .unwrap_or(false)
+}
 
 /// Manages the system configuration file.
 pub struct ConfigStore {
@@ -21,37 +33,61 @@ impl ConfigStore {
         Self { paths }
     }
 
-    /// Loads the system configuration.
+    /// Loads the system configuration from the default config file path (TOML).
     ///
     /// If no configuration file exists, returns the default configuration.
     pub async fn load(&self) -> Result<SystemConfig> {
         let path = self.paths.config_file();
+        self.load_from_path(&path).await
+    }
 
+    /// Loads the system configuration from an explicit path.
+    ///
+    /// Format is detected by path extension: `.yaml` or `.yml` => YAML, otherwise TOML.
+    /// If the file does not exist, returns the default configuration.
+    pub async fn load_from_path(&self, path: &Path) -> Result<SystemConfig> {
         if !path.exists() {
             return Ok(SystemConfig::default());
         }
 
-        let contents = fs::read_to_string(&path)
+        let contents = fs::read_to_string(path)
             .await
             .map_err(|e| StorageError::ReadError {
                 path: path.display().to_string(),
                 reason: e.to_string(),
             })?;
 
-        let config: SystemConfig = toml::from_str(&contents)
-            .map_err(|e| StorageError::SerializationError(e.to_string()))?;
+        let config: SystemConfig = if is_yaml_path(path) {
+            serde_yaml::from_str(&contents)
+                .map_err(|e| StorageError::SerializationError(e.to_string()))?
+        } else {
+            toml::from_str(&contents)
+                .map_err(|e| StorageError::SerializationError(e.to_string()))?
+        };
 
         Ok(config)
     }
 
-    /// Saves the system configuration.
+    /// Saves the system configuration to the default config file path (TOML).
     pub async fn save(&self, config: &SystemConfig) -> Result<()> {
         let path = self.paths.config_file();
+        self.save_to_path(&path, config).await
+    }
 
-        let contents = toml::to_string_pretty(config)
-            .map_err(|e| StorageError::SerializationError(e.to_string()))?;
+    /// Saves the system configuration to an explicit path.
+    ///
+    /// Format is determined by path extension: `.yaml` or `.yml` => YAML, otherwise TOML.
+    /// `format_version` is always written (same schema for both formats).
+    pub async fn save_to_path(&self, path: &Path, config: &SystemConfig) -> Result<()> {
+        let contents = if is_yaml_path(path) {
+            serde_yaml::to_string(config)
+                .map_err(|e| StorageError::SerializationError(e.to_string()))?
+        } else {
+            toml::to_string_pretty(config)
+                .map_err(|e| StorageError::SerializationError(e.to_string()))?
+        };
 
-        fs::write(&path, contents)
+        fs::write(path, contents)
             .await
             .map_err(|e| StorageError::WriteError {
                 path: path.display().to_string(),
@@ -227,5 +263,33 @@ mod tests {
 
         let loaded = store.load().await.unwrap();
         assert_eq!(loaded.signal.notch_filter_hz, 60.0);
+    }
+
+    #[tokio::test]
+    async fn yaml_save_load_roundtrip_format_version_and_decoder_signal() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+        let yaml_path = tmp.path().join("config.yaml");
+
+        let mut config = SystemConfig::default();
+        config.format_version = neurohid_types::config::CURRENT_CONFIG_FORMAT_VERSION;
+        config.decoder.model_path = "custom.pt".to_string();
+        config.decoder.learning_rate = 1e-4;
+        config.signal.notch_filter_hz = 50.0;
+        config.signal.buffer_size_samples = 2048;
+
+        store.save_to_path(&yaml_path, &config).await.unwrap();
+        assert!(yaml_path.exists());
+
+        let loaded = store.load_from_path(&yaml_path).await.unwrap();
+        assert_eq!(
+            loaded.format_version,
+            neurohid_types::config::CURRENT_CONFIG_FORMAT_VERSION,
+            "YAML roundtrip must persist format_version"
+        );
+        assert_eq!(loaded.decoder.model_path, "custom.pt");
+        assert_eq!(loaded.decoder.learning_rate, 1e-4);
+        assert_eq!(loaded.signal.notch_filter_hz, 50.0);
+        assert_eq!(loaded.signal.buffer_size_samples, 2048);
     }
 }
