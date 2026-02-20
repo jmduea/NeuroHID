@@ -17,6 +17,7 @@ mod latency;
 mod latency_alert;
 mod outlet;
 mod recording;
+mod replay_source;
 mod session_logger;
 mod signal;
 
@@ -58,5 +59,6 @@ pub use ipc::IpcTask;
 pub use latency_alert::LatencyAlertMonitorTask;
 pub use outlet::OutletTask;
 pub use recording::{RecordingCommand, RecordingCommandResult, RecordingRequest, RecordingTask};
+pub use replay_source::{load_session_samples, run_replay_task};
 pub use session_logger::{EpisodeLogRecord, SessionLoggerTask};
 pub use signal::SignalTask;

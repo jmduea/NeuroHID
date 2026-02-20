@@ -175,6 +175,11 @@ enum RecordCommandCli {
         #[arg(short, long)]
         output: std::path::PathBuf,
     },
+    /// Run the pipeline in replay mode on a session folder (offline decoder run).
+    ReplayOffline {
+        /// Path to the session folder to replay.
+        session_dir: std::path::PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -260,6 +265,10 @@ struct Args {
     #[arg(long)]
     control_port: Option<u16>,
 
+    /// Replay mode: use session folder as sample source instead of live device.
+    #[arg(long)]
+    replay: Option<std::path::PathBuf>,
+
     /// Windows service lifecycle command.
     #[arg(long, value_enum)]
     service_command: Option<ServiceCommand>,
@@ -278,6 +287,7 @@ struct RuntimeContext {
     profile_store: ProfileStore,
     config: SystemConfig,
     profile_id: Option<ProfileId>,
+    replay_path: Option<std::path::PathBuf>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -336,7 +346,7 @@ async fn main() -> anyhow::Result<()> {
                 return run_pipeline_command(command, &args).await;
             }
             CliCommand::Record { command } => {
-                return run_record_command(command).await;
+                return run_record_command(command, &args).await;
             }
             CliCommand::Daemon { command } => return run_daemon_command(*command, &args).await,
         }
@@ -364,7 +374,12 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("Starting NeuroHID service");
 
-    let runtime = load_runtime_context(args.profile.as_deref(), args.config.as_deref()).await?;
+    let runtime = load_runtime_context(
+        args.profile.as_deref(),
+        args.config.as_deref(),
+        args.replay.clone(),
+    )
+    .await?;
     if handle_artifact_commands(&args, &runtime.profile_store, runtime.profile_id.as_ref()).await? {
         return Ok(());
     }
@@ -383,6 +398,7 @@ fn init_logging(verbose: bool) -> anyhow::Result<()> {
 async fn load_runtime_context(
     profile_name_override: Option<&str>,
     config_path_override: Option<&str>,
+    replay_path: Option<std::path::PathBuf>,
 ) -> anyhow::Result<RuntimeContext> {
     let (profile_store, config_store) = neurohid_storage::initialize()
         .await
@@ -451,6 +467,7 @@ async fn load_runtime_context(
         profile_store,
         config,
         profile_id,
+        replay_path,
     })
 }
 
@@ -532,6 +549,9 @@ async fn run_managed_runtime(
     let mut builder = RuntimeBuilder::new(runtime.config).with_profile_store(runtime.profile_store);
     if let Some(profile_id) = runtime.profile_id {
         builder = builder.with_profile_id(profile_id);
+    }
+    if let Some(path) = runtime.replay_path {
+        builder = builder.with_replay_path(path);
     }
     let runtime_handle = builder.start().await?;
     let runtime_ipc_handle = runtime_handle.ipc_handle();
@@ -1649,7 +1669,12 @@ async fn emit_runtime_event_replay(
 }
 
 async fn run_daemon_command(command: DaemonCommand, args: &Args) -> anyhow::Result<()> {
-    let runtime = load_runtime_context(args.profile.as_deref(), args.config.as_deref()).await?;
+    let runtime = load_runtime_context(
+        args.profile.as_deref(),
+        args.config.as_deref(),
+        args.replay.clone(),
+    )
+    .await?;
     let daemon_ipc = daemon_ipc_config_from_service(&runtime.config.service, args.control_port)?;
     match command {
         DaemonCommand::Start => daemon_start(args, daemon_ipc).await,
@@ -1990,7 +2015,7 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
 }
 
 /// Run record CLI: start/stop/status session recording via control requests to a running service.
-async fn run_record_command(command: &RecordCommandCli) -> anyhow::Result<()> {
+async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::Result<()> {
     let config = RuntimeIpcConfig {
         transport: RuntimeIpcTransport::TcpLoopback,
         endpoint: String::new(),
@@ -2092,7 +2117,24 @@ async fn run_record_command(command: &RecordCommandCli) -> anyhow::Result<()> {
             println!("Exported to {}", output.display());
             Ok(())
         }
+        RecordCommandCli::ReplayOffline { session_dir } => {
+            run_replay_offline(&session_dir, args).await
+        }
     }
+}
+
+/// Run the pipeline in replay mode on a session folder (offline); no live device.
+async fn run_replay_offline(
+    session_dir: &std::path::Path,
+    args: &Args,
+) -> anyhow::Result<()> {
+    let runtime = load_runtime_context(
+        args.profile.as_deref(),
+        args.config.as_deref(),
+        Some(session_dir.to_path_buf()),
+    )
+    .await?;
+    run_managed_runtime(runtime, args.control_port).await
 }
 
 /// Run control CLI: send one request to a running service and print result.
@@ -3537,6 +3579,7 @@ mod windows_service_host {
             .block_on(load_runtime_context(
                 launch.profile.as_deref(),
                 launch.config.as_deref(),
+                None,
             ))
             .map_err(|e| anyhow::anyhow!("Failed to initialize runtime context: {}", e))?;
 

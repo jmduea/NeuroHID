@@ -79,8 +79,8 @@ pub enum DecoderCommand {
 
 use crate::tasks::{
     ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask,
-    LatencyAlertMonitorTask, OutletTask, RecordingRequest, RecordingTask, SessionLoggerTask,
-    SignalTask, TrainerIngressEvent,
+    LatencyAlertMonitorTask, OutletTask, RecordingRequest, RecordingTask, run_replay_task,
+    SessionLoggerTask, SignalTask, TrainerIngressEvent,
 };
 
 /// The main service that coordinates all NeuroHID operations.
@@ -104,6 +104,9 @@ pub struct NeuroHidService {
 
     /// Shared state that tasks can read
     shared_state: Arc<RwLock<ServiceState>>,
+
+    /// When set, run in replay mode: spawn replay source instead of live device.
+    replay_session_path: Option<std::path::PathBuf>,
 }
 
 /// Shared state accessible by all tasks.
@@ -596,7 +599,14 @@ impl NeuroHidService {
             profile_id,
             shutdown_rx,
             shared_state,
+            replay_session_path: None,
         })
+    }
+
+    /// Run in replay mode: use a session folder as the sample source instead of a live device.
+    pub fn with_replay_path(mut self, path: std::path::PathBuf) -> Self {
+        self.replay_session_path = Some(path);
+        self
     }
 
     /// Spawns the service on the tokio runtime and returns a non-blocking handle.
@@ -868,25 +878,32 @@ impl NeuroHidService {
             }))
         });
 
-        // Spawn the device task. This connects to the EEG device and streams
-        // samples into the sample channel.
+        // Spawn the device task or replay source. Replay mode uses a session folder
+        // as the sample source instead of a live device.
+        let replay_path = self.replay_session_path.clone();
         let device_config = self.config.device.clone();
         let cal_tx_for_device = calibration_sample_tx.clone();
         let cal_flag_for_device = calibration_flag.as_ref().map(Arc::clone);
         let device_observability = observability_config.clone();
-        let mut device_handle = tokio::spawn(async move {
-            tracing::info!("Device task starting");
-            let task = DeviceTask::new(
-                device_config,
-                sample_tx,
-                state_device,
-                cal_tx_for_device,
-                cal_flag_for_device,
-                device_command_rx,
-                device_observability,
-            );
-            task.run(shutdown_device).await
-        });
+        let mut device_handle = if let Some(path) = replay_path {
+            tokio::spawn(async move {
+                let _ = run_replay_task(&path, sample_tx, shutdown_device).await;
+            })
+        } else {
+            tokio::spawn(async move {
+                tracing::info!("Device task starting");
+                let task = DeviceTask::new(
+                    device_config,
+                    sample_tx,
+                    state_device,
+                    cal_tx_for_device,
+                    cal_flag_for_device,
+                    device_command_rx,
+                    device_observability,
+                );
+                let _ = task.run(shutdown_device).await;
+            })
+        };
 
         // Spawn the signal processing task. This reads samples, applies filters,
         // extracts features, and sends them to the IPC channel.
@@ -1175,16 +1192,12 @@ impl NeuroHidService {
 
                 // ── Critical tasks ──────────────────────────────────────
 
-                // Device task finished (either error or clean shutdown)
+                // Device/replay task finished (either error or clean shutdown)
                 result = &mut device_handle => {
                     match result {
-                        Ok(Ok(())) => tracing::info!("Device task completed"),
-                        Ok(Err(e)) => {
-                            tracing::error!("Device task failed: {}", e);
-                            task_failure = Some(("device".into(), e.to_string()));
-                        }
+                        Ok(()) => tracing::info!("Device/replay task completed"),
                         Err(e) => {
-                            tracing::error!("Device task panicked: {}", e);
+                            tracing::error!("Device/replay task panicked: {}", e);
                             task_failure = Some(("device".into(), e.to_string()));
                         }
                     }

@@ -31,6 +31,7 @@ pub struct RuntimeBuilder {
     config: SystemConfig,
     profile_store: Option<ProfileStore>,
     profile_id: Option<ProfileId>,
+    replay_session_path: Option<std::path::PathBuf>,
 }
 
 impl RuntimeBuilder {
@@ -40,6 +41,7 @@ impl RuntimeBuilder {
             config,
             profile_store: None,
             profile_id: None,
+            replay_session_path: None,
         }
     }
 
@@ -55,17 +57,25 @@ impl RuntimeBuilder {
         self
     }
 
+    /// Use a session folder as the sample source (replay mode) instead of a live device.
+    pub fn with_replay_path(mut self, path: std::path::PathBuf) -> Self {
+        self.replay_session_path = Some(path);
+        self
+    }
+
     /// Start runtime tasks and return a managed handle.
     pub async fn start(self) -> Result<RuntimeHandle> {
         let (shutdown_tx, shutdown_rx) = broadcast::channel::<()>(1);
-        let service = NeuroHidService::new(
+        let mut service = NeuroHidService::new(
             self.config,
             self.profile_store,
             self.profile_id,
             shutdown_rx,
         )
         .await?;
-
+        if let Some(path) = self.replay_session_path {
+            service = service.with_replay_path(path);
+        }
         let handle = service.spawn(shutdown_tx);
         Ok(RuntimeHandle { handle })
     }

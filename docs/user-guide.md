@@ -53,6 +53,26 @@ Optional: `--config <path>`, `--profile <name>`, `--control-port <port>`. The de
 - **Control without Hub:** Status and output toggle are available via `neurohid-service control snapshot` and `neurohid-service control set-output-enabled`; see [deployment guide](deployment-guide.md).
 - **Advanced config:** Override config path, control port, or IPC endpoint via config file or flags as documented in the deployment guide.
 
+## Recording and export
+
+Session folders are written when you start recording (via control/CLI or Hub). Each session has a folder (e.g. `session_<id>`) containing `manifest.json`, `config.json`, `streams/*.jsonl`, and `actions.jsonl`. The default location is from your recording config; you can override it when starting a recording.
+
+**Export to XDF:** To get a single file for use in common tools, export a session folder to XDF 1.0 (offline; no running service needed):
+
+```bash
+neurohid-service record export <path/to/session_folder> -o out.xdf
+```
+
+Exported `.xdf` files open in **EEGLAB**, **MNE-Python** (`mne.io.read_raw_xdf()`), and **Python** with **pyxdf** (`pyxdf.load_xdf()`). Session layout and stream semantics are documented in the config and recording format docs.
+
+**Replay:** You can run the pipeline on a recorded session instead of a live device (replay mode). Use `--replay <path/to/session_folder>` when starting the service, or run an offline pass with:
+
+```bash
+neurohid-service record replay-offline <path/to/session_folder>
+```
+
+Replay feeds the session's streams through the same signal and decoder path so you can validate or compare outputs.
+
 ---
 
 In short: **device in hand → list/connect device (CLI or SDK) → set config and profile → run service or pipeline.** For transport, control, observability, and validation harness, use the [deployment guide](deployment-guide.md).
