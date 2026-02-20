@@ -29,7 +29,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Composable SDK / CLI / formats
 
-- [ ] **COMP-01**: Developer can drive device discovery, connection, and stream selection via public SDK API (Rust) and/or CLI
+- [x] **COMP-01**: Developer can drive device discovery, connection, and stream selection via public SDK API (Rust) and/or CLI
 - [ ] **COMP-02**: Developer can configure signal pipeline and decoder (e.g. model path, params) via SDK/CLI and documented config format
 - [x] **COMP-03**: Developer can start/stop runtime and send control requests (e.g. snapshot, set output enabled) via SDK or CLI
 - [x] **COMP-04**: Stream consumption, timestamp, and "latest sample" semantics are documented and consistent (e.g. drain-then-last for LSL)
@@ -89,7 +89,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | PATH-01 | Phase 4 | Pending |
 | PATH-02 | Phase 4 | Pending |
 | PATH-03 | Phase 1 | Complete |
-| COMP-01 | Phase 3 | Pending |
+| COMP-01 | Phase 3 | Complete |
 | COMP-02 | Phase 3 | Pending |
 | COMP-03 | Phase 2 | Complete |
 | COMP-04 | Phase 1 | Complete |

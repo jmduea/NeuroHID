@@ -5,16 +5,18 @@
 See: .planning/PROJECT.md (updated 2026-02-20)
 
 **Core value:** A single, composable path from biosignal device to actionable output — with an IDE-like experience for building and training decoders and a standalone runtime for using them — so that developers and power users don't have to piece together disparate libraries and tools.
-**Current focus:** Phase 2 — Standalone runtime and control
+**Current focus:** Phase 3 — SDK/CLI for device and pipeline config
 
 ## Current Position
 
-Phase: 2 of 6 (Standalone runtime and control)
-Plan: 2 of 2 in current phase
-Status: Plan 02 complete
-Last activity: 2026-02-20 — Plan 02-02 executed (control CLI, deployment docs)
+Phase: 3 of 6 (SDK/CLI for device and pipeline config)
+Plan: 1 of 2 in current phase
+Current Plan: 01
+Total Plans in Phase: 2
+Status: Plan 01 complete
+Last activity: 2026-02-20 — Plan 03-01 executed (SDK device API, CLI device list/connect)
 
-Progress: [██████████] 100%
+Progress: [█████-----] 50%
 
 ## Performance Metrics
 
@@ -36,6 +38,7 @@ Progress: [██████████] 100%
 *Updated after each plan completion*
 | Phase 01-contracts-and-versioned-formats P01 | 15 | 2 tasks | 3 files |
 | Phase 02-standalone-runtime-and-control P01 | ~15 | 2 tasks | 2 files |
+| Phase 03-sdk-cli-for-device-and-pipeline-config P01 | 25 | 2 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -47,6 +50,7 @@ Recent decisions affecting current work:
 - (; roadmap just created)
 - [Phase 01-contracts-and-versioned-formats]: Config format version and compatibility policy in same doc as schema (config-format.md); N=2 previous versions supported
 - [Phase 01-contracts-and-versioned-formats]: Profile: calibration identity in metadata (no separate manifest) for export/import roundtrip; N=2 reader compatibility
+- [Phase 03-sdk-cli-for-device-and-pipeline-config]: Device API in neurohid-sdk device module (list, connect_by_id, connect_by_criteria, StreamConnectionHandle); neurohid dispatches to neurohid-service for device|config|pipeline|control|daemon
 
 ### Pending Todos
 
@@ -59,5 +63,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 02-02-PLAN.md (control CLI, RUNT-02, RUNT-03, COMP-03)
+Stopped at: Completed 03-01-PLAN.md (SDK device API, CLI device list/connect, COMP-01)
 Resume file: None
