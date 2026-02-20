@@ -10,9 +10,20 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 
+/// Current config file format version. Bump when the schema changes incompatibly.
+pub const CURRENT_CONFIG_FORMAT_VERSION: u32 = 1;
+
+fn default_format_version() -> u32 {
+    CURRENT_CONFIG_FORMAT_VERSION
+}
+
 /// Top-level system configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemConfig {
+    /// Config file format version for compatibility and migration.
+    #[serde(default = "default_format_version")]
+    pub format_version: u32,
+
     /// Configuration for device connection
     pub device: DeviceConfig,
 
@@ -48,6 +59,25 @@ pub struct SystemConfig {
     /// Configuration for hub UI behavior and persistence.
     #[serde(default)]
     pub ui: UiConfig,
+}
+
+impl Default for SystemConfig {
+    fn default() -> Self {
+        Self {
+            format_version: CURRENT_CONFIG_FORMAT_VERSION,
+            device: DeviceConfig::default(),
+            signal: SignalConfig::default(),
+            observation: ObservationConfig::default(),
+            errp: ErrPConfig::default(),
+            decoder: DecoderConfig::default(),
+            recalibration: RecalibrationConfig::default(),
+            action: ActionConfig::default(),
+            storage: StorageConfig::default(),
+            outlet: OutletConfig::default(),
+            service: ServiceConfig::default(),
+            ui: UiConfig::default(),
+        }
+    }
 }
 
 /// Which device backend to use for data acquisition.

@@ -94,6 +94,10 @@ mod tests {
         let config = store.load().await.unwrap();
         // Verify it matches Default
         assert_eq!(
+            config.format_version,
+            neurohid_types::config::CURRENT_CONFIG_FORMAT_VERSION
+        );
+        assert_eq!(
             config.signal.notch_filter_hz,
             SystemConfig::default().signal.notch_filter_hz
         );
@@ -115,6 +119,11 @@ mod tests {
         store.save(&config).await.unwrap();
         let loaded = store.load().await.unwrap();
 
+        assert_eq!(
+            loaded.format_version,
+            neurohid_types::config::CURRENT_CONFIG_FORMAT_VERSION,
+            "roundtrip must persist format_version"
+        );
         assert_eq!(loaded.signal.notch_filter_hz, 50.0);
         assert_eq!(loaded.service.log_level, "debug");
     }
@@ -181,6 +190,27 @@ mod tests {
             result.signal.bandpass_high_hz,
             SystemConfig::default().signal.bandpass_high_hz
         );
+    }
+
+    #[tokio::test]
+    async fn load_legacy_toml_without_format_version_deserializes_as_version_1() {
+        let tmp = tempfile::tempdir().unwrap();
+        let store = make_store(tmp.path().to_path_buf());
+        let mut config = SystemConfig::default();
+        config.signal.notch_filter_hz = 50.0;
+        let with_version = toml::to_string_pretty(&config).unwrap();
+        // Remove the format_version line to simulate legacy file
+        let legacy: String = with_version
+            .lines()
+            .filter(|line| !line.starts_with("format_version"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let config_path = tmp.path().join("config.toml");
+        std::fs::write(&config_path, legacy).unwrap();
+
+        let loaded = store.load().await.unwrap();
+        assert_eq!(loaded.format_version, 1, "legacy file without format_version should default to 1");
+        assert_eq!(loaded.signal.notch_filter_hz, 50.0);
     }
 
     #[tokio::test]
