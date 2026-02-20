@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-20)
 
 **Core value:** A single, composable path from biosignal device to actionable output — with an IDE-like experience for building and training decoders and a standalone runtime for using them — so that developers and power users don't have to piece together disparate libraries and tools.
-**Current focus:** Phase 1 — Contracts and versioned formats
+**Current focus:** Phase 2 — Standalone runtime and control
 
 ## Current Position
 
-Phase: 1 of 6 (Contracts and versioned formats)
-Plan: 3 of 3 in current phase
-Status: Plan 03 complete
-Last activity: 2026-02-20 — Plan 01-03 executed (stream semantics)
+Phase: 2 of 6 (Standalone runtime and control)
+Plan: 1 of 2 in current phase
+Status: Plan 01 complete
+Last activity: 2026-02-20 — Plan 02-01 executed (default control endpoint, standalone docs)
 
-Progress: [██████████] 100%
+Progress: [█████-----] 50%
 
 ## Performance Metrics
 
@@ -35,6 +35,7 @@ Progress: [██████████] 100%
 
 *Updated after each plan completion*
 | Phase 01-contracts-and-versioned-formats P01 | 15 | 2 tasks | 3 files |
+| Phase 02-standalone-runtime-and-control P01 | ~15 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -58,5 +59,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 01-03-PLAN.md (stream semantics; COMP-04)
+Stopped at: Completed 02-01-PLAN.md (standalone default control, RUNT-01)
 Resume file: None

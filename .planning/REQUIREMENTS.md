@@ -17,7 +17,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 ### Standalone runtime
 
-- [ ] **RUNT-01**: User can start the standalone runtime (neurohid-service or equivalent) with a chosen profile and attached decoder and have it run without the Hub GUI
+- [x] **RUNT-01**: User can start the standalone runtime (neurohid-service or equivalent) with a chosen profile and attached decoder and have it run without the Hub GUI
 - [ ] **RUNT-02**: User can enable/disable action output (e.g. HID) via control (CLI or Hub) while the runtime is running
 - [ ] **RUNT-03**: User can get runtime status (device connected, decoder loaded, output enabled, integrity) via control without opening the Hub
 
@@ -83,7 +83,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HUB-03 | Phase 5 | Pending |
 | HUB-04 | Phase 5 | Pending |
 | HUB-05 | Phase 5 | Pending |
-| RUNT-01 | Phase 2 | Pending |
+| RUNT-01 | Phase 2 | Complete |
 | RUNT-02 | Phase 2 | Pending |
 | RUNT-03 | Phase 2 | Pending |
 | PATH-01 | Phase 4 | Pending |

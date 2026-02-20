@@ -48,7 +48,7 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 02-01-PLAN.md — Standalone service with default control endpoint and startup docs (RUNT-01)
+- [x] 02-01-PLAN.md — Standalone service with default control endpoint and startup docs (RUNT-01)
 - [ ] 02-02-PLAN.md — Control CLI (snapshot, set-output-enabled) and docs (RUNT-02, RUNT-03, COMP-03)
 
 ### Phase 3: SDK/CLI for device and pipeline config
@@ -112,7 +112,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. Contracts and versioned formats | 3/3 | Complete | 2026-02-20 |
-| 2. Standalone runtime and control | 0/? | Not started | - |
+| 2. Standalone runtime and control | 1/2 | In progress | 2026-02-20 |
 | 3. SDK/CLI for device and pipeline config | 0/? | Not started | - |
 | 4. Standard path and recording | 0/? | Not started | - |
 | 5. Hub-as-IDE | 0/? | Not started | - |
