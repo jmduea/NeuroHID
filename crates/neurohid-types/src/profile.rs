@@ -39,9 +39,23 @@ impl std::fmt::Display for ProfileId {
     }
 }
 
+/// Identity of stored calibration data for reproducibility (re-run and audit/share).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CalibrationIdentity {
+    /// Format version of the calibration blob.
+    pub format_version: u32,
+    /// Optional content hash (e.g. SHA-256 hex) for exact verification.
+    #[serde(default)]
+    pub content_hash: Option<String>,
+}
+
 /// Metadata about a user profile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProfileMetadata {
+    /// Profile metadata format version for compatibility and migration.
+    #[serde(default)]
+    pub format_version: u32,
+
     /// The profile identifier
     pub id: ProfileId,
 
@@ -62,6 +76,10 @@ pub struct ProfileMetadata {
 
     /// Current calibration state
     pub calibration_state: CalibrationState,
+
+    /// Identity of the stored calibration for reproducibility (version + optional hash).
+    #[serde(default)]
+    pub calibration_identity: Option<CalibrationIdentity>,
 }
 
 impl ProfileMetadata {
@@ -69,6 +87,7 @@ impl ProfileMetadata {
     pub fn new(id: ProfileId, name: String) -> Self {
         let now = crate::now_micros();
         Self {
+            format_version: 1,
             id,
             name,
             created_at: now,
@@ -76,6 +95,7 @@ impl ProfileMetadata {
             last_calibrated_at: None,
             total_usage_time_us: 0,
             calibration_state: CalibrationState::NotCalibrated,
+            calibration_identity: None,
         }
     }
 }
