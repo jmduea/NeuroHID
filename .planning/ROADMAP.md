@@ -12,7 +12,7 @@ This roadmap takes NeuroHID from current validated foundations (device/signal/de
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: Contracts and versioned formats** - Profile/config and stream semantics versioned and documented; calibration/profile metadata reproducible
+- [x] **Phase 1: Contracts and versioned formats** - Profile/config and stream semantics versioned and documented; calibration/profile metadata reproducible (2026-02-20)
 - [ ] **Phase 2: Standalone runtime and control** - Run headless with profile+decoder; enable/disable output and get status via control; SDK/CLI for runtime control
 - [ ] **Phase 3: SDK/CLI for device and pipeline config** - Developer drives discovery, connection, stream selection, and configures signal/decoder via SDK/CLI
 - [ ] **Phase 4: Standard path and recording** - One documented path device→decoder→actions; record/export/replay in standard formats
@@ -32,9 +32,9 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Plans**: 3 plans
 
 Plans:
-- [ ] 01-01-PLAN.md — Config format versioned and documented (COMP-05)
-- [ ] 01-02-PLAN.md — Profile format versioned; calibration/profile identity for reproducibility (COMP-05, PATH-03)
-- [ ] 01-03-PLAN.md — Stream semantics documented (consumption, timestamps, latest-sample) (COMP-04)
+- [x] 01-01-PLAN.md — Config format versioned and documented (COMP-05)
+- [x] 01-02-PLAN.md — Profile format versioned; calibration/profile identity for reproducibility (COMP-05, PATH-03)
+- [x] 01-03-PLAN.md — Stream semantics documented (consumption, timestamps, latest-sample) (COMP-04)
 
 ### Phase 2: Standalone runtime and control
 **Goal**: User can run the decoder in the background and control it without the Hub GUI.
@@ -110,7 +110,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. Contracts and versioned formats | 0/? | Not started | - |
+| 1. Contracts and versioned formats | 3/3 | Complete | 2026-02-20 |
 | 2. Standalone runtime and control | 0/? | Not started | - |
 | 3. SDK/CLI for device and pipeline config | 0/? | Not started | - |
 | 4. Standard path and recording | 0/? | Not started | - |
