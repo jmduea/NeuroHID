@@ -76,7 +76,7 @@ Each task was committed atomically:
 - `crates/neurohid-sdk/src/config.rs` - load/save convenience API; module doc
 - `crates/neurohid-sdk/src/lib.rs` - pub mod config; config_tests
 - `crates/neurohid-sdk/Cargo.toml` - dev-dependency tempfile
-- `crates/neurohid/src/bin/neurohid-service.rs` - ConfigCommandCli (Show, Validate), PipelineCommandCli (Run --dry-run), run_config_command, run_pipeline_command; global --json, -q; ConfigErrorJson for stderr
+- `crates/neurohid/src/bin/neurohid-service.rs` - ConfigCommandCli (Show, Validate), PipelineCommandCli (Run --dry-run), run_config_command, run_pipeline_command; global --json, -q; ConfigErrorJson for stderr; load_runtime_context uses ConfigStore::load_from_path for --config (YAML/TOML by extension)
 
 ## Decisions Made
 

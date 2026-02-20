@@ -61,8 +61,8 @@ Plans:
 **Plans**: 2 plans
 
 Plans:
-- [ ] 03-01-PLAN.md — SDK device discovery/connection API and CLI device list/connect (COMP-01)
-- [ ] 03-02-PLAN.md — Config YAML + docs, SDK config API, CLI config/pipeline subcommands (COMP-02)
+- [x] 03-01-PLAN.md — SDK device discovery/connection API and CLI device list/connect (COMP-01)
+- [x] 03-02-PLAN.md — Config YAML + docs, SDK config API, CLI config/pipeline subcommands (COMP-02) (2026-02-20)
 
 ### Phase 4: Standard path and recording
 **Goal**: User has one coherent path from device to actions and can record/replay sessions for reproducibility.
