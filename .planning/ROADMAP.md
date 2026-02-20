@@ -29,10 +29,12 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. Profile and config formats have a documented version and compatibility policy
   2. Stream consumption, timestamp, and "latest sample" semantics are documented (e.g. drain-then-last for LSL)
   3. Calibration and profile metadata are stored with version/identity so the same setup can be reproduced
-**Plans**: TBD
+**Plans**: 3 plans
 
 Plans:
-- [ ] 01-01: TBD
+- [ ] 01-01-PLAN.md — Config format versioned and documented (COMP-05)
+- [ ] 01-02-PLAN.md — Profile format versioned; calibration/profile identity for reproducibility (COMP-05, PATH-03)
+- [ ] 01-03-PLAN.md — Stream semantics documented (consumption, timestamps, latest-sample) (COMP-04)
 
 ### Phase 2: Standalone runtime and control
 **Goal**: User can run the decoder in the background and control it without the Hub GUI.
