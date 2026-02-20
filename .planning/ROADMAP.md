@@ -75,7 +75,7 @@ Plans:
 
 Plans:
 - [ ] 04-01-PLAN.md — User guide with standard path section (device → decoder → run) (PATH-01)
-- [ ] 04-02-PLAN.md — Session recording (folder layout, tap task, control/CLI) (PATH-02)
+- [x] 04-02-PLAN.md — Session recording (folder layout, tap task, control/CLI) (PATH-02)
 - [ ] 04-03-PLAN.md — Export to XDF and replay (virtual source, offline run, docs) (PATH-02)
 
 ### Phase 5: Hub-as-IDE
@@ -117,6 +117,6 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 1. Contracts and versioned formats | 3/3 | Complete | 2026-02-20 |
 | 2. Standalone runtime and control | 2/2 | Complete    | 2026-02-20 |
 | 3. SDK/CLI for device and pipeline config | 2/2 | Complete   | 2026-02-20 |
-| 4. Standard path and recording | 1/3 | In Progress|  |
+| 4. Standard path and recording | 2/3 | In Progress|  |
 | 5. Hub-as-IDE | 0/? | Not started | - |
 | 6. Composable and extensible | 0/? | Not started | - |

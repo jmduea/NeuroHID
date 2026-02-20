@@ -10,13 +10,13 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 ## Current Position
 
 Phase: 4 of 6 (Standard path and recording)
-Plan: 1 of 3 in current phase
-Current Plan: 01
+Plan: 2 of 3 in current phase
+Current Plan: 02
 Total Plans in Phase: 3
-Status: Plan 01 complete
-Last activity: 2026-02-20 — Plan 04-01 executed (user guide and standard path, PATH-01)
+Status: Plan 02 complete
+Last activity: 2026-02-20 — Plan 04-02 executed (session recording, PATH-02)
 
-Progress: [███░░░░░░░] 33%
+Progress: [██████░░░░] 67%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Recent decisions affecting current work:
 - [Phase 03-sdk-cli-for-device-and-pipeline-config]: Device API in neurohid-sdk device module (list, connect_by_id, connect_by_criteria, StreamConnectionHandle); neurohid dispatches to neurohid-service for device|config|pipeline|control|daemon
 - [Phase 03-sdk-cli-for-device-and-pipeline-config]: ConfigStore YAML/TOML by path extension; SDK config::load/save; CLI config show/validate, pipeline run --dry-run; exit 3 config invalid, --json errors to stderr
 - [Phase 04-standard-path-and-recording]: User guide as dedicated doc (user-guide.md) with Standard path section; index links under Canonical Entry Points
+- [Phase 04-standard-path-and-recording]: Recording config default_output_path as Option<String>; config snapshot as config.json in session folder; dispatch_control_request async for recording oneshot reply
 
 ### Pending Todos
 
@@ -67,5 +68,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-20
-Stopped at: Completed 03-02-PLAN.md (YAML config, SDK config API, CLI config/pipeline, COMP-02)
+Stopped at: Completed 04-02-PLAN.md (session recording, control/CLI, PATH-02)
 Resume file: None

@@ -24,7 +24,7 @@ Requirements for initial release. Each maps to roadmap phases.
 ### Standard path
 
 - [x] **PATH-01**: User can follow documented steps from "device in hand" to "decoder driving actions" using defaults and one coherent path
-- [ ] **PATH-02**: User can record/export sessions and replay or analyze them in standard formats (e.g. XDF, documented config) for reproducibility
+- [x] **PATH-02**: User can record/export sessions and replay or analyze them in standard formats (e.g. XDF, documented config) for reproducibility
 - [x] **PATH-03**: Calibration and profile metadata are stored with version/identity so the same setup can be reproduced
 
 ### Composable SDK / CLI / formats
@@ -87,7 +87,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | RUNT-02 | Phase 2 | Complete |
 | RUNT-03 | Phase 2 | Complete |
 | PATH-01 | Phase 4 | Complete |
-| PATH-02 | Phase 4 | Pending |
+| PATH-02 | Phase 4 | Complete |
 | PATH-03 | Phase 1 | Complete |
 | COMP-01 | Phase 3 | Complete |
 | COMP-02 | Phase 3 | Complete |
