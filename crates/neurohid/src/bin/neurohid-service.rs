@@ -37,6 +37,8 @@ use neurohid_core::service::NeuroHidService;
 use tokio::sync::{Mutex, broadcast};
 
 const DEFAULT_WINDOWS_SERVICE_NAME: &str = "NeuroHIDService";
+/// Default TCP port for the control server when running standalone with no config endpoint.
+const DEFAULT_STANDALONE_CONTROL_PORT: u16 = 47384;
 #[cfg(windows)]
 const WINDOWS_SERVICE_DISPLAY_NAME: &str = "NeuroHID Service";
 #[cfg(windows)]
@@ -382,7 +384,16 @@ async fn run_managed_runtime(
     let runtime_ipc_handle = runtime_handle.ipc_handle();
     tracing::info!("Managed runtime started");
 
-    if let Some(server_config) = resolve_runtime_ipc_server_config(&service_config, control_port)? {
+    let effective_control_port = control_port.or_else(|| {
+        if service_config.ipc_endpoint.trim().is_empty() {
+            Some(DEFAULT_STANDALONE_CONTROL_PORT)
+        } else {
+            None
+        }
+    });
+    if let Some(server_config) =
+        resolve_runtime_ipc_server_config(&service_config, effective_control_port)?
+    {
         tracing::info!(
             transport = ?server_config.transport,
             endpoint = %server_config.endpoint,
