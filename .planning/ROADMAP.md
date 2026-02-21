@@ -34,7 +34,11 @@ Phases 1–6 completed; see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP
   2. Hub is documented as one application built on the framework; dependency graph and docs define the boundary.
   3. Hub depends only on core (and calibration) and the framework facade; dependency audit or CI check enforces no disallowed direct deps from Hub to component crates.
   4. Docs describe the framework vs Hub boundary so contributors and embedders know what is framework vs application.
-**Plans**: TBD
+**Plans:** 2 plans
+
+Plans:
+- [ ] 07-01-PLAN.md — Framework surface doc and allowlist; index/README/crate-boundaries links
+- [ ] 07-02-PLAN.md — CI dependency allowlist script and job
 
 ### Phase 8: Thorough Testing
 **Goal**: Developer has confidence that tests are deterministic, key boundaries are covered, and CI reflects reality.
@@ -76,7 +80,7 @@ Phases 1–6 completed; see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Framework–Hub Separation | v1.1 | 0/? | Not started | - |
+| 7. Framework–Hub Separation | v1.1 | 0/2 | Not started | - |
 | 8. Thorough Testing | v1.1 | 0/? | Not started | - |
 | 9. BrainFlow First-Class | v1.1 | 0/? | Not started | - |
 | 10. BrainFlow Deeper | v1.1 | 0/? | Not started | - |
