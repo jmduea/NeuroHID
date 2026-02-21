@@ -7,6 +7,9 @@
 //!
 //! When the native BrainFlow SDK integration is needed, add the `brainflow`
 //! feature and plumb the real SDK behind this same `DeviceProvider` trait.
+//!
+//! With `brainflow-native` enabled, connect() returns a native Device for real
+//! boards (board_id != 0 or serial_port set); board_id 0 stays synthetic.
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -60,6 +63,20 @@ impl DeviceProvider for BrainFlowProvider {
         device_id: &DeviceId,
         _settings: Option<ConnectionSettings>,
     ) -> Result<Box<dyn Device>> {
+        #[cfg(feature = "brainflow-native")]
+        if self.config.board_id != 0 || self.config.serial_port.is_some() {
+            if let Ok(native) =
+                crate::brainflow_native::connect_native(
+                    self.config.board_id,
+                    self.config.serial_port.as_deref(),
+                    device_id,
+                )
+            {
+                return Ok(Box::new(native));
+            }
+            // Fall through to synthetic if native connect fails (e.g. no hardware)
+        }
+
         let metadata = normalize_metadata(&self.config);
         if metadata.info.id != *device_id {
             return Err(DeviceError::NoDeviceFound.into());
