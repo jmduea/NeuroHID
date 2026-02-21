@@ -87,18 +87,6 @@ impl SettingsScreen {
                     }
                 };
                 theme::status_chip(ui, &backend_label, theme::Intent::Muted);
-                theme::status_chip(ui, "LSL-first telemetry UX", theme::Intent::Info);
-                if matches!(
-                    state.config.device.backend,
-                    neurohid_types::config::DeviceBackend::Serial
-                        | neurohid_types::config::DeviceBackend::BrainFlow
-                ) {
-                    theme::status_chip(
-                        ui,
-                        "Serial/BrainFlow parity is phased later",
-                        theme::Intent::Warning,
-                    );
-                }
 
                 theme::status_chip(
                     ui,

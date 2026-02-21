@@ -100,7 +100,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut crate::state::HubState, runtime: &t
                     if matches!(cfg.backend, neurohid_types::config::DeviceBackend::Serial) {
                         theme::status_chip(
                             ui,
-                            "Serial backend remains functional; deep telemetry parity is phased",
+                            "Serial backend: configure port and baud in Settings.",
                             theme::Intent::Warning,
                         );
                         ui.horizontal(|ui| {
@@ -171,7 +171,7 @@ pub fn render(ui: &mut egui::Ui, state: &mut crate::state::HubState, runtime: &t
                     ) {
                         theme::status_chip(
                             ui,
-                            "BrainFlow backend remains functional; deep telemetry parity is phased",
+                            "BrainFlow: set board id (0 = synthetic); optional serial port for hardware.",
                             theme::Intent::Warning,
                         );
                         ui.horizontal(|ui| {

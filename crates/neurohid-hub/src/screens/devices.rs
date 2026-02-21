@@ -46,7 +46,7 @@ impl DevicesScreen {
                 theme::status_chip(ui, "Service stopped", theme::Intent::Warning);
                 theme::status_chip(
                     ui,
-                    "Start service to discover/connect LSL streams",
+                    "Start service to discover/connect streams (LSL, BrainFlow, …)",
                     theme::Intent::Info,
                 );
                 theme::status_chip(ui, "Use Dashboard to start service", theme::Intent::Muted);
@@ -95,14 +95,13 @@ impl DevicesScreen {
                 } else {
                     theme::status_chip(ui, "Device idle", theme::Intent::Muted);
                 }
-                theme::status_chip(ui, "LSL-first scope", theme::Intent::Info);
             });
         });
         ui.add_space(8.0);
 
         // Header with rescan button
         ui.horizontal(|ui| {
-            ui.heading("Available Streams (LSL-first)");
+            ui.heading("Available Streams");
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if theme::action_button(ui, "Rescan", true, theme::ButtonTone::Primary) {
                     service_manager.rescan_streams();
@@ -117,13 +116,8 @@ impl DevicesScreen {
                 ui.add_space(4.0);
                 theme::status_chip(
                     ui,
-                    "Ensure device software is pushing to LSL; use Rescan to check manually",
+                    "Use Rescan to discover streams; LSL requires a publisher; BrainFlow synthetic appears when backend is BrainFlow.",
                     theme::Intent::Warning,
-                );
-                theme::status_chip(
-                    ui,
-                    "Serial/BrainFlow parity is planned in later phases",
-                    theme::Intent::Muted,
                 );
                 theme::status_chip(
                     ui,
