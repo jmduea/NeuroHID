@@ -22,6 +22,7 @@ use crate::screens::jupyter_ide::JupyterIdeScreen;
 use crate::screens::profiles::ProfilesScreen;
 use crate::screens::python_lab::PythonLabScreen;
 use crate::screens::settings::SettingsScreen;
+use crate::screens::training::TrainingScreen;
 use crate::screens::visualization::VisualizationScreen;
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
@@ -54,6 +55,7 @@ pub struct HubApp {
     devices: DevicesScreen,
     profiles: ProfilesScreen,
     calibration: CalibrationScreen,
+    training: TrainingScreen,
     jupyter_ide: JupyterIdeScreen,
     python_lab: PythonLabScreen,
     settings: SettingsScreen,
@@ -120,6 +122,7 @@ impl HubApp {
             devices: DevicesScreen::new(),
             profiles: ProfilesScreen::new(),
             calibration: CalibrationScreen::new(),
+            training: TrainingScreen::new(),
             jupyter_ide: JupyterIdeScreen::new(),
             python_lab: PythonLabScreen::new(),
             settings: SettingsScreen::new(),
@@ -2065,7 +2068,8 @@ impl eframe::App for HubApp {
                             .show_entry(ui, &mut self.state, &mut self.service_manager);
                     }
                     Screen::Training => {
-                        todo!("Training screen stub added in Task 2");
+                        self.training
+                            .show(ui, &self.state, &mut self.service_manager);
                     }
                     Screen::JupyterIde => {
                         self.jupyter_ide.show(ui, &self.state.config.ui);
@@ -2436,6 +2440,16 @@ fn command_palette_items(
             label: "Open Profiles",
             keywords: "screen ops profiles calibration",
             action: CommandPaletteAction::OpenScreen(Screen::Profiles),
+        },
+        CommandPaletteItem {
+            label: "Open Calibration",
+            keywords: "screen calibration games wizard",
+            action: CommandPaletteAction::OpenScreen(Screen::Calibration),
+        },
+        CommandPaletteItem {
+            label: "Open Training",
+            keywords: "screen training decoder config progress",
+            action: CommandPaletteAction::OpenScreen(Screen::Training),
         },
         CommandPaletteItem {
             label: "Open Visualization",

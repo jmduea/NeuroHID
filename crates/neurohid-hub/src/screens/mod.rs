@@ -12,6 +12,7 @@ pub mod jupyter_ide;
 pub mod profiles;
 pub mod python_lab;
 pub mod settings;
+pub mod training;
 pub mod visualization;
 
 /// The available hub screens, selected via sidebar navigation.
