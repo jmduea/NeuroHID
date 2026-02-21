@@ -94,7 +94,7 @@ Plans:
 - [ ] 05-01-PLAN.md — Sidebar/nav alignment (Calibration, Training, Visualization, Devices) and Training screen stub (HUB-05)
 - [ ] 05-02-PLAN.md — Devices discover/connect and persistent strip; connection status and stream health in one place (HUB-01)
 - [ ] 05-03-PLAN.md — Calibration game list/grid, wizard, persist to profile (HUB-02)
-- [ ] 05-04-PLAN.md — Training screen split layout (config | live progress/metrics) (HUB-03)
+- [x] 05-04-PLAN.md — Training screen split layout (config | live progress/metrics) (HUB-03)
 - [ ] 05-05-PLAN.md — Visualization customizable and open with Run (HUB-04)
 - [ ] 05-06-PLAN.md — Primary workflow (Run in Hub/background, resume state, docs) (HUB-05)
 
@@ -123,5 +123,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Standalone runtime and control | 2/2 | Complete    | 2026-02-20 |
 | 3. SDK/CLI for device and pipeline config | 2/2 | Complete   | 2026-02-20 |
 | 4. Standard path and recording | 3/3 | Complete    | 2026-02-20 |
-| 5. Hub-as-IDE | 1/6 | In Progress|  |
+| 5. Hub-as-IDE | 4/6 | In Progress|  |
 | 6. Composable and extensible | 0/? | Not started | - |

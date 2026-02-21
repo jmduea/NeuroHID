@@ -10,13 +10,13 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 ## Current Position
 
 Phase: 5 of 6 (Hub-as-IDE)
-Plan: 1 of 6 in current phase
-Current Plan: 01
+Plan: 5 of 6 in current phase
+Current Plan: 05
 Total Plans in Phase: 6
-Status: Plan 05-01 complete (sidebar/nav alignment, Training stub)
-Last activity: 2026-02-21 — Plan 05-01 executed (lanes, Screen::Training, training.rs stub)
+Status: Plan 05-05 complete (Visualization customizable, Run+Viz together; HUB-04)
+Last activity: 2026-02-21 — Plan 05-05 executed (layout persisted via UiConfig, content-area Run|Viz tabs)
 
-Progress: [██░░░░░░░░] 17%
+Progress: [███████░░░] 83%
 
 ## Performance Metrics
 
@@ -42,6 +42,7 @@ Progress: [██░░░░░░░░] 17%
 | Phase 03-sdk-cli-for-device-and-pipeline-config P02 | ~25 | 3 tasks | 7 files |
 | Phase 04 P01 | 5min | 1 task | 2 files |
 | Phase 04 P02 | — | 3 tasks | 12+ files |
+| Phase 05-hub-as-ide P02 | 15 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -58,6 +59,8 @@ Recent decisions affecting current work:
 - [Phase 04-standard-path-and-recording]: User guide as dedicated doc (user-guide.md) with Standard path section; index links under Canonical Entry Points
 - [Phase 04-standard-path-and-recording]: Recording config default_output_path as Option<String>; config snapshot as config.json in session folder; dispatch_control_request async for recording oneshot reply
 - [Phase 05-hub-as-ide]: Lanes: Devices, Calibration, Training, Visualization, Config; Training screen stub for primary workflow
+- [Phase 05-hub-as-ide]: Status bar shows Devices X/Y and Signal % from any screen; strip always visible (0/0 when stopped)
+- [Phase 05-hub-as-ide]: Training screen split layout (config | live progress); Train on collected data stub; live metrics from ControlSnapshot + trainer_snapshot()
 
 ### Pending Todos
 
@@ -70,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 05-01-PLAN.md (sidebar/nav, Training stub). Next: 05-02 (Devices discover/connect).
+Stopped at: Completed 05-04-PLAN.md (Training split layout, HUB-03). Next: 05-05 (Visualization).
 Resume file: None
