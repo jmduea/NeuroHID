@@ -133,6 +133,18 @@ jobs:
       - name: Format check
         run: cargo fmt --check
 
+  framework-boundary:
+    name: Framework Boundary
+    needs: determine-impact
+    if: needs.determine-impact.outputs.rust == 'true' || needs.determine-impact.outputs.automation == 'true' || github.event_name == 'push'
+    runs-on: [self-hosted, linux, neurohid-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Check framework boundary
+        shell: pwsh
+        run: ./.github/scripts/check-framework-boundary.ps1
+
   docs:
     name: Documentation
     needs: determine-impact
