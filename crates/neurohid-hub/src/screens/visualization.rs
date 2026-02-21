@@ -2,7 +2,10 @@
 //!
 //! The main real-time data visualization screen. Uses the LayoutManager to
 //! display multiple widgets (Time Series, FFT, Band Power, etc.) in a
-//! configurable multi-pane layout.
+//! configurable multi-pane layout. Layout preset and pane widget assignments
+//! are persisted via `UiConfig` (visualization_layout_preset, visualization_pane_widgets)
+//! so the user's customization is restored on restart. Visualization is open
+//! anytime from the sidebar (top-level lane in Advanced mode).
 
 use eframe::egui::{self, Color32, RichText};
 use neurohid_types::config::UiConfig;
