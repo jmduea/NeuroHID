@@ -88,10 +88,15 @@ Plans:
   3. User can configure and launch decoder training from the Hub and observe training progress and metrics
   4. User can visualize real-time signal and pipeline state (e.g. features, decoder output) in the Hub during experiments
   5. User can follow one primary workflow in the Hub: device setup → calibration → train decoder → run (embedded or external runtime) without switching tools
-**Plans**: TBD
+**Plans**: 6 plans
 
 Plans:
-- [ ] 05-01: TBD
+- [ ] 05-01-PLAN.md — Sidebar/nav alignment (Calibration, Training, Visualization, Devices) and Training screen stub (HUB-05)
+- [ ] 05-02-PLAN.md — Devices discover/connect and persistent strip; connection status and stream health in one place (HUB-01)
+- [ ] 05-03-PLAN.md — Calibration game list/grid, wizard, persist to profile (HUB-02)
+- [ ] 05-04-PLAN.md — Training screen split layout (config | live progress/metrics) (HUB-03)
+- [ ] 05-05-PLAN.md — Visualization customizable and open with Run (HUB-04)
+- [ ] 05-06-PLAN.md — Primary workflow (Run in Hub/background, resume state, docs) (HUB-05)
 
 ### Phase 6: Composable and extensible
 **Goal**: Pipeline components are swappable and new device/output types can be added via published contracts.
@@ -118,5 +123,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Standalone runtime and control | 2/2 | Complete    | 2026-02-20 |
 | 3. SDK/CLI for device and pipeline config | 2/2 | Complete   | 2026-02-20 |
 | 4. Standard path and recording | 3/3 | Complete    | 2026-02-20 |
-| 5. Hub-as-IDE | 0/? | Not started | - |
+| 5. Hub-as-IDE | 1/6 | In Progress|  |
 | 6. Composable and extensible | 0/? | Not started | - |

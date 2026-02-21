@@ -5,18 +5,18 @@
 See: .planning/PROJECT.md (updated 2026-02-20)
 
 **Core value:** A single, composable path from biosignal device to actionable output — with an IDE-like experience for building and training decoders and a standalone runtime for using them — so that developers and power users don't have to piece together disparate libraries and tools.
-**Current focus:** Phase 4 — Standard path and recording
+**Current focus:** Phase 5 — Hub-as-IDE
 
 ## Current Position
 
-Phase: 4 of 6 (Standard path and recording)
-Plan: 3 of 3 in current phase
-Current Plan: 03
-Total Plans in Phase: 3
-Status: Plans 01, 02, and 03 complete (Phase 4 complete)
-Last activity: 2026-02-20 — Plan 04-03 executed (XDF export, replay source, replay-offline, user-guide)
+Phase: 5 of 6 (Hub-as-IDE)
+Plan: 1 of 6 in current phase
+Current Plan: 01
+Total Plans in Phase: 6
+Status: Plan 05-01 complete (sidebar/nav alignment, Training stub)
+Last activity: 2026-02-21 — Plan 05-01 executed (lanes, Screen::Training, training.rs stub)
 
-Progress: [██████████] 100%
+Progress: [██░░░░░░░░] 17%
 
 ## Performance Metrics
 
@@ -57,6 +57,7 @@ Recent decisions affecting current work:
 - [Phase 03-sdk-cli-for-device-and-pipeline-config]: ConfigStore YAML/TOML by path extension; SDK config::load/save; CLI config show/validate, pipeline run --dry-run; exit 3 config invalid, --json errors to stderr
 - [Phase 04-standard-path-and-recording]: User guide as dedicated doc (user-guide.md) with Standard path section; index links under Canonical Entry Points
 - [Phase 04-standard-path-and-recording]: Recording config default_output_path as Option<String>; config snapshot as config.json in session folder; dispatch_control_request async for recording oneshot reply
+- [Phase 05-hub-as-ide]: Lanes: Devices, Calibration, Training, Visualization, Config; Training screen stub for primary workflow
 
 ### Pending Todos
 
@@ -68,6 +69,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-02-20
-Stopped at: Plan 04-03 complete (SUMMARY, ROADMAP, STATE updated). Phase 4 complete. Next: Phase 5 (Hub-as-IDE) when started.
+Last session: 2026-02-21
+Stopped at: Completed 05-01-PLAN.md (sidebar/nav, Training stub). Next: 05-02 (Devices discover/connect).
 Resume file: None
