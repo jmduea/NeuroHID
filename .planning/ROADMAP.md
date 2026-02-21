@@ -93,7 +93,7 @@ Plans:
 Plans:
 - [ ] 05-01-PLAN.md — Sidebar/nav alignment (Calibration, Training, Visualization, Devices) and Training screen stub (HUB-05)
 - [ ] 05-02-PLAN.md — Devices discover/connect and persistent strip; connection status and stream health in one place (HUB-01)
-- [ ] 05-03-PLAN.md — Calibration game list/grid, wizard, persist to profile (HUB-02)
+- [x] 05-03-PLAN.md — Calibration game list/grid, wizard, persist to profile (HUB-02)
 - [x] 05-04-PLAN.md — Training screen split layout (config | live progress/metrics) (HUB-03)
 - [x] 05-05-PLAN.md — Visualization customizable and open with Run (HUB-04)
 - [ ] 05-06-PLAN.md — Primary workflow (Run in Hub/background, resume state, docs) (HUB-05)
