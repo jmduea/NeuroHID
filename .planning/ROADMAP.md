@@ -94,7 +94,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 7. Framework–Hub Separation | 2/2 | Complete    | 2026-02-21 | - |
 | 8. Thorough Testing | 5/5 | Complete    | 2026-02-21 | - |
-| 9. BrainFlow First-Class | 3/3 | Complete   | 2026-02-21 | - |
+| 9. BrainFlow First-Class | 3/3 | Complete    | 2026-02-21 | - |
 | 10. BrainFlow Deeper | v1.1 | 0/? | Not started | - |
 
 ---
