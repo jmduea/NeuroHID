@@ -107,10 +107,13 @@ Plans:
   2. New device backends can be added without changing core orchestration (trait-based or plugin contract)
   3. New action/output types (e.g. game input, MIDI) can be added via a defined outlet/effector contract
   4. One example plugin (device or outlet) exists and is tested in CI to demonstrate the extension path
-**Plans**: TBD
+**Plans**: 4 plans
 
 Plans:
-- [ ] 06-01: TBD
+- [ ] 06-01-PLAN.md — Outlet contract, extension manifest, discovery registry (COMP-06, EXT-01, EXT-02)
+- [ ] 06-02-PLAN.md — Device/outlet name-based selection and loading in core (COMP-06, EXT-01, EXT-02)
+- [ ] 06-03-PLAN.md — Example outlet plugin and CI e2e (EXT-03)
+- [ ] 06-04-PLAN.md — Hub Extensions screen and CLI list/refresh (COMP-06)
 
 ## Progress
 
