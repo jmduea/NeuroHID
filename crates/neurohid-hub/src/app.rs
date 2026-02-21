@@ -508,6 +508,10 @@ impl HubApp {
         );
     }
 
+    /// Persistent device/stream strip (status bar): visible from every screen.
+    /// Single source of truth: ServiceSnapshot (ControlSnapshot). Shows device
+    /// count (connected/total) and signal quality so users have one place for
+    /// at-a-glance status without opening the Devices screen.
     fn show_status_bar(&mut self, ctx: &egui::Context) {
         const FOOTER_CONTROL_WIDTH_ADVANCED: f32 = 278.0;
         const FOOTER_CONTROL_WIDTH_STANDARD: f32 = 140.0;
@@ -607,6 +611,35 @@ impl HubApp {
                         );
                     }
 
+                    // Persistent strip: device count and signal health always visible (one place)
+                    let connected_streams = snap
+                        .discovered_streams
+                        .iter()
+                        .filter(|stream| stream.connected)
+                        .count();
+                    let total_streams = snap.discovered_streams.len();
+                    theme::status_chip(
+                        ui,
+                        &format!("Devices {}/{}", connected_streams, total_streams),
+                        if connected_streams > 0 {
+                            theme::Intent::Info
+                        } else {
+                            theme::Intent::Muted
+                        },
+                    );
+                    let signal_intent = if snap.signal_quality >= 0.7 {
+                        theme::Intent::Success
+                    } else if snap.signal_quality >= 0.5 {
+                        theme::Intent::Warning
+                    } else {
+                        theme::Intent::Danger
+                    };
+                    theme::status_chip(
+                        ui,
+                        &format!("Signal {:.0}%", snap.signal_quality * 100.0),
+                        signal_intent,
+                    );
+
                     if snap.running {
                         let mode_label = match snap.runtime_mode_state {
                             RuntimeModeState::Full => "Mode: full",
@@ -619,35 +652,6 @@ impl HubApp {
                             RuntimeModeState::Degraded => theme::Intent::Danger,
                         };
                         theme::status_chip(ui, mode_label, mode_intent);
-
-                        let signal_intent = if snap.signal_quality >= 0.7 {
-                            theme::Intent::Success
-                        } else if snap.signal_quality >= 0.5 {
-                            theme::Intent::Warning
-                        } else {
-                            theme::Intent::Danger
-                        };
-                        theme::status_chip(
-                            ui,
-                            &format!("Signal {:.0}%", snap.signal_quality * 100.0),
-                            signal_intent,
-                        );
-
-                        let connected_streams = snap
-                            .discovered_streams
-                            .iter()
-                            .filter(|stream| stream.connected)
-                            .count();
-                        let total_streams = snap.discovered_streams.len();
-                        theme::status_chip(
-                            ui,
-                            &format!("Devices {}/{}", connected_streams, total_streams),
-                            if connected_streams > 0 {
-                                theme::Intent::Info
-                            } else {
-                                theme::Intent::Muted
-                            },
-                        );
 
                         let mins = snap.uptime_secs / 60;
                         let secs = snap.uptime_secs % 60;
