@@ -12,14 +12,12 @@ A single, composable path from biosignal device to actionable output — with an
 
 **Shipped:** v1.0 MVP (2026-02-21) — 6 phases, 20 plans. Versioned contracts and formats; standalone runtime and control; SDK/CLI for device and pipeline config; standard path and recording; Hub-as-IDE; composable pipeline with extension contracts and example outlet plugin. All 19 v1 requirements validated.
 
-## Current Milestone: v1.1 Testing, BrainFlow & Framework Separation
+**Shipped:** v1.1 Testing, BrainFlow & Framework Separation (2026-02-21) — 4 phases, 12 plans. Framework–Hub boundary documented and CI-enforced; thorough testing (nextest, integration/E2E, coverage thresholds, docs/testing.md); BrainFlow first-class (docs, synthetic board replaces mock, Hub UX) and deeper (brainflow-native feature, pinned 5.13.0, same pipeline as LSL). All 17 v1.1 requirements validated.
 
-**Goal:** Improve confidence and developer clarity: thorough testing, first-class BrainFlow integration (docs/UX then deeper integration), and a clear structural split between the reusable framework (what devs build on) and the NeuroHID Hub application (our solution on top). Full framework split to separate repo is planned for a later milestone.
+## Next Milestone Goals
 
-**Target features:**
-- Thorough testing — broader and deeper coverage (Rust + Python), reduce flakiness, integration/E2E where valuable
-- Native BrainFlow — BrainFlow’s synthetic board fully replaces the mock device for tests/examples/CI; documentation, examples, Hub UX; then deeper integration (real SDK, streaming) as far as milestone allows
-- Framework vs Hub separation — structural boundary in-repo: framework as distinct crate(s) or layout that Hub depends on; documented “framework” surface and “Hub as one app”; full split (e.g. framework in own repo) planned later
+To be defined via `/gsd:new-milestone` (questioning → research → requirements → roadmap). Candidates from deferred/out-of-scope: validation harness in CI (TEST-06), board-specific BrainFlow params (BRAIN-09), framework repo split (FRAME-05), latency profiling (RUNT-04/05), Hub/notebook enhancements.
+
 
 ## Requirements
 
@@ -42,12 +40,12 @@ A single, composable path from biosignal device to actionable output — with an
 - ✓ **Standard path** — documented device→decoder→actions; record/export/replay (PATH-01–PATH-02) — v1.0
 - ✓ **Composable building blocks** — SDK/CLI/formats; pipeline stages swappable via contracts (COMP-01–COMP-06) — v1.0
 - ✓ **Extensibility** — device/outlet contracts; example plugin in CI (EXT-01–EXT-03) — v1.0
+- ✓ **Thorough testing** — nextest, integration/E2E, coverage thresholds, test tiers doc (TEST-01–TEST-05) — v1.1
+- ✓ **Framework vs Hub separation** — framework surface doc, allowlist, CI boundary check (FRAME-01–FRAME-04) — v1.1
+- ✓ **BrainFlow first-class and deeper** — docs, synthetic board, Hub UX, brainflow-native feature, pinned build (BRAIN-01–BRAIN-08) — v1.1
 
 ### Active
 
-- [ ] Thorough testing — coverage, flakiness reduction, integration/E2E (v1.1)
-- [ ] Native BrainFlow — docs, examples, Hub UX; deeper integration as scope allows (v1.1)
-- [ ] Framework vs Hub separation — structural boundary in-repo; framework as distinct surface Hub depends on (v1.1)
 - [ ] Latency profiling and tuning; Soak/LatencyMatrix in CI (RUNT-04, RUNT-05) — deferred
 - [ ] Advanced visualization and experiment templates in Hub (HUB-06) — deferred
 - [ ] Richer Python/notebook integration and workbench options (HUB-07) — deferred
@@ -65,6 +63,7 @@ A single, composable path from biosignal device to actionable output — with an
 - The repo is a Rust/Python monorepo: Rust runtime (device/signal/action stack, IPC, GUI, SDK), Python ML bridge (decoder, ErrP, trainer, notebooks). Codebase mapped in `.planning/codebase/` (ARCHITECTURE.md, STACK.md).
 - Target users: the author first; then other developers and power users who want to experiment with biosignal-driven interfaces and need composable, observable tooling.
 - **Shipped v1.0:** 6 phases, 20 plans; extension contracts in docs/extension-contracts.md; example outlet crate and CI e2e.
+- **Shipped v1.1:** 4 phases, 12 plans; framework surface and allowlist; nextest and testing docs; BrainFlow synthetic default and brainflow-native optional.
 
 ## Constraints
 
@@ -82,8 +81,8 @@ A single, composable path from biosignal device to actionable output — with an
 | Config/profile versioning and stream semantics | Reproducibility and compatibility | ✓ config-format.md; N=2 compatibility |
 | Extension identity by name; discovery path | Simple, deterministic plugin loading | ✓ config root + /extensions; DuplicateName error |
 | Loaded* wrappers (libloading + Box<dyn Trait>) | Keep extension libs alive; snapshot exposes slot names | ✓ In core and snapshot |
-| Framework vs Hub structural separation (v1.1) | Devs need clear “what to depend on” vs “our app”; full repo split later | — In progress |
-| BrainFlow first-class then deeper (v1.1) | Docs/UX first, then board config/streaming as scope allows | — In progress |
+| Framework vs Hub structural separation (v1.1) | Devs need clear “what to depend on” vs “our app”; full repo split later | ✓ Shipped v1.1 |
+| BrainFlow first-class then deeper (v1.1) | Docs/UX first, then board config/streaming as scope allows | ✓ Shipped v1.1 |
 
 ---
-*Last updated: 2026-02-21 after v1.1 milestone start*
+*Last updated: 2026-02-21 after v1.1 milestone complete*

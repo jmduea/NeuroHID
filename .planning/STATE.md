@@ -5,18 +5,13 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** A single, composable path from biosignal device to actionable output — with an IDE-like experience for building and training decoders and a standalone runtime for using them — so that developers and power users don't have to piece together disparate libraries and tools.
-**Current focus:** v1.1 — Phase 8 (Thorough Testing)
+**Current focus:** Planning next milestone (v1.2 or later).
 
 ## Current Position
 
-Phase: 10 of 10 (BrainFlow Deeper)
-**Current Plan:** Not started
-**Total Plans in Phase:** 2
-Plan: 10-01 complete
-Status: Ready to execute
-Last activity: 2026-02-21 — Completed 10-01 (Pin BrainFlow version and document build order)
+Milestone v1.1 complete (2026-02-21). All 4 phases (7–10), 12 plans shipped. Archived to .planning/milestones/v1.1-ROADMAP.md and v1.1-REQUIREMENTS.md.
 
-Progress: [██████████░░░░░░░░░░] 50% (2 plans in v1.1)
+Progress: v1.1 complete. Next: `/gsd:new-milestone` to define next milestone.
 
 ## Performance Metrics
 

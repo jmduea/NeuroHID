@@ -16,3 +16,18 @@
 
 ---
 
+
+## v1.1 Testing, BrainFlow & Framework Separation (Shipped: 2026-02-21)
+
+**Phases completed:** 4 phases, 12 plans
+
+**Key accomplishments:**
+1. Framework–Hub separation — Documented framework surface and allowlist; CI enforces Hub/binaries dependency boundary; docs/framework-surface.md and .github/framework-allowlist.toml
+2. Thorough testing — Nextest in CI, pipeline integration and extension outlet e2e tests; E2E service + Python client; coverage thresholds (Python 50%, Rust 35%); docs/testing.md for tiers and isolation
+3. BrainFlow first-class — docs/brainflow.md; BrainFlow in default build; synthetic board replaces mock in tests/examples/CI; Hub Devices/Settings parity; one runnable example (embedded_runtime)
+4. BrainFlow deeper — brainflow-native feature flag and optional native Device/streaming path; BrainFlow 5.13.0 pinned and build order documented; optional scripts/build-brainflow-native.sh; same pipeline as LSL
+
+**Archived:** [v1.1-ROADMAP.md](milestones/v1.1-ROADMAP.md) | [v1.1-REQUIREMENTS.md](milestones/v1.1-REQUIREMENTS.md)
+
+---
+
