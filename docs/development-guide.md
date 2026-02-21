@@ -94,11 +94,33 @@ Impact-aware routing logic is implemented in `.github/scripts/classify-impact.ps
   - Linux: `self-hosted`, `linux`, `neurohid-ci`
   - Windows: `self-hosted`, `windows`, `neurohid-ci`
   - macOS: `self-hosted`, `macos`, `neurohid-ci`
+- **Fallback:** The Test job also runs on GitHub-hosted `ubuntu-22.04` so that Linux tests can
+  complete when self-hosted Linux runners are unavailable. Self-hosted remains preferred for
+  performance and LSL/device tooling.
 - `ci.yml` controls optional macOS execution with repository variable `ENABLE_MACOS`.
 - If macOS support is dropped temporarily, set `ENABLE_MACOS=false` in repo variables and align
   required checks in branch protection.
 - At release/public transition, change workflow runner mappings to GitHub-hosted labels
   (`ubuntu-latest`, `windows-latest`, `macos-latest`).
+
+### Self-hosted runner setup
+
+To register self-hosted runners for NeuroHID CI:
+
+1. **Repository:** GitHub → Settings → Actions → Runners → New self-hosted runner.
+2. **OS:** Follow the displayed commands for the runner OS (Linux, Windows, or macOS).
+3. **Labels:** Use the labels above so workflows can select them:
+   - Linux: `self-hosted`, `linux`, `neurohid-ci`
+   - Windows: `self-hosted`, `windows`, `neurohid-ci`
+   - macOS: `self-hosted`, `macos`, `neurohid-ci`
+4. **Linux:** Install build deps (e.g. `liblsl-dev`) and Rust/Python/uv so that `cargo build
+   --workspace`, `cargo test --workspace`, and `uv sync --directory python` succeed.
+5. **Windows:** Install Visual Studio Build Tools (or MSVC) and LSL if needed; ensure PowerShell
+   and Git are available.
+6. **macOS:** Install Xcode Command Line Tools and LSL; ensure `cargo` and `uv` are on the PATH.
+
+After registration, jobs in `.github/workflows/ci.yml` that use the corresponding `runs-on` labels
+will run on these runners. See [GitHub: Adding self-hosted runners](https://docs.github.com/en/actions/hosting-your-own-runners/adding-self-hosted-runners).
 
 ## Coverage Gates in CI
 

@@ -3,6 +3,9 @@
 [![CI](https://github.com/jmduea/NeuroHID/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/jmduea/NeuroHID/actions/workflows/ci.yml?query=branch%3Amain)
 [![codecov](https://codecov.io/gh/jmduea/NeuroHID/branch/main/graph/badge.svg)](https://codecov.io/gh/jmduea/NeuroHID)
 
+CI quality gates (see [development guide](docs/development-guide.md)): Test, Clippy, Format,
+Documentation, Python Tests, Unsafe Compliance, Protocol Contracts, Rust/Python coverage.
+
 I built NeuroHID to control my computer with a cheap EEG headset. It reads
 brain signals, figures out what you're trying to do, and moves the mouse or
 presses keys — no special app integration needed, since it emits standard HID

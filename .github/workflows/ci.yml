@@ -9,8 +9,8 @@ on:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
-  PYTHON_COVERAGE_MIN: "48"
-  RUST_COVERAGE_MIN: "30"
+  PYTHON_COVERAGE_MIN: "50"
+  RUST_COVERAGE_MIN: "35"
 
 jobs:
   determine-impact:
@@ -68,6 +68,9 @@ jobs:
           - platform: linux
             runner_os: Linux
             runner: [self-hosted, linux, neurohid-ci]
+          - platform: linux
+            runner_os: Linux
+            runner: ubuntu-22.04
           - platform: windows
             runner_os: Windows
             runner: [self-hosted, windows, neurohid-ci]
@@ -256,7 +259,6 @@ jobs:
   unsafe-compliance:
     name: Unsafe Compliance
     needs: determine-impact
-    if: needs.determine-impact.outputs.unsafe == 'true'
     runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
