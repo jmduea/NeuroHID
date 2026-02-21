@@ -99,9 +99,14 @@ impl HubApp {
 
         let visualization = VisualizationScreen::from_ui_config(&state.config.ui);
 
+        let current_screen = state.config.ui.last_screen.as_deref().and_then(Screen::from_id);
+        let current_screen = current_screen
+            .filter(|s| Screen::all_for_mode(&state.config.ui.mode).contains(s))
+            .unwrap_or(Screen::Dashboard);
+
         let mut hub = Self {
             runtime,
-            current_screen: Screen::Dashboard,
+            current_screen,
             state,
             service_manager: ServiceManager::new(),
             last_service_running: None,
@@ -132,6 +137,8 @@ impl HubApp {
             hub.state.init_error = Some(err);
         }
 
+        hub.workbench
+            .sync_lane_from_screen(&hub.state.config.ui.mode, hub.current_screen);
         hub.service_manager.configure(&hub.state.config);
 
         if hub.state.config.service.auto_start {
@@ -295,6 +302,12 @@ impl HubApp {
         }
     }
 
+    /// Persist current screen to config for resume state; call when screen changes.
+    fn persist_last_screen(&mut self) {
+        self.state.config.ui.last_screen = Some(self.current_screen.id().to_string());
+        let _ = self.persist_config("last_screen (resume state)");
+    }
+
     fn set_visualization_detached(&mut self, ctx: &egui::Context, detached: bool) {
         if self.state.config.ui.visualization_detached == detached {
             return;
@@ -305,6 +318,7 @@ impl HubApp {
             self.current_screen = Screen::Visualization;
             self.workbench
                 .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+            self.persist_last_screen();
         } else {
             ctx.send_viewport_cmd_to(
                 Self::detached_visualization_viewport_id(),
@@ -500,12 +514,16 @@ impl HubApp {
                 );
             });
 
+        let prev_screen = self.current_screen;
         apply_sidebar_shell_response(
             &self.state.config.ui.mode,
             response,
             &mut self.workbench,
             &mut self.current_screen,
         );
+        if prev_screen != self.current_screen {
+            self.persist_last_screen();
+        }
     }
 
     /// Persistent device/stream strip (status bar): visible from every screen.
@@ -1074,6 +1092,7 @@ impl HubApp {
                                 &self.state.config.ui.mode,
                                 self.current_screen,
                             );
+                            self.persist_last_screen();
                             if let Some(tab) = problem.tab_target {
                                 self.workbench.open_bottom_tab(tab);
                             }
@@ -1242,6 +1261,7 @@ impl HubApp {
             self.current_screen = screens[0];
             self.workbench
                 .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+            self.persist_last_screen();
         }
         self.workbench.sidebar_focus_screen = Some(self.current_screen);
     }
@@ -1261,6 +1281,7 @@ impl HubApp {
         self.current_screen = screens[next_index];
         self.workbench
             .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+        self.persist_last_screen();
         self.workbench.sidebar_focus_screen = Some(self.current_screen);
     }
 
@@ -1497,6 +1518,7 @@ impl HubApp {
                 self.current_screen = screen;
                 self.workbench
                     .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+                self.persist_last_screen();
             }
             CommandPaletteAction::ToggleBottomPanel => {
                 self.workbench.bottom_panel.visible = !self.workbench.bottom_panel.visible;
@@ -1534,6 +1556,7 @@ impl HubApp {
                 self.current_screen = Screen::JupyterIde;
                 self.workbench
                     .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+                self.persist_last_screen();
             }
             CommandPaletteAction::StartJupyter => {
                 self.jupyter_ide
@@ -1541,12 +1564,14 @@ impl HubApp {
                 self.current_screen = Screen::JupyterIde;
                 self.workbench
                     .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+                self.persist_last_screen();
             }
             CommandPaletteAction::StopJupyter => {
                 self.jupyter_ide.command_stop_jupyter();
                 self.current_screen = Screen::JupyterIde;
                 self.workbench
                     .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
+                self.persist_last_screen();
             }
             CommandPaletteAction::OpenJupyterBrowser => {
                 if let Err(error) = self
@@ -1904,6 +1929,7 @@ impl eframe::App for HubApp {
 
         if !Screen::all_for_mode(&self.state.config.ui.mode).contains(&self.current_screen) {
             self.current_screen = Screen::Dashboard;
+            self.persist_last_screen();
         }
         self.workbench
             .sync_lane_from_screen(&self.state.config.ui.mode, self.current_screen);
@@ -2016,6 +2042,7 @@ impl eframe::App for HubApp {
                                 &self.state.config.ui.mode,
                                 self.current_screen,
                             );
+                            self.persist_last_screen();
                         }
                         if ui
                             .selectable_label(viz_selected, "Visualization")
@@ -2027,6 +2054,7 @@ impl eframe::App for HubApp {
                                 &self.state.config.ui.mode,
                                 self.current_screen,
                             );
+                            self.persist_last_screen();
                         }
                     });
                     ui.add_space(6.0);

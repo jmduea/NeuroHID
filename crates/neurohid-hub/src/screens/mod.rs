@@ -30,6 +30,37 @@ pub enum Screen {
 }
 
 impl Screen {
+    /// Stable ID for config persistence (resume state).
+    pub fn id(self) -> &'static str {
+        match self {
+            Screen::Dashboard => "dashboard",
+            Screen::Visualization => "visualization",
+            Screen::Devices => "devices",
+            Screen::Profiles => "profiles",
+            Screen::Calibration => "calibration",
+            Screen::Training => "training",
+            Screen::JupyterIde => "jupyter_ide",
+            Screen::PythonLab => "python_lab",
+            Screen::Settings => "settings",
+        }
+    }
+
+    /// Parse screen from persisted ID; returns None for unknown or invalid IDs.
+    pub fn from_id(id: &str) -> Option<Screen> {
+        match id {
+            "dashboard" => Some(Screen::Dashboard),
+            "visualization" => Some(Screen::Visualization),
+            "devices" => Some(Screen::Devices),
+            "profiles" => Some(Screen::Profiles),
+            "calibration" => Some(Screen::Calibration),
+            "training" => Some(Screen::Training),
+            "jupyter_ide" => Some(Screen::JupyterIde),
+            "python_lab" => Some(Screen::PythonLab),
+            "settings" => Some(Screen::Settings),
+            _ => None,
+        }
+    }
+
     pub fn label(&self) -> &'static str {
         match self {
             Screen::Dashboard => "Dashboard",

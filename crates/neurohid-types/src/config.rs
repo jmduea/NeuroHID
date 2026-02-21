@@ -574,6 +574,9 @@ pub struct UiConfig {
     /// Thresholds used by Advanced-mode Problems panel device-health diagnostics.
     #[serde(default)]
     pub device_health_problems: DeviceHealthProblemConfig,
+    /// Last open screen ID for resume (e.g. "dashboard", "training"). Applied on Hub startup.
+    #[serde(default)]
+    pub last_screen: Option<String>,
 }
 
 fn default_font_scale() -> f32 {
@@ -672,6 +675,7 @@ impl Default for UiConfig {
             visualization_detached_pos: None,
             visualization_detached_size: None,
             device_health_problems: DeviceHealthProblemConfig::default(),
+            last_screen: None,
         }
     }
 }
@@ -1095,5 +1099,19 @@ mod tests {
                 .device_health_problems
                 .quality_critical_threshold
         );
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_without_last_screen() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.remove("last_screen");
+
+        let decoded: UiConfig =
+            serde_json::from_value(json).expect("deserialize ui config without last_screen");
+
+        assert_eq!(decoded.last_screen, None);
     }
 }
