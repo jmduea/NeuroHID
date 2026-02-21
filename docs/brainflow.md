@@ -21,7 +21,7 @@ neurohid-core = { path = "...", features = ["brainflow"] }
 
 ## Synthetic vs native
 
-The **current implementation is simulation/synthetic only**. The BrainFlow adapter in NeuroHID uses a synthetic board (no real BrainFlow C++ SDK). For real hardware, use the **Native SDK (Phase 10)** path below; it is optional and not used in the default or CI build.
+The **default build and CI use the synthetic board only** (no real BrainFlow C++ SDK). To use real hardware, build with `--features brainflow-native` after building BrainFlow per the **Native SDK (Phase 10)** section below. The BrainFlow streaming path (synthetic or native) uses the **same pipeline as LSL**: Device → SampleStream → downstream (decoder, actions).
 
 ## Build order
 
