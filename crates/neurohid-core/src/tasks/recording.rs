@@ -16,7 +16,7 @@ use neurohid_storage::ProfileStore;
 use neurohid_types::{
     action::Action,
     config::SystemConfig,
-    error::{ConfigError, Result},
+    error::Result,
     profile::ProfileId,
     recording::{RecordingConfig, SessionManifest},
     signal::Sample,
@@ -270,11 +270,7 @@ impl RecordingTask {
                     .as_ref()
                     .map(PathBuf::from)
             })
-            .ok_or_else(|| {
-                neurohid_types::Error::Config(ConfigError::MissingRequired {
-                    key: "recording output path".into(),
-                })
-            })?;
+            .unwrap_or_else(|| PathBuf::from("./recordings"));
         let started_us = neurohid_types::now_micros();
         let session_id = format!("session_{}", started_us);
         let session_dir = base.join(&session_id);

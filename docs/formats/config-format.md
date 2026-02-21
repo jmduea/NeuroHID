@@ -97,11 +97,11 @@ Signal preprocessing and feature extraction:
 
 ### Recording config
 
-Session recording is configured under `recording` (optional; defaults: no default path, auto off, no caps).
+Session recording is configured under `recording` (optional; defaults: default path `./recordings`, auto off, no caps).
 
 | Field | Description |
 |-------|-------------|
-| `default_output_path` | Default directory for session folders (path string); omit for no default. |
+| `default_output_path` | Default directory for session folders (path string); omit to use `./recordings` (relative to cwd). |
 | `auto_mode` | `off`, `tied_to_runtime`, or `tied_to_output`. When not `off`, recording starts/stops with runtime or output. |
 | `max_duration_secs` | Optional cap: stop recording after this many seconds. |
 | `max_size_mb` | Optional cap: stop recording when total size reaches this many MB. |
