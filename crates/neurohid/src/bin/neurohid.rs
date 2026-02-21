@@ -48,7 +48,7 @@ fn init_hub_logger() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("Failed to initialize combined logger: {}", error))
 }
 
-const CLI_SUBCOMMANDS: &[&str] = &["device", "config", "pipeline", "control", "daemon"];
+const CLI_SUBCOMMANDS: &[&str] = &["device", "config", "pipeline", "control", "daemon", "record"];
 
 /// If argv suggests a CLI subcommand (device list, control snapshot, etc.), run neurohid-service
 /// with the same args and exit with its code. No GUI or heavy init. Returns only when not dispatching.

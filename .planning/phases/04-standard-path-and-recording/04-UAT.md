@@ -1,5 +1,5 @@
 ---
-status: complete
+status: diagnosed
 phase: 04-standard-path-and-recording
 source: 04-01-SUMMARY.md, 04-02-SUMMARY.md, 04-03-SUMMARY.md
 started: "2026-02-20T00:00:00Z"
@@ -69,26 +69,46 @@ skipped: 2
   reason: "User reported: running cargo run --bin neurohid record start starts the hub and service (even though the service is already running in another terminal)."
   severity: major
   test: 2
-  artifacts: []
-  missing: []
+  root_cause: "Hub binary (neurohid.rs) only dispatches to neurohid-service when argv[1] is in CLI_SUBCOMMANDS; 'record' is not in the list (only device, config, pipeline, control, daemon). So 'neurohid record start' etc. never delegate and the Hub starts instead."
+  artifacts:
+    - path: crates/neurohid/src/bin/neurohid.rs
+      issue: "CLI_SUBCOMMANDS omits 'record'"
+  missing:
+    - "Add 'record' to CLI_SUBCOMMANDS in neurohid.rs so record start/stop/status/export/replay-offline delegate to neurohid-service"
+  debug_session: ""
 - truth: "neurohid record status (or control snapshot) shows recording_active and current session id when talking to running service."
   status: failed
   reason: "User reported: Same issue as test 2: record status starts the Hub instead of sending control request to running service."
   severity: major
   test: 4
-  artifacts: []
-  missing: []
+  root_cause: "Same as test 2: 'record' not in CLI_SUBCOMMANDS in neurohid.rs."
+  artifacts:
+    - path: crates/neurohid/src/bin/neurohid.rs
+      issue: "CLI_SUBCOMMANDS omits 'record'"
+  missing:
+    - "Add 'record' to CLI_SUBCOMMANDS (fixes all record subcommands)"
+  debug_session: ""
 - truth: "neurohid record export <session_dir> -o out.xdf runs offline and produces a valid .xdf file (no Hub/service start)."
   status: failed
   reason: "User reported: record export starts the Hub instead of running offline export (same pattern as record start/status)."
   severity: major
   test: 6
-  artifacts: []
-  missing: []
+  root_cause: "Same as test 2: 'record' not in CLI_SUBCOMMANDS in neurohid.rs."
+  artifacts:
+    - path: crates/neurohid/src/bin/neurohid.rs
+      issue: "CLI_SUBCOMMANDS omits 'record'"
+  missing:
+    - "Add 'record' to CLI_SUBCOMMANDS"
+  debug_session: ""
 - truth: "neurohid record replay-offline <session_dir> runs offline replay (no Hub start)."
   status: failed
   reason: "User reported: record replay-offline starts the Hub instead of running offline replay (same pattern as record start/status/export)."
   severity: major
   test: 7
-  artifacts: []
-  missing: []
+  root_cause: "Same as test 2: 'record' not in CLI_SUBCOMMANDS in neurohid.rs."
+  artifacts:
+    - path: crates/neurohid/src/bin/neurohid.rs
+      issue: "CLI_SUBCOMMANDS omits 'record'"
+  missing:
+    - "Add 'record' to CLI_SUBCOMMANDS"
+  debug_session: ""
