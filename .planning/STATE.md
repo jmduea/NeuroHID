@@ -5,18 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** A single, composable path from biosignal device to actionable output — with an IDE-like experience for building and training decoders and a standalone runtime for using them — so that developers and power users don't have to piece together disparate libraries and tools.
-**Current focus:** v1.1 — Phase 7 (Framework–Hub Separation)
+**Current focus:** v1.1 — Phase 8 (Thorough Testing)
 
 ## Current Position
 
-Phase: 7 of 10 (Framework–Hub Separation)
-**Current Plan:** Not started
-**Total Plans in Phase:** 2
-Plan: 01 complete
-Status: Ready to execute
-Last activity: 2026-02-21 — Plan 07-01 completed (framework surface and Hub boundary)
+Phase: 8 of 10 (Thorough Testing)
+Plan: —
+Status: Ready to plan
+Last activity: 2026-02-21 — Phase 7 completed (Framework–Hub Separation)
 
-Progress: [██████████░░░░░░░░░░] 50% (1 of 2 plans in Phase 7)
+Progress: [██████████░░░░░░░░░░] 50% (2 plans in v1.1)
 
 ## Performance Metrics
 
