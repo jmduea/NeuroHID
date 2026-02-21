@@ -57,6 +57,8 @@ uv run --directory python neurohid-ml bridge
 
 ## Validation and Testing
 
+For definitions of **unit vs integration vs E2E** and how to avoid flakiness (isolation policy, condition-based waits, retries), see [Test tiers and isolation](testing.md).
+
 ### Rust
 
 ```bash
