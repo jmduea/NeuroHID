@@ -4,111 +4,41 @@
 //! training pipeline. This keeps the signal->action control loop local to Rust
 //! so HID output is not gated on Python IPC availability.
 
+mod inference;
+mod model;
+mod training;
+
 use std::collections::HashMap;
-use std::io::Cursor;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use tokio::sync::{RwLock, broadcast, mpsc};
-use tract_onnx::prelude::*;
 
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement},
-    config::DecoderConfig,
     DecoderChannels, DecoderRunner,
+    action::Action,
+    config::DecoderConfig,
     control::RuntimeModeState,
     error::{DecoderError, Error, Result},
     learning::{CandidateGuardrails, TrainingEpisode},
     model::ModelManifest,
-    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
+    observability::{self as obs, ObservabilityComponent, ObservabilityConfig},
     profile::ProfileId,
     signal::FeatureVector,
 };
 
+use crate::observability::EmitGate;
 use crate::service::{DecoderCommand, IntegrityStage, ServiceState};
 use crate::tasks::DecisionEventRecord;
 use crate::tasks::latency::RollingLatency;
 use crate::tasks::session_logger::EpisodeLogRecord;
 
+use model::{load_onnx_model, ArtifactLoader, LoadedModel, OnnxArtifactLoader};
+use inference::{lightweight_fallback_action, run_inference};
+
 const LATENCY_WINDOW_SIZE: usize = 512;
 const DECODER_SUMMARY_EVERY_DECISIONS: u64 = 256;
-
-type OnnxPlan = SimplePlan<TypedFact, Box<dyn TypedOp>, TypedModel>;
-
-#[derive(Clone)]
-struct LoadedModel {
-    manifest: ModelManifest,
-    model: Arc<dyn InferenceModel>,
-}
-
-trait InferenceModel: Send + Sync {
-    fn infer(&self, normalized: &[f32]) -> Result<Vec<f32>>;
-}
-
-struct OnnxInferenceModel {
-    model: OnnxPlan,
-}
-
-impl InferenceModel for OnnxInferenceModel {
-    fn infer(&self, normalized: &[f32]) -> Result<Vec<f32>> {
-        let input =
-            tract_ndarray::Array2::from_shape_vec((1, normalized.len()), normalized.to_vec())
-                .map_err(|e| Error::Decoder(DecoderError::InferenceFailed(e.to_string())))?;
-        let input = input.into_tensor();
-        let output = self
-            .model
-            .run(tvec!(input.into()))
-            .map_err(|e| Error::Decoder(DecoderError::InferenceFailed(e.to_string())))?;
-        let first = output.first().ok_or_else(|| {
-            Error::Decoder(DecoderError::InferenceFailed(
-                "empty model output".to_string(),
-            ))
-        })?;
-        first
-            .to_array_view::<f32>()
-            .map_err(|e| Error::Decoder(DecoderError::InferenceFailed(e.to_string())))
-            .map(|array| array.iter().copied().collect())
-    }
-}
-
-#[async_trait]
-trait ArtifactLoader: Send + Sync {
-    async fn load(
-        &self,
-        profile_store: Option<&ProfileStore>,
-        profile_id: &ProfileId,
-    ) -> Result<LoadedModel>;
-}
-
-struct OnnxArtifactLoader;
-
-#[async_trait]
-impl ArtifactLoader for OnnxArtifactLoader {
-    async fn load(
-        &self,
-        profile_store: Option<&ProfileStore>,
-        profile_id: &ProfileId,
-    ) -> Result<LoadedModel> {
-        let store = profile_store.as_ref().ok_or_else(|| {
-            Error::Decoder(DecoderError::ModelFileError(
-                "profile store unavailable for decoder model load".to_string(),
-            ))
-        })?;
-
-        let manifest = store.load_decoder_manifest(profile_id).await?;
-        manifest.validate_runtime_compatibility().map_err(|msg| {
-            Error::Decoder(DecoderError::ModelFileError(format!(
-                "manifest compatibility check failed: {msg}"
-            )))
-        })?;
-
-        let model_bytes = store.load_decoder_model_onnx(profile_id).await?;
-        let model = load_onnx_model(&model_bytes)?;
-
-        Ok(LoadedModel { manifest, model })
-    }
-}
 
 /// Decoder task for Rust-native ONNX inference.
 pub struct DecoderTask {
@@ -906,145 +836,6 @@ impl DecoderTask {
     }
 }
 
-fn load_onnx_model(bytes: &[u8]) -> Result<Arc<dyn InferenceModel>> {
-    let mut cursor = Cursor::new(bytes);
-    let model = tract_onnx::onnx()
-        .model_for_read(&mut cursor)
-        .map_err(|e| Error::Decoder(DecoderError::ModelFileError(e.to_string())))?
-        .into_optimized()
-        .map_err(|e| Error::Decoder(DecoderError::ModelFileError(e.to_string())))?
-        .into_runnable()
-        .map_err(|e| Error::Decoder(DecoderError::ModelFileError(e.to_string())))?;
-    Ok(Arc::new(OnnxInferenceModel { model }))
-}
-
-fn run_inference(model: &LoadedModel, feature: &FeatureVector) -> Result<Action> {
-    if feature.dim() != model.manifest.input_dim {
-        return Err(Error::Decoder(DecoderError::InvalidInputDimensions {
-            expected: model.manifest.input_dim,
-            got: feature.dim(),
-        }));
-    }
-
-    let normalized: Vec<f32> = feature
-        .values
-        .iter()
-        .zip(
-            model
-                .manifest
-                .normalization_stats
-                .mean
-                .iter()
-                .zip(model.manifest.normalization_stats.std.iter()),
-        )
-        .map(|(value, (mean, std))| ((*value - *mean) / *std).clamp(-10.0, 10.0))
-        .collect();
-
-    let values = model.model.infer(&normalized)?;
-    Ok(action_from_output(&values, feature.timestamp))
-}
-
-fn lightweight_fallback_action(feature: &FeatureVector) -> Action {
-    let dx = feature
-        .values
-        .first()
-        .copied()
-        .unwrap_or(0.0)
-        .clamp(-1.0, 1.0);
-    let dy = feature
-        .values
-        .get(1)
-        .copied()
-        .unwrap_or(0.0)
-        .clamp(-1.0, 1.0);
-    let confidence = feature
-        .values
-        .get(2)
-        .copied()
-        .map(to_probability)
-        .unwrap_or_else(|| (dx.abs() + dy.abs()).clamp(0.0, 1.0));
-    let mut action = Action::none().with_confidence(confidence);
-    if dx.abs() > 0.01 || dy.abs() > 0.01 {
-        action.mouse = Some(MouseAction::move_relative(dx, dy));
-        action.timestamp = feature.timestamp;
-    }
-    action
-}
-
-fn action_from_output(values: &[f32], timestamp: i64) -> Action {
-    let dx = *values.first().unwrap_or(&0.0);
-    let dy = *values.get(1).unwrap_or(&0.0);
-
-    let (left_click_prob, right_click_prob, confidence_raw) = match values.len() {
-        0..=2 => (None, None, None),
-        3 => (None, None, values.get(2).copied()),
-        4 => (values.get(2).copied(), None, values.get(3).copied()),
-        _ => (
-            values.get(2).copied(),
-            values.get(3).copied(),
-            values.get(4).copied(),
-        ),
-    };
-
-    let confidence = confidence_raw
-        .map(to_probability)
-        .unwrap_or_else(|| (dx.abs() + dy.abs()).clamp(0.0, 1.0));
-
-    let mut mouse = MouseAction {
-        movement: None,
-        buttons: Vec::new(),
-        scroll: None,
-    };
-
-    if dx.abs() > 0.01 || dy.abs() > 0.01 {
-        mouse.movement = Some(MouseMovement { dx, dy });
-    }
-
-    if left_click_prob.is_some_and(|p| to_probability(p) >= 0.8) {
-        mouse.buttons.push(MouseButtonEvent {
-            button: MouseButton::Left,
-            pressed: true,
-        });
-        mouse.buttons.push(MouseButtonEvent {
-            button: MouseButton::Left,
-            pressed: false,
-        });
-    }
-
-    if right_click_prob.is_some_and(|p| to_probability(p) >= 0.8) {
-        mouse.buttons.push(MouseButtonEvent {
-            button: MouseButton::Right,
-            pressed: true,
-        });
-        mouse.buttons.push(MouseButtonEvent {
-            button: MouseButton::Right,
-            pressed: false,
-        });
-    }
-
-    let mouse = if mouse.movement.is_some() || !mouse.buttons.is_empty() {
-        Some(mouse)
-    } else {
-        None
-    };
-
-    Action {
-        timestamp,
-        mouse,
-        keyboard: None,
-        confidence,
-        decision_id: None,
-    }
-}
-
-fn to_probability(value: f32) -> f32 {
-    if (0.0..=1.0).contains(&value) {
-        value
-    } else {
-        1.0 / (1.0 + (-value).exp())
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
@@ -1058,10 +849,9 @@ mod tests {
         NormalizationStats,
     };
 
-    use super::{
-        ArtifactLoader, DecoderTask, InferenceModel, LoadedModel, action_from_output,
-        to_probability,
-    };
+    use super::inference::{action_from_output, to_probability};
+    use super::model::{ArtifactLoader, InferenceModel, LoadedModel};
+    use super::DecoderTask;
     use crate::service::ServiceState;
 
     #[derive(Clone)]
@@ -1276,10 +1066,7 @@ mod tests {
 
 #[async_trait::async_trait]
 impl DecoderRunner for DecoderTask {
-    async fn run(
-        self: Box<Self>,
-        shutdown: tokio::sync::broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run(self: Box<Self>, shutdown: tokio::sync::broadcast::Receiver<()>) -> Result<()> {
         (*self).run(shutdown).await
     }
 }
@@ -1303,12 +1090,10 @@ pub fn create_decoder(
 ) -> Result<(Box<dyn DecoderRunner + Send + Sync>, String)> {
     if let Some(ref ext_name) = config.extension_name {
         let name = ext_name.clone();
-        let reg = registry.ok_or_else(|| {
-            neurohid_types::error::ExtensionError::LoadError {
-                name: name.clone(),
-                reason: "extension registry not available (decoder extension requires registry)"
-                    .to_string(),
-            }
+        let reg = registry.ok_or_else(|| neurohid_types::error::ExtensionError::LoadError {
+            name: name.clone(),
+            reason: "extension registry not available (decoder extension requires registry)"
+                .to_string(),
         })?;
         let channels = DecoderChannels {
             feature_rx,

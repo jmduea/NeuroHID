@@ -1,5 +1,8 @@
 //! Runtime ML bridge task (protocol v3).
 
+mod broker_task;
+mod client_task;
+
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -11,71 +14,29 @@ use tokio::sync::{RwLock, broadcast, mpsc};
 
 use neurohid_ipc::{
     Ack, CandidateModelReady, DecisionEvent, ErrpResult, ErrpWindow, Hello, IPC_PROTOCOL_VERSION,
-    IpcChannel, IpcEnvelope, ProtocolError, RuntimeMlRole, RuntimeTelemetry, SessionBoundary,
-    SessionBoundaryEvent, Shutdown, TrainerStatus, TrainerStreamKind,
+    IpcChannel, IpcEnvelope, ProtocolError, RuntimeEvent, RuntimeMlRole, RuntimeTelemetry,
+    SessionBoundary, SessionBoundaryEvent, Shutdown, TrainerStatus, TrainerStreamKind,
 };
 use neurohid_types::{
     control::RuntimeModeState,
     error::{Error, IpcError, Result},
     event::{MarkerPayload, MarkerType, StreamMarker},
-    ipc::RuntimeEvent,
-    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
+    observability::{self as obs, ObservabilityComponent, ObservabilityConfig},
     profile::ProfileId,
     reward::{ErrPConfig, ErrPResult, SignalQuality},
     signal::Sample,
 };
 
+use crate::observability::EmitGate;
 use crate::service::{DecoderCommand, IntegrityStage, ServiceState};
 use crate::tasks::{DecisionEventRecord, TrainerIngressEvent};
 
-const REAL_MESSAGE_POLL_MS: u64 = 25;
-const SIMULATED_CONNECT_DELAY_MS: u64 = 100;
-const DEFAULT_ERRP_STREAM_KEY: &str = "__all__";
-const ERRP_BUFFER_RETENTION_US: i64 = 5_000_000;
-const ERRP_EMIT_GRACE_US: i64 = 120_000;
-const DEFAULT_ERRP_SAMPLE_RATE_HZ: f32 = 128.0;
-const MAX_CANDIDATE_FUTURE_SKEW_US: i64 = 5 * 60 * 1_000_000;
-const MAX_CANDIDATE_MODEL_BYTES: u64 = 128 * 1024 * 1024;
-const IPC_TELEMETRY_SUMMARY_EVERY: u64 = 120;
-
-#[derive(Debug, Clone)]
-struct PendingErrpWindow {
-    decision_id: String,
-    action_timestamp_us: i64,
-    window_start_us: i64,
-    window_end_us: i64,
-    stream_id: Option<String>,
-    signal_quality: f32,
-}
-
-#[derive(Debug, Clone)]
-struct StreamSampleBuffer {
-    samples: VecDeque<Sample>,
-}
-
-impl StreamSampleBuffer {
-    fn new() -> Self {
-        Self {
-            samples: VecDeque::with_capacity(1024),
-        }
-    }
-
-    fn push(&mut self, sample: Sample) {
-        self.samples.push_back(sample);
-    }
-
-    fn prune_before(&mut self, cutoff_us: i64) {
-        while self.samples.front().is_some_and(|sample| {
-            sample
-                .device_timestamp
-                .unwrap_or(sample.system_timestamp)
-                .saturating_sub(cutoff_us)
-                < 0
-        }) {
-            let _ = self.samples.pop_front();
-        }
-    }
-}
+use broker_task::{
+    is_connection_lost_error, PendingErrpWindow, StreamSampleBuffer,
+    DEFAULT_ERRP_SAMPLE_RATE_HZ, DEFAULT_ERRP_STREAM_KEY, ERRP_BUFFER_RETENTION_US,
+    ERRP_EMIT_GRACE_US, IPC_TELEMETRY_SUMMARY_EVERY, MAX_CANDIDATE_FUTURE_SKEW_US,
+    MAX_CANDIDATE_MODEL_BYTES, REAL_MESSAGE_POLL_MS, SIMULATED_CONNECT_DELAY_MS,
+};
 
 /// Runtime ML bridge task.
 pub struct IpcTask {
@@ -1139,8 +1100,4 @@ impl IpcTask {
         let mut state = self.state.write().await;
         state.ml_bridge_last_heartbeat_us = Some(neurohid_types::now_micros());
     }
-}
-
-fn is_connection_lost_error(err: &Error) -> bool {
-    matches!(err, Error::Ipc(IpcError::ConnectionLost))
 }

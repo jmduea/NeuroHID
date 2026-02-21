@@ -21,7 +21,7 @@ mod replay_source;
 mod session_logger;
 mod signal;
 
-use neurohid_types::IpcEnvelope;
+use neurohid_ipc::IpcEnvelope;
 use neurohid_types::{Timestamp, action::Action};
 use tokio::sync::mpsc;
 
@@ -53,12 +53,12 @@ pub struct TrainerBridgeChannels {
 }
 
 pub use action::ActionTask;
-pub use decoder::{create_decoder, DecoderTask};
+pub use decoder::{DecoderTask, create_decoder};
 pub use device::DeviceTask;
 pub use ipc::IpcTask;
 pub use latency_alert::LatencyAlertMonitorTask;
-pub use outlet::{create_outlet, OutletTask};
+pub use outlet::{OutletTask, create_outlet};
 pub use recording::{RecordingCommand, RecordingCommandResult, RecordingRequest, RecordingTask};
 pub use replay_source::{load_session_samples, run_replay_task};
 pub use session_logger::{EpisodeLogRecord, SessionLoggerTask};
-pub use signal::{create_signal_preprocessor, SignalTask};
+pub use signal::{SignalTask, create_signal_preprocessor};

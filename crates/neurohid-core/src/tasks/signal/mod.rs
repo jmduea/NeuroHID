@@ -12,302 +12,40 @@
 //! buffer and independent feature extraction. Features from all streams are
 //! merged into a single output channel.
 
-use neurohid_signal::{
-    BufferConfig as PipelineBufferConfig, FeatureConfig as PipelineFeatureConfig,
-    FilterConfig as PipelineFilterConfig, FilterType, PipelineConfig, SignalPipeline,
-};
+mod config;
+mod pipeline_task;
+
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
 
 use async_trait::async_trait;
 use neurohid_types::{
+    SignalChannels, SignalPreprocessor,
     config::SignalConfig,
     device::DiscoveredStream,
     error::Result,
-    SignalChannels, SignalPreprocessor,
     event::{MarkerPayload, MarkerType, StreamMarker},
-    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
+    observability::{self as obs, ObservabilityComponent, ObservabilityConfig},
     reward::ErrPResult,
     signal::{FeatureVector, Sample},
 };
 
+use crate::observability::EmitGate;
 use crate::service::{IntegrityStage, ServiceState, SignalCommand};
 use crate::tasks::latency::RollingLatency;
 
-/// Default key for samples without a source_id (e.g., mock device).
-const DEFAULT_STREAM_KEY: &str = "__default__";
-const SIGNAL_SUMMARY_EVERY_SAMPLES: u64 = 2_048;
-const SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES: u64 = 512;
+use config::{
+    DEFAULT_STREAM_KEY, SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES, SIGNAL_SUMMARY_EVERY_SAMPLES,
+};
+use pipeline_task::{StreamBuffer, StreamRuntimeMetrics, SignalSequenceIssue};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum StreamRoute {
+pub(crate) enum StreamRoute {
     Eeg,
     Motion,
     Auxiliary,
     Unknown,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum SignalSequenceIssue {
-    Gap {
-        previous: u64,
-        current: u64,
-        missing: u64,
-    },
-    Regression {
-        previous: u64,
-        current: u64,
-    },
-}
-
-/// Per-stream processing state.
-struct StreamBuffer {
-    pipeline: Option<SignalPipeline>,
-    channel_count: usize,
-    estimated_sample_rate_hz: f32,
-    last_sample_timestamp_micros: Option<i64>,
-    last_sequence_number: Option<u64>,
-    samples_received: u64,
-    samples_dropped: u64,
-    integrity_issues: u64,
-    preprocessing_summary: String,
-    last_quality: Option<Vec<f32>>,
-}
-
-impl StreamBuffer {
-    fn new(config: &SignalConfig, channel_count: usize, nominal_sample_rate_hz: f32) -> Self {
-        let sample_rate_hz = Self::sanitize_sample_rate_hz(nominal_sample_rate_hz);
-        Self {
-            pipeline: Self::build_pipeline(config, channel_count, sample_rate_hz),
-            channel_count: channel_count.max(1),
-            estimated_sample_rate_hz: sample_rate_hz,
-            last_sample_timestamp_micros: None,
-            last_sequence_number: None,
-            samples_received: 0,
-            samples_dropped: 0,
-            integrity_issues: 0,
-            preprocessing_summary: Self::preprocessing_summary(config),
-            last_quality: None,
-        }
-    }
-
-    fn sanitize_sample_rate_hz(sample_rate_hz: f32) -> f32 {
-        if sample_rate_hz.is_finite() {
-            sample_rate_hz.clamp(8.0, 2048.0)
-        } else {
-            128.0
-        }
-    }
-
-    fn build_pipeline(
-        config: &SignalConfig,
-        channel_count: usize,
-        nominal_sample_rate_hz: f32,
-    ) -> Option<SignalPipeline> {
-        let sample_rate_hz = Self::sanitize_sample_rate_hz(nominal_sample_rate_hz);
-        let nyquist = sample_rate_hz / 2.0;
-
-        let mut filters = Vec::new();
-        if config.notch_filter_enabled
-            && config.notch_filter_hz > 0.0
-            && config.notch_filter_hz < nyquist
-        {
-            filters.push(FilterType::Notch {
-                center_hz: config.notch_filter_hz,
-                q_factor: 30.0,
-            });
-        }
-
-        if config.bandpass_filter_enabled {
-            let low_hz = config.bandpass_low_hz.max(0.1);
-            let high_hz = config.bandpass_high_hz.min(nyquist - 0.1);
-            if high_hz > low_hz + 0.05 {
-                filters.push(FilterType::Bandpass { low_hz, high_hz });
-            }
-        }
-
-        let window_samples =
-            SignalTask::samples_for_duration_ms(config.feature_window_ms, sample_rate_hz);
-        let step_samples =
-            SignalTask::samples_for_duration_ms(config.feature_step_ms, sample_rate_hz);
-        let pipeline_config = PipelineConfig {
-            filter: PipelineFilterConfig {
-                filters,
-                sample_rate_hz,
-            },
-            buffer: PipelineBufferConfig {
-                capacity_samples: config
-                    .buffer_size_samples
-                    .max(window_samples)
-                    .max(step_samples),
-                channel_count: channel_count.max(1),
-            },
-            features: PipelineFeatureConfig {
-                sample_rate_hz,
-                channel_count: channel_count.max(1),
-                welch_segment_len: SignalTask::welch_segment_len_for_window(window_samples),
-                ..PipelineFeatureConfig::default()
-            },
-            artifact_threshold_uv: if config.artifact_rejection_enabled {
-                config.artifact_threshold_uv.max(0.0)
-            } else {
-                f32::MAX
-            },
-            window_samples,
-            step_samples,
-            zscore_window_secs: 60.0,
-        };
-
-        match SignalPipeline::new(pipeline_config) {
-            Ok(pipeline) => Some(pipeline),
-            Err(error) => {
-                tracing::warn!(
-                    "Signal pipeline initialization failed; using unfiltered fallback: {}",
-                    error
-                );
-                let fallback = PipelineConfig {
-                    filter: PipelineFilterConfig {
-                        filters: Vec::new(),
-                        sample_rate_hz,
-                    },
-                    buffer: PipelineBufferConfig {
-                        capacity_samples: 1024,
-                        channel_count: channel_count.max(1),
-                    },
-                    features: PipelineFeatureConfig {
-                        sample_rate_hz,
-                        channel_count: channel_count.max(1),
-                        welch_segment_len: 32,
-                        ..PipelineFeatureConfig::default()
-                    },
-                    artifact_threshold_uv: f32::MAX,
-                    window_samples: SignalTask::samples_for_duration_ms(500, sample_rate_hz),
-                    step_samples: SignalTask::samples_for_duration_ms(50, sample_rate_hz),
-                    zscore_window_secs: 60.0,
-                };
-                match SignalPipeline::new(fallback) {
-                    Ok(pipeline) => Some(pipeline),
-                    Err(fallback_error) => {
-                        tracing::error!(
-                            "Fallback signal pipeline initialization failed: {}",
-                            fallback_error
-                        );
-                        None
-                    }
-                }
-            }
-        }
-    }
-
-    fn preprocessing_summary(config: &SignalConfig) -> String {
-        let notch = if config.notch_filter_enabled {
-            format!("notch {:.1}Hz", config.notch_filter_hz)
-        } else {
-            "notch off".to_string()
-        };
-        let bandpass = if config.bandpass_filter_enabled {
-            format!(
-                "bandpass {:.1}-{:.1}Hz",
-                config.bandpass_low_hz, config.bandpass_high_hz
-            )
-        } else {
-            "bandpass off".to_string()
-        };
-        let artifact = if config.artifact_rejection_enabled {
-            format!("artifact {:.1}uV", config.artifact_threshold_uv)
-        } else {
-            "artifact off".to_string()
-        };
-        format!("{notch}; {bandpass}; {artifact}")
-    }
-
-    fn rebuild_pipeline(&mut self, config: &SignalConfig) {
-        self.pipeline =
-            Self::build_pipeline(config, self.channel_count, self.estimated_sample_rate_hz);
-        self.preprocessing_summary = Self::preprocessing_summary(config);
-    }
-
-    fn update_sample_rate_estimate(&mut self, sample: &Sample) -> Option<(i64, i64)> {
-        let timestamp = sample.device_timestamp.unwrap_or(sample.system_timestamp);
-
-        if let Some(previous_timestamp) = self.last_sample_timestamp_micros {
-            let delta_micros = timestamp.saturating_sub(previous_timestamp);
-            if delta_micros > 0 {
-                let instantaneous_rate_hz = 1_000_000.0 / delta_micros as f32;
-                if instantaneous_rate_hz.is_finite()
-                    && (8.0..=2048.0).contains(&instantaneous_rate_hz)
-                {
-                    self.estimated_sample_rate_hz =
-                        self.estimated_sample_rate_hz * 0.9 + instantaneous_rate_hz * 0.1;
-                }
-            } else {
-                self.integrity_issues = self.integrity_issues.saturating_add(1);
-                self.last_sample_timestamp_micros = Some(timestamp);
-                return Some((previous_timestamp, timestamp));
-            }
-        }
-
-        self.last_sample_timestamp_micros = Some(timestamp);
-        None
-    }
-
-    fn record_sequence(&mut self, sequence_number: Option<u64>) -> Option<SignalSequenceIssue> {
-        let sequence_number = sequence_number?;
-
-        if let Some(previous) = self.last_sequence_number {
-            let expected = previous.saturating_add(1);
-            if sequence_number > expected {
-                let missing = sequence_number.saturating_sub(expected);
-                self.samples_dropped = self.samples_dropped.saturating_add(missing);
-                self.integrity_issues = self.integrity_issues.saturating_add(1);
-                self.last_sequence_number = Some(sequence_number);
-                return Some(SignalSequenceIssue::Gap {
-                    previous,
-                    current: sequence_number,
-                    missing,
-                });
-            } else if sequence_number <= previous {
-                self.integrity_issues = self.integrity_issues.saturating_add(1);
-                self.last_sequence_number = Some(sequence_number);
-                return Some(SignalSequenceIssue::Regression {
-                    previous,
-                    current: sequence_number,
-                });
-            }
-        }
-
-        self.last_sequence_number = Some(sequence_number);
-        None
-    }
-
-    fn drop_rate_pct(&self) -> Option<f32> {
-        let total = self.samples_received.saturating_add(self.samples_dropped);
-        if total == 0 {
-            None
-        } else {
-            Some((self.samples_dropped as f32 / total as f32) * 100.0)
-        }
-    }
-
-    fn integrity_state(&self) -> &'static str {
-        if self.integrity_issues == 0 {
-            "ok"
-        } else {
-            "degraded"
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-struct StreamRuntimeMetrics {
-    effective_sample_rate_hz: Option<f64>,
-    samples_received: Option<u64>,
-    samples_dropped: Option<u64>,
-    drop_rate_pct: Option<f32>,
-    last_sample_age_ms: Option<u64>,
-    preprocessing_summary: Option<String>,
-    integrity_state: Option<String>,
 }
 
 /// The signal processing task.
@@ -338,33 +76,6 @@ pub struct SignalTask {
 }
 
 impl SignalTask {
-    fn samples_for_duration_ms(duration_ms: u32, sample_rate_hz: f32) -> usize {
-        let duration_secs = duration_ms.max(1) as f32 / 1000.0;
-        let sample_rate_hz = if sample_rate_hz.is_finite() {
-            sample_rate_hz.clamp(8.0, 2048.0)
-        } else {
-            128.0
-        };
-
-        (duration_secs * sample_rate_hz).round().max(1.0) as usize
-    }
-
-    /// Choose a Welch segment length that is valid for the current window.
-    ///
-    /// Uses the largest power-of-two <= `sample_count`, capped at 256.
-    fn welch_segment_len_for_window(sample_count: usize) -> usize {
-        if sample_count <= 1 {
-            return sample_count.max(1);
-        }
-
-        let max_allowed = sample_count.min(256);
-        let mut segment_len = 1usize;
-        while segment_len.saturating_mul(2) <= max_allowed {
-            segment_len *= 2;
-        }
-        segment_len
-    }
-
     /// Creates a new signal task.
     #[expect(
         clippy::too_many_arguments,
@@ -645,13 +356,7 @@ impl SignalTask {
                                 if buffer.channel_count != sample_channel_count {
                                     let expected_channel_count = buffer.channel_count;
                                     buffer.channel_count = sample_channel_count;
-                                    buffer.pipeline = StreamBuffer::build_pipeline(
-                                        &self.config,
-                                        sample_channel_count,
-                                        nominal_sample_rate_hz,
-                                    );
-                                    buffer.preprocessing_summary =
-                                        StreamBuffer::preprocessing_summary(&self.config);
+                                    buffer.rebuild_pipeline(&self.config);
                                     buffer.integrity_issues =
                                         buffer.integrity_issues.saturating_add(1);
                                     tracing::warn!(
@@ -961,10 +666,7 @@ impl SignalTask {
 
 #[async_trait]
 impl SignalPreprocessor for SignalTask {
-    async fn run(
-        self: Box<Self>,
-        shutdown: tokio::sync::broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run(self: Box<Self>, shutdown: tokio::sync::broadcast::Receiver<()>) -> Result<()> {
         (*self).run(shutdown).await
     }
 }
@@ -988,12 +690,10 @@ pub fn create_signal_preprocessor(
 ) -> Result<(Box<dyn SignalPreprocessor + Send + Sync>, String)> {
     if let Some(ref ext_name) = config.extension_name {
         let name = ext_name.clone();
-        let reg = registry.ok_or_else(|| {
-            neurohid_types::error::ExtensionError::LoadError {
-                name: name.clone(),
-                reason: "extension registry not available (signal extension requires registry)"
-                    .to_string(),
-            }
+        let reg = registry.ok_or_else(|| neurohid_types::error::ExtensionError::LoadError {
+            name: name.clone(),
+            reason: "extension registry not available (signal extension requires registry)"
+                .to_string(),
         })?;
         let channels = SignalChannels {
             sample_rx,
@@ -1020,6 +720,7 @@ pub fn create_signal_preprocessor(
 
 #[cfg(test)]
 mod tests {
+    use super::config;
     use super::SignalTask;
     use super::StreamRoute;
     use neurohid_types::device::DiscoveredStream;
@@ -1027,30 +728,30 @@ mod tests {
 
     #[test]
     fn samples_for_duration_uses_expected_rate() {
-        assert_eq!(SignalTask::samples_for_duration_ms(500, 128.0), 64);
-        assert_eq!(SignalTask::samples_for_duration_ms(50, 128.0), 6);
+        assert_eq!(config::samples_for_duration_ms(500, 128.0), 64);
+        assert_eq!(config::samples_for_duration_ms(50, 128.0), 6);
     }
 
     #[test]
     fn samples_for_duration_clamps_invalid_rate() {
-        assert_eq!(SignalTask::samples_for_duration_ms(500, f32::NAN), 64);
-        assert_eq!(SignalTask::samples_for_duration_ms(500, 0.0), 4);
+        assert_eq!(config::samples_for_duration_ms(500, f32::NAN), 64);
+        assert_eq!(config::samples_for_duration_ms(500, 0.0), 4);
     }
 
     #[test]
     fn samples_for_duration_never_returns_zero() {
-        assert_eq!(SignalTask::samples_for_duration_ms(0, 256.0), 1);
-        assert_eq!(SignalTask::samples_for_duration_ms(1, 8.0), 1);
+        assert_eq!(config::samples_for_duration_ms(0, 256.0), 1);
+        assert_eq!(config::samples_for_duration_ms(1, 8.0), 1);
     }
 
     #[test]
     fn welch_segment_len_is_power_of_two_within_window() {
-        assert_eq!(SignalTask::welch_segment_len_for_window(1), 1);
-        assert_eq!(SignalTask::welch_segment_len_for_window(2), 2);
-        assert_eq!(SignalTask::welch_segment_len_for_window(63), 32);
-        assert_eq!(SignalTask::welch_segment_len_for_window(64), 64);
-        assert_eq!(SignalTask::welch_segment_len_for_window(200), 128);
-        assert_eq!(SignalTask::welch_segment_len_for_window(1024), 256);
+        assert_eq!(config::welch_segment_len_for_window(1), 1);
+        assert_eq!(config::welch_segment_len_for_window(2), 2);
+        assert_eq!(config::welch_segment_len_for_window(63), 32);
+        assert_eq!(config::welch_segment_len_for_window(64), 64);
+        assert_eq!(config::welch_segment_len_for_window(200), 128);
+        assert_eq!(config::welch_segment_len_for_window(1024), 256);
     }
 
     #[test]
