@@ -362,6 +362,14 @@ pub enum ExtensionError {
     #[error("Duplicate extension name: '{name}' appears in multiple manifests")]
     DuplicateName { name: String },
 
+    /// Extension name not found in registry (not discovered or wrong slot).
+    #[error("Extension not found: '{name}'")]
+    NotFound { name: String },
+
+    /// Failed to load extension library (dylib load or symbol resolution).
+    #[error("Failed to load extension '{name}': {reason}")]
+    LoadError { name: String, reason: String },
+
     /// Manifest file could not be read or parsed.
     #[error("Failed to read or parse manifest at '{path}': {reason}")]
     ManifestError { path: String, reason: String },

@@ -100,10 +100,15 @@ pub enum DeviceBackend {
     /// Auto-detect: try LSL first, then fall back to Mock.
     #[default]
     Auto,
+    /// Load device provider from a discovered extension by name (name-only ID).
+    #[serde(rename = "extension")]
+    Extension(String),
 }
 
 impl DeviceBackend {
     /// All variants in display order, for use in UI selectors.
+    /// Extension(name) is represented as a single "Extension" variant in UI;
+    /// the name is stored in config.
     pub const ALL: &'static [DeviceBackend] = &[
         DeviceBackend::Auto,
         DeviceBackend::Lsl,
@@ -121,6 +126,7 @@ impl std::fmt::Display for DeviceBackend {
             DeviceBackend::Serial => write!(f, "Serial"),
             DeviceBackend::BrainFlow => write!(f, "BrainFlow"),
             DeviceBackend::Auto => write!(f, "Auto"),
+            DeviceBackend::Extension(name) => write!(f, "Extension({})", name),
         }
     }
 }

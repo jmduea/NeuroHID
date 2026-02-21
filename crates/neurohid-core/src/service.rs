@@ -77,6 +77,7 @@ pub enum DecoderCommand {
     SetActiveProfile { profile_id: Option<ProfileId> },
 }
 
+use crate::extension_registry::{default_extension_paths, ExtensionRegistry};
 use crate::tasks::{
     ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask,
     LatencyAlertMonitorTask, OutletTask, RecordingRequest, RecordingTask, run_replay_task,
@@ -885,6 +886,11 @@ impl NeuroHidService {
         let cal_tx_for_device = calibration_sample_tx.clone();
         let cal_flag_for_device = calibration_flag.as_ref().map(Arc::clone);
         let device_observability = observability_config.clone();
+        let mut registry = ExtensionRegistry::new(default_extension_paths());
+        if registry.scan().is_err() {
+            tracing::debug!("Extension registry scan skipped or failed (no extensions path or empty)");
+        }
+        let device_registry = Arc::new(registry);
         let mut device_handle = if let Some(path) = replay_path {
             tokio::spawn(async move {
                 let _ = run_replay_task(&path, sample_tx, shutdown_device).await;
@@ -899,6 +905,7 @@ impl NeuroHidService {
                     cal_tx_for_device,
                     cal_flag_for_device,
                     device_command_rx,
+                    Some(device_registry),
                     device_observability,
                 );
                 let _ = task.run(shutdown_device).await;

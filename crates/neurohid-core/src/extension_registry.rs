@@ -2,18 +2,29 @@
 //!
 //! Scans configured directory paths for extension manifests, enforces unique
 //! names (fail on duplicate), and exposes lists per pipeline slot for Hub/CLI.
-//! Loading of extensions (dylib/subprocess) is handled in a later plan.
+//! Loads in-process device/outlet/signal/decoder extensions via libloading (dylib).
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use async_trait::async_trait;
+use neurohid_device::{Device, DeviceProvider};
 use neurohid_types::{
+    device::{ConnectionSettings, DeviceId, DeviceInfo},
     error::{ExtensionError, Result},
     outlet::{ExtensionKind, ExtensionManifest},
 };
 
 /// Default manifest filename(s) we look for in each extension directory.
 const MANIFEST_FILENAMES: &[&str] = &["manifest.json", "neurohid.manifest.json"];
+
+/// Symbol name exported by device extension cdylibs (same toolchain required; see docs).
+const DEVICE_PROVIDER_SYMBOL: &[u8] = b"neurohid_device_provider_create";
+
+/// Default library filename for device extensions when manifest does not specify one.
+fn default_device_library_name() -> String {
+    format!("libneurohid_device{}", std::env::consts::DLL_EXTENSION)
+}
 
 /// A discovered extension (name + path to its manifest directory).
 #[derive(Debug, Clone)]
@@ -22,12 +33,42 @@ pub struct ExtensionEntry {
     pub path: PathBuf,
 }
 
+/// Wrapper that keeps the loaded library alive while the device provider is in use.
+/// In-process plugins must be built with the same Rust toolchain as the host (ABI).
+pub struct LoadedDeviceProvider {
+    _lib: libloading::Library,
+    provider: Box<dyn DeviceProvider>,
+}
+
+#[async_trait]
+impl DeviceProvider for LoadedDeviceProvider {
+    fn device_type(&self) -> neurohid_types::device::DeviceType {
+        self.provider.device_type()
+    }
+
+    async fn is_available(&self) -> bool {
+        self.provider.is_available().await
+    }
+
+    async fn discover(&self) -> Result<Vec<DeviceInfo>> {
+        self.provider.discover().await
+    }
+
+    async fn connect(
+        &self,
+        device_id: &DeviceId,
+        settings: Option<ConnectionSettings>,
+    ) -> Result<Box<dyn Device>> {
+        self.provider.connect(device_id, settings).await
+    }
+}
+
 /// Registry of discovered extensions. Build with path list, then call `scan()`.
 #[derive(Debug, Default)]
 pub struct ExtensionRegistry {
     paths: Vec<PathBuf>,
-    /// name -> (kind, path); after scan, names are unique.
-    by_name: HashMap<String, (ExtensionKind, PathBuf)>,
+    /// name -> (manifest, path); after scan, names are unique.
+    by_name: HashMap<String, (ExtensionManifest, PathBuf)>,
 }
 
 impl ExtensionRegistry {
@@ -74,12 +115,67 @@ impl ExtensionRegistry {
                     seen_names
                         .insert(manifest.name.clone(), path.clone());
                     self.by_name
-                        .insert(manifest.name.clone(), (manifest.kind, path));
+                        .insert(manifest.name.clone(), (manifest, path));
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Load a device provider extension by name. Returns a provider that holds the
+    /// library guard so the dylib is not unloaded. Fails with a clear error if the
+    /// name is unknown, not a device extension, or the library/symbol fails to load.
+    ///
+    /// In-process plugins must be built with the same Rust toolchain as the host.
+    pub fn load_device_provider(&self, name: &str) -> Result<LoadedDeviceProvider> {
+        let (manifest, dir) = self
+            .by_name
+            .get(name)
+            .ok_or_else(|| ExtensionError::NotFound {
+                name: name.to_string(),
+            })?;
+        if manifest.kind != ExtensionKind::Device {
+            return Err(ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!("extension '{}' is not a device extension (kind: {:?})", name, manifest.kind),
+            }.into());
+        }
+        let lib_name: String = manifest
+            .library
+            .clone()
+            .unwrap_or_else(default_device_library_name);
+        let path = dir.join(&lib_name);
+        // SAFETY: We load a cdylib that is built with the same Rust toolchain; the plugin
+        // contract documents that in-process extensions must match the host toolchain (ABI).
+        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
+            ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!("failed to load library '{}': {}", path.display(), e),
+            }
+        })?;
+        type CreateFn = unsafe extern "Rust" fn() -> Result<Box<dyn DeviceProvider>>;
+        // SAFETY: Symbol is from a library we hold; plugin exports this symbol per contract.
+        let create: libloading::Symbol<CreateFn> = unsafe {
+            lib.get(DEVICE_PROVIDER_SYMBOL).map_err(|e| {
+                ExtensionError::LoadError {
+                    name: name.to_string(),
+                    reason: format!(
+                        "symbol 'neurohid_device_provider_create' not found or incompatible: {}",
+                        e
+                    ),
+                }
+            })?
+        };
+        // SAFETY: Plugin factory is documented to return a valid provider for the same toolchain.
+        let provider = unsafe { create() }.map_err(|e| ExtensionError::LoadError {
+            name: name.to_string(),
+            reason: e.to_string(),
+        })?;
+        Ok(LoadedDeviceProvider {
+            _lib: lib,
+            provider,
+        })
     }
 
     fn read_manifest_in_dir(dir: &Path) -> Option<ExtensionManifest> {
@@ -115,7 +211,7 @@ impl ExtensionRegistry {
     fn list_by_kind(&self, kind: ExtensionKind) -> Vec<ExtensionEntry> {
         self.by_name
             .iter()
-            .filter(|(_, (k, _))| *k == kind)
+            .filter(|(_, (m, _))| m.kind == kind)
             .map(|(name, (_, path))| ExtensionEntry {
                 name: name.clone(),
                 path: path.clone(),

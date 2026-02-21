@@ -23,6 +23,7 @@ neurohid-signal = { path = "../neurohid-signal" }
 neurohid-platform = { path = "../neurohid-platform" }
 neurohid-storage = { path = "../neurohid-storage" }
 neurohid-ipc = { path = "../neurohid-ipc" }
+libloading = "0.8"
 
 # Async runtime
 tokio = { workspace = true }

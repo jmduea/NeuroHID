@@ -2969,6 +2969,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "futures",
+ "libloading",
  "lsl",
  "neurohid-device",
  "neurohid-ipc",

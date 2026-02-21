@@ -37,6 +37,10 @@ pub struct ExtensionManifest {
     pub name: String,
     /// Slot this extension implements.
     pub kind: ExtensionKind,
+    /// Optional library filename (relative to manifest directory) for in-process dylib.
+    /// Defaults to a platform-specific name (e.g. libneurohid_extension.so) when absent.
+    #[serde(default)]
+    pub library: Option<String>,
 }
 
 /// Channel handles passed into an outlet runner (same shape as the outlet task in neurohid-core).

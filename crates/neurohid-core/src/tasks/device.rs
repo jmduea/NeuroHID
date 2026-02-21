@@ -45,13 +45,14 @@ use neurohid_device::{Device, DeviceProvider, MockDeviceConfig, SerialProvider};
 use neurohid_types::{
     config::{DeviceBackend, DeviceConfig},
     device::{DeviceId, DeviceInfo, DiscoveredStream},
-    error::{DeviceError, Result},
+    error::{DeviceError, ExtensionError, Result},
     observability::{
         self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig,
     },
     signal::Sample,
 };
 
+use crate::extension_registry::ExtensionRegistry;
 use crate::service::{DeviceCommand, IntegrityStage, ServiceState};
 
 /// An active stream connection managed by the device task.
@@ -173,6 +174,8 @@ pub struct DeviceTask {
     calibration_mode: Option<Arc<AtomicBool>>,
     /// Optional channel for receiving stream management commands from the hub
     device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
+    /// Optional extension registry for loading device provider by name (Extension backend).
+    registry: Option<Arc<ExtensionRegistry>>,
     emit_gate: EmitGate,
     stream_emit_policy: EmitPolicyConfig,
 }
@@ -186,6 +189,7 @@ impl DeviceTask {
         calibration_sample_tx: Option<mpsc::Sender<Sample>>,
         calibration_mode: Option<Arc<AtomicBool>>,
         device_command_rx: Option<mpsc::Receiver<DeviceCommand>>,
+        registry: Option<Arc<ExtensionRegistry>>,
         observability: ObservabilityConfig,
     ) -> Self {
         let policy = observability.policy_for(ObservabilityComponent::Device);
@@ -196,6 +200,7 @@ impl DeviceTask {
             calibration_sample_tx,
             calibration_mode,
             device_command_rx,
+            registry,
             emit_gate: EmitGate::new(policy.clone()),
             stream_emit_policy: policy,
         }
@@ -215,7 +220,7 @@ impl DeviceTask {
             state.set_stage_integrity_snapshot(IntegrityStage::Device, 0, false);
         }
 
-        let provider = create_provider(&self.config).await?;
+        let provider = create_provider(&self.config, self.registry.as_deref()).await?;
 
         let result = if self.device_command_rx.is_some() {
             self.run_interactive(provider, shutdown).await
@@ -893,10 +898,13 @@ async fn set_stream_connected(state: &Arc<RwLock<ServiceState>>, stream_id: &str
 ///
 /// For `Auto` mode, creates an `AutoProvider` that tries LSL on every
 /// discovery call and falls back to Mock only when no LSL streams are found.
-/// This avoids the old behaviour where a single 1-second check at startup
-/// would permanently lock the provider to Mock.
-async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider>> {
-    match config.backend {
+/// For `Extension(name)`, loads the device provider from the registry via libloading;
+/// no silent fallback — returns a clear error if the name is unknown or load fails.
+async fn create_provider(
+    config: &DeviceConfig,
+    registry: Option<&ExtensionRegistry>,
+) -> Result<Box<dyn DeviceProvider>> {
+    match &config.backend {
         DeviceBackend::Mock => {
             tracing::info!("Using Mock device backend");
             Ok(Box::new(MockProvider::new(MockDeviceConfig::default())))
@@ -928,6 +936,18 @@ async fn create_provider(config: &DeviceConfig) -> Result<Box<dyn DeviceProvider
         DeviceBackend::BrainFlow => {
             tracing::info!("Using BrainFlow device backend");
             create_brainflow_provider(config)
+        }
+
+        DeviceBackend::Extension(name) => {
+            let reg = registry.ok_or_else(|| {
+                ExtensionError::LoadError {
+                    name: name.clone(),
+                    reason: "extension registry not available (device extension requires registry)".to_string(),
+                }
+            })?;
+            tracing::info!(name = %name, "Using device extension");
+            let loaded = reg.load_device_provider(name)?;
+            Ok(Box::new(loaded))
         }
     }
 }
