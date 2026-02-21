@@ -8,6 +8,7 @@ use eframe::egui;
 use serde::Serialize;
 
 use neurohid_calibration::panel::{CalibrationPanel, CalibrationPanelResult};
+use neurohid_calibration::GameKind;
 use neurohid_types::model::{
     CURRENT_ACTION_SCHEMA_VERSION, CURRENT_FEATURE_SCHEMA_VERSION, ModelManifest,
     NormalizationStats,
@@ -17,6 +18,12 @@ use neurohid_types::profile::{CalibrationQuality, CalibrationState};
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 use crate::theme;
+
+/// User choice: full calibration (both games) or a single game from the list.
+enum StartChoice {
+    Full,
+    SingleGame(GameKind),
+}
 
 pub struct CalibrationScreen {
     panel: Option<CalibrationPanel>,
@@ -220,13 +227,61 @@ impl CalibrationScreen {
 
         ui.add_space(16.0);
 
-        if theme::action_button(ui, "Start Calibration", true, theme::ButtonTone::Primary) {
-            service_manager.enter_calibration_mode();
+        // Game list/grid: user picks a game → wizard then that game's panel
+        ui.label("Choose a calibration game. The wizard will guide you, then run the game. Results are saved to your active profile.");
+        ui.add_space(12.0);
 
-            let mut panel = CalibrationPanel::new();
+        let mut start_game: Option<StartChoice> = None;
+        theme::card_frame(ui).show(ui, |ui| {
+            ui.set_min_width(400.0);
+            for kind in GameKind::all() {
+                ui.add_space(8.0);
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        let name = kind.display_name();
+                        if theme::action_button(
+                            ui,
+                            name,
+                            true,
+                            theme::ButtonTone::Primary,
+                        ) {
+                            start_game = Some(StartChoice::SingleGame(kind));
+                        }
+                        ui.add_space(4.0);
+                        ui.label(
+                            egui::RichText::new(kind.description())
+                                .small()
+                                .color(ui.ctx().style().visuals.weak_text_color()),
+                        );
+                        // Placeholder for decoder accuracy when backend provides it
+                        ui.label(
+                            egui::RichText::new("Accuracy: —")
+                                .small()
+                                .color(egui::Color32::GRAY),
+                        );
+                    });
+                });
+                ui.add_space(8.0);
+                ui.separator();
+            }
+            ui.add_space(8.0);
+            ui.separator();
+            ui.add_space(8.0);
+            ui.label("Or run the full calibration (both games in sequence):");
+            if theme::action_button(ui, "Start full calibration", true, theme::ButtonTone::Secondary)
+            {
+                start_game = Some(StartChoice::Full);
+            }
+        });
+
+        if let Some(choice) = start_game {
+            service_manager.enter_calibration_mode();
+            let mut panel = match choice {
+                StartChoice::Full => CalibrationPanel::new(),
+                StartChoice::SingleGame(kind) => CalibrationPanel::new_for_game(kind),
+            };
             panel.set_signal_quality(snap.signal_quality);
             self.panel = Some(panel);
-
             tracing::info!("Starting calibration session");
         }
     }

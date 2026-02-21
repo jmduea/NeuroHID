@@ -11,7 +11,7 @@ use eframe::egui;
 
 use neurohid_types::profile::CalibrationStep;
 
-use crate::games::{GridMazeGame, TargetTrackingGame};
+use crate::games::{GameKind, GridMazeGame, TargetTrackingGame};
 use crate::wizard::WizardState;
 
 /// The result of rendering the calibration panel for one frame.
@@ -72,10 +72,12 @@ pub struct CalibrationPanel {
     tracking_quality: Option<(f32, u32)>,
     /// Start time for the decoder training phase.
     decoder_training_started_at: Option<std::time::Instant>,
+    /// When set, only this game is run (wizard then that game then complete).
+    game_kind: Option<GameKind>,
 }
 
 impl CalibrationPanel {
-    /// Creates a new calibration panel.
+    /// Creates a new calibration panel (full flow: wizard then both games).
     pub fn new() -> Self {
         Self {
             screen: Screen::Welcome,
@@ -87,6 +89,17 @@ impl CalibrationPanel {
             maze_quality: None,
             tracking_quality: None,
             decoder_training_started_at: None,
+            game_kind: None,
+        }
+    }
+
+    /// Creates a calibration panel that runs only the given game (wizard steps
+    /// for that game, then the game, then complete). Used when the hub game
+    /// list is used and the user picks a single game.
+    pub fn new_for_game(kind: GameKind) -> Self {
+        Self {
+            game_kind: Some(kind),
+            ..Self::new()
         }
     }
 
@@ -264,6 +277,16 @@ impl CalibrationPanel {
     }
 
     fn show_errp_discrete_intro(&mut self, ui: &mut egui::Ui) {
+        if self.game_kind == Some(GameKind::TargetTracking) {
+            ui.label("This session will run Target Tracking only.");
+            ui.label("Continuing to the Target Tracking intro.");
+            ui.add_space(20.0);
+            if action_button(ui, "Continue", true, ButtonVariant::Default) {
+                self.wizard.advance();
+            }
+            return;
+        }
+
         ui.label("In this game, you'll navigate a maze using thought commands.");
         ui.label("Sometimes the system will deliberately make mistakes.");
         ui.label("This helps us learn what your brain signals look like when errors occur.");
@@ -330,12 +353,15 @@ impl CalibrationPanel {
         };
 
         if game_complete {
-            // Extract quality metrics from the game before advancing
             if let Some(game) = &self.grid_maze {
                 self.maze_quality = Some(game.quality_metrics());
             }
-            self.wizard.advance();
-            self.screen = Screen::Wizard;
+            if self.game_kind == Some(GameKind::GridMaze) {
+                self.screen = Screen::Complete;
+            } else {
+                self.wizard.advance();
+                self.screen = Screen::Wizard;
+            }
         }
     }
 
@@ -347,12 +373,15 @@ impl CalibrationPanel {
         };
 
         if game_complete {
-            // Extract quality metrics from the game before advancing
             if let Some(game) = &self.target_tracking {
                 self.tracking_quality = Some(game.quality_metrics());
             }
-            self.wizard.advance();
-            self.screen = Screen::Wizard;
+            if self.game_kind == Some(GameKind::TargetTracking) {
+                self.screen = Screen::Complete;
+            } else {
+                self.wizard.advance();
+                self.screen = Screen::Wizard;
+            }
         }
     }
 

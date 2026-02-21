@@ -8,8 +8,11 @@
 //!
 //! ```no_run
 //! use neurohid_calibration::panel::{CalibrationPanel, CalibrationPanelResult};
+//! use neurohid_calibration::GameKind;
 //! ```
 
 pub mod games;
 pub mod panel;
 pub mod wizard;
+
+pub use games::GameKind;
