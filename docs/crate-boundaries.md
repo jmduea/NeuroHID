@@ -32,6 +32,10 @@ are allowed to depend on which layers.
 - Put UI-only behavior and presentation in `neurohid-hub`.
 - Put public convenience exports for external Rust users in `neurohid-sdk`.
 
+## Framework surface and Hub boundary
+
+The framework surface (which crates and APIs embedders and Hub may depend on) and the Hub allowlist are defined in [framework-surface.md](framework-surface.md). That doc is the source of truth for "what do I depend on?" and for Hub's allowed path dependencies; this document defines placement and the layer map. The Hub allowlist is enforced by CI and defined in [`.github/framework-allowlist.toml`](../.github/framework-allowlist.toml).
+
 ## Dependency Direction
 
 Preferred dependency flow:

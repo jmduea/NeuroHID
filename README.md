@@ -49,6 +49,8 @@ time without you clicking "wrong" buttons.
 
 ## Architecture
 
+Building another app? See [Framework surface and Hub boundary](docs/framework-surface.md).
+
 Hybrid Rust/Python monorepo:
 
 | Part | Stack | Location |

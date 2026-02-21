@@ -17,6 +17,7 @@
 
 ## Architecture and System Docs
 
+- **Framework surface and Hub boundary (what to depend on):** [framework-surface.md](framework-surface.md)
 - [Crate Boundaries and Placement Guide](./crate-boundaries.md)
 - [Architecture - Rust Core](./architecture-rust-core.md)
 - [Architecture - Python ML](./architecture-python-ml.md)
