@@ -1675,6 +1675,7 @@ fn render_sidebar_shell(
         egui::vec2(6.0, 5.0)
     };
 
+    // CONTEXT order: Devices, Calibration, Training, Visualization, then Config
     for lane in ActivityLane::ALL {
         sidebar_test_marker(&mut body_ui, lane.label());
     }
@@ -1757,6 +1758,7 @@ fn render_platform_sidebar(
                         hover_labels.push(None);
                     }
 
+                    // CONTEXT order: Devices, Calibration, Training, Visualization, Config
                     for lane in ActivityLane::ALL {
                         sidebar
                             .item(lane.glyph(), lane.label())
