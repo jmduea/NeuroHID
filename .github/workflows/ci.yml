@@ -204,6 +204,28 @@ jobs:
           name: python-coverage
           fail_ci_if_error: false
 
+  e2e-service-client:
+    name: E2E Service + Python Client
+    needs: determine-impact
+    if: needs.determine-impact.outputs.rust == 'true' || needs.determine-impact.outputs.python == 'true' || github.event_name == 'push'
+    runs-on: [self-hosted, linux, neurohid-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v4
+      - uses: Swatinem/rust-cache@v2
+      - name: Install LSL (Linux)
+        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+      - name: Build neurohid-service
+        run: cargo build -p neurohid --bin neurohid-service
+      - name: Install Python dependencies
+        run: uv sync --directory python --extra dev
+      - name: Run E2E test (service + Python client)
+        run: uv run --project python pytest python/tests/test_e2e_service_client.py -v
+
   ipc-compat-matrix:
     name: IPC Compat Matrix
     needs: determine-impact
