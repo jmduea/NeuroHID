@@ -33,6 +33,7 @@ pub mod learning;
 pub mod model;
 pub mod observability;
 pub mod observation;
+pub mod outlet;
 pub mod profile;
 pub mod recording;
 pub mod reward;
@@ -60,6 +61,7 @@ pub use learning::{
 pub use model::{ModelManifest, NormalizationStats};
 pub use observability::{EmitGate, EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig};
 pub use observation::{CursorState, Observation};
+pub use outlet::{ExtensionKind, ExtensionManifest, Outlet, OutletChannels};
 pub use profile::{CalibrationState, ProfileId};
 pub use recording::{RecordingAutoMode, RecordingConfig, SessionManifest};
 pub use reward::{ErrPResult, RewardSignal, SignalQuality};
