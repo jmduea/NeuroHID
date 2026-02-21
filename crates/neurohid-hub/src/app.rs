@@ -18,6 +18,7 @@ use crate::screens::Screen;
 use crate::screens::calibration::CalibrationScreen;
 use crate::screens::dashboard::DashboardScreen;
 use crate::screens::devices::DevicesScreen;
+use crate::screens::extensions::ExtensionsScreen;
 use crate::screens::jupyter_ide::JupyterIdeScreen;
 use crate::screens::profiles::ProfilesScreen;
 use crate::screens::python_lab::PythonLabScreen;
@@ -58,6 +59,7 @@ pub struct HubApp {
     training: TrainingScreen,
     jupyter_ide: JupyterIdeScreen,
     python_lab: PythonLabScreen,
+    extensions: ExtensionsScreen,
     settings: SettingsScreen,
 }
 
@@ -130,6 +132,7 @@ impl HubApp {
             training: TrainingScreen::new(),
             jupyter_ide: JupyterIdeScreen::new(),
             python_lab: PythonLabScreen::new(),
+            extensions: ExtensionsScreen::new(),
             settings: SettingsScreen::new(),
         };
 
@@ -2145,6 +2148,13 @@ impl eframe::App for HubApp {
                             &self.state.service_snapshot,
                         );
                     }
+                    Screen::Extensions => {
+                        self.extensions.show(
+                            ui,
+                            &self.state,
+                            &self.runtime,
+                        );
+                    }
                     Screen::Settings => {
                         self.settings.show(
                             ui,
@@ -2190,6 +2200,7 @@ fn screen_glyph(screen: Screen) -> &'static str {
         Screen::Training => "TR",
         Screen::JupyterIde => "JP",
         Screen::PythonLab => "PY",
+        Screen::Extensions => "EX",
         Screen::Settings => "ST",
     }
 }
@@ -2538,6 +2549,11 @@ fn command_palette_items(
             label: "Open Jupyter IDE",
             keywords: "screen labs jupyter ide",
             action: CommandPaletteAction::OpenScreen(Screen::JupyterIde),
+        },
+        CommandPaletteItem {
+            label: "Open Extensions",
+            keywords: "screen extensions plugins addons",
+            action: CommandPaletteAction::OpenScreen(Screen::Extensions),
         },
         CommandPaletteItem {
             label: "Open Settings",

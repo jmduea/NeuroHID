@@ -265,6 +265,7 @@ pub fn screens_for_lane(lane: ActivityLane) -> &'static [Screen] {
         ActivityLane::Config => &[
             Screen::Dashboard,
             Screen::Profiles,
+            Screen::Extensions,
             Screen::Settings,
             Screen::PythonLab,
             Screen::JupyterIde,
@@ -278,8 +279,8 @@ pub const fn lane_for_screen(screen: Screen) -> ActivityLane {
         Screen::Calibration => ActivityLane::Calibration,
         Screen::Training => ActivityLane::Training,
         Screen::Visualization => ActivityLane::Visualization,
-        Screen::Dashboard | Screen::Profiles | Screen::Settings | Screen::PythonLab
-        | Screen::JupyterIde => ActivityLane::Config,
+        Screen::Dashboard | Screen::Profiles | Screen::Extensions | Screen::Settings
+        | Screen::PythonLab | Screen::JupyterIde => ActivityLane::Config,
     }
 }
 

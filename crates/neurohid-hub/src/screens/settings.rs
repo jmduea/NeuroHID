@@ -5,6 +5,8 @@
 
 use eframe::egui;
 
+use neurohid_core::extension_registry::{default_extension_paths, ExtensionRegistry};
+
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 use crate::theme;
@@ -259,6 +261,7 @@ impl SettingsScreen {
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             ui.label(egui::RichText::new("Device & acquisition").small().weak());
+            let last_device_backend = state.config.device.backend.clone();
             // Device settings
             let changed = egui::CollapsingHeader::new("Device")
                 .default_open(true)
@@ -266,34 +269,57 @@ impl SettingsScreen {
                     let mut changed = false;
                     let cfg = &mut state.config.device;
 
-                    // Device backend selector
+                    // Device backend selector: built-in + discovered device extensions
                     ui.horizontal(|ui| {
                         ui.label("Backend:");
                         let current_backend = cfg.backend.clone();
-                        let options = ["Auto", "LSL", "Mock", "Serial", "BrainFlow", "Extension"];
+                        let mut reg =
+                            ExtensionRegistry::new(default_extension_paths());
+                        let _ = reg.scan();
+                        let device_names: Vec<String> =
+                            reg.list_devices().into_iter().map(|e| e.name).collect();
+                        let builtin =
+                            ["Auto", "LSL", "Mock", "Serial", "BrainFlow"];
+                        let options: Vec<String> = builtin
+                            .iter()
+                            .map(|s| (*s).to_string())
+                            .chain(device_names.clone())
+                            .collect();
+                        let options_ref: Vec<&str> =
+                            options.iter().map(String::as_str).collect();
                         let mut selected = match &cfg.backend {
                             neurohid_types::config::DeviceBackend::Auto => 0,
                             neurohid_types::config::DeviceBackend::Lsl => 1,
                             neurohid_types::config::DeviceBackend::Mock => 2,
                             neurohid_types::config::DeviceBackend::Serial => 3,
                             neurohid_types::config::DeviceBackend::BrainFlow => 4,
-                            neurohid_types::config::DeviceBackend::Extension(_) => 5,
+                            neurohid_types::config::DeviceBackend::Extension(name) => options
+                                .iter()
+                                .position(|s| s == name)
+                                .unwrap_or(5.min(options.len().saturating_sub(1))),
                         };
                         if theme::select_index(
                             ui,
                             "settings_device_backend",
                             &mut selected,
-                            &options,
+                            &options_ref,
                             180.0,
                         ) {
-                            cfg.backend = match selected {
-                                0 => neurohid_types::config::DeviceBackend::Auto,
-                                1 => neurohid_types::config::DeviceBackend::Lsl,
-                                2 => neurohid_types::config::DeviceBackend::Mock,
-                                3 => neurohid_types::config::DeviceBackend::Serial,
-                                4 => neurohid_types::config::DeviceBackend::BrainFlow,
-                                _ => neurohid_types::config::DeviceBackend::Extension(String::new()),
+                            cfg.backend = if selected < 5 {
+                                match selected {
+                                    0 => neurohid_types::config::DeviceBackend::Auto,
+                                    1 => neurohid_types::config::DeviceBackend::Lsl,
+                                    2 => neurohid_types::config::DeviceBackend::Mock,
+                                    3 => neurohid_types::config::DeviceBackend::Serial,
+                                    4 => neurohid_types::config::DeviceBackend::BrainFlow,
+                                    _ => neurohid_types::config::DeviceBackend::Auto,
+                                }
+                            } else if let Some(name) = options.get(selected) {
+                                neurohid_types::config::DeviceBackend::Extension(name.clone())
+                            } else {
+                                neurohid_types::config::DeviceBackend::Auto
                             };
+                            changed = true;
                         }
                         if cfg.backend != current_backend {
                             changed = true;
@@ -478,6 +504,14 @@ impl SettingsScreen {
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
             }
+            if state.config.device.backend != last_device_backend {
+                if runtime
+                    .block_on(state.config_store.save(&state.config))
+                    .is_err()
+                {
+                    tracing::warn!("Failed to persist device backend");
+                }
+            }
             ui.add_space(8.0);
 
             ui.label(
@@ -485,12 +519,52 @@ impl SettingsScreen {
                     .small()
                     .weak(),
             );
+            let last_signal_extension = state.config.signal.extension_name.clone();
             // Signal settings
             let changed = egui::CollapsingHeader::new("Signal Processing")
                 .default_open(false)
                 .show(ui, |ui| {
                     let mut changed = false;
                     let cfg = &mut state.config.signal;
+
+                    // Signal preprocessing: built-in or extension by name
+                    ui.horizontal(|ui| {
+                        ui.label("Pipeline:");
+                        let mut reg =
+                            ExtensionRegistry::new(default_extension_paths());
+                        let _ = reg.scan();
+                        let ext_names: Vec<String> = reg
+                            .list_signal_preprocessors()
+                            .into_iter()
+                            .map(|e| e.name)
+                            .collect();
+                        let options: Vec<String> = std::iter::once("Built-in".to_string())
+                            .chain(ext_names.clone())
+                            .collect();
+                        let options_ref: Vec<&str> =
+                            options.iter().map(String::as_str).collect();
+                        let current = cfg.extension_name.as_deref().unwrap_or("");
+                        let mut selected = options
+                            .iter()
+                            .position(|s| s.as_str() == current || (current.is_empty() && s == "Built-in"))
+                            .unwrap_or(0);
+                        if theme::select_index(
+                            ui,
+                            "settings_signal_extension",
+                            &mut selected,
+                            &options_ref,
+                            180.0,
+                        ) {
+                            cfg.extension_name = if selected == 0 {
+                                None
+                            } else if let Some(name) = options.get(selected) {
+                                Some(name.clone())
+                            } else {
+                                None
+                            };
+                            changed = true;
+                        }
+                    });
 
                     ui.horizontal_wrapped(|ui| {
                         ui.label("Presets:");
@@ -663,6 +737,14 @@ impl SettingsScreen {
                 self.unsaved_changes = true;
                 signal_changed_this_frame = true;
             }
+            if state.config.signal.extension_name != last_signal_extension {
+                if runtime
+                    .block_on(state.config_store.save(&state.config))
+                    .is_err()
+                {
+                    tracing::warn!("Failed to persist signal extension");
+                }
+            }
             ui.add_space(8.0);
 
             // Action settings
@@ -744,12 +826,49 @@ impl SettingsScreen {
             }
             ui.add_space(8.0);
 
+            let last_decoder_extension = state.config.decoder.extension_name.clone();
             // Decoder settings (advanced)
             let changed = egui::CollapsingHeader::new("Decoder (Advanced)")
                 .default_open(false)
                 .show(ui, |ui| {
                     let mut changed = false;
                     let cfg = &mut state.config.decoder;
+
+                    // Decoder: built-in or extension by name
+                    ui.horizontal(|ui| {
+                        ui.label("Decoder:");
+                        let mut reg =
+                            ExtensionRegistry::new(default_extension_paths());
+                        let _ = reg.scan();
+                        let ext_names: Vec<String> =
+                            reg.list_decoders().into_iter().map(|e| e.name).collect();
+                        let options: Vec<String> = std::iter::once("Built-in".to_string())
+                            .chain(ext_names.clone())
+                            .collect();
+                        let options_ref: Vec<&str> =
+                            options.iter().map(String::as_str).collect();
+                        let current = cfg.extension_name.as_deref().unwrap_or("");
+                        let mut selected = options
+                            .iter()
+                            .position(|s| s.as_str() == current || (current.is_empty() && s == "Built-in"))
+                            .unwrap_or(0);
+                        if theme::select_index(
+                            ui,
+                            "settings_decoder_extension",
+                            &mut selected,
+                            &options_ref,
+                            180.0,
+                        ) {
+                            cfg.extension_name = if selected == 0 {
+                                None
+                            } else if let Some(name) = options.get(selected) {
+                                Some(name.clone())
+                            } else {
+                                None
+                            };
+                            changed = true;
+                        }
+                    });
 
                     ui.horizontal(|ui| {
                         ui.label("Learning rate:");
@@ -787,6 +906,14 @@ impl SettingsScreen {
                 });
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
+            }
+            if state.config.decoder.extension_name != last_decoder_extension {
+                if runtime
+                    .block_on(state.config_store.save(&state.config))
+                    .is_err()
+                {
+                    tracing::warn!("Failed to persist decoder extension");
+                }
             }
             ui.add_space(8.0);
 
@@ -955,12 +1082,49 @@ impl SettingsScreen {
             }
             ui.add_space(8.0);
 
+            let last_outlet_extension = state.config.outlet.extension_name.clone();
             // Outlet settings
             let changed = egui::CollapsingHeader::new("Outlets")
                 .default_open(false)
                 .show(ui, |ui| {
                     let mut changed = false;
                     let cfg = &mut state.config.outlet;
+
+                    // Outlet: built-in or extension by name
+                    ui.horizontal(|ui| {
+                        ui.label("Outlet:");
+                        let mut reg =
+                            ExtensionRegistry::new(default_extension_paths());
+                        let _ = reg.scan();
+                        let ext_names: Vec<String> =
+                            reg.list_outlets().into_iter().map(|e| e.name).collect();
+                        let options: Vec<String> = std::iter::once("Built-in".to_string())
+                            .chain(ext_names.clone())
+                            .collect();
+                        let options_ref: Vec<&str> =
+                            options.iter().map(String::as_str).collect();
+                        let current = cfg.extension_name.as_deref().unwrap_or("");
+                        let mut selected = options
+                            .iter()
+                            .position(|s| s.as_str() == current || (current.is_empty() && s == "Built-in"))
+                            .unwrap_or(0);
+                        if theme::select_index(
+                            ui,
+                            "settings_outlet_extension",
+                            &mut selected,
+                            &options_ref,
+                            180.0,
+                        ) {
+                            cfg.extension_name = if selected == 0 {
+                                None
+                            } else if let Some(name) = options.get(selected) {
+                                Some(name.clone())
+                            } else {
+                                None
+                            };
+                            changed = true;
+                        }
+                    });
 
                     ui.horizontal(|ui| {
                         ui.label("Enable outlets:");
@@ -1076,6 +1240,14 @@ impl SettingsScreen {
                 });
             if changed.body_returned == Some(true) {
                 self.unsaved_changes = true;
+            }
+            if state.config.outlet.extension_name != last_outlet_extension {
+                if runtime
+                    .block_on(state.config_store.save(&state.config))
+                    .is_err()
+                {
+                    tracing::warn!("Failed to persist outlet extension");
+                }
             }
             ui.add_space(8.0);
 

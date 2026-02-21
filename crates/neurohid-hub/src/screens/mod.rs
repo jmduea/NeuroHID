@@ -8,6 +8,7 @@ use neurohid_types::config::UiMode;
 pub mod calibration;
 pub mod dashboard;
 pub mod devices;
+pub mod extensions;
 pub mod jupyter_ide;
 pub mod profiles;
 pub mod python_lab;
@@ -26,6 +27,7 @@ pub enum Screen {
     Training,
     JupyterIde,
     PythonLab,
+    Extensions,
     Settings,
 }
 
@@ -41,6 +43,7 @@ impl Screen {
             Screen::Training => "training",
             Screen::JupyterIde => "jupyter_ide",
             Screen::PythonLab => "python_lab",
+            Screen::Extensions => "extensions",
             Screen::Settings => "settings",
         }
     }
@@ -56,6 +59,7 @@ impl Screen {
             "training" => Some(Screen::Training),
             "jupyter_ide" => Some(Screen::JupyterIde),
             "python_lab" => Some(Screen::PythonLab),
+            "extensions" => Some(Screen::Extensions),
             "settings" => Some(Screen::Settings),
             _ => None,
         }
@@ -71,6 +75,7 @@ impl Screen {
             Screen::Training => "Training",
             Screen::JupyterIde => "Jupyter IDE",
             Screen::PythonLab => "Python Lab",
+            Screen::Extensions => "Extensions",
             Screen::Settings => "Settings",
         }
     }
@@ -83,6 +88,7 @@ impl Screen {
                 Screen::Profiles,
                 Screen::Calibration,
                 Screen::Training,
+                Screen::Extensions,
                 Screen::Settings,
             ],
             UiMode::Advanced => &[
@@ -94,6 +100,7 @@ impl Screen {
                 Screen::Training,
                 Screen::JupyterIde,
                 Screen::PythonLab,
+                Screen::Extensions,
                 Screen::Settings,
             ],
         }
