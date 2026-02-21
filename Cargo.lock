@@ -3055,6 +3055,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "neurohid-outlet-example"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "neurohid-types",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "neurohid-platform"
 version = "0.1.0"
 dependencies = [

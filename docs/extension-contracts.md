@@ -76,7 +76,15 @@ Each returns a list of entries (name + path to the extension directory) for use 
 
 ## Loading extensions
 
-Loading (e.g. dynamic library or subprocess) is not covered in this document; it is implemented in a later plan. This document defines only the contracts and discovery behaviour.
+Outlet extensions are loaded by `neurohid-core` via `ExtensionRegistry::load_outlet`. The runtime expects a cdylib that exports the symbol `neurohid_outlet_create` with signature `(OutletConfig, OutletChannels) -> Result<Box<dyn Outlet>>`. In-process plugins must be built with the same Rust toolchain as the host (ABI). See `crates/neurohid-core/src/extension_registry.rs` for the loader.
+
+### Example outlet plugin
+
+The workspace includes an example outlet: `crates/neurohid-outlet-example`. It implements the outlet contract (minimal run-until-shutdown behaviour). To build and use it:
+
+- **Build:** `cargo build -p neurohid-outlet-example` (produces a cdylib in `target/debug/` or `target/release/`, e.g. `libneurohid_outlet_example.so` on Linux).
+- **Manifest:** In the extension directory (a child of a path passed to the registry), place `manifest.json` with `{"name": "neurohid-outlet-example", "kind": "outlet", "library": "<filename>"}`. The `library` value must match the built artifact (e.g. `libneurohid_outlet_example.so` on Linux, `neurohid_outlet_example.dll` on Windows).
+- **Discovery:** Point the extension registry at a directory that contains a child directory with that manifest and the copied library, or use the default `<config_root>/extensions` and install the extension there.
 
 ## References
 
