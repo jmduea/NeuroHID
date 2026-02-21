@@ -13,6 +13,7 @@ default = []
 [dependencies]
 neurohid-types = { path = "../neurohid-types" }
 neurohid-core = { path = "../neurohid-core" }
+neurohid-ipc = { path = "../neurohid-ipc" }
 neurohid-calibration = { path = "../neurohid-calibration" }
 neurohid-storage = { path = "../neurohid-storage" }
 
@@ -52,4 +53,3 @@ eframe = { workspace = true, features = ["default_fonts", "glow"] }
 
 [dev-dependencies]
 egui_kittest = "0.33.1"
-neurohid-ipc = { path = "../neurohid-ipc" }
