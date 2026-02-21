@@ -19,10 +19,7 @@ struct ExampleOutlet {
 
 #[async_trait]
 impl Outlet for ExampleOutlet {
-    async fn run(
-        self: Box<Self>,
-        mut shutdown: broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run(self: Box<Self>, mut shutdown: broadcast::Receiver<()>) -> Result<()> {
         tracing::info!("neurohid-outlet-example: outlet running until shutdown");
         let _ = shutdown.recv().await;
         tracing::debug!("neurohid-outlet-example: shutdown received");
@@ -32,6 +29,12 @@ impl Outlet for ExampleOutlet {
 
 /// Factory symbol required by the extension loader (see docs/extension-contracts.md and
 /// neurohid-core extension_registry). Same toolchain as host required for ABI.
+///
+/// # Safety
+///
+/// Must be called only by `ExtensionRegistry` after loading this cdylib with
+/// `libloading`. Caller and callee must be built with the same Rust toolchain
+/// so that `Box<dyn Outlet>` has a compatible ABI.
 #[unsafe(no_mangle)]
 pub unsafe extern "Rust" fn neurohid_outlet_create(
     config: OutletConfig,

@@ -8,15 +8,15 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
-use tokio::sync::broadcast;
 use neurohid_device::{Device, DeviceProvider};
 use neurohid_types::{
+    DecoderChannels, DecoderRunner, SignalChannels, SignalPreprocessor,
     config::{DecoderConfig, OutletConfig, SignalConfig},
     device::{ConnectionSettings, DeviceId, DeviceInfo},
     error::{ExtensionError, Result},
     outlet::{ExtensionKind, ExtensionManifest, Outlet, OutletChannels},
-    DecoderChannels, DecoderRunner, SignalChannels, SignalPreprocessor,
 };
+use tokio::sync::broadcast;
 
 /// Default manifest filename(s) we look for in each extension directory.
 const MANIFEST_FILENAMES: &[&str] = &["manifest.json", "neurohid.manifest.json"];
@@ -94,10 +94,7 @@ pub struct LoadedOutlet {
 
 #[async_trait]
 impl Outlet for LoadedOutlet {
-    async fn run(
-        self: Box<Self>,
-        shutdown: broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run(self: Box<Self>, shutdown: broadcast::Receiver<()>) -> Result<()> {
         let LoadedOutlet { _lib: _, outlet } = *self;
         outlet.run(shutdown).await
     }
@@ -111,10 +108,7 @@ pub struct LoadedSignalPreprocessor {
 
 #[async_trait]
 impl SignalPreprocessor for LoadedSignalPreprocessor {
-    async fn run(
-        self: Box<Self>,
-        shutdown: broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run(self: Box<Self>, shutdown: broadcast::Receiver<()>) -> Result<()> {
         let LoadedSignalPreprocessor { _lib: _, runner } = *self;
         runner.run(shutdown).await
     }
@@ -128,10 +122,7 @@ pub struct LoadedDecoderRunner {
 
 #[async_trait]
 impl DecoderRunner for LoadedDecoderRunner {
-    async fn run(
-        self: Box<Self>,
-        shutdown: broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run(self: Box<Self>, shutdown: broadcast::Receiver<()>) -> Result<()> {
         let LoadedDecoderRunner { _lib: _, runner } = *self;
         runner.run(shutdown).await
     }
@@ -186,10 +177,8 @@ impl ExtensionRegistry {
                         }
                         .into());
                     }
-                    seen_names
-                        .insert(manifest.name.clone(), path.clone());
-                    self.by_name
-                        .insert(manifest.name.clone(), (manifest, path));
+                    seen_names.insert(manifest.name.clone(), path.clone());
+                    self.by_name.insert(manifest.name.clone(), (manifest, path));
                 }
             }
         }
@@ -212,8 +201,12 @@ impl ExtensionRegistry {
         if manifest.kind != ExtensionKind::Device {
             return Err(ExtensionError::LoadError {
                 name: name.to_string(),
-                reason: format!("extension '{}' is not a device extension (kind: {:?})", name, manifest.kind),
-            }.into());
+                reason: format!(
+                    "extension '{}' is not a device extension (kind: {:?})",
+                    name, manifest.kind
+                ),
+            }
+            .into());
         }
         let lib_name: String = manifest
             .library
@@ -222,24 +215,22 @@ impl ExtensionRegistry {
         let path = dir.join(&lib_name);
         // SAFETY: We load a cdylib that is built with the same Rust toolchain; the plugin
         // contract documents that in-process extensions must match the host toolchain (ABI).
-        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
-            ExtensionError::LoadError {
+        let lib =
+            unsafe { libloading::Library::new(&path) }.map_err(|e| ExtensionError::LoadError {
                 name: name.to_string(),
                 reason: format!("failed to load library '{}': {}", path.display(), e),
-            }
-        })?;
+            })?;
         type CreateFn = unsafe extern "Rust" fn() -> Result<Box<dyn DeviceProvider>>;
         // SAFETY: Symbol is from a library we hold; plugin exports this symbol per contract.
         let create: libloading::Symbol<CreateFn> = unsafe {
-            lib.get(DEVICE_PROVIDER_SYMBOL).map_err(|e| {
-                ExtensionError::LoadError {
+            lib.get(DEVICE_PROVIDER_SYMBOL)
+                .map_err(|e| ExtensionError::LoadError {
                     name: name.to_string(),
                     reason: format!(
                         "symbol 'neurohid_device_provider_create' not found or incompatible: {}",
                         e
                     ),
-                }
-            })?
+                })?
         };
         // SAFETY: Plugin factory is documented to return a valid provider for the same toolchain.
         let provider = unsafe { create() }.map_err(|e| ExtensionError::LoadError {
@@ -282,37 +273,31 @@ impl ExtensionRegistry {
             .unwrap_or_else(default_outlet_library_name);
         let path = dir.join(&lib_name);
         // SAFETY: Same-toolchain plugin contract; see device loader.
-        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
-            ExtensionError::LoadError {
+        let lib =
+            unsafe { libloading::Library::new(&path) }.map_err(|e| ExtensionError::LoadError {
                 name: name.to_string(),
                 reason: format!("failed to load library '{}': {}", path.display(), e),
-            }
-        })?;
+            })?;
         type CreateFn =
             unsafe extern "Rust" fn(OutletConfig, OutletChannels) -> Result<Box<dyn Outlet>>;
         // SAFETY: Symbol from loaded library; plugin exports per contract.
         let create: libloading::Symbol<CreateFn> = unsafe {
-            lib.get(OUTLET_SYMBOL).map_err(|e| {
-                ExtensionError::LoadError {
+            lib.get(OUTLET_SYMBOL)
+                .map_err(|e| ExtensionError::LoadError {
                     name: name.to_string(),
                     reason: format!(
                         "symbol 'neurohid_outlet_create' not found or incompatible: {}",
                         e
                     ),
-                }
-            })?
+                })?
         };
         // SAFETY: Plugin factory returns valid outlet for same toolchain.
-        let outlet = unsafe { create(config, channels) }.map_err(|e| {
-            ExtensionError::LoadError {
+        let outlet =
+            unsafe { create(config, channels) }.map_err(|e| ExtensionError::LoadError {
                 name: name.to_string(),
                 reason: e.to_string(),
-            }
-        })?;
-        Ok(LoadedOutlet {
-            _lib: lib,
-            outlet,
-        })
+            })?;
+        Ok(LoadedOutlet { _lib: lib, outlet })
     }
 
     /// Load a signal preprocessing extension by name. Returns a runner that holds the library guard.
@@ -343,35 +328,34 @@ impl ExtensionRegistry {
             .clone()
             .unwrap_or_else(default_signal_preprocessor_library_name);
         let path = dir.join(&lib_name);
-        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
-            ExtensionError::LoadError {
+        // SAFETY: Same-toolchain plugin contract; see device loader.
+        let lib =
+            unsafe { libloading::Library::new(&path) }.map_err(|e| ExtensionError::LoadError {
                 name: name.to_string(),
                 reason: format!("failed to load library '{}': {}", path.display(), e),
-            }
-        })?;
-        type CreateFn =
-            unsafe extern "Rust" fn(SignalConfig, SignalChannels) -> Result<Box<dyn SignalPreprocessor>>;
+            })?;
+        type CreateFn = unsafe extern "Rust" fn(
+            SignalConfig,
+            SignalChannels,
+        ) -> Result<Box<dyn SignalPreprocessor>>;
+        // SAFETY: Symbol from loaded library; plugin exports per contract.
         let create: libloading::Symbol<CreateFn> = unsafe {
-            lib.get(SIGNAL_PREPROCESSOR_SYMBOL).map_err(|e| {
-                ExtensionError::LoadError {
+            lib.get(SIGNAL_PREPROCESSOR_SYMBOL)
+                .map_err(|e| ExtensionError::LoadError {
                     name: name.to_string(),
                     reason: format!(
                         "symbol 'neurohid_signal_preprocessor_create' not found: {}",
                         e
                     ),
-                }
-            })?
+                })?
         };
-        let runner = unsafe { create(config, channels) }.map_err(|e| {
-            ExtensionError::LoadError {
+        // SAFETY: Plugin factory returns valid runner for same toolchain.
+        let runner =
+            unsafe { create(config, channels) }.map_err(|e| ExtensionError::LoadError {
                 name: name.to_string(),
                 reason: e.to_string(),
-            }
-        })?;
-        Ok(LoadedSignalPreprocessor {
-            _lib: lib,
-            runner,
-        })
+            })?;
+        Ok(LoadedSignalPreprocessor { _lib: lib, runner })
     }
 
     /// Load a decoder extension by name. Returns a runner that holds the library guard.
@@ -402,32 +386,31 @@ impl ExtensionRegistry {
             .clone()
             .unwrap_or_else(default_decoder_library_name);
         let path = dir.join(&lib_name);
-        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
-            ExtensionError::LoadError {
+        // SAFETY: Same-toolchain plugin contract; see device loader.
+        let lib =
+            unsafe { libloading::Library::new(&path) }.map_err(|e| ExtensionError::LoadError {
                 name: name.to_string(),
                 reason: format!("failed to load library '{}': {}", path.display(), e),
-            }
-        })?;
-        type CreateFn =
-            unsafe extern "Rust" fn(DecoderConfig, DecoderChannels) -> Result<Box<dyn DecoderRunner>>;
+            })?;
+        type CreateFn = unsafe extern "Rust" fn(
+            DecoderConfig,
+            DecoderChannels,
+        ) -> Result<Box<dyn DecoderRunner>>;
+        // SAFETY: Symbol from loaded library; plugin exports per contract.
         let create: libloading::Symbol<CreateFn> = unsafe {
-            lib.get(DECODER_SYMBOL).map_err(|e| {
-                ExtensionError::LoadError {
+            lib.get(DECODER_SYMBOL)
+                .map_err(|e| ExtensionError::LoadError {
                     name: name.to_string(),
                     reason: format!("symbol 'neurohid_decoder_create' not found: {}", e),
-                }
-            })?
+                })?
         };
-        let runner = unsafe { create(config, channels) }.map_err(|e| {
-            ExtensionError::LoadError {
+        // SAFETY: Plugin factory returns valid runner for same toolchain.
+        let runner =
+            unsafe { create(config, channels) }.map_err(|e| ExtensionError::LoadError {
                 name: name.to_string(),
                 reason: e.to_string(),
-            }
-        })?;
-        Ok(LoadedDecoderRunner {
-            _lib: lib,
-            runner,
-        })
+            })?;
+        Ok(LoadedDecoderRunner { _lib: lib, runner })
     }
 
     fn read_manifest_in_dir(dir: &Path) -> Option<ExtensionManifest> {
@@ -495,11 +478,7 @@ mod tests {
         std::fs::create_dir_all(&ext_dir).unwrap();
         let manifest_path = ext_dir.join("manifest.json");
         let mut f = std::fs::File::create(&manifest_path).unwrap();
-        writeln!(
-            f,
-            r#"{{ "name": "test-outlet", "kind": "outlet" }}"#
-        )
-        .unwrap();
+        writeln!(f, r#"{{ "name": "test-outlet", "kind": "outlet" }}"#).unwrap();
         drop(f);
 
         let mut reg = ExtensionRegistry::new(vec![temp.clone()]);
@@ -550,12 +529,7 @@ mod tests {
             std::fs::create_dir_all(temp.join(dir)).unwrap();
             let path = temp.join(dir).join("manifest.json");
             let mut f = std::fs::File::create(&path).unwrap();
-            writeln!(
-                f,
-                r#"{{ "name": "{}", "kind": "{}" }}"#,
-                name, kind
-            )
-            .unwrap();
+            writeln!(f, r#"{{ "name": "{}", "kind": "{}" }}"#, name, kind).unwrap();
             drop(f);
         }
 
