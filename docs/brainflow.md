@@ -21,12 +21,37 @@ neurohid-core = { path = "...", features = ["brainflow"] }
 
 ## Synthetic vs native
 
-The **current implementation is simulation/synthetic only**. The BrainFlow adapter in NeuroHID uses a synthetic board (no real BrainFlow C++ SDK). Native SDK integration and real hardware support are planned for **Phase 10** (requirements BRAIN-06–08).
+The **current implementation is simulation/synthetic only**. The BrainFlow adapter in NeuroHID uses a synthetic board (no real BrainFlow C++ SDK). For real hardware, use the **Native SDK (Phase 10)** path below; it is optional and not used in the default or CI build.
 
 ## Build order
 
-- **Phase 9:** No C++ build is required. The default build includes the BrainFlow (synthetic) backend.
-- **Phase 10 (native):** When the real BrainFlow SDK is integrated, build order and native dependencies will be documented in the Phase 10 plan and docs.
+- **Phase 9 (default):** No C++ build is required. The default build includes the BrainFlow (synthetic) backend.
+- **Phase 10 (native):** See **Native SDK (Phase 10)** below for reproducible C++ → Rust → neurohid-device build order when using the real BrainFlow SDK.
+
+### Native SDK (Phase 10)
+
+NeuroHID pins the BrainFlow version and documents build steps so that native builds are **reproducible** (requirement BRAIN-08). Default and CI do **not** use the native SDK; they use the synthetic backend only.
+
+**Pinned version**
+
+- Use the **BrainFlow git tag `5.13.0`** (or the exact commit that includes both the C++ core and the in-tree `rust_package/brainflow`). NeuroHID documents this tag for reproducible builds. Check the [BrainFlow releases](https://github.com/brainflow-dev/brainflow/releases) for the current recommended tag if you need a different version.
+
+**Build order (authoritative)**
+
+1. **C++** — From the BrainFlow repo root (clone at the pinned tag):
+   - Run the official build script: `python tools/build.py` (or `uv run python tools/build.py` if using uv). Optional args: `--brainflow-version`, `--cmake-install-prefix`, `--build-dir` as needed.
+   - Output goes to `installed/lib/` (BoardController, DataHandler, MLModule shared libs) and `installed/inc/` (headers).
+
+2. **Rust** — The official Rust binding (`rust_package/brainflow` in the BrainFlow repo) expects a `lib/` directory **inside** the crate. After building C++:
+   - Copy `installed/lib/*` into `rust_package/brainflow/lib/` (inside the BrainFlow repo), then build the Rust crate from that tree. Alternatively, if the crate is patched to support an env-based path, set e.g. `BRAINFLOW_LIB_DIR` to `installed/lib` and build from the crate directory.
+
+3. **NeuroHID** — Build the device crate with the native feature (and `brainflow` if not already default):
+   - `cargo build -p neurohid-device --features brainflow,brainflow-native`
+   - Default and CI do **not** use `brainflow-native`; only use it when you have built the C++ and Rust stack above.
+
+**Optional script**
+
+An optional script `scripts/build-brainflow-native.sh` can run the C++ build and copy libs to a target directory for a reproducible native stack. Manual steps in this section are sufficient; the script is for convenience. See that script and the doc references there for Windows (e.g. WSL or manual steps).
 
 ## Device-agnostic API (BRAIN-04)
 
