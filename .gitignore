@@ -12,7 +12,11 @@ _bmad/*
 
 # XDF test data artifacts
 *.xdf
+# Recordings
+sessions/
 
+# cursor settings
+.cursor/
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
