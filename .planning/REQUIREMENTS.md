@@ -34,7 +34,7 @@ Requirements for milestone v1.1 (Testing, BrainFlow & Framework Separation). Eac
 
 - [ ] **BRAIN-06**: Developer can build and use the real BrainFlow SDK in neurohid-device behind a feature flag (e.g. brainflow-native); default and CI use synthetic board only (no mock)
 - [ ] **BRAIN-07**: User or developer can use the BrainFlow streaming path into the same signal pipeline as LSL and other backends (synthetic or real board → Device → pipeline)
-- [ ] **BRAIN-08**: BrainFlow version and build steps (C++ core then Rust) are pinned and documented so builds are reproducible
+- [x] **BRAIN-08**: BrainFlow version and build steps (C++ core then Rust) are pinned and documented so builds are reproducible
 
 ## Future requirements (v1.2+)
 
@@ -86,7 +86,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRAIN-05 | Phase 9 | Complete |
 | BRAIN-06 | Phase 10 | Pending |
 | BRAIN-07 | Phase 10 | Pending |
-| BRAIN-08 | Phase 10 | Pending |
+| BRAIN-08 | Phase 10 | Complete |
 
 **Coverage:**
 - v1.1 requirements: 17 total

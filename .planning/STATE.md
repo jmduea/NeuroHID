@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 
 ## Current Position
 
-Phase: 9 of 10 (BrainFlow First-Class)
-**Current Plan:** Not started
-**Total Plans in Phase:** 3
-Plan: 09-01 complete
+Phase: 10 of 10 (BrainFlow Deeper)
+**Current Plan:** 2
+**Total Plans in Phase:** 2
+Plan: 10-01 complete
 Status: Ready to execute
-Last activity: 2026-02-21 — Completed 09-01 (BrainFlow default build + first-class docs)
+Last activity: 2026-02-21 — Completed 10-01 (Pin BrainFlow version and document build order)
 
 Progress: [██████████░░░░░░░░░░] 50% (2 plans in v1.1)
 
@@ -35,6 +35,7 @@ Progress: [██████████░░░░░░░░░░] 50% (2 
 | Phase 09-brainflow-first-class P01 | 5 | 2 tasks | 3 files |
 | Phase 09-brainflow-first-class P02 | 10 | 2 tasks | 4 files |
 | Phase 09-brainflow-first-class P03 | 15 | 2 tasks | 7 files |
+| Phase 10-brainflow-deeper P01 | 2min | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -54,6 +55,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent: framework vs Hub
 - [Phase 09-brainflow-first-class]: BrainFlow in neurohid-core default features; single canonical doc docs/brainflow.md, BRAIN-04 documented
 - [Phase 09-brainflow-first-class]: embedded_runtime is the one runnable example; Hub copy-only for BrainFlow parity
 - [Phase 09-brainflow-first-class]: Auto fallback is BrainFlow synthetic (board_id 0); Mock not used in Auto path; SDK device tests require device-brainflow
+- [Phase 10-brainflow-deeper]: BrainFlow version pinned (5.13.0) and C++ → Rust → neurohid-device build order documented in docs/brainflow.md; optional scripts/build-brainflow-native.sh (BRAIN-08)
 
 ### Pending Todos
 

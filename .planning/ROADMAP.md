@@ -84,7 +84,11 @@ Plans:
   1. Developer can build and use the real BrainFlow SDK in neurohid-device behind a feature flag (e.g. brainflow-native); default and CI use synthetic board only (no mock).
   2. User or developer can use the BrainFlow streaming path into the same signal pipeline as LSL and other backends (synthetic or real board → Device → pipeline).
   3. BrainFlow version and build steps (C++ core then Rust) are pinned and documented so builds are reproducible.
-**Plans**: TBD
+**Plans:** 1/2 plans executed
+
+Plans:
+- [ ] 10-01-PLAN.md — Pin BrainFlow version and document build order; optional script (BRAIN-08)
+- [ ] 10-02-PLAN.md — brainflow-native feature and native Device/streaming path (BRAIN-06, BRAIN-07)
 
 ## Progress
 
@@ -95,7 +99,7 @@ Plans:
 | 7. Framework–Hub Separation | 2/2 | Complete    | 2026-02-21 | - |
 | 8. Thorough Testing | 5/5 | Complete    | 2026-02-21 | - |
 | 9. BrainFlow First-Class | 3/3 | Complete    | 2026-02-21 | - |
-| 10. BrainFlow Deeper | v1.1 | 0/? | Not started | - |
+| 10. BrainFlow Deeper | 1/2 | In Progress|  | - |
 
 ---
 _Last updated: 2026-02-21 — v1.1 roadmap created_
