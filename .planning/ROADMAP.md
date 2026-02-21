@@ -80,7 +80,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Framework–Hub Separation | 2/2 | Complete   | 2026-02-21 | - |
+| 7. Framework–Hub Separation | 2/2 | Complete    | 2026-02-21 | - |
 | 8. Thorough Testing | v1.1 | 0/? | Not started | - |
 | 9. BrainFlow First-Class | v1.1 | 0/? | Not started | - |
 | 10. BrainFlow Deeper | v1.1 | 0/? | Not started | - |

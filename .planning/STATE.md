@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 7 of 10 (Framework–Hub Separation)
-**Current Plan:** 2
+**Current Plan:** Not started
 **Total Plans in Phase:** 2
 Plan: 01 complete
 Status: Ready to execute
