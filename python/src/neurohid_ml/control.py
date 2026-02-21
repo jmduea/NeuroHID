@@ -43,21 +43,28 @@ class NeuroHidControlClient:
         repr=False,
     )
 
+    def _control_payload_snapshot(self, response: dict[str, Any], key: str) -> dict[str, Any]:
+        """Extract snapshot dict from control.rpc response; accept single or double payload."""
+        payload = response.get("payload", {})
+        if not isinstance(payload, dict):
+            raise NotebookError(f"invalid control response: {response}")
+        snapshot = payload.get(key)
+        if isinstance(snapshot, dict):
+            return snapshot
+        inner = payload.get("payload", {})
+        if isinstance(inner, dict):
+            snapshot = inner.get(key)
+            if isinstance(snapshot, dict):
+                return snapshot
+        raise NotebookError(f"invalid control response: {response}")
+
     def snapshot(self) -> dict[str, Any]:
         response = self.send_command({"type": "snapshot"})
-        payload = response.get("payload", {})
-        snapshot = payload.get("snapshot")
-        if not isinstance(snapshot, dict):
-            raise NotebookError(f"invalid snapshot response: {response}")
-        return snapshot
+        return self._control_payload_snapshot(response, "snapshot")
 
     def trainer_snapshot(self) -> dict[str, Any]:
         response = self.send_command({"type": "trainer_snapshot"})
-        payload = response.get("payload", {})
-        snapshot = payload.get("snapshot")
-        if not isinstance(snapshot, dict):
-            raise NotebookError(f"invalid trainer snapshot response: {response}")
-        return snapshot
+        return self._control_payload_snapshot(response, "snapshot")
 
     def set_output_enabled(self, enabled: bool) -> dict[str, Any]:
         return self.send_command(
