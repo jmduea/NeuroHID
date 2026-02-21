@@ -73,5 +73,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 05-04-PLAN.md (Training split layout, HUB-03). Next: 05-05 (Visualization).
+Stopped at: Completed 05-05-PLAN.md (Visualization customizable, Run+Viz tabs, HUB-04). Next: 05-06 (Primary workflow).
 Resume file: None
