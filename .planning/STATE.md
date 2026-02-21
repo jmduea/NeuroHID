@@ -11,7 +11,7 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 
 Phase: 6 of 6 (Composable and extensible)
 Plan: 2 of 4 in current phase
-**Current Plan:** 4
+**Current Plan:** Not started
 **Total Plans in Phase:** 4
 Status: Plan 06-02 complete (Name-based selection and factories)
 Last activity: 2026-02-21 — Plan 06-02 executed (device/outlet/signal/decoder config + factories, libloading, snapshot slot names)
