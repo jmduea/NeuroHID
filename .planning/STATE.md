@@ -11,7 +11,7 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 
 Phase: 6 of 6 (Composable and extensible)
 Plan: 2 of 4 in current phase
-**Current Plan:** 3
+**Current Plan:** 4
 **Total Plans in Phase:** 4
 Status: Plan 06-02 complete (Name-based selection and factories)
 Last activity: 2026-02-21 — Plan 06-02 executed (device/outlet/signal/decoder config + factories, libloading, snapshot slot names)
@@ -45,6 +45,7 @@ Progress: [█████░░░░░] 50%
 | Phase 05-hub-as-ide P02 | 15 | 2 tasks | 2 files |
 | Phase 05-hub-as-ide P06 | 15 | 3 tasks | 7 files |
 | Phase 06-composable-and-extensible P03 | 6 | 2 tasks | 9 files |
+| Phase 06-composable-and-extensible P04 | 25 | 2 tasks | 6 files |
 
 ## Accumulated Context
 
@@ -68,6 +69,7 @@ Recent decisions affecting current work:
 - [Phase 06]: Extension identity by name only; duplicate names cause scan() to fail with ExtensionError::DuplicateName; default discovery path: config root + /extensions
 - [Phase 06-02]: Device backend Extension(name); outlet/signal/decoder use optional extension_name in config; Loaded* wrappers hold libloading::Library + Box<dyn Trait>; snapshot exposes device/outlet/signal/decoder names
 - [Phase 06]: Example outlet as workspace member (neurohid-outlet-example); e2e as in-process integration test asserting create_outlet and name (EXT-03)
+- [Phase 06-composable-and-extensible]: Extensions CLI in neurohid binary (list/refresh); slot selection persist after section when changed
 
 ### Pending Todos
 
