@@ -204,22 +204,22 @@ mod tests {
         }
     }
 
-    // ───────────── device ─────────────
+    // ───────────── device (BrainFlow synthetic as non-hardware path) ─────────────
 
-    #[cfg(feature = "device")]
+    #[cfg(all(feature = "device", feature = "device-brainflow"))]
     mod device_tests {
         use crate::device;
 
         #[test]
-        fn mock_device_config_default() {
-            let cfg = device::mock::MockDeviceConfig::default();
+        fn brainflow_config_default() {
+            let cfg = crate::types::config::BrainFlowConfig::default();
             let _ = format!("{cfg:?}");
         }
 
         #[test]
-        fn mock_provider_constructible() {
+        fn brainflow_provider_constructible() {
             let _provider =
-                device::mock::MockProvider::new(device::mock::MockDeviceConfig::default());
+                device::BrainFlowProvider::new(crate::types::config::BrainFlowConfig::default());
         }
 
         #[test]
@@ -421,13 +421,13 @@ mod tests {
 
     // ───────────── cross-feature coherence ─────────────
 
-    #[cfg(all(feature = "types", feature = "device"))]
+    #[cfg(all(feature = "types", feature = "device", feature = "device-brainflow"))]
     #[test]
     fn device_id_shared_across_crates() {
         // DeviceId from types is the same type used in device crate
         let id = crate::types::DeviceId::new("coherence-test");
-        let cfg = crate::device::mock::MockDeviceConfig::default();
-        let _provider = crate::device::mock::MockProvider::new(cfg);
+        let cfg = crate::types::config::BrainFlowConfig::default();
+        let _provider = crate::device::BrainFlowProvider::new(cfg);
         let _ = format!("{id:?}");
     }
 
@@ -444,17 +444,17 @@ mod tests {
 
     // ───────────── device API (runtime + device) ─────────────
 
-    #[cfg(all(feature = "runtime", feature = "device"))]
+    #[cfg(all(feature = "runtime", feature = "device", feature = "device-brainflow"))]
     mod device_api_tests {
         use crate::device;
 
         #[tokio::test]
-        async fn list_streams_discovery_returns_mock_streams() {
-            let provider = device::mock::MockProvider::new(device::mock::MockDeviceConfig::default())
-                .with_num_devices(2);
+        async fn list_streams_discovery_returns_brainflow_synthetic_stream() {
+            let provider =
+                device::BrainFlowProvider::new(crate::types::config::BrainFlowConfig::default());
             let streams = device::list_streams_discovery(&provider).await.unwrap();
-            assert_eq!(streams.len(), 2);
-            assert!(!streams[0].id.is_empty());
+            assert_eq!(streams.len(), 1);
+            assert!(streams[0].id.starts_with("brainflow::"));
             assert!(!streams[0].name.is_empty());
         }
     }

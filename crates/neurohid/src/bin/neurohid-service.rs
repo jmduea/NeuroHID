@@ -2615,7 +2615,7 @@ mod tests {
     use neurohid_core::runtime::RuntimeBuilder;
     use neurohid_ipc::IpcClient as RuntimeIpcClient;
     use neurohid_types::{
-        config::{DeviceBackend, SystemConfig},
+        config::{BrainFlowConfig, DeviceBackend, SystemConfig},
         control::{
             ControlCommand, ControlRequest, ControlResponsePayload, ControlSnapshot,
             RuntimeModeState,
@@ -2754,7 +2754,8 @@ mod tests {
         };
 
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.service.ipc_simulation_enabled = true;
         config.action.enabled = false;
 
@@ -2850,7 +2851,8 @@ mod tests {
         };
 
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.service.ipc_simulation_enabled = false;
         config.action.enabled = false;
 
@@ -2951,7 +2953,8 @@ mod tests {
         };
 
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.service.ipc_simulation_enabled = true;
         config.action.enabled = false;
 
@@ -3095,7 +3098,8 @@ mod tests {
         };
 
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.service.ipc_simulation_enabled = true;
         config.action.enabled = false;
 
@@ -3182,7 +3186,8 @@ mod tests {
         };
 
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.action.enabled = false;
 
         let runtime = RuntimeBuilder::new(config)
@@ -3331,7 +3336,8 @@ mod tests {
         };
 
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.action.enabled = false;
 
         let runtime = RuntimeBuilder::new(config)

@@ -653,7 +653,7 @@ mod tests {
     use std::time::Duration;
 
     use neurohid_types::{
-        config::{DeviceBackend, SystemConfig},
+        config::{BrainFlowConfig, DeviceBackend, SystemConfig},
         control::{ControlCommand, ControlRequest, ControlResponsePayload},
     };
 
@@ -676,7 +676,8 @@ mod tests {
     #[tokio::test]
     async fn managed_runtime_handles_control_commands_and_shutdown() {
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.service.ipc_simulation_enabled = true;
         config.action.enabled = false;
 
@@ -722,7 +723,8 @@ mod tests {
     #[tokio::test]
     async fn managed_runtime_restart_after_stop() {
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.service.ipc_simulation_enabled = true;
         config.action.enabled = false;
 
@@ -750,7 +752,8 @@ mod tests {
     #[tokio::test]
     async fn managed_runtime_dispatches_serialized_control_requests() {
         let mut config = SystemConfig::default();
-        config.device.backend = DeviceBackend::Mock;
+        config.device.backend = DeviceBackend::BrainFlow;
+        config.device.brainflow = Some(BrainFlowConfig::default());
         config.service.ipc_simulation_enabled = true;
         config.action.enabled = false;
         let mut updated_signal = config.signal.clone();

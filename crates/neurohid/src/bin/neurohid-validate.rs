@@ -13,7 +13,7 @@ use neurohid_ipc::{
     send_control_request_blocking,
 };
 
-use neurohid_types::config::{DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig};
+use neurohid_types::config::{BrainFlowConfig, DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig};
 use neurohid_types::control::{
     ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
     RuntimeModeState,
@@ -690,7 +690,8 @@ fn build_config(
     control_port: u16,
 ) -> SystemConfig {
     let mut config = SystemConfig::default();
-    config.device.backend = DeviceBackend::Mock;
+    config.device.backend = DeviceBackend::BrainFlow;
+    config.device.brainflow = Some(BrainFlowConfig::default());
     config.action.enabled = false;
     config.service.runtime_mode = ServiceRuntimeMode::Embedded;
     config.service.ipc_mode = IpcMode::TcpLoopback;

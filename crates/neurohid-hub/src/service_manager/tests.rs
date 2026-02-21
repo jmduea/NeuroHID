@@ -13,7 +13,7 @@ use neurohid_ipc::{Hello, RuntimeMlRole, TrainerStreamKind};
 #[cfg(windows)]
 use neurohid_ipc::{IpcConfig, IpcServer, IpcTransport};
 use neurohid_types::{
-    config::{DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig},
+    config::{BrainFlowConfig, DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig},
     control::{
         ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
         RuntimeModeState,
@@ -29,7 +29,8 @@ fn snapshot_tracks_real_ipc_connect_disconnect_transitions() {
 
     let mut manager = ServiceManager::new();
     let mut config = SystemConfig::default();
-    config.device.backend = DeviceBackend::Mock;
+    config.device.backend = DeviceBackend::BrainFlow;
+    config.device.brainflow = Some(BrainFlowConfig::default());
     config.service.ipc_simulation_enabled = false;
     config.service.ipc_mode = IpcMode::TcpLoopback;
     config.service.ipc_endpoint = format!("127.0.0.1:{}", allocate_test_port());
@@ -125,7 +126,8 @@ fn snapshot_reports_simulated_bridge_with_explicit_tcp_override() {
 
     let mut manager = ServiceManager::new();
     let mut config = SystemConfig::default();
-    config.device.backend = DeviceBackend::Mock;
+    config.device.backend = DeviceBackend::BrainFlow;
+    config.device.brainflow = Some(BrainFlowConfig::default());
     config.service.ipc_simulation_enabled = true;
     config.service.ipc_mode = IpcMode::TcpLoopback;
     config.service.ipc_endpoint = format!("127.0.0.1:{}", allocate_test_port());
@@ -148,7 +150,8 @@ fn snapshot_tracks_named_pipe_reconnect_and_stall_recovery() {
 
     let mut manager = ServiceManager::new();
     let mut config = SystemConfig::default();
-    config.device.backend = DeviceBackend::Mock;
+    config.device.backend = DeviceBackend::BrainFlow;
+    config.device.brainflow = Some(BrainFlowConfig::default());
     config.service.ipc_simulation_enabled = false;
     config.service.ipc_mode = IpcMode::LocalSocket;
     config.service.ipc_endpoint = unique_pipe_name("neurohid_ipc_test");
