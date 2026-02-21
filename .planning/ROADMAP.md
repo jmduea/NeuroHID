@@ -110,10 +110,10 @@ Plans:
 **Plans**: 4 plans
 
 Plans:
-- [ ] 06-01-PLAN.md — Outlet contract, extension manifest, discovery registry (COMP-06, EXT-01, EXT-02)
-- [ ] 06-02-PLAN.md — Device/outlet name-based selection and loading in core (COMP-06, EXT-01, EXT-02)
+- [ ] 06-01-PLAN.md — All four slot contracts (outlet, device, signal preprocessing, decoder), extension manifest, discovery registry (COMP-06, EXT-01, EXT-02)
+- [ ] 06-02-PLAN.md — Device, signal preprocessing, decoder, outlet name-based selection and loading in core (COMP-06, EXT-01, EXT-02)
 - [ ] 06-03-PLAN.md — Example outlet plugin and CI e2e (EXT-03)
-- [ ] 06-04-PLAN.md — Hub Extensions screen and CLI list/refresh (COMP-06)
+- [ ] 06-04-PLAN.md — Hub Extensions screen and device/signal/decoder/outlet dropdowns, CLI list/refresh (COMP-06)
 
 ## Progress
 
@@ -127,4 +127,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 3. SDK/CLI for device and pipeline config | 2/2 | Complete   | 2026-02-20 |
 | 4. Standard path and recording | 3/3 | Complete    | 2026-02-20 |
 | 5. Hub-as-IDE | 6/6 | Complete    | 2026-02-21 |
-| 6. Composable and extensible | 0/? | Not started | - |
+| 6. Composable and extensible | 1/4 | In Progress|  |

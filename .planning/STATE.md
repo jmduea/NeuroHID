@@ -9,14 +9,14 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 
 ## Current Position
 
-Phase: 5 of 6 (Hub-as-IDE)
-Plan: 6 of 6 in current phase
-Current Plan: 06
-Total Plans in Phase: 6
-Status: Plan 05-06 complete (Primary workflow, Run in Hub/background, resume state; HUB-05)
-Last activity: 2026-02-21 — Plan 05-06 executed (resume state, runtime mode UI, workflow docs)
+Phase: 6 of 6 (Composable and extensible)
+Plan: 1 of 4 in current phase
+**Current Plan:** 01
+**Total Plans in Phase:** 4
+Status: Plan 06-01 complete (Extension contracts and registry)
+Last activity: 2026-02-21 — Plan 06-01 executed (outlet/signal/decoder contracts, ExtensionRegistry, docs)
 
-Progress: [██████████] 100%
+Progress: [███░░░░░░░] 25%
 
 ## Performance Metrics
 
@@ -64,6 +64,7 @@ Recent decisions affecting current work:
 - [Phase 05-hub-as-ide]: Training screen split layout (config | live progress); Train on collected data stub; live metrics from ControlSnapshot + trainer_snapshot()
 - [Phase 05-hub-as-ide]: Calibration game list/grid (Grid Maze, Target Tracking); single-game panel via new_for_game(kind); results persisted to active profile (HUB-02)
 - [Phase 05-hub-as-ide]: Resume state as last_screen in UiConfig; Run in Hub / Run in background as user-facing labels (HUB-05)
+- [Phase 06]: Extension identity by name only; duplicate names cause scan() to fail with ExtensionError::DuplicateName; default discovery path: config root + /extensions
 
 ### Pending Todos
 
@@ -76,5 +77,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 05-06-PLAN.md (Primary workflow, Run in Hub/background, resume state).
+Stopped at: Completed 06-01-PLAN.md (Extension contracts and registry).
 Resume file: None
