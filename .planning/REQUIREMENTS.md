@@ -12,7 +12,7 @@ Requirements for initial release. Each maps to roadmap phases.
 - [x] **HUB-01**: User can discover and connect devices from the Hub and see connection status and stream health in one place
 - [ ] **HUB-02**: User can run calibration (wizard/games) from the Hub and have results tied to a profile/identity for reproducibility
 - [x] **HUB-03**: User can configure and launch decoder training from the Hub and observe training progress and metrics
-- [ ] **HUB-04**: User can visualize real-time signal and pipeline state (e.g. features, decoder output) in the Hub during experiments
+- [x] **HUB-04**: User can visualize real-time signal and pipeline state (e.g. features, decoder output) in the Hub during experiments
 - [x] **HUB-05**: User can follow one primary workflow in the Hub: device setup → calibration → train decoder → run (embedded or external runtime) without switching tools
 
 ### Standalone runtime
@@ -81,7 +81,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | HUB-01 | Phase 5 | Complete |
 | HUB-02 | Phase 5 | Pending |
 | HUB-03 | Phase 5 | Complete |
-| HUB-04 | Phase 5 | Pending |
+| HUB-04 | Phase 5 | Complete |
 | HUB-05 | Phase 5 | Complete |
 | RUNT-01 | Phase 2 | Complete |
 | RUNT-02 | Phase 2 | Complete |
