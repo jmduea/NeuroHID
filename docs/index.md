@@ -20,6 +20,7 @@
 - [Crate Boundaries and Placement Guide](./crate-boundaries.md)
 - [Architecture - Rust Core](./architecture-rust-core.md)
 - [Architecture - Python ML](./architecture-python-ml.md)
+- [Extension Contracts and Discovery](./extension-contracts.md)
 - [Integration Architecture](./integration-architecture.md)
 - [Protocol and API Reference](./protocol-and-api.md)
 

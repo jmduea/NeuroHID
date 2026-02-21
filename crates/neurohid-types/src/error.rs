@@ -54,6 +54,10 @@ pub enum Error {
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
 
+    /// Errors related to extension discovery and loading
+    #[error("Extension error: {0}")]
+    Extension(#[from] ExtensionError),
+
     /// Generic internal error (should be rare)
     #[error("Internal error: {0}")]
     Internal(String),
@@ -349,6 +353,22 @@ pub enum ConfigError {
     /// Config write error
     #[error("Failed to write configuration: {0}")]
     WriteError(String),
+}
+
+/// Errors related to extension discovery and registry.
+#[derive(Error, Debug)]
+pub enum ExtensionError {
+    /// Duplicate extension name discovered (same name in more than one manifest).
+    #[error("Duplicate extension name: '{name}' appears in multiple manifests")]
+    DuplicateName { name: String },
+
+    /// Manifest file could not be read or parsed.
+    #[error("Failed to read or parse manifest at '{path}': {reason}")]
+    ManifestError { path: String, reason: String },
+
+    /// Discovery path is invalid or not a directory.
+    #[error("Invalid extension path: {0}")]
+    InvalidPath(String),
 }
 
 // Implement From for common std error types to make ? work smoothly
