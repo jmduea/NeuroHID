@@ -18,7 +18,7 @@ Phases 1–6 completed; see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP
 
 **Milestone Goal:** Improve confidence and developer clarity: thorough testing, first-class BrainFlow integration (docs/UX then deeper), and a clear structural split between the reusable framework and the NeuroHID Hub application.
 
-- [ ] **Phase 7: Framework–Hub Separation** — Structural boundary and docs; framework surface documented; Hub depends only on core/facade; CI or audit enforces boundary
+- [x] **Phase 7: Framework–Hub Separation** — Structural boundary and docs; framework surface documented; Hub depends only on core/facade; CI or audit enforces boundary (completed 2026-02-21)
 - [ ] **Phase 8: Thorough Testing** — Deterministic tests, integration at boundaries, CI gates that reflect reality, one valuable E2E path, test tiers documented
 - [ ] **Phase 9: BrainFlow First-Class** — Docs, runnable examples (synthetic board), Hub discover/connect UX; synthetic board replaces in-repo mock everywhere
 - [ ] **Phase 10: BrainFlow Deeper** — Real SDK behind feature flag, streaming path into pipeline, pinned version and build steps
@@ -34,7 +34,7 @@ Phases 1–6 completed; see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP
   2. Hub is documented as one application built on the framework; dependency graph and docs define the boundary.
   3. Hub depends only on core (and calibration) and the framework facade; dependency audit or CI check enforces no disallowed direct deps from Hub to component crates.
   4. Docs describe the framework vs Hub boundary so contributors and embedders know what is framework vs application.
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 07-01-PLAN.md — Framework surface doc and allowlist; index/README/crate-boundaries links
@@ -80,7 +80,7 @@ Plans:
 
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
-| 7. Framework–Hub Separation | 1/2 | In Progress|  | - |
+| 7. Framework–Hub Separation | 2/2 | Complete   | 2026-02-21 | - |
 | 8. Thorough Testing | v1.1 | 0/? | Not started | - |
 | 9. BrainFlow First-Class | v1.1 | 0/? | Not started | - |
 | 10. BrainFlow Deeper | v1.1 | 0/? | Not started | - |

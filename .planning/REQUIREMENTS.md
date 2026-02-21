@@ -19,7 +19,7 @@ Requirements for milestone v1.1 (Testing, BrainFlow & Framework Separation). Eac
 
 - [x] **FRAME-01**: Developer can identify the documented framework surface (which crates and features to depend on) and use it without depending on Hub internals
 - [x] **FRAME-02**: Hub is documented as one application built on top of the framework (same binaries; dependency graph and docs define the boundary)
-- [ ] **FRAME-03**: Hub depends only on core (and calibration) and the framework facade; dependency audit or CI check enforces no disallowed direct deps from Hub to component crates
+- [x] **FRAME-03**: Hub depends only on core (and calibration) and the framework facade; dependency audit or CI check enforces no disallowed direct deps from Hub to component crates
 - [x] **FRAME-04**: Docs describe the framework vs Hub boundary (e.g. in crate-boundaries or framework-surface) so contributors and embedders know what is framework vs application
 
 ### BrainFlow — first-class (docs, examples, Hub UX)
@@ -77,7 +77,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-05 | Phase 8 | Pending |
 | FRAME-01 | Phase 7 | Complete |
 | FRAME-02 | Phase 7 | Complete |
-| FRAME-03 | Phase 7 | Pending |
+| FRAME-03 | Phase 7 | Complete |
 | FRAME-04 | Phase 7 | Complete |
 | BRAIN-01 | Phase 9 | Pending |
 | BRAIN-02 | Phase 9 | Pending |

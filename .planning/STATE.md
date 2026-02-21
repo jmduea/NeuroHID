@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 7 of 10 (Framework–Hub Separation)
-**Current Plan:** 1
+**Current Plan:** 2
 **Total Plans in Phase:** 2
 Plan: 01 complete
 Status: Ready to execute
@@ -26,6 +26,7 @@ Progress: [██████████░░░░░░░░░░] 50% (1 
 |-------|-------|-------|----------|
 | (v1.0 history in prior STATE) | — | — | — |
 | Phase 07-framework-hub-separation P01 | 8min | 2 tasks | 5 files |
+| Phase 07-framework-hub-separation P02 | 8 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -34,6 +35,7 @@ Progress: [██████████░░░░░░░░░░] 50% (1 
 Decisions are logged in PROJECT.md Key Decisions table. Recent: framework vs Hub structural separation and BrainFlow first-class then deeper (v1.1) — in progress.
 - [Phase 07-framework-hub-separation]: Framework surface and Hub allowlist in one canonical doc; allowlist file single source for CI
 - [Phase 07-framework-hub-separation]: No permanent exceptions: re-export from core or update allowlist and code together
+- [Phase 07-framework-hub-separation]: Boundary check runs on rust, automation, or push; no bypass or exception list
 
 ### Pending Todos
 
