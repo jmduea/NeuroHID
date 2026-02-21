@@ -20,7 +20,7 @@ Phases 1–6 completed; see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP
 
 - [x] **Phase 7: Framework–Hub Separation** — Structural boundary and docs; framework surface documented; Hub depends only on core/facade; CI or audit enforces boundary (completed 2026-02-21)
 - [x] **Phase 8: Thorough Testing** — Deterministic tests, integration at boundaries, CI gates that reflect reality, one valuable E2E path, test tiers documented (completed 2026-02-21)
-- [ ] **Phase 9: BrainFlow First-Class** — Docs, runnable examples (synthetic board), Hub discover/connect UX; synthetic board replaces in-repo mock everywhere
+- [x] **Phase 9: BrainFlow First-Class** — Docs, runnable examples (synthetic board), Hub discover/connect UX; synthetic board replaces in-repo mock everywhere (completed 2026-02-21)
 - [ ] **Phase 10: BrainFlow Deeper** — Real SDK behind feature flag, streaming path into pipeline, pinned version and build steps
 
 ## Phase Details
@@ -69,7 +69,7 @@ Plans:
   3. User can discover and connect BrainFlow devices from the Hub Devices screen with UX parity to LSL and other backends (discover, connect, disconnect).
   4. BrainFlow remains one backend behind the existing DeviceProvider/Device abstraction; device-agnostic API is preserved.
   5. BrainFlow's synthetic board fully replaces the in-repo mock device: tests, examples, and CI use the synthetic board as the single non-hardware device path (no separate mock backend).
-**Plans:** 2/3 plans executed
+**Plans:** 3/3 plans complete
 
 Plans:
 - [ ] 09-01-PLAN.md — Enable BrainFlow in default build; first-class docs (BRAIN-01, BRAIN-04)
@@ -94,7 +94,7 @@ Plans:
 |-------|-----------|----------------|--------|-----------|
 | 7. Framework–Hub Separation | 2/2 | Complete    | 2026-02-21 | - |
 | 8. Thorough Testing | 5/5 | Complete    | 2026-02-21 | - |
-| 9. BrainFlow First-Class | 2/3 | In Progress|  | - |
+| 9. BrainFlow First-Class | 3/3 | Complete   | 2026-02-21 | - |
 | 10. BrainFlow Deeper | v1.1 | 0/? | Not started | - |
 
 ---

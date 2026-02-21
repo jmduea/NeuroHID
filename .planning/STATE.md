@@ -10,7 +10,7 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 9 of 10 (BrainFlow First-Class)
-**Current Plan:** 2
+**Current Plan:** 3
 **Total Plans in Phase:** 3
 Plan: 09-01 complete
 Status: Ready to execute
@@ -34,6 +34,7 @@ Progress: [██████████░░░░░░░░░░] 50% (2 
 | Phase 08-thorough-testing P04 | 15 | 2 tasks | 2 files |
 | Phase 09-brainflow-first-class P01 | 5 | 2 tasks | 3 files |
 | Phase 09-brainflow-first-class P02 | 10 | 2 tasks | 4 files |
+| Phase 09-brainflow-first-class P03 | 15 | 2 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -52,6 +53,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent: framework vs Hub
 - [Phase 08-thorough-testing]: E2E service+client runs in CI on Linux only; test skipped on Windows
 - [Phase 09-brainflow-first-class]: BrainFlow in neurohid-core default features; single canonical doc docs/brainflow.md, BRAIN-04 documented
 - [Phase 09-brainflow-first-class]: embedded_runtime is the one runnable example; Hub copy-only for BrainFlow parity
+- [Phase 09-brainflow-first-class]: Auto fallback is BrainFlow synthetic (board_id 0); Mock not used in Auto path; SDK device tests require device-brainflow
 
 ### Pending Todos
 

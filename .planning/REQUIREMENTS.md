@@ -28,7 +28,7 @@ Requirements for milestone v1.1 (Testing, BrainFlow & Framework Separation). Eac
 - [x] **BRAIN-02**: User can run at least one runnable example using BrainFlow’s synthetic board that demonstrates BrainFlow with NeuroHID end-to-end
 - [x] **BRAIN-03**: User can discover and connect BrainFlow devices from the Hub Devices screen with UX parity to LSL and other backends (discover, connect, disconnect)
 - [x] **BRAIN-04**: BrainFlow remains one backend behind the existing DeviceProvider/Device abstraction; device-agnostic API is preserved
-- [ ] **BRAIN-05**: BrainFlow’s synthetic board fully replaces the in-repo mock device: tests, examples, and CI use the synthetic board as the single non-hardware device path (no separate mock backend)
+- [x] **BRAIN-05**: BrainFlow’s synthetic board fully replaces the in-repo mock device: tests, examples, and CI use the synthetic board as the single non-hardware device path (no separate mock backend)
 
 ### BrainFlow — deeper (real SDK, streaming)
 
@@ -83,7 +83,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | BRAIN-02 | Phase 9 | Complete |
 | BRAIN-03 | Phase 9 | Complete |
 | BRAIN-04 | Phase 9 | Complete |
-| BRAIN-05 | Phase 9 | Pending |
+| BRAIN-05 | Phase 9 | Complete |
 | BRAIN-06 | Phase 10 | Pending |
 | BRAIN-07 | Phase 10 | Pending |
 | BRAIN-08 | Phase 10 | Pending |
