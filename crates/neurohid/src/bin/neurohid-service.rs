@@ -41,6 +41,8 @@ use tokio::sync::{Mutex, broadcast};
 const DEFAULT_WINDOWS_SERVICE_NAME: &str = "NeuroHIDService";
 /// Default TCP port for the control server when running standalone with no config endpoint.
 const DEFAULT_STANDALONE_CONTROL_PORT: u16 = 47384;
+/// Default control endpoint string used by CLI when --endpoint is not set.
+const DEFAULT_CONTROL_ENDPOINT: &str = "127.0.0.1:47384";
 #[cfg(windows)]
 const WINDOWS_SERVICE_DISPLAY_NAME: &str = "NeuroHID Service";
 #[cfg(windows)]
@@ -334,10 +336,10 @@ async fn main() -> anyhow::Result<()> {
     if let Some(command) = &args.command {
         match command {
             CliCommand::Control { command, endpoint } => {
-                return run_control_command(command, endpoint).await;
+                return run_control_command(command, endpoint, &args).await;
             }
             CliCommand::Device { command } => {
-                return run_device_command(command).await;
+                return run_device_command(command, &args).await;
             }
             CliCommand::Config { command } => {
                 return run_config_command(command, &args).await;
@@ -1816,6 +1818,62 @@ fn resolve_daemon_target_ipc(default_ipc: &RuntimeIpcConfig) -> RuntimeIpcConfig
     default_ipc.clone()
 }
 
+/// Resolve control endpoint for client commands (record, control, device). When the default
+/// endpoint is used, try daemon metadata first, then config, so that we connect to the
+/// same service the user started (daemon or Hub with config).
+async fn resolve_control_endpoint_for_client(
+    endpoint: &str,
+    config_path_override: Option<&String>,
+) -> RuntimeIpcConfig {
+    if endpoint != DEFAULT_CONTROL_ENDPOINT {
+        return RuntimeIpcConfig {
+            transport: RuntimeIpcTransport::TcpLoopback,
+            endpoint: endpoint.to_string(),
+            ..RuntimeIpcConfig::default()
+        };
+    }
+    let default_ipc = RuntimeIpcConfig {
+        transport: RuntimeIpcTransport::TcpLoopback,
+        endpoint: DEFAULT_CONTROL_ENDPOINT.to_string(),
+        ..RuntimeIpcConfig::default()
+    };
+    // Prefer daemon metadata (service started via daemon start).
+    let resolved = resolve_daemon_target_ipc(&default_ipc);
+    if resolved.endpoint != default_ipc.endpoint {
+        return resolved;
+    }
+    // Else try config (e.g. service started by Hub or with --config that sets ipc_endpoint).
+    let paths = match DataPaths::new(neurohid_storage::default_data_dir()) {
+        Ok(p) => p,
+        Err(_) => return default_ipc,
+    };
+    let store = ConfigStore::new(paths);
+    let config = match config_path_override {
+        Some(p) => store.load_from_path(std::path::Path::new(p)).await,
+        None => store.load().await,
+    };
+    match config {
+        Ok(cfg) if cfg.service.ipc_mode == IpcMode::TcpLoopback
+            && !cfg.service.ipc_endpoint.trim().is_empty() =>
+        {
+            if validate_local_only_endpoint(
+                RuntimeIpcTransport::TcpLoopback,
+                cfg.service.ipc_endpoint.trim(),
+            )
+            .is_ok()
+            {
+                return RuntimeIpcConfig {
+                    transport: RuntimeIpcTransport::TcpLoopback,
+                    endpoint: cfg.service.ipc_endpoint.trim().to_string(),
+                    ..RuntimeIpcConfig::default()
+                };
+            }
+        }
+        _ => {}
+    }
+    default_ipc
+}
+
 async fn daemon_start(args: &Args, default_ipc: RuntimeIpcConfig) -> anyhow::Result<()> {
     let target_ipc = resolve_daemon_target_ipc(&default_ipc);
     if let Ok(snapshot) = request_control_snapshot(&target_ipc).await
@@ -2016,17 +2074,10 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
 
 /// Run record CLI: start/stop/status session recording via control requests to a running service.
 async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::Result<()> {
-    let config = RuntimeIpcConfig {
-        transport: RuntimeIpcTransport::TcpLoopback,
-        endpoint: String::new(),
-        ..RuntimeIpcConfig::default()
-    };
     match command {
         RecordCommandCli::Start { output_path, endpoint } => {
-            let config = RuntimeIpcConfig {
-                endpoint: endpoint.clone(),
-                ..config
-            };
+            let config =
+                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
             let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::StartRecording {
@@ -2055,10 +2106,8 @@ async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::
             }
         }
         RecordCommandCli::Stop { endpoint } => {
-            let config = RuntimeIpcConfig {
-                endpoint: endpoint.clone(),
-                ..config
-            };
+            let config =
+                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
             let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::StopRecording),
@@ -2081,10 +2130,8 @@ async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::
             }
         }
         RecordCommandCli::Status { endpoint } => {
-            let config = RuntimeIpcConfig {
-                endpoint: endpoint.clone(),
-                ..config
-            };
+            let config =
+                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
             let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::Snapshot),
@@ -2141,12 +2188,10 @@ async fn run_replay_offline(
 async fn run_control_command(
     command: &ControlCommandCli,
     endpoint: &str,
+    args: &Args,
 ) -> anyhow::Result<()> {
-    let config = RuntimeIpcConfig {
-        transport: RuntimeIpcTransport::TcpLoopback,
-        endpoint: endpoint.to_string(),
-        ..RuntimeIpcConfig::default()
-    };
+    let config =
+        resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
 
     match command {
         ControlCommandCli::Snapshot => {
@@ -2204,18 +2249,31 @@ async fn run_control_command(
 }
 
 /// Exit codes: 0 success, 1 generic error, 2 not found, 3 config invalid (documented in code).
-async fn run_device_command(command: &DeviceCommandCli) -> anyhow::Result<()> {
+async fn run_device_command(command: &DeviceCommandCli, args: &Args) -> anyhow::Result<()> {
     match command {
         DeviceCommandCli::List {
             json,
             quiet,
             endpoint,
-        } => run_device_list(endpoint, *json, *quiet).await,
+        } => {
+            let config =
+                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+            run_device_list(&config.endpoint, *json, *quiet).await
+        }
         DeviceCommandCli::Connect {
             device_id,
             criteria,
             endpoint,
-        } => run_device_connect(endpoint, device_id.as_deref(), criteria.as_deref()).await,
+        } => {
+            let config =
+                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+            run_device_connect(
+                &config.endpoint,
+                device_id.as_deref(),
+                criteria.as_deref(),
+            )
+            .await
+        }
     }
 }
 

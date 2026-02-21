@@ -1228,6 +1228,7 @@ dependencies = [
     { name = "jupyterlab" },
     { name = "numpy" },
     { name = "onnx" },
+    { name = "pyxdf" },
     { name = "scikit-learn" },
     { name = "scipy" },
     { name = "torch" },
@@ -1254,6 +1255,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=1.3.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=7.0.0" },
+    { name = "pyxdf", specifier = ">=1.17.3" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
     { name = "scikit-learn", specifier = ">=1.8.0" },
     { name = "scipy", specifier = ">=1.17.0" },
@@ -1768,6 +1770,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/63/32/40a775343ace542cc43ece3f1d1fce454021521ecac41c4c4573081c2336/pywinpty-3.0.3-cp314-cp314-win_arm64.whl", hash = "sha256:34789d685fc0d547ce0c8a65e5a70e56f77d732fa6e03c8f74fefb8cbb252019", size = 234207, upload-time = "2026-02-04T21:51:58.687Z" },
     { url = "https://files.pythonhosted.org/packages/8d/54/5d5e52f4cb75028104ca6faf36c10f9692389b1986d34471663b4ebebd6d/pywinpty-3.0.3-cp314-cp314t-win_amd64.whl", hash = "sha256:0c37e224a47a971d1a6e08649a1714dac4f63c11920780977829ed5c8cadead1", size = 2112910, upload-time = "2026-02-04T21:52:30.976Z" },
     { url = "https://files.pythonhosted.org/packages/0a/44/dcd184824e21d4620b06c7db9fbb15c3ad0a0f1fa2e6de79969fb82647ec/pywinpty-3.0.3-cp314-cp314t-win_arm64.whl", hash = "sha256:c4e9c3dff7d86ba81937438d5819f19f385a39d8f592d4e8af67148ceb4f6ab5", size = 233425, upload-time = "2026-02-04T21:51:56.754Z" },
+]
+
+[[package]]
+name = "pyxdf"
+version = "1.17.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "numpy" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/f3/1e/60ad39e13262040b693475619c55efcb8d5e52129f2bb52c911e434da829/pyxdf-1.17.3.tar.gz", hash = "sha256:8294353f2989885177277e4a02e260dc9430a60b53b463bad8cdc179fb2c47ce", size = 34372, upload-time = "2026-01-20T14:34:45.21Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1f/b1/da571fa66bc52bac76702cdadfd734aad9ac4f7313da1430c3fb5203eb2f/pyxdf-1.17.3-py3-none-any.whl", hash = "sha256:c7c01d65e5b9144d544f886debc56b46f7807a014192b9f49bcbdb75b3f19a47", size = 21191, upload-time = "2026-01-20T14:34:45.957Z" },
 ]
 
 [[package]]
