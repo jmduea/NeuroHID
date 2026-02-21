@@ -12,7 +12,7 @@ name = "neurohid_core"
 path = "src/lib.rs"
 
 [features]
-default = ["device-lsl"]
+default = ["device-lsl", "brainflow"]
 device-lsl = ["neurohid-device/lsl", "dep:lsl"]
 brainflow = ["neurohid-device/brainflow"]
 
