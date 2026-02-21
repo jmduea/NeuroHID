@@ -78,15 +78,19 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9
       - name: Install LSL (Linux)
         if: matrix.runner_os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y liblsl-dev
       - name: Build
         run: cargo build --workspace
       - name: Test
-        run: cargo test --workspace
+        run: cargo nextest run --workspace
       - name: Extension outlet e2e
-        run: cargo test -p neurohid-core --test extension_outlet_e2e
+        run: cargo nextest run -p neurohid-core --test extension_outlet_e2e
 
   test-macos:
     name: Test (macOS)
@@ -97,12 +101,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Install cargo-nextest
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9
       - name: Build
         run: cargo build --workspace
       - name: Test
-        run: cargo test --workspace
+        run: cargo nextest run --workspace
       - name: Extension outlet e2e
-        run: cargo test -p neurohid-core --test extension_outlet_e2e
+        run: cargo nextest run -p neurohid-core --test extension_outlet_e2e
 
   clippy:
     name: Clippy
