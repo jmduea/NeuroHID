@@ -10,21 +10,22 @@ use std::sync::{
 
 use tokio::sync::{broadcast, mpsc, oneshot};
 
+use neurohid_ipc::{IpcEnvelope, RuntimeEvent};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
-    IpcEnvelope,
     action::Action,
     config::{FallbackPolicy, SignalConfig, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, TrainerSnapshot},
     error::{Error, Result},
     event::StreamMarker,
-    ipc::RuntimeEvent,
     profile::ProfileId,
     signal::{FeatureVector, Sample},
 };
 
 use crate::service::{DeviceCommand, NeuroHidService, ServiceHandle, ServiceState, SignalCommand};
-use crate::tasks::{RecordingCommand, RecordingCommandResult, RecordingRequest, TrainerIngressEvent};
+use crate::tasks::{
+    RecordingCommand, RecordingCommandResult, RecordingRequest, TrainerIngressEvent,
+};
 
 /// Builder for a managed runtime instance.
 pub struct RuntimeBuilder {
@@ -608,10 +609,9 @@ impl RuntimeIpcHandle {
                         ControlResponse::error(request_id, e)
                     }
                     Ok(Err(e)) => ControlResponse::error(request_id, e),
-                    Err(_) => ControlResponse::error(
-                        request_id,
-                        "recording response dropped".to_string(),
-                    ),
+                    Err(_) => {
+                        ControlResponse::error(request_id, "recording response dropped".to_string())
+                    }
                     _ => ControlResponse::error(
                         request_id,
                         "unexpected recording result".to_string(),
@@ -635,10 +635,9 @@ impl RuntimeIpcHandle {
                         ControlResponse::error(request_id, e)
                     }
                     Ok(Err(e)) => ControlResponse::error(request_id, e),
-                    Err(_) => ControlResponse::error(
-                        request_id,
-                        "recording response dropped".to_string(),
-                    ),
+                    Err(_) => {
+                        ControlResponse::error(request_id, "recording response dropped".to_string())
+                    }
                     _ => ControlResponse::error(
                         request_id,
                         "unexpected recording result".to_string(),
@@ -718,6 +717,34 @@ mod tests {
             .command(RuntimeCommand::Stop)
             .expect("stop should succeed");
         runtime.wait().await.expect("runtime should stop cleanly");
+    }
+
+    #[tokio::test]
+    async fn managed_runtime_restart_after_stop() {
+        let mut config = SystemConfig::default();
+        config.device.backend = DeviceBackend::Mock;
+        config.service.ipc_simulation_enabled = true;
+        config.action.enabled = false;
+
+        let runtime = RuntimeBuilder::new(config.clone())
+            .start()
+            .await
+            .expect("runtime should start");
+        wait_for(Duration::from_secs(3), || runtime.snapshot().running).await;
+        runtime
+            .command(RuntimeCommand::Stop)
+            .expect("stop should succeed");
+        runtime.wait().await.expect("runtime should stop cleanly");
+
+        let runtime2 = RuntimeBuilder::new(config)
+            .start()
+            .await
+            .expect("runtime should start again after stop");
+        wait_for(Duration::from_secs(3), || runtime2.snapshot().running).await;
+        runtime2
+            .command(RuntimeCommand::Stop)
+            .expect("stop should succeed");
+        runtime2.wait().await.expect("runtime should stop cleanly");
     }
 
     #[tokio::test]

@@ -26,9 +26,10 @@ use neurohid_types::{
     control::RuntimeModeState,
     error::Result,
     event::{MarkerPayload, MarkerType, StreamMarker},
-    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
+    observability::{self as obs, ObservabilityComponent, ObservabilityConfig},
 };
 
+use crate::observability::EmitGate;
 use crate::service::{IntegrityStage, ServiceState};
 use crate::tasks::latency::RollingLatency;
 

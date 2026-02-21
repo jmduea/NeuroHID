@@ -9,11 +9,7 @@ use std::fs::File;
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 
-use neurohid_types::{
-    error::Result,
-    recording::SessionManifest,
-    signal::Sample,
-};
+use neurohid_types::{error::Result, recording::SessionManifest, signal::Sample};
 
 const XDF_MAGIC: &[u8; 4] = b"XDF:";
 // Tag scheme used by pyxdf and xdf_rs: 1=FileHeader, 2=StreamHeader, 3=Samples, 4=ClockOffset, 5=Boundary, 6=StreamFooter.
@@ -80,11 +76,7 @@ fn stream_header_xml(
     <session_id>{}</session_id>
     <desc/>
 </info>"#,
-        name,
-        channel_count,
-        nominal_srate,
-        source_id,
-        session_id
+        name, channel_count, nominal_srate, source_id, session_id
     )
 }
 
@@ -142,7 +134,11 @@ fn load_stream_file(path: &Path, stream_id: u32) -> std::io::Result<StreamData> 
 }
 
 /// Write Samples chunk: [StreamID u32][NumSamples var][Sample...], each Sample [0x08][f64 ts][f32...].
-fn write_samples_chunk(w: &mut impl Write, stream_id: u32, samples: &[Sample]) -> std::io::Result<()> {
+fn write_samples_chunk(
+    w: &mut impl Write,
+    stream_id: u32,
+    samples: &[Sample],
+) -> std::io::Result<()> {
     if samples.is_empty() {
         return Ok(());
     }
@@ -172,24 +168,22 @@ fn write_samples_chunk(w: &mut impl Write, stream_id: u32, samples: &[Sample]) -
 /// Actions are not included in the XDF; they remain in the session folder as actions.jsonl.
 pub fn export_session_to_xdf(session_dir: &Path, out_path: &Path) -> Result<()> {
     let manifest_path = session_dir.join("manifest.json");
-    let manifest_json = std::fs::read_to_string(&manifest_path).map_err(|e| {
-        neurohid_types::Error::internal(format!("read manifest: {}", e))
-    })?;
-    let manifest: SessionManifest = serde_json::from_str(&manifest_json).map_err(|e| {
-        neurohid_types::Error::internal(format!("parse manifest: {}", e))
-    })?;
+    let manifest_json = std::fs::read_to_string(&manifest_path)
+        .map_err(|e| neurohid_types::Error::internal(format!("read manifest: {}", e)))?;
+    let manifest: SessionManifest = serde_json::from_str(&manifest_json)
+        .map_err(|e| neurohid_types::Error::internal(format!("parse manifest: {}", e)))?;
 
     let streams_dir = session_dir.join("streams");
     if !streams_dir.is_dir() {
-        return Err(neurohid_types::Error::internal("session streams/ directory missing"));
+        return Err(neurohid_types::Error::internal(
+            "session streams/ directory missing",
+        ));
     }
 
     let mut stream_files: Vec<_> = std::fs::read_dir(streams_dir)
         .map_err(|e| neurohid_types::Error::internal(format!("read streams dir: {}", e)))?
         .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.path().extension().is_some_and(|ext| ext == "jsonl")
-        })
+        .filter(|e| e.path().extension().is_some_and(|ext| ext == "jsonl"))
         .collect();
     stream_files.sort_by_key(|e| e.path());
 
@@ -197,8 +191,9 @@ pub fn export_session_to_xdf(session_dir: &Path, out_path: &Path) -> Result<()> 
     for (i, entry) in stream_files.iter().enumerate() {
         let path = entry.path();
         let stream_id = (i + 1) as u32; // XDF stream IDs are typically 1-based
-        let mut data = load_stream_file(&path, stream_id)
-            .map_err(|e| neurohid_types::Error::internal(format!("load stream {:?}: {}", path, e)))?;
+        let mut data = load_stream_file(&path, stream_id).map_err(|e| {
+            neurohid_types::Error::internal(format!("load stream {:?}: {}", path, e))
+        })?;
         if data.samples.is_empty() {
             continue;
         }
@@ -206,16 +201,17 @@ pub fn export_session_to_xdf(session_dir: &Path, out_path: &Path) -> Result<()> 
         streams.push(data);
     }
 
-    let mut out = File::create(out_path).map_err(|e| {
-        neurohid_types::Error::internal(format!("create output file: {}", e))
-    })?;
+    let mut out = File::create(out_path)
+        .map_err(|e| neurohid_types::Error::internal(format!("create output file: {}", e)))?;
 
     // Magic
-    out.write_all(XDF_MAGIC)?;
+    out.write_all(XDF_MAGIC)
+        .map_err(|e| neurohid_types::Error::internal(format!("write XDF magic: {e}")))?;
 
     // FileHeader
     let fh_xml = file_header_xml();
-    write_chunk(&mut out, TAG_FILE_HEADER, fh_xml.as_bytes())?;
+    write_chunk(&mut out, TAG_FILE_HEADER, fh_xml.as_bytes())
+        .map_err(|e| neurohid_types::Error::internal(format!("write XDF file header: {e}")))?;
 
     let session_id = Some(manifest.session_id.as_str());
 
@@ -232,33 +228,42 @@ pub fn export_session_to_xdf(session_dir: &Path, out_path: &Path) -> Result<()> 
         );
         let mut header_content = s.stream_id.to_le_bytes().to_vec();
         header_content.extend_from_slice(xml.as_bytes());
-        write_chunk(&mut out, TAG_STREAM_HEADER, &header_content)?;
+        write_chunk(&mut out, TAG_STREAM_HEADER, &header_content).map_err(|e| {
+            neurohid_types::Error::internal(format!("write XDF stream header {}: {e}", s.stream_id))
+        })?;
     }
 
     // Samples (one chunk per stream)
     for s in &streams {
-        write_samples_chunk(&mut out, s.stream_id, &s.samples)?;
+        write_samples_chunk(&mut out, s.stream_id, &s.samples).map_err(|e| {
+            neurohid_types::Error::internal(format!(
+                "write XDF samples for stream {}: {e}",
+                s.stream_id
+            ))
+        })?;
     }
 
     // StreamFooters (content = StreamID 4 bytes + XML)
     for s in &streams {
-        let (first_sec, last_sec) = if let (Some(a), Some(b)) = (s.samples.first(), s.samples.last()) {
-            (
-                (a.system_timestamp as f64) / 1_000_000.0,
-                (b.system_timestamp as f64) / 1_000_000.0,
-            )
-        } else {
-            (0.0, 0.0)
-        };
+        let (first_sec, last_sec) =
+            if let (Some(a), Some(b)) = (s.samples.first(), s.samples.last()) {
+                (
+                    (a.system_timestamp as f64) / 1_000_000.0,
+                    (b.system_timestamp as f64) / 1_000_000.0,
+                )
+            } else {
+                (0.0, 0.0)
+            };
         let xml = stream_footer_xml(first_sec, last_sec, s.samples.len() as u64);
         let mut footer_content = s.stream_id.to_le_bytes().to_vec();
         footer_content.extend_from_slice(xml.as_bytes());
-        write_chunk(&mut out, TAG_STREAM_FOOTER, &footer_content)?;
+        write_chunk(&mut out, TAG_STREAM_FOOTER, &footer_content).map_err(|e| {
+            neurohid_types::Error::internal(format!("write XDF stream footer {}: {e}", s.stream_id))
+        })?;
     }
 
-    out.sync_all().map_err(|e| {
-        neurohid_types::Error::internal(format!("sync output: {}", e))
-    })?;
+    out.sync_all()
+        .map_err(|e| neurohid_types::Error::internal(format!("sync output: {}", e)))?;
     Ok(())
 }
 

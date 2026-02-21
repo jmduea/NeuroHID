@@ -15,6 +15,7 @@ use std::sync::{
 };
 use std::time::{Duration, Instant};
 
+use neurohid_core::observability::EmitGate;
 use neurohid_core::recording;
 use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle, RuntimeIpcHandle};
 use neurohid_ipc::{
@@ -23,14 +24,16 @@ use neurohid_ipc::{
     IpcConnection as RuntimeIpcConnection, IpcServer as RuntimeIpcServer,
     IpcTransport as RuntimeIpcTransport, send_control_request_once,
 };
-use neurohid_storage::{ConfigStore, DataPaths, ProfileStore};
-use neurohid_types::{
+use neurohid_ipc::{
     ControlRpcRequest, ControlRpcResponse, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
     RuntimeEvent, RuntimeEventsSubscribe,
+};
+use neurohid_storage::{ConfigStore, DataPaths, ProfileStore};
+use neurohid_types::{
     config::{IpcMode, SystemConfig},
     control::{ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload},
     device::DiscoveredStream,
-    observability::{self as obs, EmitGate, EmitPolicyConfig, ObservabilityComponent},
+    observability::{self as obs, EmitPolicyConfig, ObservabilityComponent},
     profile::ProfileId,
 };
 
@@ -578,7 +581,10 @@ async fn run_managed_runtime(
             "Starting unified IPC v3 server (control.rpc + runtime.events)"
         );
         if server_config.endpoint.contains("47384") {
-            tracing::info!("Control CLI: neurohid device list / neurohid control snapshot (default --endpoint {})", server_config.endpoint);
+            tracing::info!(
+                "Control CLI: neurohid device list / neurohid control snapshot (default --endpoint {})",
+                server_config.endpoint
+            );
         }
         tokio::select! {
             result = run_ipc_control_server(
@@ -1853,8 +1859,9 @@ async fn resolve_control_endpoint_for_client(
         None => store.load().await,
     };
     match config {
-        Ok(cfg) if cfg.service.ipc_mode == IpcMode::TcpLoopback
-            && !cfg.service.ipc_endpoint.trim().is_empty() =>
+        Ok(cfg)
+            if cfg.service.ipc_mode == IpcMode::TcpLoopback
+                && !cfg.service.ipc_endpoint.trim().is_empty() =>
         {
             if validate_local_only_endpoint(
                 RuntimeIpcTransport::TcpLoopback,
@@ -2075,9 +2082,11 @@ fn control_command_name(command: &ControlCommand) -> &'static str {
 /// Run record CLI: start/stop/status session recording via control requests to a running service.
 async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::Result<()> {
     match command {
-        RecordCommandCli::Start { output_path, endpoint } => {
-            let config =
-                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+        RecordCommandCli::Start {
+            output_path,
+            endpoint,
+        } => {
+            let config = resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
             let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::StartRecording {
@@ -2106,8 +2115,7 @@ async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::
             }
         }
         RecordCommandCli::Stop { endpoint } => {
-            let config =
-                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+            let config = resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
             let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::StopRecording),
@@ -2130,8 +2138,7 @@ async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::
             }
         }
         RecordCommandCli::Status { endpoint } => {
-            let config =
-                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+            let config = resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
             let response = send_control_request_once(
                 config,
                 ControlRequest::new(ControlCommand::Snapshot),
@@ -2145,10 +2152,7 @@ async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::
                     println!(
                         "recording_active={} current_session_id={}",
                         snapshot.recording_active,
-                        snapshot
-                            .current_session_id
-                            .as_deref()
-                            .unwrap_or("")
+                        snapshot.current_session_id.as_deref().unwrap_or("")
                     );
                     Ok(())
                 }
@@ -2158,7 +2162,10 @@ async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::
                 _ => Err(anyhow::anyhow!("status returned unexpected payload")),
             }
         }
-        RecordCommandCli::Export { session_dir, output } => {
+        RecordCommandCli::Export {
+            session_dir,
+            output,
+        } => {
             recording::export_session_to_xdf(&session_dir, &output)
                 .map_err(|e| anyhow::anyhow!("export failed: {}", e))?;
             println!("Exported to {}", output.display());
@@ -2171,10 +2178,7 @@ async fn run_record_command(command: &RecordCommandCli, args: &Args) -> anyhow::
 }
 
 /// Run the pipeline in replay mode on a session folder (offline); no live device.
-async fn run_replay_offline(
-    session_dir: &std::path::Path,
-    args: &Args,
-) -> anyhow::Result<()> {
+async fn run_replay_offline(session_dir: &std::path::Path, args: &Args) -> anyhow::Result<()> {
     let runtime = load_runtime_context(
         args.profile.as_deref(),
         args.config.as_deref(),
@@ -2190,8 +2194,7 @@ async fn run_control_command(
     endpoint: &str,
     args: &Args,
 ) -> anyhow::Result<()> {
-    let config =
-        resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+    let config = resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
 
     match command {
         ControlCommandCli::Snapshot => {
@@ -2256,8 +2259,7 @@ async fn run_device_command(command: &DeviceCommandCli, args: &Args) -> anyhow::
             quiet,
             endpoint,
         } => {
-            let config =
-                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+            let config = resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
             run_device_list(&config.endpoint, *json, *quiet).await
         }
         DeviceCommandCli::Connect {
@@ -2265,14 +2267,8 @@ async fn run_device_command(command: &DeviceCommandCli, args: &Args) -> anyhow::
             criteria,
             endpoint,
         } => {
-            let config =
-                resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
-            run_device_connect(
-                &config.endpoint,
-                device_id.as_deref(),
-                criteria.as_deref(),
-            )
-            .await
+            let config = resolve_control_endpoint_for_client(endpoint, args.config.as_ref()).await;
+            run_device_connect(&config.endpoint, device_id.as_deref(), criteria.as_deref()).await
         }
     }
 }
@@ -2290,10 +2286,7 @@ async fn run_config_command(command: &ConfigCommandCli, args: &Args) -> anyhow::
     let paths = DataPaths::new(neurohid_storage::default_data_dir())
         .map_err(|e| anyhow::anyhow!("config directory: {}", e))?;
     let store = ConfigStore::new(paths);
-    let config_path = args
-        .config
-        .as_ref()
-        .map(|s| PathBuf::from(s.as_str()));
+    let config_path = args.config.as_ref().map(|s| PathBuf::from(s.as_str()));
 
     match command {
         ConfigCommandCli::Show { json } => {
@@ -2365,10 +2358,7 @@ async fn run_pipeline_command(command: &PipelineCommandCli, args: &Args) -> anyh
             let paths = DataPaths::new(neurohid_storage::default_data_dir())
                 .map_err(|e| anyhow::anyhow!("config directory: {}", e))?;
             let store = ConfigStore::new(paths);
-            let config_path = args
-                .config
-                .as_ref()
-                .map(|s| PathBuf::from(s.as_str()));
+            let config_path = args.config.as_ref().map(|s| PathBuf::from(s.as_str()));
             let _config = match config_path.as_ref() {
                 Some(p) => store.load_from_path(p).await,
                 None => store.load().await,
@@ -2388,7 +2378,9 @@ fn device_ipc_config(endpoint: &str) -> RuntimeIpcConfig {
     }
 }
 
-async fn fetch_discovered_streams(config: &RuntimeIpcConfig) -> anyhow::Result<Vec<DiscoveredStream>> {
+async fn fetch_discovered_streams(
+    config: &RuntimeIpcConfig,
+) -> anyhow::Result<Vec<DiscoveredStream>> {
     send_control_request_once(
         config.clone(),
         ControlRequest::new(ControlCommand::RescanStreams),

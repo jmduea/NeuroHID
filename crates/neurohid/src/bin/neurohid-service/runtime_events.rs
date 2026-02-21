@@ -1,8 +1,10 @@
 use std::collections::{HashSet, VecDeque};
 
-use neurohid_types::{
-    RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe, RuntimeTelemetry,
+use neurohid_ipc::{
+    IpcChannel, RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe, RuntimeTelemetry,
     TrainerStatus,
+};
+use neurohid_types::{
     control::ControlSnapshot,
     observation::{CursorState, Observation, ScreenInfo},
 };
@@ -251,9 +253,9 @@ pub(super) fn build_runtime_capabilities_event(snapshot: &ControlSnapshot) -> Ru
     RuntimeEvent::Capabilities {
         observation_schema_version: 1,
         channels: vec![
-            neurohid_types::IpcChannel::ControlRpc,
-            neurohid_types::IpcChannel::TrainerStream,
-            neurohid_types::IpcChannel::RuntimeEvents,
+            neurohid_ipc::IpcChannel::ControlRpc,
+            neurohid_ipc::IpcChannel::TrainerStream,
+            neurohid_ipc::IpcChannel::RuntimeEvents,
         ],
         components: vec![
             match live_observation_reason {
