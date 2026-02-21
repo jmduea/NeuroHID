@@ -74,6 +74,12 @@ uv run --project python black --check python/src python/tests
 uv run --project python mypy python/src
 ```
 
+### Retries and flakiness policy
+
+- Retries are used only for identified flaky tests (e.g. `nextest.toml` and optional `pytest-rerunfailures` where configured); broad reruns are avoided so flakiness is fixed at root cause.
+- CI passing means safe-to-merge for the scope exercised; flakiness is not masked by broad retries.
+- See the test tiers doc (when available) for isolation and flakiness-avoidance guidance.
+
 ## Automation Harness Commands
 
 Run canonical local quality gates (same script family used by CI):
