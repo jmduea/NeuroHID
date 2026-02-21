@@ -50,7 +50,14 @@ Plans:
   3. CI gates reflect reality (coverage and flakiness addressed) so passing CI means safe-to-merge for the scope exercised.
   4. Developer has at least one valuable E2E path (e.g. Hub discover→connect→stream or runtime profile→decoder→action) exercised in tests.
   5. Test tiers and isolation policy are documented so contributors know unit vs integration vs E2E and how to avoid flakiness.
-**Plans**: TBD
+**Plans:** 2/5 plans executed
+
+Plans:
+- [ ] 08-01-PLAN.md — Nextest and nextest.toml; CI Test jobs use nextest (TEST-01)
+- [ ] 08-02-PLAN.md — Pipeline integration test; confirm IPC/config in CI (TEST-02)
+- [ ] 08-03-PLAN.md — Sync coverage docs with ci.yml; retries/flakiness policy (TEST-03)
+- [ ] 08-04-PLAN.md — One E2E path: service + Python client (TEST-04)
+- [ ] 08-05-PLAN.md — Test tiers and isolation policy doc (TEST-05)
 
 ### Phase 9: BrainFlow First-Class
 **Goal**: User or developer can use BrainFlow with NeuroHID via first-class docs, runnable examples, and Hub UX; synthetic board fully replaces the in-repo mock device.
@@ -81,7 +88,7 @@ Plans:
 | Phase | Milestone | Plans Complete | Status | Completed |
 |-------|-----------|----------------|--------|-----------|
 | 7. Framework–Hub Separation | 2/2 | Complete    | 2026-02-21 | - |
-| 8. Thorough Testing | v1.1 | 0/? | Not started | - |
+| 8. Thorough Testing | 2/5 | In Progress|  | - |
 | 9. BrainFlow First-Class | v1.1 | 0/? | Not started | - |
 | 10. BrainFlow Deeper | v1.1 | 0/? | Not started | - |
 

@@ -10,9 +10,11 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 ## Current Position
 
 Phase: 8 of 10 (Thorough Testing)
+**Current Plan:** 04
+**Total Plans in Phase:** 5
 Plan: —
-Status: Ready to plan
-Last activity: 2026-02-21 — Phase 7 completed (Framework–Hub Separation)
+Status: Ready to execute
+Last activity: 2026-02-21 — Completed 08-03 (CI–docs alignment)
 
 Progress: [██████████░░░░░░░░░░] 50% (2 plans in v1.1)
 
@@ -25,6 +27,8 @@ Progress: [██████████░░░░░░░░░░] 50% (2 
 | (v1.0 history in prior STATE) | — | — | — |
 | Phase 07-framework-hub-separation P01 | 8min | 2 tasks | 5 files |
 | Phase 07-framework-hub-separation P02 | 8 | 2 tasks | 2 files |
+| Phase 08-thorough-testing P03 | 5min | 2 tasks | 1 files |
+| Phase 08-thorough-testing P05 | 5 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -34,6 +38,9 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent: framework vs Hub
 - [Phase 07-framework-hub-separation]: Framework surface and Hub allowlist in one canonical doc; allowlist file single source for CI
 - [Phase 07-framework-hub-separation]: No permanent exceptions: re-export from core or update allowlist and code together
 - [Phase 07-framework-hub-separation]: Boundary check runs on rust, automation, or push; no bypass or exception list
+- [Phase 08-thorough-testing]: Coverage thresholds: Python 50%, Rust 35% — doc points to ci.yml env as source of truth
+- [Phase 08-thorough-testing]: Retries only for identified flaky tests; broad reruns avoided; CI reflects reality
+- [Phase 08-thorough-testing]: Single doc docs/testing.md for tier definitions and isolation; development-guide links only (no duplication)
 
 ### Pending Todos
 
