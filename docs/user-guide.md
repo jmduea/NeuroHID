@@ -53,6 +53,19 @@ Optional: `--config <path>`, `--profile <name>`, `--control-port <port>`. The de
 - **Control without Hub:** Status and output toggle are available via `neurohid-service control snapshot` and `neurohid-service control set-output-enabled`; see [deployment guide](deployment-guide.md).
 - **Advanced config:** Override config path, control port, or IPC endpoint via config file or flags as documented in the deployment guide.
 
+## Hub workflow: standard path in the Hub
+
+In the NeuroHID Hub you can follow one primary workflow without switching tools:
+
+1. **Devices** — Discover and connect your biosignal device; see connection status and stream health in the status bar and Devices screen.
+2. **Calibration** — Run calibration (wizard or games) from the Calibration screen; results are stored in the active profile.
+3. **Training** — Configure and launch decoder training from the Training screen; watch progress and metrics in the Hub.
+4. **Run** — Start the runtime from the Hub. Choose how to run:
+   - **Run in Hub** — The runtime runs inside the Hub process (embedded). Use **Start (Run in Hub)** on the Dashboard.
+   - **Run in background** — The runtime runs as a separate `neurohid-service` process. Set **Run** to "Run in background" in Settings, start `neurohid-service` yourself, then use **Connect to background service** on the Dashboard. The Hub still shows status and control via the same UI.
+
+You can open any screen from the sidebar in any order; the above is the suggested sequence. When you close and reopen the Hub, it restores your last open screen (resume state).
+
 ## Recording and export
 
 Session folders are written when you start recording (via control/CLI or Hub). Each session has a folder (e.g. `session_<id>`) containing `manifest.json`, `config.json`, `streams/*.jsonl`, and `actions.jsonl`. The default location is from your recording config; you can override it when starting a recording.

@@ -139,6 +139,13 @@ impl DashboardScreen {
             "Mission control for runtime health, model operations, and signal confidence",
         );
 
+        ui.collapsing("Suggested path", |ui| {
+            ui.label(
+                "Devices → Calibration → Training → Run. Use the sidebar to open any step; \
+                 choose Run in Hub or Run in background in Settings.",
+            );
+        });
+
         let snap = &state.service_snapshot;
         self.poll_trainer_snapshot(service_manager, snap.running);
         self.sample_trainer_observability(snap);
