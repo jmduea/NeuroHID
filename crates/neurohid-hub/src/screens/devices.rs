@@ -1,8 +1,9 @@
 //! # Devices Screen
 //!
-//! Stream discovery and connection management. Shows discovered LSL streams
-//! grouped by device (source_id), with per-stream connection controls and
-//! signal quality indicators.
+//! **One place** for device/stream discovery, connection, and health. Shows
+//! ControlSnapshot.discovered_streams with connection status (connected/not),
+//! stream identity, and stream health (channel_quality, integrity_state, etc.).
+//! Rescan, ConnectStream, and DisconnectStream are dispatched via ServiceManager.
 
 use std::collections::BTreeMap;
 
@@ -35,7 +36,7 @@ impl DevicesScreen {
         theme::page_header(
             ui,
             "Devices",
-            "Discover, connect, and monitor available LSL streams",
+            "One place to discover, connect, and monitor streams — connection status and health here",
         );
 
         let snap = &state.service_snapshot;
