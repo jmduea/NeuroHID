@@ -10,13 +10,13 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 ## Current Position
 
 Phase: 6 of 6 (Composable and extensible)
-Plan: 1 of 4 in current phase
-**Current Plan:** 01
+Plan: 2 of 4 in current phase
+**Current Plan:** 02
 **Total Plans in Phase:** 4
-Status: Plan 06-01 complete (Extension contracts and registry)
-Last activity: 2026-02-21 — Plan 06-01 executed (outlet/signal/decoder contracts, ExtensionRegistry, docs)
+Status: Plan 06-02 complete (Name-based selection and factories)
+Last activity: 2026-02-21 — Plan 06-02 executed (device/outlet/signal/decoder config + factories, libloading, snapshot slot names)
 
-Progress: [███░░░░░░░] 25%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -65,6 +65,7 @@ Recent decisions affecting current work:
 - [Phase 05-hub-as-ide]: Calibration game list/grid (Grid Maze, Target Tracking); single-game panel via new_for_game(kind); results persisted to active profile (HUB-02)
 - [Phase 05-hub-as-ide]: Resume state as last_screen in UiConfig; Run in Hub / Run in background as user-facing labels (HUB-05)
 - [Phase 06]: Extension identity by name only; duplicate names cause scan() to fail with ExtensionError::DuplicateName; default discovery path: config root + /extensions
+- [Phase 06-02]: Device backend Extension(name); outlet/signal/decoder use optional extension_name in config; Loaded* wrappers hold libloading::Library + Box<dyn Trait>; snapshot exposes device/outlet/signal/decoder names
 
 ### Pending Todos
 
@@ -77,5 +78,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 06-01-PLAN.md (Extension contracts and registry).
+Stopped at: Completed 06-02-PLAN.md (Name-based selection and factories).
 Resume file: None
