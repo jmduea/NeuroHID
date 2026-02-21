@@ -11,6 +11,7 @@
 //! ```
 
 pub mod extension_registry;
+pub mod observability;
 pub mod recording;
 pub mod runtime;
 pub mod service;
