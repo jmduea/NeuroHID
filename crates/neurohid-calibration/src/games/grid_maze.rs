@@ -175,7 +175,7 @@ impl GridMazeGame {
         // Determine actual direction
         self.actual_direction = if self.is_error_trial {
             // Pick a different direction (usually opposite)
-            Some(self.intended_direction.unwrap().opposite())
+            Some(self.intended_direction.expect("set on line 170").opposite())
         } else {
             self.intended_direction
         };
