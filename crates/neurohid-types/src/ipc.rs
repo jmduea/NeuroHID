@@ -653,6 +653,7 @@ mod tests {
             decoder_model_version: None,
             active_profile_name: None,
             device_name: None,
+            outlet_name: None,
             device_battery: None,
             signal_quality: 1.0,
             signal_latency_last_us: 0,
@@ -694,6 +695,8 @@ mod tests {
             pipeline_integrity_degraded: false,
             integrity_issue_count: 0,
             stage_health_summary: None,
+            recording_active: false,
+            current_session_id: None,
         }
     }
 

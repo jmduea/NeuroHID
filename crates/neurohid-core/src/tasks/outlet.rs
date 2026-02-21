@@ -1,10 +1,12 @@
 //! # Outlet Task
 //!
 //! Publishes selected runtime streams to external consumers using configurable
-//! transport targets.
+//! transport targets. Built-in implementation of the Outlet contract; extension
+//! outlets are loaded via the registry and run through the same interface.
 
 use std::time::{Duration, Instant};
 
+use async_trait::async_trait;
 use tokio::io::AsyncWriteExt;
 use tokio::net::TcpStream;
 use tokio::sync::broadcast;
@@ -17,6 +19,7 @@ use neurohid_types::{
     config::{OutletConfig, OutletTarget, OutletTransport},
     error::Result,
     event::StreamMarker,
+    outlet::{Outlet, OutletChannels},
     signal::{FeatureVector, Sample},
 };
 
@@ -609,4 +612,46 @@ impl OutletTask {
             target.send_json_line(&line).await;
         }
     }
+}
+
+#[async_trait]
+impl Outlet for OutletTask {
+    async fn run(
+        self: Box<Self>,
+        shutdown: broadcast::Receiver<()>,
+    ) -> Result<()> {
+        (*self).run(shutdown).await
+    }
+}
+
+/// Builds either the built-in OutletTask or a loaded outlet extension.
+/// Returns the runnable outlet and its display name for snapshot ("built-in" or extension name).
+pub fn create_outlet(
+    config: OutletConfig,
+    sample_rx: Option<broadcast::Receiver<Sample>>,
+    feature_rx: Option<broadcast::Receiver<FeatureVector>>,
+    action_rx: Option<broadcast::Receiver<Action>>,
+    marker_rx: Option<broadcast::Receiver<StreamMarker>>,
+    registry: Option<&crate::extension_registry::ExtensionRegistry>,
+) -> Result<(Box<dyn Outlet + Send + Sync>, String)> {
+    if let Some(ref ext_name) = config.extension_name {
+        let name = ext_name.clone();
+        let reg = registry.ok_or_else(|| {
+            neurohid_types::error::ExtensionError::LoadError {
+                name: name.clone(),
+                reason: "extension registry not available (outlet extension requires registry)"
+                    .to_string(),
+            }
+        })?;
+        let channels = OutletChannels {
+            sample_rx,
+            feature_rx,
+            action_rx,
+            marker_rx,
+        };
+        let loaded = reg.load_outlet(&name, config, channels)?;
+        return Ok((Box::new(loaded), name));
+    }
+    let task = OutletTask::new(config, sample_rx, feature_rx, action_rx, marker_rx);
+    Ok((Box::new(task), "built-in".to_string()))
 }

@@ -57,7 +57,7 @@ pub use decoder::DecoderTask;
 pub use device::DeviceTask;
 pub use ipc::IpcTask;
 pub use latency_alert::LatencyAlertMonitorTask;
-pub use outlet::OutletTask;
+pub use outlet::{create_outlet, OutletTask};
 pub use recording::{RecordingCommand, RecordingCommandResult, RecordingRequest, RecordingTask};
 pub use replay_source::{load_session_samples, run_replay_task};
 pub use session_logger::{EpisodeLogRecord, SessionLoggerTask};

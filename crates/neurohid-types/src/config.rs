@@ -485,6 +485,9 @@ pub struct OutletConfig {
     /// Master switch for outlet publishing.
     #[serde(default)]
     pub enabled: bool,
+    /// When set, use this outlet extension instead of the built-in (LSL/TCP). Name-only ID.
+    #[serde(default)]
+    pub extension_name: Option<String>,
     /// Destination targets.
     #[serde(default)]
     pub targets: Vec<OutletTarget>,
@@ -510,6 +513,7 @@ impl Default for OutletConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            extension_name: None,
             targets: vec![OutletTarget::default()],
             publish_samples: false,
             publish_features: true,

@@ -8,11 +8,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
+use tokio::sync::broadcast;
 use neurohid_device::{Device, DeviceProvider};
 use neurohid_types::{
+    config::OutletConfig,
     device::{ConnectionSettings, DeviceId, DeviceInfo},
     error::{ExtensionError, Result},
-    outlet::{ExtensionKind, ExtensionManifest},
+    outlet::{ExtensionKind, ExtensionManifest, Outlet, OutletChannels},
 };
 
 /// Default manifest filename(s) we look for in each extension directory.
@@ -21,9 +23,17 @@ const MANIFEST_FILENAMES: &[&str] = &["manifest.json", "neurohid.manifest.json"]
 /// Symbol name exported by device extension cdylibs (same toolchain required; see docs).
 const DEVICE_PROVIDER_SYMBOL: &[u8] = b"neurohid_device_provider_create";
 
+/// Symbol name exported by outlet extension cdylibs.
+const OUTLET_SYMBOL: &[u8] = b"neurohid_outlet_create";
+
 /// Default library filename for device extensions when manifest does not specify one.
 fn default_device_library_name() -> String {
     format!("libneurohid_device{}", std::env::consts::DLL_EXTENSION)
+}
+
+/// Default library filename for outlet extensions when manifest does not specify one.
+fn default_outlet_library_name() -> String {
+    format!("libneurohid_outlet{}", std::env::consts::DLL_EXTENSION)
 }
 
 /// A discovered extension (name + path to its manifest directory).
@@ -60,6 +70,23 @@ impl DeviceProvider for LoadedDeviceProvider {
         settings: Option<ConnectionSettings>,
     ) -> Result<Box<dyn Device>> {
         self.provider.connect(device_id, settings).await
+    }
+}
+
+/// Wrapper that keeps the loaded library alive while the outlet is in use.
+pub struct LoadedOutlet {
+    _lib: libloading::Library,
+    outlet: Box<dyn Outlet>,
+}
+
+#[async_trait]
+impl Outlet for LoadedOutlet {
+    async fn run(
+        self: Box<Self>,
+        shutdown: broadcast::Receiver<()>,
+    ) -> Result<()> {
+        let LoadedOutlet { _lib: _, outlet } = *self;
+        outlet.run(shutdown).await
     }
 }
 
@@ -175,6 +202,69 @@ impl ExtensionRegistry {
         Ok(LoadedDeviceProvider {
             _lib: lib,
             provider,
+        })
+    }
+
+    /// Load an outlet extension by name. Returns an outlet that holds the library guard.
+    /// Fails with a clear error if the name is unknown, not an outlet extension, or load fails.
+    pub fn load_outlet(
+        &self,
+        name: &str,
+        config: OutletConfig,
+        channels: OutletChannels,
+    ) -> Result<LoadedOutlet> {
+        let (manifest, dir) = self
+            .by_name
+            .get(name)
+            .ok_or_else(|| ExtensionError::NotFound {
+                name: name.to_string(),
+            })?;
+        if manifest.kind != ExtensionKind::Outlet {
+            return Err(ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!(
+                    "extension '{}' is not an outlet extension (kind: {:?})",
+                    name, manifest.kind
+                ),
+            }
+            .into());
+        }
+        let lib_name: String = manifest
+            .library
+            .clone()
+            .unwrap_or_else(default_outlet_library_name);
+        let path = dir.join(&lib_name);
+        // SAFETY: Same-toolchain plugin contract; see device loader.
+        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
+            ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!("failed to load library '{}': {}", path.display(), e),
+            }
+        })?;
+        type CreateFn =
+            unsafe extern "Rust" fn(OutletConfig, OutletChannels) -> Result<Box<dyn Outlet>>;
+        // SAFETY: Symbol from loaded library; plugin exports per contract.
+        let create: libloading::Symbol<CreateFn> = unsafe {
+            lib.get(OUTLET_SYMBOL).map_err(|e| {
+                ExtensionError::LoadError {
+                    name: name.to_string(),
+                    reason: format!(
+                        "symbol 'neurohid_outlet_create' not found or incompatible: {}",
+                        e
+                    ),
+                }
+            })?
+        };
+        // SAFETY: Plugin factory returns valid outlet for same toolchain.
+        let outlet = unsafe { create(config, channels) }.map_err(|e| {
+            ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: e.to_string(),
+            }
+        })?;
+        Ok(LoadedOutlet {
+            _lib: lib,
+            outlet,
         })
     }
 

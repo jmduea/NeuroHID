@@ -79,8 +79,8 @@ pub enum DecoderCommand {
 
 use crate::extension_registry::{default_extension_paths, ExtensionRegistry};
 use crate::tasks::{
-    ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord, IpcTask,
-    LatencyAlertMonitorTask, OutletTask, RecordingRequest, RecordingTask, run_replay_task,
+    create_outlet, ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord,
+    IpcTask, LatencyAlertMonitorTask, RecordingRequest, RecordingTask, run_replay_task,
     SessionLoggerTask, SignalTask, TrainerIngressEvent,
 };
 
@@ -136,6 +136,9 @@ pub struct ServiceState {
 
     /// Name of the connected device (if any)
     pub device_name: Option<String>,
+
+    /// Outlet slot identifier: "built-in" or extension name (for snapshot).
+    pub outlet_name: Option<String>,
 
     /// Battery level of the connected device (0-100)
     pub device_battery: Option<u8>,
@@ -304,6 +307,7 @@ impl Default for ServiceState {
             errors_detected: 0,
             device_connected: false,
             device_name: None,
+            outlet_name: None,
             device_battery: None,
             started_at: None,
             active_profile_name: None,
@@ -802,25 +806,49 @@ impl NeuroHidService {
         let marker_tx_for_action = marker_broadcast_tx;
         let observability_config = self.config.service.observability.clone();
 
-        // Optional outlet fan-out task: subscribes to the same broadcast channels
-        // used by hub widgets and republishes to configured network targets.
+        let mut registry = ExtensionRegistry::new(default_extension_paths());
+        if registry.scan().is_err() {
+            tracing::debug!("Extension registry scan skipped or failed (no extensions path or empty)");
+        }
+        let device_registry = Arc::new(registry);
+
+        // Optional outlet fan-out task: built-in or extension via create_outlet.
         let outlet_config = self.config.outlet.clone();
         let outlet_sample_rx = sample_broadcast_tx.as_ref().map(|tx| tx.subscribe());
         let outlet_feature_rx = feature_broadcast_tx.as_ref().map(|tx| tx.subscribe());
         let outlet_action_rx = action_broadcast_tx.as_ref().map(|tx| tx.subscribe());
         let outlet_marker_rx = marker_tx_for_action.as_ref().map(|tx| tx.subscribe());
+        let outlet_registry = device_registry.clone();
         let mut outlet_handle = if outlet_config.enabled {
-            Some(tokio::spawn(async move {
-                tracing::info!("Outlet task starting");
-                let task = OutletTask::new(
-                    outlet_config,
-                    outlet_sample_rx,
-                    outlet_feature_rx,
-                    outlet_action_rx,
-                    outlet_marker_rx,
-                );
-                task.run(shutdown_outlet).await
-            }))
+            match create_outlet(
+                outlet_config,
+                outlet_sample_rx,
+                outlet_feature_rx,
+                outlet_action_rx,
+                outlet_marker_rx,
+                Some(&*outlet_registry),
+            ) {
+                Ok((outlet, outlet_name)) => {
+                    {
+                        let mut state = self.shared_state.write().await;
+                        state.outlet_name = Some(outlet_name.clone());
+                    }
+                    let name_for_log = outlet_name.clone();
+                    Some(tokio::spawn(async move {
+                        tracing::info!(outlet = %name_for_log, "Outlet task starting");
+                        outlet.run(shutdown_outlet).await
+                    }))
+                }
+                Err(e) => {
+                    tracing::error!("Outlet creation failed: {} — outlet disabled", e);
+                    let mut state = self.shared_state.write().await;
+                    if state.task_error.is_none() {
+                        state.task_error = Some(("outlet".into(), format!("{} — outlet disabled", e)));
+                    }
+                    state.outlet_name = None;
+                    None
+                }
+            }
         } else {
             None
         };
@@ -886,11 +914,6 @@ impl NeuroHidService {
         let cal_tx_for_device = calibration_sample_tx.clone();
         let cal_flag_for_device = calibration_flag.as_ref().map(Arc::clone);
         let device_observability = observability_config.clone();
-        let mut registry = ExtensionRegistry::new(default_extension_paths());
-        if registry.scan().is_err() {
-            tracing::debug!("Extension registry scan skipped or failed (no extensions path or empty)");
-        }
-        let device_registry = Arc::new(registry);
         let mut device_handle = if let Some(path) = replay_path {
             tokio::spawn(async move {
                 let _ = run_replay_task(&path, sample_tx, shutdown_device).await;
@@ -1334,6 +1357,7 @@ impl NeuroHidService {
             }
             state.device_connected = false;
             state.device_name = None;
+            state.outlet_name = None;
             state.decoder_ready = false;
             state.decoder_model_version = None;
             state.ipc_connected = false;

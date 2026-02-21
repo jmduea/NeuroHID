@@ -170,14 +170,17 @@ impl SettingsScreen {
                     };
                 theme::status_chip(ui, ui_mode_label, theme::Intent::Info);
 
-                let backend_label = match state.config.device.backend {
-                    neurohid_types::config::DeviceBackend::Auto => "Backend auto",
-                    neurohid_types::config::DeviceBackend::Lsl => "Backend LSL",
-                    neurohid_types::config::DeviceBackend::Mock => "Backend mock",
-                    neurohid_types::config::DeviceBackend::Serial => "Backend serial",
-                    neurohid_types::config::DeviceBackend::BrainFlow => "Backend BrainFlow",
+                let backend_label = match &state.config.device.backend {
+                    neurohid_types::config::DeviceBackend::Auto => "Backend auto".to_string(),
+                    neurohid_types::config::DeviceBackend::Lsl => "Backend LSL".to_string(),
+                    neurohid_types::config::DeviceBackend::Mock => "Backend mock".to_string(),
+                    neurohid_types::config::DeviceBackend::Serial => "Backend serial".to_string(),
+                    neurohid_types::config::DeviceBackend::BrainFlow => "Backend BrainFlow".to_string(),
+                    neurohid_types::config::DeviceBackend::Extension(name) => {
+                        format!("Backend extension({})", name)
+                    }
                 };
-                theme::status_chip(ui, backend_label, theme::Intent::Muted);
+                theme::status_chip(ui, &backend_label, theme::Intent::Muted);
                 theme::status_chip(ui, "LSL-first telemetry UX", theme::Intent::Info);
                 if matches!(
                     state.config.device.backend,
@@ -267,13 +270,14 @@ impl SettingsScreen {
                     ui.horizontal(|ui| {
                         ui.label("Backend:");
                         let current_backend = cfg.backend.clone();
-                        let options = ["Auto", "LSL", "Mock", "Serial", "BrainFlow"];
-                        let mut selected = match cfg.backend {
+                        let options = ["Auto", "LSL", "Mock", "Serial", "BrainFlow", "Extension"];
+                        let mut selected = match &cfg.backend {
                             neurohid_types::config::DeviceBackend::Auto => 0,
                             neurohid_types::config::DeviceBackend::Lsl => 1,
                             neurohid_types::config::DeviceBackend::Mock => 2,
                             neurohid_types::config::DeviceBackend::Serial => 3,
                             neurohid_types::config::DeviceBackend::BrainFlow => 4,
+                            neurohid_types::config::DeviceBackend::Extension(_) => 5,
                         };
                         if theme::select_index(
                             ui,
@@ -287,7 +291,8 @@ impl SettingsScreen {
                                 1 => neurohid_types::config::DeviceBackend::Lsl,
                                 2 => neurohid_types::config::DeviceBackend::Mock,
                                 3 => neurohid_types::config::DeviceBackend::Serial,
-                                _ => neurohid_types::config::DeviceBackend::BrainFlow,
+                                4 => neurohid_types::config::DeviceBackend::BrainFlow,
+                                _ => neurohid_types::config::DeviceBackend::Extension(String::new()),
                             };
                         }
                         if cfg.backend != current_backend {
