@@ -12,10 +12,14 @@ A single, composable path from biosignal device to actionable output — with an
 
 **Shipped:** v1.0 MVP (2026-02-21) — 6 phases, 20 plans. Versioned contracts and formats; standalone runtime and control; SDK/CLI for device and pipeline config; standard path and recording; Hub-as-IDE; composable pipeline with extension contracts and example outlet plugin. All 19 v1 requirements validated.
 
-## Next Milestone Goals
+## Current Milestone: v1.1 Testing, BrainFlow & Framework Separation
 
-- To be defined via `/gsd:new-milestone` (questioning → research → requirements → roadmap).
-- Candidate areas: latency/performance (RUNT-04, RUNT-05), advanced Hub (HUB-06, HUB-07), plugin lifecycle (EXT-04).
+**Goal:** Improve confidence and developer clarity: thorough testing, first-class BrainFlow integration (docs/UX then deeper integration), and a clear structural split between the reusable framework (what devs build on) and the NeuroHID Hub application (our solution on top). Full framework split to separate repo is planned for a later milestone.
+
+**Target features:**
+- Thorough testing — broader and deeper coverage (Rust + Python), reduce flakiness, integration/E2E where valuable
+- Native BrainFlow — BrainFlow’s synthetic board fully replaces the mock device for tests/examples/CI; documentation, examples, Hub UX; then deeper integration (real SDK, streaming) as far as milestone allows
+- Framework vs Hub separation — structural boundary in-repo: framework as distinct crate(s) or layout that Hub depends on; documented “framework” surface and “Hub as one app”; full split (e.g. framework in own repo) planned later
 
 ## Requirements
 
@@ -41,10 +45,13 @@ A single, composable path from biosignal device to actionable output — with an
 
 ### Active
 
-- [ ] Latency profiling and tuning; Soak/LatencyMatrix in CI (RUNT-04, RUNT-05)
-- [ ] Advanced visualization and experiment templates in Hub (HUB-06)
-- [ ] Richer Python/notebook integration and workbench options (HUB-07)
-- [ ] Plugin discovery/lifecycle fully specified and documented (EXT-04)
+- [ ] Thorough testing — coverage, flakiness reduction, integration/E2E (v1.1)
+- [ ] Native BrainFlow — docs, examples, Hub UX; deeper integration as scope allows (v1.1)
+- [ ] Framework vs Hub separation — structural boundary in-repo; framework as distinct surface Hub depends on (v1.1)
+- [ ] Latency profiling and tuning; Soak/LatencyMatrix in CI (RUNT-04, RUNT-05) — deferred
+- [ ] Advanced visualization and experiment templates in Hub (HUB-06) — deferred
+- [ ] Richer Python/notebook integration and workbench options (HUB-07) — deferred
+- [ ] Plugin discovery/lifecycle fully specified and documented (EXT-04) — deferred
 
 ### Out of Scope
 
@@ -75,6 +82,8 @@ A single, composable path from biosignal device to actionable output — with an
 | Config/profile versioning and stream semantics | Reproducibility and compatibility | ✓ config-format.md; N=2 compatibility |
 | Extension identity by name; discovery path | Simple, deterministic plugin loading | ✓ config root + /extensions; DuplicateName error |
 | Loaded* wrappers (libloading + Box<dyn Trait>) | Keep extension libs alive; snapshot exposes slot names | ✓ In core and snapshot |
+| Framework vs Hub structural separation (v1.1) | Devs need clear “what to depend on” vs “our app”; full repo split later | — In progress |
+| BrainFlow first-class then deeper (v1.1) | Docs/UX first, then board config/streaming as scope allows | — In progress |
 
 ---
-*Last updated: 2026-02-21 after v1.0 milestone*
+*Last updated: 2026-02-21 after v1.1 milestone start*
