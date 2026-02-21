@@ -124,9 +124,10 @@ will run on these runners. See [GitHub: Adding self-hosted runners](https://docs
 
 ## Coverage Gates in CI
 
-- Python coverage gate remains enforced with `PYTHON_COVERAGE_MIN` (currently `48`).
-- Rust coverage gate remains enforced with `RUST_COVERAGE_MIN` (currently `30`).
+- Python coverage gate is enforced with `PYTHON_COVERAGE_MIN` (currently `50`).
+- Rust coverage gate is enforced with `RUST_COVERAGE_MIN` (currently `35`).
 - Both gates upload coverage artifacts and report to Codecov.
+- **Source of truth:** The numeric thresholds are defined in `.github/workflows/ci.yml` (env); this doc is kept in sync with those values.
 
 ## Branch Protection Required Checks
 
