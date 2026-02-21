@@ -40,7 +40,7 @@ Requirements for initial release. Each maps to roadmap phases.
 
 - [x] **EXT-01**: New device backends can be added without changing core orchestration (trait-based or plugin contract)
 - [x] **EXT-02**: New action/output types (e.g. game input, MIDI) can be added via a defined outlet/effector contract
-- [ ] **EXT-03**: One example plugin (device or outlet) exists and is tested in CI to demonstrate the extension path
+- [x] **EXT-03**: One example plugin (device or outlet) exists and is tested in CI to demonstrate the extension path
 
 ## v2 Requirements
 
@@ -97,7 +97,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | COMP-06 | Phase 6 | Complete |
 | EXT-01 | Phase 6 | Complete |
 | EXT-02 | Phase 6 | Complete |
-| EXT-03 | Phase 6 | Pending |
+| EXT-03 | Phase 6 | Complete |
 
 **Coverage:**
 - v1 requirements: 19 total
