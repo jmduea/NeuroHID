@@ -38,6 +38,8 @@ pub mod profile;
 pub mod recording;
 pub mod reward;
 pub mod signal;
+pub mod decoder_contract;
+pub mod signal_contract;
 
 // Re-export commonly used types at the crate root for convenience
 pub use action::{Action, Key, KeyAction, MouseAction, MouseButton};
@@ -66,6 +68,8 @@ pub use profile::{CalibrationState, ProfileId};
 pub use recording::{RecordingAutoMode, RecordingConfig, SessionManifest};
 pub use reward::{ErrPResult, RewardSignal, SignalQuality};
 pub use signal::{ChannelConfig, ChannelId, FeatureVector, Sample};
+pub use signal_contract::SignalPreprocessor;
+pub use decoder_contract::DecoderRunner;
 
 /// Microseconds since Unix epoch. We use i64 to allow for negative values
 /// (timestamps before epoch) even though we don't expect them in practice.
