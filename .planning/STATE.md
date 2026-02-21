@@ -9,12 +9,12 @@ See: .planning/PROJECT.md (updated 2026-02-21)
 
 ## Current Position
 
-Phase: 8 of 10 (Thorough Testing)
-**Current Plan:** Not started
-**Total Plans in Phase:** 5
-Plan: —
+Phase: 9 of 10 (BrainFlow First-Class)
+**Current Plan:** 01
+**Total Plans in Phase:** 3
+Plan: 09-01 complete
 Status: Ready to execute
-Last activity: 2026-02-21 — Completed 08-03 (CI–docs alignment)
+Last activity: 2026-02-21 — Completed 09-01 (BrainFlow default build + first-class docs)
 
 Progress: [██████████░░░░░░░░░░] 50% (2 plans in v1.1)
 
@@ -32,6 +32,7 @@ Progress: [██████████░░░░░░░░░░] 50% (2 
 | Phase 08-thorough-testing P01 | 15 | 2 tasks | 2 files |
 | Phase 08-thorough-testing P02 | 15 | 2 tasks | 2 files |
 | Phase 08-thorough-testing P04 | 15 | 2 tasks | 2 files |
+| Phase 09-brainflow-first-class P01 | 5 | 2 tasks | 3 files |
 
 ## Accumulated Context
 
@@ -48,6 +49,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent: framework vs Hub
 - [Phase 08-thorough-testing]: nextest.toml at repo root with retries (fixed, 2) and slow-timeout (60s, terminate-after 3)
 - [Phase 08-thorough-testing]: Pipeline integration test in neurohid-core; IPC and config boundaries covered by existing CI jobs
 - [Phase 08-thorough-testing]: E2E service+client runs in CI on Linux only; test skipped on Windows
+- [Phase 09-brainflow-first-class]: BrainFlow in neurohid-core default features; single canonical doc docs/brainflow.md, BRAIN-04 documented
 
 ### Pending Todos
 
