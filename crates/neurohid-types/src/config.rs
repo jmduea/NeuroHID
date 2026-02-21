@@ -267,6 +267,9 @@ pub struct DeviceConfig {
 /// Configuration for signal processing.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SignalConfig {
+    /// When set, use this signal preprocessing extension instead of the built-in pipeline.
+    #[serde(default)]
+    pub extension_name: Option<String>,
     /// Size of the ring buffer in samples
     pub buffer_size_samples: usize,
 
@@ -301,6 +304,7 @@ pub struct SignalConfig {
 impl Default for SignalConfig {
     fn default() -> Self {
         Self {
+            extension_name: None,
             buffer_size_samples: 1024, // ~8 seconds at 128Hz
             notch_filter_enabled: true,
             notch_filter_hz: 60.0, // US default; should be 50.0 for EU
@@ -318,6 +322,9 @@ impl Default for SignalConfig {
 /// Configuration for the decoder (RL policy).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecoderConfig {
+    /// When set, use this decoder extension instead of the built-in ONNX pipeline.
+    #[serde(default)]
+    pub extension_name: Option<String>,
     /// Path to the decoder model file (relative to profile directory)
     pub model_path: String,
 
@@ -352,6 +359,7 @@ pub struct DecoderConfig {
 impl Default for DecoderConfig {
     fn default() -> Self {
         Self {
+            extension_name: None,
             model_path: "decoder.pt".to_string(),
             online_learning_enabled: true,
             learning_rate: 3e-4,

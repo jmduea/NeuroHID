@@ -104,6 +104,12 @@ pub struct ControlSnapshot {
     /// Outlet slot identifier: "built-in" or extension name.
     #[serde(default)]
     pub outlet_name: Option<String>,
+    /// Signal preprocessing slot identifier: "built-in" or extension name.
+    #[serde(default)]
+    pub signal_name: Option<String>,
+    /// Decoder slot identifier: "built-in" or extension name.
+    #[serde(default)]
+    pub decoder_name: Option<String>,
     pub device_battery: Option<u8>,
     pub signal_quality: f32,
     pub signal_latency_last_us: u64,
@@ -173,6 +179,8 @@ impl Default for ControlSnapshot {
             active_profile_name: None,
             device_name: None,
             outlet_name: None,
+            signal_name: None,
+            decoder_name: None,
             device_battery: None,
             signal_quality: 0.0,
             signal_latency_last_us: 0,
@@ -338,6 +346,8 @@ mod tests {
             active_profile_name: Some("default".to_string()),
             device_name: Some("Mock EEG".to_string()),
             outlet_name: None,
+            signal_name: None,
+            decoder_name: None,
             device_battery: Some(100),
             signal_quality: 0.8,
             signal_latency_last_us: 1000,

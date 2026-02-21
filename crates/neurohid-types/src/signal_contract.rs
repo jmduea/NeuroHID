@@ -5,9 +5,16 @@
 //! Aligns with how the signal task in neurohid-core runs until shutdown.
 
 use async_trait::async_trait;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
 use crate::error::Result;
+use crate::signal::{FeatureVector, Sample};
+
+/// Channel handles for a signal preprocessor (minimal contract: sample in, features out).
+pub struct SignalChannels {
+    pub sample_rx: mpsc::Receiver<Sample>,
+    pub feature_tx: mpsc::Sender<FeatureVector>,
+}
 
 /// Signal preprocessing contract: accepts raw samples, produces feature vectors.
 ///

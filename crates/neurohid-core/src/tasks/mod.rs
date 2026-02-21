@@ -53,7 +53,7 @@ pub struct TrainerBridgeChannels {
 }
 
 pub use action::ActionTask;
-pub use decoder::DecoderTask;
+pub use decoder::{create_decoder, DecoderTask};
 pub use device::DeviceTask;
 pub use ipc::IpcTask;
 pub use latency_alert::LatencyAlertMonitorTask;
@@ -61,4 +61,4 @@ pub use outlet::{create_outlet, OutletTask};
 pub use recording::{RecordingCommand, RecordingCommandResult, RecordingRequest, RecordingTask};
 pub use replay_source::{load_session_samples, run_replay_task};
 pub use session_logger::{EpisodeLogRecord, SessionLoggerTask};
-pub use signal::SignalTask;
+pub use signal::{create_signal_preprocessor, SignalTask};

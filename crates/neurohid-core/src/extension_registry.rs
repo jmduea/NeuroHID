@@ -11,10 +11,11 @@ use async_trait::async_trait;
 use tokio::sync::broadcast;
 use neurohid_device::{Device, DeviceProvider};
 use neurohid_types::{
-    config::OutletConfig,
+    config::{DecoderConfig, OutletConfig, SignalConfig},
     device::{ConnectionSettings, DeviceId, DeviceInfo},
     error::{ExtensionError, Result},
     outlet::{ExtensionKind, ExtensionManifest, Outlet, OutletChannels},
+    DecoderChannels, DecoderRunner, SignalChannels, SignalPreprocessor,
 };
 
 /// Default manifest filename(s) we look for in each extension directory.
@@ -25,6 +26,10 @@ const DEVICE_PROVIDER_SYMBOL: &[u8] = b"neurohid_device_provider_create";
 
 /// Symbol name exported by outlet extension cdylibs.
 const OUTLET_SYMBOL: &[u8] = b"neurohid_outlet_create";
+/// Symbol name exported by signal preprocessing extension cdylibs.
+const SIGNAL_PREPROCESSOR_SYMBOL: &[u8] = b"neurohid_signal_preprocessor_create";
+/// Symbol name exported by decoder extension cdylibs.
+const DECODER_SYMBOL: &[u8] = b"neurohid_decoder_create";
 
 /// Default library filename for device extensions when manifest does not specify one.
 fn default_device_library_name() -> String {
@@ -34,6 +39,14 @@ fn default_device_library_name() -> String {
 /// Default library filename for outlet extensions when manifest does not specify one.
 fn default_outlet_library_name() -> String {
     format!("libneurohid_outlet{}", std::env::consts::DLL_EXTENSION)
+}
+
+fn default_signal_preprocessor_library_name() -> String {
+    format!("libneurohid_signal{}", std::env::consts::DLL_EXTENSION)
+}
+
+fn default_decoder_library_name() -> String {
+    format!("libneurohid_decoder{}", std::env::consts::DLL_EXTENSION)
 }
 
 /// A discovered extension (name + path to its manifest directory).
@@ -87,6 +100,40 @@ impl Outlet for LoadedOutlet {
     ) -> Result<()> {
         let LoadedOutlet { _lib: _, outlet } = *self;
         outlet.run(shutdown).await
+    }
+}
+
+/// Wrapper that keeps the loaded library alive while the signal preprocessor is in use.
+pub struct LoadedSignalPreprocessor {
+    _lib: libloading::Library,
+    runner: Box<dyn SignalPreprocessor>,
+}
+
+#[async_trait]
+impl SignalPreprocessor for LoadedSignalPreprocessor {
+    async fn run(
+        self: Box<Self>,
+        shutdown: broadcast::Receiver<()>,
+    ) -> Result<()> {
+        let LoadedSignalPreprocessor { _lib: _, runner } = *self;
+        runner.run(shutdown).await
+    }
+}
+
+/// Wrapper that keeps the loaded library alive while the decoder is in use.
+pub struct LoadedDecoderRunner {
+    _lib: libloading::Library,
+    runner: Box<dyn DecoderRunner>,
+}
+
+#[async_trait]
+impl DecoderRunner for LoadedDecoderRunner {
+    async fn run(
+        self: Box<Self>,
+        shutdown: broadcast::Receiver<()>,
+    ) -> Result<()> {
+        let LoadedDecoderRunner { _lib: _, runner } = *self;
+        runner.run(shutdown).await
     }
 }
 
@@ -265,6 +312,121 @@ impl ExtensionRegistry {
         Ok(LoadedOutlet {
             _lib: lib,
             outlet,
+        })
+    }
+
+    /// Load a signal preprocessing extension by name. Returns a runner that holds the library guard.
+    pub fn load_signal_preprocessor(
+        &self,
+        name: &str,
+        config: SignalConfig,
+        channels: SignalChannels,
+    ) -> Result<LoadedSignalPreprocessor> {
+        let (manifest, dir) = self
+            .by_name
+            .get(name)
+            .ok_or_else(|| ExtensionError::NotFound {
+                name: name.to_string(),
+            })?;
+        if manifest.kind != ExtensionKind::SignalPreprocessing {
+            return Err(ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!(
+                    "extension '{}' is not a signal preprocessing extension (kind: {:?})",
+                    name, manifest.kind
+                ),
+            }
+            .into());
+        }
+        let lib_name: String = manifest
+            .library
+            .clone()
+            .unwrap_or_else(default_signal_preprocessor_library_name);
+        let path = dir.join(&lib_name);
+        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
+            ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!("failed to load library '{}': {}", path.display(), e),
+            }
+        })?;
+        type CreateFn =
+            unsafe extern "Rust" fn(SignalConfig, SignalChannels) -> Result<Box<dyn SignalPreprocessor>>;
+        let create: libloading::Symbol<CreateFn> = unsafe {
+            lib.get(SIGNAL_PREPROCESSOR_SYMBOL).map_err(|e| {
+                ExtensionError::LoadError {
+                    name: name.to_string(),
+                    reason: format!(
+                        "symbol 'neurohid_signal_preprocessor_create' not found: {}",
+                        e
+                    ),
+                }
+            })?
+        };
+        let runner = unsafe { create(config, channels) }.map_err(|e| {
+            ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: e.to_string(),
+            }
+        })?;
+        Ok(LoadedSignalPreprocessor {
+            _lib: lib,
+            runner,
+        })
+    }
+
+    /// Load a decoder extension by name. Returns a runner that holds the library guard.
+    pub fn load_decoder(
+        &self,
+        name: &str,
+        config: DecoderConfig,
+        channels: DecoderChannels,
+    ) -> Result<LoadedDecoderRunner> {
+        let (manifest, dir) = self
+            .by_name
+            .get(name)
+            .ok_or_else(|| ExtensionError::NotFound {
+                name: name.to_string(),
+            })?;
+        if manifest.kind != ExtensionKind::Decoder {
+            return Err(ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!(
+                    "extension '{}' is not a decoder extension (kind: {:?})",
+                    name, manifest.kind
+                ),
+            }
+            .into());
+        }
+        let lib_name: String = manifest
+            .library
+            .clone()
+            .unwrap_or_else(default_decoder_library_name);
+        let path = dir.join(&lib_name);
+        let lib = unsafe { libloading::Library::new(&path) }.map_err(|e| {
+            ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: format!("failed to load library '{}': {}", path.display(), e),
+            }
+        })?;
+        type CreateFn =
+            unsafe extern "Rust" fn(DecoderConfig, DecoderChannels) -> Result<Box<dyn DecoderRunner>>;
+        let create: libloading::Symbol<CreateFn> = unsafe {
+            lib.get(DECODER_SYMBOL).map_err(|e| {
+                ExtensionError::LoadError {
+                    name: name.to_string(),
+                    reason: format!("symbol 'neurohid_decoder_create' not found: {}", e),
+                }
+            })?
+        };
+        let runner = unsafe { create(config, channels) }.map_err(|e| {
+            ExtensionError::LoadError {
+                name: name.to_string(),
+                reason: e.to_string(),
+            }
+        })?;
+        Ok(LoadedDecoderRunner {
+            _lib: lib,
+            runner,
         })
     }
 

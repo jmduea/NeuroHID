@@ -79,9 +79,9 @@ pub enum DecoderCommand {
 
 use crate::extension_registry::{default_extension_paths, ExtensionRegistry};
 use crate::tasks::{
-    create_outlet, ActionTask, DecisionEventRecord, DecoderTask, DeviceTask, EpisodeLogRecord,
-    IpcTask, LatencyAlertMonitorTask, RecordingRequest, RecordingTask, run_replay_task,
-    SessionLoggerTask, SignalTask, TrainerIngressEvent,
+    create_decoder, create_outlet, create_signal_preprocessor, ActionTask, DecisionEventRecord,
+    DeviceTask, EpisodeLogRecord, IpcTask, LatencyAlertMonitorTask, RecordingRequest, RecordingTask,
+    run_replay_task, SessionLoggerTask, TrainerIngressEvent,
 };
 
 /// The main service that coordinates all NeuroHID operations.
@@ -139,6 +139,12 @@ pub struct ServiceState {
 
     /// Outlet slot identifier: "built-in" or extension name (for snapshot).
     pub outlet_name: Option<String>,
+
+    /// Signal preprocessing slot identifier: "built-in" or extension name.
+    pub signal_name: Option<String>,
+
+    /// Decoder slot identifier: "built-in" or extension name.
+    pub decoder_name: Option<String>,
 
     /// Battery level of the connected device (0-100)
     pub device_battery: Option<u8>,
@@ -308,6 +314,8 @@ impl Default for ServiceState {
             device_connected: false,
             device_name: None,
             outlet_name: None,
+            signal_name: None,
+            decoder_name: None,
             device_battery: None,
             started_at: None,
             active_profile_name: None,
@@ -914,6 +922,7 @@ impl NeuroHidService {
         let cal_tx_for_device = calibration_sample_tx.clone();
         let cal_flag_for_device = calibration_flag.as_ref().map(Arc::clone);
         let device_observability = observability_config.clone();
+        let device_registry_for_device = device_registry.clone();
         let mut device_handle = if let Some(path) = replay_path {
             tokio::spawn(async move {
                 let _ = run_replay_task(&path, sample_tx, shutdown_device).await;
@@ -928,58 +937,68 @@ impl NeuroHidService {
                     cal_tx_for_device,
                     cal_flag_for_device,
                     device_command_rx,
-                    Some(device_registry),
+                    Some(device_registry_for_device),
                     device_observability,
                 );
                 let _ = task.run(shutdown_device).await;
             })
         };
 
-        // Spawn the signal processing task. This reads samples, applies filters,
-        // extracts features, and sends them to the IPC channel.
+        // Spawn the signal processing task (built-in or extension via create_signal_preprocessor).
         let signal_config = self.config.signal.clone();
         let signal_observability = observability_config.clone();
+        let signal_registry = device_registry.clone();
+        let (signal_runner, signal_name) = create_signal_preprocessor(
+            signal_config,
+            sample_rx,
+            feature_tx,
+            errp_rx,
+            state_signal,
+            signal_command_rx,
+            Some(errp_sample_tx),
+            sample_broadcast_tx,
+            feature_broadcast_tx,
+            marker_tx_for_signal,
+            signal_observability,
+            Some(&*signal_registry),
+        )?;
+        {
+            let mut state = self.shared_state.write().await;
+            state.signal_name = Some(signal_name.clone());
+        }
         let mut signal_handle = tokio::spawn(async move {
-            tracing::info!("Signal task starting");
-            let task = SignalTask::new(
-                signal_config,
-                sample_rx,
-                feature_tx,
-                errp_rx,
-                state_signal,
-                signal_command_rx,
-                Some(errp_sample_tx),
-                sample_broadcast_tx,
-                feature_broadcast_tx,
-                marker_tx_for_signal,
-                signal_observability,
-            );
-            task.run(shutdown_signal).await
+            tracing::info!(signal = %signal_name, "Signal task starting");
+            signal_runner.run(shutdown_signal).await
         });
 
-        // Spawn the Rust decoder task. This performs ONNX inference in-process
-        // so the signal->action path does not depend on Python bridge latency.
+        // Spawn the decoder task (built-in or extension via create_decoder).
         let decoder_config: DecoderConfig = self.config.decoder.clone();
         let profile_store_for_decoder = self.profile_store.clone();
         let profile_id_for_decoder = self.profile_id.clone();
         let fallback_enabled = self.config.service.fallback_policy.enabled;
         let decoder_observability = observability_config.clone();
+        let decoder_registry = device_registry.clone();
+        let (decoder_runner, decoder_name) = create_decoder(
+            decoder_config,
+            feature_rx,
+            action_tx,
+            state_decoder,
+            profile_store_for_decoder,
+            profile_id_for_decoder,
+            decoder_command_rx,
+            Some(decision_event_tx),
+            episode_log_tx,
+            fallback_enabled,
+            decoder_observability,
+            Some(&*decoder_registry),
+        )?;
+        {
+            let mut state = self.shared_state.write().await;
+            state.decoder_name = Some(decoder_name.clone());
+        }
         let mut decoder_handle = tokio::spawn(async move {
-            tracing::info!("Decoder task starting");
-            let task = DecoderTask::new(
-                decoder_config,
-                feature_rx,
-                action_tx,
-                state_decoder,
-                profile_store_for_decoder,
-                profile_id_for_decoder,
-                decoder_command_rx,
-                Some(decision_event_tx),
-                episode_log_tx,
-                fallback_enabled,
-                decoder_observability,
-            );
-            task.run(shutdown_decoder).await
+            tracing::info!(decoder = %decoder_name, "Decoder task starting");
+            decoder_runner.run(shutdown_decoder).await
         });
 
         // Spawn the IPC task. This remains available for Python-side ErrP and
@@ -1358,6 +1377,8 @@ impl NeuroHidService {
             state.device_connected = false;
             state.device_name = None;
             state.outlet_name = None;
+            state.signal_name = None;
+            state.decoder_name = None;
             state.decoder_ready = false;
             state.decoder_model_version = None;
             state.ipc_connected = false;

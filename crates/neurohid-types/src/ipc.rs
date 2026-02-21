@@ -654,6 +654,8 @@ mod tests {
             active_profile_name: None,
             device_name: None,
             outlet_name: None,
+            signal_name: None,
+            decoder_name: None,
             device_battery: None,
             signal_quality: 1.0,
             signal_latency_last_us: 0,

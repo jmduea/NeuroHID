@@ -16,6 +16,7 @@ use neurohid_storage::ProfileStore;
 use neurohid_types::{
     action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement},
     config::DecoderConfig,
+    DecoderChannels, DecoderRunner,
     control::RuntimeModeState,
     error::{DecoderError, Error, Result},
     learning::{CandidateGuardrails, TrainingEpisode},
@@ -1271,4 +1272,63 @@ mod tests {
         assert!(to_probability(-4.0) < 0.1);
         assert_eq!(to_probability(0.8), 0.8);
     }
+}
+
+#[async_trait::async_trait]
+impl DecoderRunner for DecoderTask {
+    async fn run(
+        self: Box<Self>,
+        shutdown: tokio::sync::broadcast::Receiver<()>,
+    ) -> Result<()> {
+        (*self).run(shutdown).await
+    }
+}
+
+/// Builds either the built-in DecoderTask or a loaded decoder extension.
+/// Returns the runner and its display name for snapshot ("built-in" or extension name).
+#[allow(clippy::too_many_arguments)]
+pub fn create_decoder(
+    config: DecoderConfig,
+    feature_rx: mpsc::Receiver<FeatureVector>,
+    action_tx: mpsc::Sender<Action>,
+    state: Arc<RwLock<ServiceState>>,
+    profile_store: Option<ProfileStore>,
+    profile_id: Option<ProfileId>,
+    decoder_command_rx: Option<mpsc::Receiver<DecoderCommand>>,
+    decision_event_tx: Option<mpsc::Sender<DecisionEventRecord>>,
+    episode_log_tx: Option<mpsc::Sender<EpisodeLogRecord>>,
+    fallback_enabled: bool,
+    observability: ObservabilityConfig,
+    registry: Option<&crate::extension_registry::ExtensionRegistry>,
+) -> Result<(Box<dyn DecoderRunner + Send + Sync>, String)> {
+    if let Some(ref ext_name) = config.extension_name {
+        let name = ext_name.clone();
+        let reg = registry.ok_or_else(|| {
+            neurohid_types::error::ExtensionError::LoadError {
+                name: name.clone(),
+                reason: "extension registry not available (decoder extension requires registry)"
+                    .to_string(),
+            }
+        })?;
+        let channels = DecoderChannels {
+            feature_rx,
+            action_tx,
+        };
+        let loaded = reg.load_decoder(&name, config, channels)?;
+        return Ok((Box::new(loaded), name));
+    }
+    let task = DecoderTask::new(
+        config,
+        feature_rx,
+        action_tx,
+        state,
+        profile_store,
+        profile_id,
+        decoder_command_rx,
+        decision_event_tx,
+        episode_log_tx,
+        fallback_enabled,
+        observability,
+    );
+    Ok((Box::new(task), "built-in".to_string()))
 }

@@ -436,6 +436,8 @@ impl RuntimeIpcHandle {
             active_profile_name: state.active_profile_name.clone(),
             device_name: state.device_name.clone(),
             outlet_name: state.outlet_name.clone(),
+            signal_name: state.signal_name.clone(),
+            decoder_name: state.decoder_name.clone(),
             device_battery: state.device_battery,
             signal_quality: state.signal_quality,
             decode_latency_last_us: state.decode_latency_last_us,

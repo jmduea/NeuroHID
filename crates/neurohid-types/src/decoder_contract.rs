@@ -5,9 +5,17 @@
 //! how the decoder task in neurohid-core runs until shutdown.
 
 use async_trait::async_trait;
-use tokio::sync::broadcast;
+use tokio::sync::{broadcast, mpsc};
 
+use crate::action::Action;
 use crate::error::Result;
+use crate::signal::FeatureVector;
+
+/// Channel handles for a decoder (feature in, actions out).
+pub struct DecoderChannels {
+    pub feature_rx: mpsc::Receiver<FeatureVector>,
+    pub action_tx: mpsc::Sender<Action>,
+}
 
 /// Decoder contract: accepts feature vectors, produces actions.
 ///

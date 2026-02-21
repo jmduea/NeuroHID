@@ -20,10 +20,12 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{RwLock, broadcast, mpsc};
 
+use async_trait::async_trait;
 use neurohid_types::{
     config::SignalConfig,
     device::DiscoveredStream,
     error::Result,
+    SignalChannels, SignalPreprocessor,
     event::{MarkerPayload, MarkerType, StreamMarker},
     observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
     reward::ErrPResult,
@@ -955,6 +957,65 @@ impl SignalTask {
         }
         let _ = tx.send(marker);
     }
+}
+
+#[async_trait]
+impl SignalPreprocessor for SignalTask {
+    async fn run(
+        self: Box<Self>,
+        shutdown: tokio::sync::broadcast::Receiver<()>,
+    ) -> Result<()> {
+        (*self).run(shutdown).await
+    }
+}
+
+/// Builds either the built-in SignalTask or a loaded signal preprocessing extension.
+/// Returns the runner and its display name for snapshot ("built-in" or extension name).
+#[allow(clippy::too_many_arguments)]
+pub fn create_signal_preprocessor(
+    config: SignalConfig,
+    sample_rx: mpsc::Receiver<Sample>,
+    feature_tx: mpsc::Sender<FeatureVector>,
+    errp_rx: mpsc::Receiver<ErrPResult>,
+    state: Arc<RwLock<ServiceState>>,
+    signal_command_rx: Option<mpsc::Receiver<SignalCommand>>,
+    sample_tap_tx: Option<mpsc::Sender<Sample>>,
+    sample_broadcast_tx: Option<broadcast::Sender<Sample>>,
+    feature_broadcast_tx: Option<broadcast::Sender<FeatureVector>>,
+    marker_broadcast_tx: Option<broadcast::Sender<StreamMarker>>,
+    observability: ObservabilityConfig,
+    registry: Option<&crate::extension_registry::ExtensionRegistry>,
+) -> Result<(Box<dyn SignalPreprocessor + Send + Sync>, String)> {
+    if let Some(ref ext_name) = config.extension_name {
+        let name = ext_name.clone();
+        let reg = registry.ok_or_else(|| {
+            neurohid_types::error::ExtensionError::LoadError {
+                name: name.clone(),
+                reason: "extension registry not available (signal extension requires registry)"
+                    .to_string(),
+            }
+        })?;
+        let channels = SignalChannels {
+            sample_rx,
+            feature_tx,
+        };
+        let loaded = reg.load_signal_preprocessor(&name, config, channels)?;
+        return Ok((Box::new(loaded), name));
+    }
+    let task = SignalTask::new(
+        config,
+        sample_rx,
+        feature_tx,
+        errp_rx,
+        state,
+        signal_command_rx,
+        sample_tap_tx,
+        sample_broadcast_tx,
+        feature_broadcast_tx,
+        marker_broadcast_tx,
+        observability,
+    );
+    Ok((Box::new(task), "built-in".to_string()))
 }
 
 #[cfg(test)]
