@@ -32,6 +32,9 @@ async-trait = "0.1"
 lsl = { version = "0.1", optional = true }
 serialport = { version = "4.7.3", default-features = false }
 
+# Real BrainFlow SDK (optional; requires C++ libs built first per docs/brainflow.md)
+brainflow = { git = "https://github.com/brainflow-dev/brainflow", tag = "5.13.0", optional = true }
+
 [dev-dependencies]
 tokio-test = "0.4"
 
@@ -39,3 +42,5 @@ tokio-test = "0.4"
 default = ["lsl"]
 lsl = ["dep:lsl"]
 brainflow = []
+# Real BrainFlow C++/Rust SDK; not in default or CI. Enables optional brainflow crate.
+brainflow-native = ["dep:brainflow"]
