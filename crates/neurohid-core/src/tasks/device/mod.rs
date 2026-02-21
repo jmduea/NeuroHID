@@ -12,7 +12,7 @@
 //! |---------|----------------------------------------------------|
 //! | `Mock`  | Synthetic sine-wave generator (always available)   |
 //! | `Lsl`   | Lab Streaming Layer — any LSL stream on the network|
-//! | `Auto`  | Tries LSL first, then falls back to Mock           |
+//! | `Auto`  | Tries LSL first, then falls back to BrainFlow synthetic |
 //! | `Serial`| Direct USB/serial adapter input                    |
 //!
 //! ## Architecture

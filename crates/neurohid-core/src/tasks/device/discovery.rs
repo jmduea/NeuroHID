@@ -151,14 +151,16 @@ pub(super) async fn create_provider(
         }
 
         DeviceBackend::Auto => {
-            tracing::info!("Using Auto device backend (LSL preferred, Mock fallback)");
-            let mock = Box::new(MockProvider::new(MockDeviceConfig::default()));
+            tracing::info!("Using Auto device backend (LSL preferred, BrainFlow synthetic fallback)");
+            let fallback = create_brainflow_provider(config)?;
 
             match create_lsl_provider(config) {
-                Ok(lsl) => Ok(Box::new(AutoProvider::new(lsl, mock))),
+                Ok(lsl) => Ok(Box::new(AutoProvider::new(lsl, fallback))),
                 Err(e) => {
-                    tracing::warn!("Auto backend: LSL unavailable ({e}), using Mock-only provider");
-                    Ok(mock)
+                    tracing::warn!(
+                        "Auto backend: LSL unavailable ({e}), using BrainFlow synthetic only"
+                    );
+                    Ok(fallback)
                 }
             }
         }
@@ -219,16 +221,16 @@ fn create_brainflow_provider(_config: &DeviceConfig) -> Result<Box<dyn DevicePro
     .into())
 }
 
-/// A composite provider that delegates to LSL first, falling back to Mock
+/// A composite provider that delegates to LSL first, falling back to BrainFlow synthetic
 /// on each `discover()` / `connect()` call instead of choosing once at startup.
 struct AutoProvider {
     lsl: Box<dyn DeviceProvider>,
-    mock: Box<dyn DeviceProvider>,
+    fallback: Box<dyn DeviceProvider>,
 }
 
 impl AutoProvider {
-    fn new(lsl: Box<dyn DeviceProvider>, mock: Box<dyn DeviceProvider>) -> Self {
-        Self { lsl, mock }
+    fn new(lsl: Box<dyn DeviceProvider>, fallback: Box<dyn DeviceProvider>) -> Self {
+        Self { lsl, fallback }
     }
 }
 
@@ -252,12 +254,14 @@ impl DeviceProvider for AutoProvider {
                 Ok(devices)
             }
             Ok(_) => {
-                tracing::debug!("Auto: no LSL streams found, falling back to Mock");
-                self.mock.discover().await
+                tracing::debug!("Auto: no LSL streams found, falling back to BrainFlow synthetic");
+                self.fallback.discover().await
             }
             Err(e) => {
-                tracing::warn!("Auto: LSL discover failed ({e}), falling back to Mock");
-                self.mock.discover().await
+                tracing::warn!(
+                    "Auto: LSL discover failed ({e}), falling back to BrainFlow synthetic"
+                );
+                self.fallback.discover().await
             }
         }
     }
@@ -267,18 +271,14 @@ impl DeviceProvider for AutoProvider {
         device_id: &DeviceId,
         settings: Option<neurohid_types::device::ConnectionSettings>,
     ) -> Result<Box<dyn Device>> {
-        if device_id.0.starts_with("mock_") {
-            return self.mock.connect(device_id, settings).await;
-        }
-
         match self.lsl.connect(device_id, settings.clone()).await {
             Ok(device) => Ok(device),
             Err(e) => {
                 tracing::warn!(
-                    "Auto: LSL connect to '{}' failed ({e}), trying Mock",
+                    "Auto: LSL connect to '{}' failed ({e}), trying fallback (BrainFlow synthetic)",
                     device_id
                 );
-                self.mock.connect(device_id, settings).await
+                self.fallback.connect(device_id, settings).await
             }
         }
     }
