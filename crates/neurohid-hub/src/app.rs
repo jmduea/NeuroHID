@@ -1995,6 +1995,43 @@ impl eframe::App for HubApp {
                     ui.separator();
                 }
 
+                // Run / Visualization tabs: when on Dashboard or Visualization (Advanced mode),
+                // allow switching between Run and Visualization without leaving the content area.
+                if self.state.config.ui.mode == UiMode::Advanced
+                    && matches!(
+                        self.current_screen,
+                        Screen::Dashboard | Screen::Visualization
+                    )
+                {
+                    ui.horizontal(|ui| {
+                        let run_selected = self.current_screen == Screen::Dashboard;
+                        let viz_selected = self.current_screen == Screen::Visualization;
+                        if ui
+                            .selectable_label(run_selected, "Run")
+                            .clicked()
+                            && !run_selected
+                        {
+                            self.current_screen = Screen::Dashboard;
+                            self.workbench.sync_lane_from_screen(
+                                &self.state.config.ui.mode,
+                                self.current_screen,
+                            );
+                        }
+                        if ui
+                            .selectable_label(viz_selected, "Visualization")
+                            .clicked()
+                            && !viz_selected
+                        {
+                            self.current_screen = Screen::Visualization;
+                            self.workbench.sync_lane_from_screen(
+                                &self.state.config.ui.mode,
+                                self.current_screen,
+                            );
+                        }
+                    });
+                    ui.add_space(6.0);
+                }
+
                 match self.current_screen {
                     Screen::Dashboard => {
                         self.dashboard.show(
