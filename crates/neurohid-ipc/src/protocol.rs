@@ -1,14 +1,14 @@
 //! IPC transport configuration and v3 message contract exports.
 
-pub use neurohid_types::ipc::{
+pub use crate::types::{
     Ack, CandidateModelReady, DecisionEvent, ErrpResult, ErrpWindow, Hello, Ping, Pong,
     ProtocolError, RuntimeMlRole, RuntimeTelemetry, SessionBoundary, SessionBoundaryEvent,
     Shutdown, TrainerStatus,
 };
-pub use neurohid_types::ipc::{
+pub use crate::types::{
     ControlRpcRequest, ControlRpcResponse, ControlRpcResponsePayload, IPC_PROTOCOL_VERSION,
     IpcChannel, IpcEnvelope, RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe,
-    TrainerStreamKind, TrainerStreamPayload,
+    RuntimeMlKind, TrainerStreamKind, TrainerStreamPayload,
 };
 
 /// Default TCP port for loopback fallback mode.

@@ -7,6 +7,7 @@ pub mod broker;
 pub mod client;
 pub mod protocol;
 pub mod server;
+pub mod types;
 
 pub use broker::{BrokerCounters, BrokerError, IpcBroker, TrainerSessionGuard};
 pub use protocol::{

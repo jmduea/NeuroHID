@@ -381,14 +381,10 @@ pub enum ExtensionError {
 
 // Implement From for common std error types to make ? work smoothly
 
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Error::Storage(StorageError::ReadError {
-            path: "unknown".to_string(),
-            reason: err.to_string(),
-        })
-    }
-}
+// NOTE: The blanket From<std::io::Error> impl was intentionally removed.
+// It mapped ALL io errors to StorageError::ReadError { path: "unknown" },
+// which lost context and misclassified errors. Call sites should use
+// explicit .map_err() with contextual information instead.
 
 impl From<serde_json::Error> for Error {
     fn from(err: serde_json::Error) -> Self {

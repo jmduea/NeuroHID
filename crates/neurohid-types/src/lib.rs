@@ -25,10 +25,10 @@
 pub mod action;
 pub mod config;
 pub mod control;
+pub mod decoder_contract;
 pub mod device;
 pub mod error;
 pub mod event;
-pub mod ipc;
 pub mod learning;
 pub mod model;
 pub mod observability;
@@ -38,7 +38,6 @@ pub mod profile;
 pub mod recording;
 pub mod reward;
 pub mod signal;
-pub mod decoder_contract;
 pub mod signal_contract;
 
 // Re-export commonly used types at the crate root for convenience
@@ -47,21 +46,15 @@ pub use control::{
     ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
     RuntimeModeState, TrainerSnapshot,
 };
+pub use decoder_contract::{DecoderChannels, DecoderRunner};
 pub use device::{ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DiscoveredStream};
 pub use error::{Error, Result};
 pub use event::{MarkerPayload, MarkerType, StreamMarker};
-pub use ipc::{
-    Ack, CandidateModelReady, ControlRpcRequest, ControlRpcResponse, ControlRpcResponsePayload,
-    DecisionEvent, ErrpResult, ErrpWindow, Hello, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
-    Ping, Pong, ProtocolError, RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe,
-    RuntimeMlKind, RuntimeMlRole, RuntimeTelemetry, SessionBoundary, SessionBoundaryEvent,
-    Shutdown, TrainerStatus, TrainerStreamKind, TrainerStreamPayload,
-};
 pub use learning::{
     CandidateGuardrails, CandidateModelMetrics, TrainingEpisode, TrainingSessionLog,
 };
 pub use model::{ModelManifest, NormalizationStats};
-pub use observability::{EmitGate, EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig};
+pub use observability::{EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig};
 pub use observation::{CursorState, Observation};
 pub use outlet::{ExtensionKind, ExtensionManifest, Outlet, OutletChannels};
 pub use profile::{CalibrationState, ProfileId};
@@ -69,7 +62,6 @@ pub use recording::{RecordingAutoMode, RecordingConfig, SessionManifest};
 pub use reward::{ErrPResult, RewardSignal, SignalQuality};
 pub use signal::{ChannelConfig, ChannelId, FeatureVector, Sample};
 pub use signal_contract::{SignalChannels, SignalPreprocessor};
-pub use decoder_contract::{DecoderChannels, DecoderRunner};
 
 /// Microseconds since Unix epoch. We use i64 to allow for negative values
 /// (timestamps before epoch) even though we don't expect them in practice.

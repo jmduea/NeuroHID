@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
-use crate::{
+use neurohid_types::{
     Timestamp,
     action::Action,
     control::{
@@ -638,7 +638,7 @@ pub struct RuntimeComponentCapability {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::control::{
+    use neurohid_types::control::{
         ControlCommand, ControlRequest, ControlResponse, ControlSnapshot, RuntimeModeState,
     };
 
@@ -704,7 +704,7 @@ mod tests {
 
     #[test]
     fn decision_event_roundtrips_payload() {
-        let mut action = crate::Action::none();
+        let mut action = neurohid_types::Action::none();
         action.confidence = 0.9;
         action.decision_id = Some("dec_1".to_string());
         let payload = DecisionEvent {

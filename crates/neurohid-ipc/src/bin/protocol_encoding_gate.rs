@@ -4,10 +4,10 @@ use std::time::Instant;
 use anyhow::{Context, Result};
 use prost::Message;
 
-use neurohid_types::action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement};
-use neurohid_types::ipc::{
+use neurohid_ipc::types::{
     DecisionEvent, ErrpWindow, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope, TrainerStatus,
 };
+use neurohid_types::action::{Action, MouseAction, MouseButton, MouseButtonEvent, MouseMovement};
 use neurohid_types::now_micros;
 
 const WARMUP_ITERATIONS: usize = 1_500;
