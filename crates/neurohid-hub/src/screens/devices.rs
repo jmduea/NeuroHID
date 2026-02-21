@@ -301,6 +301,7 @@ impl DevicesScreen {
                     if theme::action_button(ui, "Disconnect All", true, theme::ButtonTone::Ghost) {
                         let ids: Vec<&str> = streams.iter().map(|s| s.id.as_str()).collect();
                         service_manager.disconnect_streams(&ids);
+                        ui.ctx().request_repaint();
                     }
                 } else {
                     if theme::action_button(ui, "Connect All", true, theme::ButtonTone::Primary) {
@@ -310,6 +311,7 @@ impl DevicesScreen {
                             .map(|s| s.id.as_str())
                             .collect();
                         service_manager.connect_streams(&ids);
+                        ui.ctx().request_repaint();
                     }
                     if any_connected
                         && theme::action_button(
@@ -325,6 +327,7 @@ impl DevicesScreen {
                             .map(|s| s.id.as_str())
                             .collect();
                         service_manager.disconnect_streams(&ids);
+                        ui.ctx().request_repaint();
                     }
                 }
             });
@@ -393,9 +396,11 @@ impl DevicesScreen {
             if stream.connected {
                 if theme::action_button(ui, "Disconnect", true, theme::ButtonTone::Ghost) {
                     service_manager.disconnect_stream(&stream.id);
+                    ui.ctx().request_repaint();
                 }
             } else if theme::action_button(ui, "Connect", true, theme::ButtonTone::Primary) {
                 service_manager.connect_stream(&stream.id);
+                ui.ctx().request_repaint();
             }
         });
 
@@ -477,9 +482,11 @@ impl DevicesScreen {
             if stream.connected {
                 if theme::action_button(ui, "Disconnect", true, theme::ButtonTone::Ghost) {
                     service_manager.disconnect_stream(&stream.id);
+                    ui.ctx().request_repaint();
                 }
             } else if theme::action_button(ui, "Connect", true, theme::ButtonTone::Primary) {
                 service_manager.connect_stream(&stream.id);
+                ui.ctx().request_repaint();
             }
 
             // Per-channel quality bars for connected streams

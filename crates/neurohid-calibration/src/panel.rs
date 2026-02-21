@@ -74,6 +74,8 @@ pub struct CalibrationPanel {
     decoder_training_started_at: Option<std::time::Instant>,
     /// When set, only this game is run (wizard then that game then complete).
     game_kind: Option<GameKind>,
+    /// User requested exit during game (checked at start of show(), then cleared).
+    cancel_requested: bool,
 }
 
 impl CalibrationPanel {
@@ -90,6 +92,7 @@ impl CalibrationPanel {
             tracking_quality: None,
             decoder_training_started_at: None,
             game_kind: None,
+            cancel_requested: false,
         }
     }
 
@@ -111,6 +114,11 @@ impl CalibrationPanel {
     /// Renders the calibration UI into the host egui context.
     /// Called each frame by the hub.
     pub fn show(&mut self, ctx: &egui::Context) -> CalibrationPanelResult {
+        if self.cancel_requested {
+            self.cancel_requested = false;
+            return CalibrationPanelResult::Cancelled;
+        }
+
         let mut result = CalibrationPanelResult::InProgress;
 
         match self.screen.clone() {
@@ -346,6 +354,8 @@ impl CalibrationPanel {
     }
 
     fn show_grid_maze(&mut self, ctx: &egui::Context) {
+        self.show_game_exit_button(ctx);
+
         let game_complete = if let Some(game) = &mut self.grid_maze {
             game.show(ctx)
         } else {
@@ -366,6 +376,8 @@ impl CalibrationPanel {
     }
 
     fn show_target_tracking(&mut self, ctx: &egui::Context) {
+        self.show_game_exit_button(ctx);
+
         let game_complete = if let Some(game) = &mut self.target_tracking {
             game.show(ctx)
         } else {
@@ -383,6 +395,19 @@ impl CalibrationPanel {
                 self.screen = Screen::Wizard;
             }
         }
+    }
+
+    /// Draws an "Exit calibration" button in a top bar when playing a game so the user can cancel mid-game.
+    fn show_game_exit_button(&mut self, ctx: &egui::Context) {
+        egui::TopBottomPanel::top("calibration_exit_bar").show(ctx, |ui| {
+            ui.horizontal(|ui| {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if action_button(ui, "Exit calibration", true, ButtonVariant::Secondary) {
+                        self.cancel_requested = true;
+                    }
+                });
+            });
+        });
     }
 
     fn show_complete(&mut self, ctx: &egui::Context) {

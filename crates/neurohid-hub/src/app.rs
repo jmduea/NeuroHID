@@ -1768,8 +1768,8 @@ fn render_sidebar_shell(
 fn render_platform_sidebar(
     ui: &mut egui::Ui,
     sidebar_state: &mut SidebarState,
-    screens: &[Screen],
-    current_screen: Screen,
+    _screens: &[Screen],
+    _current_screen: Screen,
     current_lane: ActivityLane,
     keyboard_focus_screen: Option<Screen>,
 ) -> SidebarResponse {
@@ -1787,29 +1787,21 @@ fn render_platform_sidebar(
                         hover_labels.push(None);
                     }
 
-                    // CONTEXT order: Devices, Calibration, Training, Visualization, Config
+                    // Single list: CONTEXT order (Devices, Calibration, Training, Visualization, Config).
+                    // Avoid duplicate egui widget IDs by not adding a second "Platform" section with the same labels.
                     for lane in ActivityLane::ALL {
-                        sidebar
-                            .item(lane.glyph(), lane.label())
-                            .active(current_lane == lane);
-                        hover_labels.push(Some(lane.label().to_string()));
-                    }
-
-                    if sidebar_open {
-                        sidebar.group_label("Platform");
-                        hover_labels.push(None);
-                    }
-
-                    for &screen in screens {
-                        let glyph = if keyboard_focus_screen == Some(screen) {
+                        let focus_in_this_lane = keyboard_focus_screen
+                            .map(|s| crate::workbench::lane_for_screen(s) == lane)
+                            .unwrap_or(false);
+                        let glyph = if focus_in_this_lane {
                             ">"
                         } else {
-                            screen_glyph(screen)
+                            lane.glyph()
                         };
                         sidebar
-                            .item(glyph, screen.label())
-                            .active(current_screen == screen);
-                        hover_labels.push(Some(screen.label().to_string()));
+                            .item(glyph, lane.label())
+                            .active(current_lane == lane);
+                        hover_labels.push(Some(lane.label().to_string()));
                     }
                 })
         })
@@ -2187,6 +2179,7 @@ impl eframe::App for HubApp {
     }
 }
 
+#[allow(dead_code)] // Used when Platform section is present; kept for command palette or future use.
 fn screen_glyph(screen: Screen) -> &'static str {
     match screen {
         Screen::Dashboard => "DB",
@@ -2686,8 +2679,8 @@ mod tests {
         );
 
         assert!(harness.query_all_by_label("NeuroHID").next().is_none());
-        assert!(harness.query_all_by_label("Platform").next().is_some());
-        assert!(harness.query_all_by_label("Dashboard").next().is_some());
+        assert!(harness.query_all_by_label("Lanes").next().is_some());
+        assert!(harness.query_all_by_label("Devices").next().is_some());
         assert!(harness.query_all_by_label("Runtime").next().is_none());
         assert!(
             harness
@@ -2743,9 +2736,9 @@ mod tests {
             },
         );
 
-        assert!(harness.query_all_by_label("Python Lab").next().is_some());
-        assert!(harness.query_all_by_label("Jupyter IDE").next().is_some());
-        assert!(harness.query_all_by_label("Dashboard").next().is_some());
+        // Sidebar shows lanes only (no duplicate Platform list); Config lane is present.
+        assert!(harness.query_all_by_label("Config").next().is_some());
+        assert!(harness.query_all_by_label("Lanes").next().is_some());
     }
 
     #[test]

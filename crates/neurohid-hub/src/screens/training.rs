@@ -18,6 +18,10 @@ const TRAINER_SNAPSHOT_POLL_INTERVAL: Duration = Duration::from_millis(1000);
 
 pub struct TrainingScreen {
     last_trainer_snapshot_poll: Option<Instant>,
+    /// Once true, we keep showing the metrics layout (avoid flicker back to "Waiting for...").
+    live_metrics_layout_shown: bool,
+    /// Cached trainer state from last successful poll so we don't flicker "checking…" every frame.
+    last_trainer_status: Option<(String, bool)>,
 }
 
 impl Default for TrainingScreen {
@@ -30,6 +34,8 @@ impl TrainingScreen {
     pub fn new() -> Self {
         Self {
             last_trainer_snapshot_poll: None,
+            live_metrics_layout_shown: false,
+            last_trainer_status: None,
         }
     }
 
@@ -53,6 +59,11 @@ impl TrainingScreen {
         self.show_config_pane(ui, state);
         ui.add_space(8.0);
         self.show_live_progress_pane(ui, state, snap, trainer_snapshot.as_ref());
+        // Reset sticky layout when service stops so next run shows "Waiting for..." again
+        if !snap.running {
+            self.live_metrics_layout_shown = false;
+            self.last_trainer_status = None;
+        }
     }
 
     fn show_config_pane(&mut self, ui: &mut egui::Ui, state: &HubState) {
@@ -161,7 +172,7 @@ impl TrainingScreen {
     }
 
     fn show_live_progress_pane(
-        &self,
+        &mut self,
         ui: &mut egui::Ui,
         state: &HubState,
         snap: &crate::state::ServiceSnapshot,
@@ -172,6 +183,7 @@ impl TrainingScreen {
             ui.add_space(6.0);
 
             if !snap.running {
+                self.live_metrics_layout_shown = false;
                 theme::status_chip(
                     ui,
                     "Start the service from Dashboard to see training progress",
@@ -180,23 +192,23 @@ impl TrainingScreen {
                 return;
             }
 
-            if let Some(trainer) = trainer_snapshot {
-                let intent = if trainer.trainer_connected {
-                    theme::Intent::Success
-                } else {
-                    theme::Intent::Warning
-                };
-                theme::status_chip(ui, &format!("Trainer: {}", trainer.trainer_state), intent);
-                ui.add_space(4.0);
-            }
-
             let has_metrics = snap.trainer_step.is_some()
                 || snap.trainer_policy_loss.is_some()
                 || snap.trainer_value_loss.is_some()
                 || snap.trainer_entropy.is_some()
                 || snap.trainer_replay_size.is_some();
 
-            if !has_metrics && trainer_snapshot.is_none() {
+            if has_metrics || trainer_snapshot.is_some() {
+                self.live_metrics_layout_shown = true;
+            }
+
+            // Use sticky layout once we've ever seen data to avoid flicker between
+            // "Waiting for trainer connection" and metrics when poll/state alternate.
+            let show_waiting_only = !self.live_metrics_layout_shown
+                && !has_metrics
+                && trainer_snapshot.is_none();
+
+            if show_waiting_only {
                 theme::status_chip(
                     ui,
                     "Waiting for trainer connection and metrics…",
@@ -205,35 +217,71 @@ impl TrainingScreen {
                 return;
             }
 
-            ui.horizontal_wrapped(|ui| {
-                if let Some(v) = snap.trainer_replay_size {
-                    ui.label("Replay size:");
-                    ui.monospace(format!("{}", v));
-                    ui.add_space(8.0);
-                }
-                if let Some(v) = snap.trainer_step {
-                    ui.label("Step:");
-                    ui.monospace(format!("{}", v));
-                    ui.add_space(8.0);
-                }
-            });
+            // Status line: use current trainer_snapshot when available, else cached last status (avoids flicker every poll interval)
+            if let Some(trainer) = trainer_snapshot {
+                self.last_trainer_status = Some((trainer.trainer_state.clone(), trainer.trainer_connected));
+            }
+            if let Some((ref state, connected)) = self.last_trainer_status {
+                let intent = if connected {
+                    theme::Intent::Success
+                } else {
+                    theme::Intent::Warning
+                };
+                theme::status_chip(ui, &format!("Trainer: {}", state), intent);
+            }
+            ui.add_space(6.0);
 
-            ui.horizontal_wrapped(|ui| {
-                if let Some(v) = snap.trainer_policy_loss {
-                    ui.label("Policy loss:");
-                    ui.monospace(format!("{:.4}", v));
-                    ui.add_space(8.0);
-                }
-                if let Some(v) = snap.trainer_value_loss {
-                    ui.label("Value loss:");
-                    ui.monospace(format!("{:.4}", v));
-                    ui.add_space(8.0);
-                }
-                if let Some(v) = snap.trainer_entropy {
-                    ui.label("Entropy:");
-                    ui.monospace(format!("{:.4}", v));
-                }
-            });
+            // Metrics: one row for step/replay, one for losses; if no metrics at all show single placeholder
+            let has_step_or_replay = snap.trainer_replay_size.is_some() || snap.trainer_step.is_some();
+            let has_losses = snap.trainer_policy_loss.is_some()
+                || snap.trainer_value_loss.is_some()
+                || snap.trainer_entropy.is_some();
+
+            if !has_step_or_replay && !has_losses {
+                ui.label(
+                    egui::RichText::new("No metrics yet").small().color(egui::Color32::GRAY),
+                );
+            } else {
+                ui.horizontal_wrapped(|ui| {
+                    if let Some(v) = snap.trainer_replay_size {
+                        ui.label(
+                            egui::RichText::new("Replay size:").small().color(egui::Color32::GRAY),
+                        );
+                        ui.monospace(format!("{}", v));
+                        ui.add_space(12.0);
+                    }
+                    if let Some(v) = snap.trainer_step {
+                        ui.label(
+                            egui::RichText::new("Step:").small().color(egui::Color32::GRAY),
+                        );
+                        ui.monospace(format!("{}", v));
+                        ui.add_space(12.0);
+                    }
+                });
+
+                ui.horizontal_wrapped(|ui| {
+                    if let Some(v) = snap.trainer_policy_loss {
+                        ui.label(
+                            egui::RichText::new("Policy loss:").small().color(egui::Color32::GRAY),
+                        );
+                        ui.monospace(format!("{:.4}", v));
+                        ui.add_space(12.0);
+                    }
+                    if let Some(v) = snap.trainer_value_loss {
+                        ui.label(
+                            egui::RichText::new("Value loss:").small().color(egui::Color32::GRAY),
+                        );
+                        ui.monospace(format!("{:.4}", v));
+                        ui.add_space(12.0);
+                    }
+                    if let Some(v) = snap.trainer_entropy {
+                        ui.label(
+                            egui::RichText::new("Entropy:").small().color(egui::Color32::GRAY),
+                        );
+                        ui.monospace(format!("{:.4}", v));
+                    }
+                });
+            }
 
             if let Some(err) = &snap.trainer_last_error {
                 ui.add_space(6.0);
