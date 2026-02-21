@@ -12,7 +12,7 @@ Requirements for milestone v1.1 (Testing, BrainFlow & Framework Separation). Eac
 - [x] **TEST-01**: Developer gets deterministic test runs (no flakiness from async/concurrency or shared state) via test policy and tooling (e.g. nextest, condition-based waits, isolation)
 - [x] **TEST-02**: Developer has integration tests at key boundaries (IPC Rust↔Python, device→signal→decoder→action pipeline, config load/save) so interface mismatches are caught in CI
 - [x] **TEST-03**: CI gates reflect reality (coverage and flakiness addressed) so passing CI means safe-to-merge for the scope exercised
-- [ ] **TEST-04**: Developer has at least one valuable E2E path (e.g. Hub discover→connect→stream or runtime profile→decoder→action) exercised in tests
+- [x] **TEST-04**: Developer has at least one valuable E2E path (e.g. Hub discover→connect→stream or runtime profile→decoder→action) exercised in tests
 - [x] **TEST-05**: Test tiers and isolation policy are documented so contributors know what is unit vs integration vs E2E and how to avoid flakiness
 
 ### Framework–Hub separation
@@ -73,7 +73,7 @@ Which phases cover which requirements. Updated during roadmap creation.
 | TEST-01 | Phase 8 | Complete |
 | TEST-02 | Phase 8 | Complete |
 | TEST-03 | Phase 8 | Complete |
-| TEST-04 | Phase 8 | Pending |
+| TEST-04 | Phase 8 | Complete |
 | TEST-05 | Phase 8 | Complete |
 | FRAME-01 | Phase 7 | Complete |
 | FRAME-02 | Phase 7 | Complete |

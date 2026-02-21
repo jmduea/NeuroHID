@@ -31,6 +31,7 @@ Progress: [██████████░░░░░░░░░░] 50% (2 
 | Phase 08-thorough-testing P05 | 5 | 2 tasks | 2 files |
 | Phase 08-thorough-testing P01 | 15 | 2 tasks | 2 files |
 | Phase 08-thorough-testing P02 | 15 | 2 tasks | 2 files |
+| Phase 08-thorough-testing P04 | 15 | 2 tasks | 2 files |
 
 ## Accumulated Context
 
@@ -46,6 +47,7 @@ Decisions are logged in PROJECT.md Key Decisions table. Recent: framework vs Hub
 - [Phase 08-thorough-testing]: Use cargo-nextest@0.9 in CI via taiki-e/install-action; rust-coverage job unchanged
 - [Phase 08-thorough-testing]: nextest.toml at repo root with retries (fixed, 2) and slow-timeout (60s, terminate-after 3)
 - [Phase 08-thorough-testing]: Pipeline integration test in neurohid-core; IPC and config boundaries covered by existing CI jobs
+- [Phase 08-thorough-testing]: E2E service+client runs in CI on Linux only; test skipped on Windows
 
 ### Pending Todos
 
