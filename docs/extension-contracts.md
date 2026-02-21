@@ -74,6 +74,28 @@ After a successful `scan()`, the registry exposes:
 
 Each returns a list of entries (name + path to the extension directory) for use by Hub/CLI and by factories that resolve a selected name to an implementation (loading is a separate step; see plan 02).
 
+### CLI
+
+From the terminal you can list or refresh discovered extensions without starting the Hub:
+
+- **`neurohid extensions list`** — Scan the discovery path and print all extensions (kind, name, path). Exit 0 on success; non-zero if discovery fails (e.g. duplicate extension names).
+- **`neurohid extensions refresh`** — Same as `list`: run discovery and print the current set. Use after adding or removing extensions so the Hub or headless runtime can see them on next start (or use the Hub’s Extensions screen Rescan for in-session refresh).
+
+Example output (tab-separated: kind, name, path):
+
+```
+outlet	my-custom-outlet	/home/user/.config/neurohid/extensions/my-custom-outlet
+```
+
+## Adding an extension
+
+1. **Discovery path:** Install your extension under the default path `<config_root>/extensions` (see [Where the runtime looks](#where-the-runtime-looks)), or configure a custom path when building the registry.
+2. **Contract:** Implement the trait for your slot (e.g. `Outlet` in `neurohid-types`, `DeviceProvider` in `neurohid-device`, or the signal/decoder contracts). See [Pipeline slots and contracts](#pipeline-slots-and-contracts).
+3. **Manifest:** Add `manifest.json` (or `neurohid.manifest.json`) in the extension directory with `name` and `kind`. See [Extension manifest](#extension-manifest).
+4. **Example:** The workspace example outlet `crates/neurohid-outlet-example` and the [Loading extensions](#loading-extensions) section show how to build a cdylib and wire it for discovery.
+
+After adding an extension, run `neurohid extensions list` (or use Hub → Extensions → Rescan) to confirm it is discovered; then select it in Hub Settings for the relevant slot (device backend, signal pipeline, decoder, or outlet).
+
 ## Loading extensions
 
 Outlet extensions are loaded by `neurohid-core` via `ExtensionRegistry::load_outlet`. The runtime expects a cdylib that exports the symbol `neurohid_outlet_create` with signature `(OutletConfig, OutletChannels) -> Result<Box<dyn Outlet>>`. In-process plugins must be built with the same Rust toolchain as the host (ABI). See `crates/neurohid-core/src/extension_registry.rs` for the loader.

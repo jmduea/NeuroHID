@@ -50,10 +50,56 @@ fn init_hub_logger() -> anyhow::Result<()> {
 
 const CLI_SUBCOMMANDS: &[&str] = &["device", "config", "pipeline", "control", "daemon", "record"];
 
+/// Handle `neurohid extensions list` and `neurohid extensions refresh`. Uses the same
+/// discovery/registry as core; exits 0 with list or non-zero on discovery failure.
+fn run_extensions_cli(args: &[String]) -> bool {
+    if args.is_empty() {
+        return false;
+    }
+    let sub = args[0].as_str();
+    if sub != "list" && sub != "refresh" {
+        return false;
+    }
+    let mut registry =
+        neurohid_core::extension_registry::ExtensionRegistry::new(
+            neurohid_core::extension_registry::default_extension_paths(),
+        );
+    if let Err(e) = registry.scan() {
+        eprintln!("neurohid extensions: discovery failed: {}", e);
+        std::process::exit(1);
+    }
+    let outlets = registry.list_outlets();
+    let devices = registry.list_devices();
+    let signal = registry.list_signal_preprocessors();
+    let decoders = registry.list_decoders();
+    for e in &outlets {
+        println!("outlet\t{}\t{}", e.name, e.path.display());
+    }
+    for e in &devices {
+        println!("device\t{}\t{}", e.name, e.path.display());
+    }
+    for e in &signal {
+        println!("signal_preprocessing\t{}\t{}", e.name, e.path.display());
+    }
+    for e in &decoders {
+        println!("decoder\t{}\t{}", e.name, e.path.display());
+    }
+    true
+}
+
 /// If argv suggests a CLI subcommand (device list, control snapshot, etc.), run neurohid-service
 /// with the same args and exit with its code. No GUI or heavy init. Returns only when not dispatching.
 fn maybe_dispatch_to_service() {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() >= 2 && args[1].as_str() == "extensions" {
+        if run_extensions_cli(args.get(2..).unwrap_or_default()) {
+            std::process::exit(0);
+        }
+        if args.len() == 2 {
+            eprintln!("neurohid extensions: use 'list' or 'refresh'");
+            std::process::exit(1);
+        }
+    }
     if args.len() < 2 {
         return;
     }
