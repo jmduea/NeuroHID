@@ -69,7 +69,12 @@ Plans:
   3. User can discover and connect BrainFlow devices from the Hub Devices screen with UX parity to LSL and other backends (discover, connect, disconnect).
   4. BrainFlow remains one backend behind the existing DeviceProvider/Device abstraction; device-agnostic API is preserved.
   5. BrainFlow's synthetic board fully replaces the in-repo mock device: tests, examples, and CI use the synthetic board as the single non-hardware device path (no separate mock backend).
-**Plans**: TBD
+**Plans:** 3 plans
+
+Plans:
+- [ ] 09-01-PLAN.md — Enable BrainFlow in default build; first-class docs (BRAIN-01, BRAIN-04)
+- [ ] 09-02-PLAN.md — Runnable example + Hub Devices/Settings copy for BrainFlow parity (BRAIN-02, BRAIN-03)
+- [ ] 09-03-PLAN.md — Auto fallback and tests/CI use BrainFlow synthetic; synthetic replaces mock (BRAIN-05)
 
 ### Phase 10: BrainFlow Deeper
 **Goal**: Developer can build and use the real BrainFlow SDK and streaming path; builds are reproducible.
