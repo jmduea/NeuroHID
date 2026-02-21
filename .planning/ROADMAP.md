@@ -21,7 +21,7 @@ Phases 1–6 completed; see [milestones/v1.0-ROADMAP.md](milestones/v1.0-ROADMAP
 - [x] **Phase 7: Framework–Hub Separation** — Structural boundary and docs; framework surface documented; Hub depends only on core/facade; CI or audit enforces boundary (completed 2026-02-21)
 - [x] **Phase 8: Thorough Testing** — Deterministic tests, integration at boundaries, CI gates that reflect reality, one valuable E2E path, test tiers documented (completed 2026-02-21)
 - [x] **Phase 9: BrainFlow First-Class** — Docs, runnable examples (synthetic board), Hub discover/connect UX; synthetic board replaces in-repo mock everywhere (completed 2026-02-21)
-- [ ] **Phase 10: BrainFlow Deeper** — Real SDK behind feature flag, streaming path into pipeline, pinned version and build steps
+- [x] **Phase 10: BrainFlow Deeper** — Real SDK behind feature flag, streaming path into pipeline, pinned version and build steps (completed 2026-02-21)
 
 ## Phase Details
 
@@ -84,7 +84,7 @@ Plans:
   1. Developer can build and use the real BrainFlow SDK in neurohid-device behind a feature flag (e.g. brainflow-native); default and CI use synthetic board only (no mock).
   2. User or developer can use the BrainFlow streaming path into the same signal pipeline as LSL and other backends (synthetic or real board → Device → pipeline).
   3. BrainFlow version and build steps (C++ core then Rust) are pinned and documented so builds are reproducible.
-**Plans:** 1/2 plans executed
+**Plans:** 2/2 plans complete
 
 Plans:
 - [ ] 10-01-PLAN.md — Pin BrainFlow version and document build order; optional script (BRAIN-08)
@@ -99,7 +99,7 @@ Plans:
 | 7. Framework–Hub Separation | 2/2 | Complete    | 2026-02-21 | - |
 | 8. Thorough Testing | 5/5 | Complete    | 2026-02-21 | - |
 | 9. BrainFlow First-Class | 3/3 | Complete    | 2026-02-21 | - |
-| 10. BrainFlow Deeper | 1/2 | In Progress|  | - |
+| 10. BrainFlow Deeper | 2/2 | Complete   | 2026-02-21 | - |
 
 ---
 _Last updated: 2026-02-21 — v1.1 roadmap created_
