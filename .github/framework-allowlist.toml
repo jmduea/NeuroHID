@@ -1,0 +1,26 @@
+# Canonical allowlist for framework boundary enforcement.
+# CI scripts (e.g. check-hub-deps) must use this file as the single source of truth.
+# See docs/framework-surface.md for the embedder-oriented description.
+
+[hub]
+# neurohid-hub may list only these workspace crates as path dependencies.
+# No other workspace path deps allowed; no permanent exceptions.
+allowed = [
+  "neurohid-types",
+  "neurohid-core",
+  "neurohid-calibration",
+  "neurohid-storage",
+  "neurohid-ipc",
+]
+
+[binaries]
+# neurohid (binaries crate) may depend on hub allowlist crates plus neurohid-hub.
+# No direct deps on neurohid-device, neurohid-signal, neurohid-platform.
+allowed = [
+  "neurohid-types",
+  "neurohid-core",
+  "neurohid-calibration",
+  "neurohid-storage",
+  "neurohid-ipc",
+  "neurohid-hub",
+]
