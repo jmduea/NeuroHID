@@ -794,24 +794,27 @@ impl SettingsScreen {
                     let cfg = &mut state.config.service;
 
                     ui.horizontal(|ui| {
-                        ui.label("Runtime mode:");
+                        ui.label("Run:");
                         let current_mode = cfg.runtime_mode.clone();
-                        let options = ["Embedded", "External"];
-                        let mut selected = match cfg.runtime_mode {
-                            neurohid_types::config::ServiceRuntimeMode::Embedded => 0,
-                            neurohid_types::config::ServiceRuntimeMode::External => 1,
-                        };
+                        let options: Vec<_> = neurohid_types::config::ServiceRuntimeMode::ALL
+                            .iter()
+                            .map(|m| m.ui_label().to_string())
+                            .collect();
+                        let options_ref: Vec<&str> = options.iter().map(String::as_str).collect();
+                        let mut selected = neurohid_types::config::ServiceRuntimeMode::ALL
+                            .iter()
+                            .position(|m| std::mem::discriminant(m) == std::mem::discriminant(&cfg.runtime_mode))
+                            .unwrap_or(0);
                         if theme::select_index(
                             ui,
                             "settings_service_runtime_mode",
                             &mut selected,
-                            &options,
-                            180.0,
+                            &options_ref,
+                            200.0,
                         ) {
-                            cfg.runtime_mode = if selected == 0 {
-                                neurohid_types::config::ServiceRuntimeMode::Embedded
-                            } else {
-                                neurohid_types::config::ServiceRuntimeMode::External
+                            cfg.runtime_mode = match selected {
+                                0 => neurohid_types::config::ServiceRuntimeMode::Embedded,
+                                _ => neurohid_types::config::ServiceRuntimeMode::External,
                             };
                         }
                         if cfg.runtime_mode != current_mode {
@@ -834,13 +837,13 @@ impl SettingsScreen {
                         });
                         theme::status_chip(
                             ui,
-                            "External mode requires neurohid-service running separately",
+                            "Run in background requires neurohid-service running separately",
                             theme::Intent::Warning,
                         );
                     } else {
                         theme::status_chip(
                             ui,
-                            "Embedded mode runs runtime inside hub process",
+                            "Run in Hub runs the runtime inside this window",
                             theme::Intent::Muted,
                         );
                     }

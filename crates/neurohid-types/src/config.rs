@@ -706,6 +706,14 @@ impl ServiceRuntimeMode {
     /// All runtime mode variants in display order.
     pub const ALL: &'static [ServiceRuntimeMode] =
         &[ServiceRuntimeMode::Embedded, ServiceRuntimeMode::External];
+
+    /// User-facing label for UI: "Run in Hub" vs "Run in background".
+    pub fn ui_label(&self) -> &'static str {
+        match self {
+            ServiceRuntimeMode::Embedded => "Run in Hub",
+            ServiceRuntimeMode::External => "Run in background",
+        }
+    }
 }
 
 impl std::fmt::Display for ServiceRuntimeMode {
@@ -716,6 +724,7 @@ impl std::fmt::Display for ServiceRuntimeMode {
         }
     }
 }
+
 
 /// Unified IPC exposure mode for service control/events endpoints.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]

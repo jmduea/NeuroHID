@@ -278,9 +278,9 @@ impl DashboardScreen {
             } else {
                 let start_label =
                     if state.config.service.runtime_mode == ServiceRuntimeMode::External {
-                        "Probe External Service"
+                        "Connect to background service"
                     } else {
-                        "Start Service"
+                        "Start (Run in Hub)"
                     };
                 let start_clicked =
                     theme::action_button(ui, start_label, true, theme::ButtonTone::Primary);
@@ -295,7 +295,7 @@ impl DashboardScreen {
                 if state.config.service.runtime_mode == ServiceRuntimeMode::External {
                     theme::status_chip(
                         ui,
-                        "External mode requires running neurohid-service",
+                        "Run in background: start neurohid-service separately",
                         theme::Intent::Warning,
                     );
                 }
@@ -348,7 +348,7 @@ impl DashboardScreen {
                 ui.horizontal_wrapped(|ui| {
                     theme::status_chip(
                         ui,
-                        &format!("Runtime {}", state.config.service.runtime_mode),
+                        state.config.service.runtime_mode.ui_label(),
                         if snap.running {
                             theme::Intent::Info
                         } else {
