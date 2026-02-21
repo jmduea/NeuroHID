@@ -1,164 +1,157 @@
 # Project Research Summary
 
-**Project:** NeuroHID
-**Domain:** Biosignal/EEG developer tooling (BCI toolkits, SDKs, IDEs, runtimes)
-**Researched:** 2026-02-20
-**Confidence:** MEDIUM
+**Project:** NeuroHID v1.1 — Testing, BrainFlow & Framework Separation  
+**Domain:** Rust/Python biosignals (EEG) stack — BCI tooling with device pipeline, ML bridge, and IDE-like Hub  
+**Researched:** 2026-02-21  
+**Confidence:** HIGH (architecture, testing patterns); MEDIUM (BrainFlow Rust path, feature prioritization)
 
 ## Executive Summary
 
-NeuroHID is biosignal/EEG developer tooling: a hybrid Rust/Python stack that turns EEG (and related biosignals) into a coherent path from device → decoder → action (e.g. HID). Experts build this as a **linear pipeline** (acquisition → preprocessing → decoding → output) with optional **streaming middleware (LSL)** and an **IDE-like Hub** for setup, calibration, and training, plus a **standalone headless runtime** for “run in background.” The recommended approach is: keep the existing Rust runtime (device/signal/decoder/action tasks) and Python ML bridge; adopt MNE-Python, LSL, BrainFlow, and ONNX/tract-onnx as the standard stack; deliver Hub-as-IDE, standalone runtime, composable SDK/CLI/formats, and a documented “standard path” as v1; design device and output as **traits from the start** to avoid enum-based extensibility debt. Key risks: LSL “latest sample” and clock semantics, Hub–runtime coupling, format/schema evolution without versioning, and latency measured only as mean. Mitigate by centralizing stream consumption (drain-then-last), strict headless vs Hub boundary, versioned persisted formats, and percentile latency validation (p95/p99).
+NeuroHID v1.1 is a confidence and clarity milestone: thorough testing, first-class BrainFlow integration (docs/examples and Hub UX, then deeper SDK/streaming), and a clear in-repo boundary between the reusable framework (what embedders depend on) and the Hub application. Experts build this by keeping the device pipeline behind stable traits, testing at boundaries (unit → integration → minimal E2E), and treating BrainFlow as one backend behind the existing DeviceProvider/Device abstraction—not a separate product surface.
+
+The recommended approach is to do **framework–Hub separation first** (docs + dependency audit, no new crates), then **thorough testing** (nextest, flakiness reduction, integration tests at IPC and pipeline boundaries), then **BrainFlow** in two waves: first-class docs/examples and Hub discovery/connection UX, then deeper native SDK and streaming behind a feature flag with simulation retained for CI. Key risks are test flakiness from async/concurrency and from Python non-determinism, BrainFlow simulation-vs-native confusion and build/API mismatches when adding the real SDK, and framework separation breaking Hub if dependency or facade changes are done piecemeal. Mitigations: explicit wait oracles and resource isolation in tests; clear labeling of simulation vs native and a pinned BrainFlow build path; a single coherent refactor for the framework boundary with a CI check that Hub depends only on core (and calibration).
 
 ## Key Findings
 
 ### Recommended Stack
 
-Stack research (see [STACK.md](.planning/research/STACK.md)) recommends a Python-side ML/analysis stack (MNE-Python 1.11+, pylsl 1.18+, BrainFlow 5.20+, PyTorch, ONNX/onnxruntime, pyxdf) and a Rust runtime path (tract-onnx, workspace-patched lsl-sys). Use **uv** for Python; Python ≥3.10; numpy &lt;3 where pylsl is used. EDF/BDF/XDF and ONNX are the interchange formats. Do not use bare `python`, Conda, legacy LSL forks, Python &lt;3.10, or a custom streaming protocol.
+Stack research (STACK.md) adds only a few elements for v1.1; the existing Rust 2024/1.85+, Python 3.12+, uv, neurohid-* crates, eframe/egui, tract-onnx, and IPC stack is unchanged.
 
-**Core technologies:**
-- **MNE-Python** — EEG/MEG/biosignal analysis, preprocessing, I/O — de facto standard; EDF/BDF/XDF support.
-- **LSL (pylsl / liblsl)** — Real-time streaming and sync — standard in BCI/research; use for multi-device and recording (XDF).
-- **BrainFlow** — Device SDK — uniform API across languages; use when adding devices beyond LSL-only.
-- **ONNX + onnxruntime (Python) / tract-onnx (Rust)** — Model export and inference — interop between Python training and Rust deployment; single artifact, no Python in deployed runtime.
-- **pyxdf** — XDF read/write — offline analysis of LSL recordings.
+**Core additions:**
+- **cargo-nextest** (0.9.x) — Rust test runner; faster parallel runs, built-in retries for flaky tests, JUnit XML and timeout controls; works with existing cargo-llvm-cov. Add as dev/CI tool with optional `nextest.toml`.
+- **pytest-rerunfailures** (≥14.0) — Python flaky retries; use sparingly; avoid mixing with pytest-xdist for flaky suites. Optional/dev dep in `python/pyproject.toml`.
+- **BrainFlow (Rust)** — No crates.io crate; use **git dependency** on `brainflow-dev/brainflow` (rust_package/brainflow) under a new feature (e.g. `brainflow-native`) in neurohid-device. Build requires BrainFlow C/C++ core first (e.g. `tools/build.py`), then Rust; document build order and env (e.g. BRAINFLOW_DIR). Keep mock/simulation path for default and CI.
+- **Framework boundary** — No new frameworks or crates; layout and documentation only. Optionally document in `docs/crate-boundaries.md` (or `docs/framework-surface.md`) and consider a facade crate only if a single “framework” dependency name is needed later.
+
+**What not to add:** Separate E2E framework (e.g. Playwright for Hub) for v1.1; cargo-tarpaulin (keep cargo-llvm-cov); third-party brainflow crate from crates.io; moving crates to another repo in v1.1.
 
 ### Expected Features
 
-From [FEATURES.md](.planning/research/FEATURES.md): table stakes include device discovery/connection, real-time streaming, device-agnostic API, signal processing pipeline, recording/export, real-time visualization, calibration/setup wizard, documentation/examples, and CLI/scriptable entrypoints. Differentiators: Hub-as-IDE (observability + training), standalone runtime (decoder-in-loop), single coherent path device→decoder→action, composable SDK+CLI+formats, extensibility (plug-in devices/outputs), local-first, integrated Python/notebook + Rust runtime, HID output out of the box. Anti-features: mandatory cloud, single-device lock-in, no CLI, opaque formats, GUI-only critical ops, over-promising hard real-time, monolithic non-composable app, requiring code for basic device check.
+From FEATURES.md: v1.1 scope is three areas—thorough testing, native BrainFlow (first wave then deeper), and framework–Hub separation.
 
-**Must have (table stakes):** Device discovery/connection, real-time streaming, device-agnostic API, signal pipeline, recording/export, real-time visualization, calibration wizard, docs/examples, CLI/scriptable — all expected by developers.
+**Must have (table stakes):**
+- Unit tests for new/changed code; deterministic tests (no flakiness); integration tests at boundaries (IPC, pipeline); CI gates that reflect reality.
+- First-class BrainFlow docs and runnable examples (synthetic board); Hub discovery/connection UX for BrainFlow; device-agnostic API preserved (BrainFlow as one backend).
+- Clear “what devs depend on” (framework surface); Hub as one application; documented boundary; no reverse coupling (components do not depend on Hub/GUI).
 
-**Should have (competitive):** Hub-as-IDE, standalone runtime, coherent standard path, composable SDK/CLI/formats, calibration first-class, local-first; extensibility (devices/outputs) as P2.
+**Should have (competitive):**
+- E2E only where valuable (e.g. one critical path); stable validation harness in CI (Soak/LatencyMatrix/BootMatrix) — deferred per PROJECT.md but aligned with testing.
+- Board-specific config in Hub; unified streaming path BrainFlow → pipeline; synthetic/dummy board in CI.
+- Framework as distinct crate set or layout; stable SDK feature matrix; single binary (neurohid, neurohid-service, neurohid-validate) still works.
 
-**Defer (v2+):** Optional cloud, mobile/embedded targets, general end-consumer product.
-
-MVP v1 checklist: device/streaming/signal/decoder/HID already validated; still to complete Hub-as-IDE, standalone runtime experience, coherent standard path, composable building blocks, calibration as first-class.
+**Defer (v2+):**
+- Full framework repo split; validation harness in CI as a formal requirement; BrainFlow-only Hub (keep multi-backend).
 
 ### Architecture Approach
 
-From [ARCHITECTURE.md](.planning/research/ARCHITECTURE.md): standard layout is a **linear pipeline** (acquisition → preprocessing → decoding → output) with optional LSL between stages, plus **control/config** (IPC, storage) and an **IDE/Hub** and **standalone runtime** that share the **same runtime core**. Data flow is unidirectional (samples → features/epochs → decisions → actions); control is bidirectional (Hub/CLI ↔ runtime via IPC). Key patterns: device-agnostic acquisition API (trait), task-based runtime with channel boundaries, LSL as optional streaming boundary, same runtime core for Hub and standalone, IPC for control and ML bridge. Anti-patterns: pipeline coupled to UI, no device abstraction, decoder/output tied to one effector, global mutable config.
+From ARCHITECTURE.md: existing layers (types → components → core → hub | sdk | binary) and data flow (DeviceTask → SignalTask → DecoderTask → ActionTask → OutletTask; Hub/CLI via RuntimeHandle and core facade; Python over IPC) are unchanged. v1.1 integrates by adding tests, extending neurohid-device BrainFlow path, and documenting/enforcing the framework–Hub boundary.
 
-**Major components:**
-1. **Acquisition** — Discover/connect devices; produce raw/time-aligned samples (or LSL inlets); abstract via single API.
-2. **Preprocessing** — Filter, re-reference, features; real-time or batch; feeds decoding.
-3. **Decoding / inference** — Load/run models (ONNX etc.); map features to decisions.
-4. **Output / action** — Map decisions to HID/game/MIDI/custom.
-5. **Control & config** — Profiles, calibration, model paths; IPC/RPC; persisted storage.
-6. **Hub (IDE)** — Device setup, calibration, training, visualization, Jupyter; talks to runtime via control IPC.
-7. **Standalone runtime** — Headless process, same pipeline; controlled via same IPC/CLI.
-
-Suggested build order: types/config → acquisition → preprocessing → decoding → output → core runtime → control & IPC → storage → standalone binary → SDK/CLI/formats → Hub → extensibility.
+**Major components (v1.1-relevant):**
+1. **neurohid-core** — Integration tests (e.g. IPC, extension outlet E2E); ownership for runtime/service integration tests; no new crates.
+2. **neurohid-device** — BrainFlow: keep simulation adapter; add native SDK path behind same Device/DeviceProvider traits under feature `brainflow-native`; all BrainFlow logic stays here.
+3. **neurohid-hub** — BrainFlow discovery/connection UX in Devices screen; optional Hub-specific integration tests; depends only on core (facade), not device/signal directly.
+4. **neurohid-sdk** — Documented as framework entrypoint; re-exports and feature set define the embedder surface.
+5. **Docs** — New or updated: framework vs Hub boundary, BrainFlow setup and Hub UX, build order for native BrainFlow.
 
 ### Critical Pitfalls
 
-From [PITFALLS.md](.planning/research/PITFALLS.md), top pitfalls and how to avoid:
+From PITFALLS.md — top five with prevention:
 
-1. **LSL “latest sample” = one pull** — Use drain-then-last (or short buffer); centralize consumption; document and test “most recent sample” semantics.
-2. **LSL clock vs wall clock** — Use LSL time for relative/sync only; document and centralize any wall-clock conversion; label in UI/logs.
-3. **Hub and runtime sharing GUI-dependent paths** — Strict boundary: runtime has own entrypoint and zero Hub/GUI deps; same contract tests for Hub-driven and service-only.
-4. **Extensibility via “one more enum”** — Model device and output as traits from the start; document extension contract; blessed backends in-tree, third party via trait.
-5. **Format/schema evolution without version** — Every persisted format has version + compatibility policy; additive evolution where possible.
-6. **Latency as “average” only** — Measure and gate on p50/p95/p99 and jitter; bounded buffers; define behavior when pipeline can’t keep up.
-7. **Calibration/session state not tied to identity** — Bind artifacts to profile/session/device; store metadata for reproducibility; validate on load.
-8. **IPC (Rust–Python) as “same process”** — Timeouts, backpressure, version handshake; small control messages; handle “Python unavailable.”
+1. **Rust test flakiness (async/concurrency)** — Use explicit wait oracles (poll until condition, bounded timeout); isolate resources (unique temp dirs, ephemeral ports); prefer unit tests with mocks; reserve E2E for few, well-scoped flows. Phase: thorough testing; checklist for new integration tests.
+
+2. **Python test flakiness (non-determinism/shared state)** — Fix random seeds (and PYTHONHASHSEED) in ML/training tests; per-test or per-suite IPC/env isolation; avoid shared long-lived IPC connection. Phase: thorough testing; document isolation policy; seeded trainer determinism check.
+
+3. **BrainFlow simulation vs real SDK confusion** — Label clearly “BrainFlow simulation” vs “BrainFlow native” in code and docs; keep simulation default for no-SDK builds and CI; base native on official lifecycle (prepare_session → start_stream → get_board_data → stop_stream). Phase: first-class then deeper BrainFlow.
+
+4. **BrainFlow API/build mismatches** — Pin and document BrainFlow version; document build steps (C++ core then Rust); map row layout explicitly to NeuroHID Sample; use synthetic/playback board in CI. Phase: deeper BrainFlow integration.
+
+5. **Framework–Hub separation breaking Hub or runtime** — Define framework surface in one place (core + SDK re-exports); Hub depends only on that (and calibration); do dependency and facade changes in one coherent change set; add CI boundary check (Hub Cargo.toml no disallowed deps). Phase: framework vs Hub separation.
+
+Additional high-impact: **E2E/integration tests assuming process/port layout** — Prefer in-process integration; unique temp dirs and ephemeral ports; “runtime ready” contract and wait for it instead of sleep. **IPC contract drift** — Versioned contract; update protocol doc and both Rust and Python when changing messages; run IPC compat matrix on protocol-touching changes.
 
 ## Implications for Roadmap
 
 Based on research, suggested phase structure:
 
-### Phase 1: Types, config, and contracts
-**Rationale:** Everything else depends on shared types, config/profile schema, and storage interface (ARCHITECTURE build order #1).
-**Delivers:** Domain types, config and profile schema, storage interface, versioned format policy.
-**Addresses:** Composable SDK/CLI/formats (contracts), coherent standard path (defaults).
-**Avoids:** Format/schema without version (PITFALLS); global mutable config (ARCHITECTURE anti-pattern).
+### Phase 1: Framework–Hub Separation (structural + docs)
 
-### Phase 2: Pipeline and runtime core
-**Rationale:** Acquisition → preprocessing → decoding → output must exist before orchestration; pipeline is already partially validated (FEATURES MVP).
-**Delivers:** Device abstraction (trait), acquisition backends (LSL, mock, etc.), signal pipeline, decoder inference, output/action layer; core runtime orchestrating tasks with channels.
-**Uses:** LSL, BrainFlow (if needed), tract-onnx, existing neurohid-* crates.
-**Implements:** Acquisition, Preprocessing, Decoding, Output, Core runtime (ARCHITECTURE).
-**Avoids:** No device abstraction; decoder/output coupled to one effector; “latest sample” wrong (centralize drain-then-last in signal path).
+**Rationale:** Defines the boundary that testing and BrainFlow live within; no code flow change; cheap (docs + audit).  
+**Delivers:** Document describing framework vs Hub; SDK as documented framework surface; Hub audited to use only core/facade; optional boundary check in CI.  
+**Addresses:** Clear “what devs depend on,” Hub as one app, documented boundary (FEATURES.md).  
+**Avoids:** Pitfall 5 (framework separation breaking Hub); Pitfall 9 (re-export bloat — document stable facade).
 
-### Phase 3: Control, IPC, storage, standalone runtime
-**Rationale:** Runtime and clients need control transport and persistence before Hub or SDK can drive the system; standalone binary is “run in background” (FEATURES).
-**Delivers:** Control RPC + optional event stream, persistence for config/profiles/secrets, standalone runtime binary (no GUI deps).
-**Addresses:** Standalone runtime experience, composable SDK (control contract).
-**Avoids:** Hub–runtime coupling (strict headless binary); IPC without timeout/version (PITFALLS).
+### Phase 2: Thorough Testing (coverage, flakiness, integration/E2E)
 
-### Phase 4: Composable SDK, CLI, formats
-**Rationale:** Public API surface, CLI, and shared formats stabilize the contract before broadening extensibility and IDE features (ARCHITECTURE).
-**Delivers:** Public SDK API, CLI commands, documented formats (ONNX, profile, stream semantics), stream-consumption and timestamp semantics in docs/examples.
-**Addresses:** Composable SDK/CLI/formats, coherent standard path (docs, defaults).
-**Avoids:** Latest-sample and LSL clock pitfalls (docs + examples); ambiguous stream identity (resolution by name+host/serial).
+**Rationale:** Improves confidence before adding native BrainFlow (which can introduce hardware/CI variability); clear ownership from Phase 1 for “where tests live.”  
+**Delivers:** cargo-nextest and optional nextest.toml; more integration tests (neurohid-core, optionally neurohid-hub); Python coverage and flakiness fixes (pytest-rerunfailures where needed); E2E only where valuable; test tiers and isolation policy documented.  
+**Uses:** cargo-nextest, cargo-llvm-cov (existing), pytest-rerunfailures (optional).  
+**Avoids:** Pitfalls 1, 2, 6 (Rust/Python flakiness, E2E assumptions); Pitfall 8 (coverage gates hiding flakiness — fix or quarantine, don’t retry by default).
 
-### Phase 5: Hub-as-IDE
-**Rationale:** Hub depends on control, storage, and optional embedded/external runtime; provides observability, calibration, training, visualization (FEATURES).
-**Delivers:** Hub UI for discovery, calibration, profiles, visualization, Python lab, Jupyter; one primary workflow (device → calibrate → train → run).
-**Addresses:** Hub-as-IDE, calibration first-class, real-time visualization.
-**Avoids:** Hub does “everything” with no clear workbench; calibration not tied to identity (store profile/device/session + metadata).
+### Phase 3: Native BrainFlow — First-Class (docs, examples, Hub UX)
 
-### Phase 6: Extensibility
-**Rationale:** Design from the start; implement after core pipeline and SDK are stable (ARCHITECTURE).
-**Delivers:** Trait-based device and outlet contracts, registration, plugin namespace/lifecycle, docs and one example plugin in CI.
-**Addresses:** Extensibility (other devices, other outputs).
-**Avoids:** Enum-based “one more backend”; undefined plugin lifecycle (PITFALLS).
+**Rationale:** Docs and Hub UX first give users a path and don’t block on SDK build details.  
+**Delivers:** BrainFlow docs (NeuroHID + BrainFlow, build order, simulation vs native); runnable examples (synthetic board); Hub discovery/connection UX for BrainFlow (discover, connect, disconnect in Devices screen) as peer to LSL/Mock.  
+**Implements:** Docs and examples; Hub devices screen changes; BrainFlowConfig and discovery in core unchanged.  
+**Avoids:** Pitfall 3 (simulation vs native confusion); Pitfall 10 (Hub UX parity for BrainFlow).
+
+### Phase 4: Native BrainFlow — Deeper (real SDK, board config, streaming)
+
+**Rationale:** After first-class UX and tests are in place; real SDK behind feature flag with simulation retained.  
+**Delivers:** Real BrainFlow SDK in neurohid-device under `brainflow-native` (git dep, build BrainFlow core first); Device/DeviceProvider implementation with BoardShim; optional board-specific config in Hub; streaming path BrainFlow → pipeline; synthetic board in CI.  
+**Uses:** BrainFlow git dep, build-from-source docs, optional CI job for native build.  
+**Avoids:** Pitfall 4 (API/build mismatches — pin version, document build, map rows, synthetic board in CI).
 
 ### Phase Ordering Rationale
 
-- Types/config first so all phases share one schema and versioning story.
-- Pipeline and runtime core second so there is a runnable device→decoder→action path and LSL/sample semantics are correct before exposing SDK.
-- Control, IPC, storage, and standalone runtime third so Hub and CLI can drive the same runtime and “run in background” is first-class.
-- SDK/CLI/formats fourth to lock contracts and doc semantics before adding more surfaces (Hub, plugins).
-- Hub-as-IDE fifth so the primary workflow is discoverable and calibration is reproducible.
-- Extensibility last so the extension contract is defined against a stable core and SDK.
+- Separation is independent and low-cost; it clarifies ownership for tests and keeps BrainFlow clearly in the device layer.
+- Testing before deeper BrainFlow reduces regressions when adding native SDK and avoids flakiness masking.
+- BrainFlow in two waves (first-class then deeper) avoids blocking on SDK/build while delivering user value (docs, Hub UX) early.
 
 ### Research Flags
 
 Phases likely needing deeper research during planning:
-- **Phase 2 (Pipeline and runtime core):** LSL chunk size and push pattern for target devices/sample rates; bad-channel handling in standard path — verify against LSL FAQ and MNE patterns.
-- **Phase 5 (Hub-as-IDE):** Primary workflow and workbench layout — validate against OpenViBE/OpenBCI mental models if needed.
+- **Phase 4 (Deeper BrainFlow):** BrainFlow Rust binding version/dep alignment (ndarray etc.); CI job that builds BrainFlow then neurohid-device; row layout and board metadata mapping — consider `/gsd:research-phase` if build or compat issues arise.
 
-Phases with standard patterns (skip research-phase unless edge cases appear):
-- **Phase 1 (Types/config):** Standard versioned config/schema patterns.
-- **Phase 3 (Control, IPC, storage):** Local IPC and storage patterns are well documented.
-- **Phase 4 (SDK/CLI/formats):** Contract design is informed by PITFALLS and FEATURES; implementation is straightforward once contracts are set.
-- **Phase 6 (Extensibility):** Trait-based plugins are a known pattern; one contract and one example suffice.
+Phases with standard patterns (skip research-phase):
+- **Phase 1 (Framework–Hub):** In-repo boundary and docs; crate-boundaries and codebase already describe it.
+- **Phase 2 (Testing):** nextest, pytest-rerunfailures, and flakiness patterns are well documented.
+- **Phase 3 (BrainFlow first-class):** Docs and Hub UX follow existing device-backend patterns; BrainFlow official docs sufficient.
 
 ## Confidence Assessment
 
 | Area       | Confidence | Notes |
 |-----------|------------|--------|
-| Stack     | MEDIUM     | PyPI/official docs for versions; “standard 2025 stack” from ecosystem search, not one authoritative BCI stack doc. |
-| Features  | MEDIUM     | Table stakes and differentiators inferred from BrainFlow, OpenViBE, OpenBCI, LSL, NeuraScale; competitor table is consistent. |
-| Architecture | MEDIUM  | Pipeline and component boundaries align with LSL/BrainFlow/MNE and NeuroHID codebase; build order is dependency-driven. |
-| Pitfalls  | MEDIUM     | LSL FAQs and Brain Products pitfalls are authoritative; Rust–Python IPC and calibration identity from multiple sources; some single-source items. |
+| Stack     | HIGH (testing, framework); MEDIUM (BrainFlow Rust) | nextest, llvm-cov, pytest-rerunfailures and framework-as-docs are well sourced; BrainFlow Rust path is official but version/dep alignment needs care. |
+| Features  | MEDIUM     | Ecosystem and BrainFlow docs; testing/framework patterns from multiple sources; prioritization from PROJECT.md and feature research. |
+| Architecture | HIGH   | Codebase and planning docs; no new external ecosystem; integration points and build order are clear. |
+| Pitfalls  | MEDIUM    | Codebase + BrainFlow docs + Rust/Python testing literature; some integration pitfalls inferred from patterns. |
 
-**Overall confidence:** MEDIUM
+**Overall confidence:** HIGH for phase order and boundary/testing strategy; MEDIUM for BrainFlow native implementation details (build, deps, row mapping).
 
 ### Gaps to Address
 
-- **numpy &lt;3 with pylsl:** Confirm exact numpy upper bound in repo (pylsl 1.18.1) and document in python/AGENTS.md or pyproject.toml.
-- **BrainFlow Rust from source:** Build and integration steps are doc-dependent; validate in CI or docs when adding BrainFlow device backend.
-- **Latency targets:** Research mentions &lt;100 ms and p95/p99; define concrete targets and Soak/LatencyMatrix criteria during phase planning for standalone runtime.
-- **Plugin discovery/lifecycle:** One contract is recommended; exact mechanism (dynamic lib, subprocess, in-process trait) can be decided in Phase 6 planning.
+- **BrainFlow Rust deps:** In-tree brainflow crate uses older ndarray etc.; wrap BoardShim in neurohid-device types and keep brainflow-native feature from leaking into main API surface; validate during Phase 4.
+- **Validation harness in CI:** PROJECT.md defers RUNT-04/RUNT-05; align with “thorough testing” in a follow-up or later phase; no block for v1.1 roadmap.
+- **IPC protocol impact:** Any change touching IPC (BrainFlow events, framework re-exports of IPC types) must trigger protocol verification and dual-side update; keep in impact checklist during planning.
 
 ## Sources
 
 ### Primary (HIGH confidence)
-- MNE-Python 1.11 — mne.tools, PyPI (deps, Python ≥3.10, numpy &lt;3).
-- PyPI: pylsl 1.18.1, brainflow 5.20.1, onnx 1.20.1, onnxruntime 1.24.2 — versions and constraints.
-- LSL FAQs — latest sample, lsl_local_clock(), chunk sizes, high sampling rates.
-- Brain Products — LSL pitfalls and how to avoid them.
+
+- STACK.md — cargo-nextest, cargo-llvm-cov, pytest-rerunfailures, BrainFlow build path and rust_package, framework boundary (docs/crate-boundaries.md).
+- ARCHITECTURE.md — Integration points, build order, crate ownership (codebase and planning docs).
+- PITFALLS.md — Flakiness causes, BrainFlow lifecycle, framework boundary enforcement (codebase + BrainFlow docs).
 
 ### Secondary (MEDIUM confidence)
-- BrainFlow, OpenViBE, OpenBCI, NeuraScale — features and APIs (official docs).
-- ARCHITECTURE.md, FEATURES.md, STACK.md, PITFALLS.md — .planning/research and .planning/codebase.
-- MNE-LSL, pyxdf — streaming and XDF usage.
-- BCI pipeline literature (acquisition → preprocessing → decoding → output).
 
-### Tertiary (LOW confidence)
-- Individual projects (eeg-mouse, MindDesktop); arXiv BCI/tooling papers — useful for context, not for version or API decisions.
+- FEATURES.md — Table stakes, differentiators, anti-features (BrainFlow ecosystem, testing/framework patterns).
+- Rust flaky tests study (async ~34%, concurrency ~25%); Python flakiness and determinism guidance.
+- BrainFlow: Supported Boards, BuildBrainFlow, Data Format, adding new boards.
+
+### Tertiary (validation during implementation)
+
+- BrainFlow Rust crate ndarray/serde alignment with workspace; optional neurohid-framework facade crate if single dependency name needed later.
 
 ---
-*Research completed: 2026-02-20*
+*Research completed: 2026-02-21*  
 *Ready for roadmap: yes*

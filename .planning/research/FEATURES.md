@@ -1,170 +1,195 @@
-# Feature Landscape: Biosignal/EEG Developer Tooling
+# Feature Research: v1.1 Testing, BrainFlow & Framework Separation
 
-**Domain:** Biosignal/EEG developer tooling (BCI toolkits, SDKs, IDEs, runtimes)
-**Researched:** 2026-02-20
-**Confidence:** MEDIUM (ecosystem and official docs; some table-stakes inferred from multiple products)
+**Domain:** NeuroHID v1.1 — thorough testing, native BrainFlow integration, framework-vs-Hub separation  
+**Researched:** 2026-02-21  
+**Confidence:** MEDIUM (ecosystem + official BrainFlow docs; testing/framework patterns from multiple sources)
 
-## Feature Landscape
+## Scope
+
+This document covers **only** the three new feature areas for the v1.1 milestone. Existing v1.0 capabilities (device discovery/connection, signal pipeline, decoder inference, HID output, IPC, Hub GUI, headless runtime, config/profile storage, calibration, SDK facade, validation harness, extension contracts) are treated as dependencies where relevant.
+
+---
+
+## 1. Thorough Testing
 
 ### Table Stakes (Users Expect These)
 
-Features developers assume exist. Missing these = product feels incomplete or unusable for serious work.
-
 | Feature | Why Expected | Complexity | Notes |
 |---------|--------------|------------|-------|
-| **Device discovery and connection** | Cannot do anything without a working stream from hardware or a reliable mock. | Medium | BrainFlow, OpenViBE, LSL, OpenBCI all provide this. Device-specific params (port, IP, MAC) are normal; abstraction is expected (BoardShim, generic acquisition server). |
-| **Real-time or low-latency streaming** | BCI and feedback require live data; offline-only tooling blocks the main use case. | Medium | LSL is the de facto standard for synchronization and streaming. Sub-100ms latency is a stated goal in production platforms (e.g. NeuraScale). |
-| **Device-agnostic or multi-device API** | Developers switch hardware; one code path across devices is table stakes in modern toolkits (BrainFlow, OpenViBE 30+ devices). | Medium | Single-board lock-in is acceptable only for device-specific GUIs; SDKs are expected to abstract board ID + params. |
-| **Signal processing pipeline (filters, basic transforms)** | Raw signals are not usable for decoding; filtering and simple transforms are baseline. | Medium | BrainFlow Signal Processing API, OpenViBE boxes (epoching, CSP, xDAWN, etc.). Can be minimal (bandpass, referencing) for MVP. |
-| **Recording / export to standard formats** | Reproducibility, offline analysis, and training require export (e.g. HDF5, EDF, or documented binary). | Low–Medium | OpenBCI-Stream CLI exports to HDF5; OpenViBE has offline Tracker; formats vary but “save and reload” is expected. |
-| **Real-time visualization** | Developers need to verify signal quality and pipeline before trusting decoding; GUI or stream debugger is expected. | Medium | OpenBCI GUI, OpenViBE Designer, LSL viewers. Can be a simple time-series/spectrum view. |
-| **Calibration or setup wizard** | Device and subject setup (impedance, channel map, baseline) is part of the workflow; without it, “it doesn’t work” is ambiguous. | Medium | Often bundled with GUI (e.g. OpenBCI GUI for signal check). Wizard or guided steps reduce support burden. |
-| **Documentation and examples** | BCI tooling is complex; missing docs or runnable examples make adoption unlikely. | Low | OpenBCI, BrainFlow, OpenViBE, LSL all emphasize docs and tutorials. |
-| **CLI or scriptable entrypoints** | Automation, CI, and headless use require non-GUI access (stream, record, run decoder). | Low–Medium | OpenBCI-Stream CLI, BrainFlow bindings, LSL from Python/C++; “GUI only” is not enough for developers. |
+| **Unit tests for new/changed code** | CI and PRs assume tests exist; missing tests block confidence. | LOW | Rust: `cargo test --workspace`; Python: `uv run --project python pytest python/tests`. Already in CI. |
+| **Deterministic tests (no flakiness)** | Flaky tests erode trust and waste CI; developers expect green-or-red. | MEDIUM | Main causes: async/waits, concurrency, network, shared state. Prevention: avoid hard sleeps; use condition-based waits; isolate state. |
+| **Integration tests at boundaries** | Catches serialization, IPC, and interface mismatches that unit tests miss. | MEDIUM | Valuable at: Rust↔Python IPC, device→signal→decoder→action pipeline, config load/save. |
+| **CI gates that reflect reality** | Passing CI should mean “safe to merge” for the scope exercised. | LOW–MEDIUM | Today: `cargo test`, pytest, validation harness invocable. Broader/deeper coverage and flakiness reduction make the gate meaningful. |
 
 ### Differentiators (Competitive Advantage)
 
-Features that set a product apart. Not required by every user, but highly valued and align with NeuroHID’s core value.
-
 | Feature | Value Proposition | Complexity | Notes |
 |---------|-------------------|------------|-------|
-| **Hub-as-IDE (observability + experiments + training)** | Single place to set up devices, run calibration, design/train decoders, and observe the full pipeline. Reduces context-switching and “glue” work. | High | OpenViBE Designer is graph-based; OpenBCI uses GUI + separate IDE. An integrated workbench (dashboard, devices, profiles, calibration, viz, python_lab, jupyter_ide) is a differentiator. |
-| **Standalone runtime (background, decoder-in-loop)** | Run a trained decoder in the background without keeping the Hub open; device → signal → decoder → action as a service. | High | Common in research (custom scripts); productized headless runtime with service/daemon support is rare in open-source BCI tooling. |
-| **Single coherent path: device → decoder → action** | One documented, default path from hardware setup to trained model to HID (or other) output, without stitching multiple tools. | Medium | Ecosystem is fragmented (LSL + custom decoder + custom output); “one stack, one path” is a differentiator. |
-| **Composable SDK + CLI + shared formats** | Same primitives (device, signal, decoder, action) available as library, CLI, and via documented formats so others can mix-and-match. | Medium | BrainFlow has SDK + bindings; fewer products offer CLI + formats (e.g. ONNX) in one coherent story. |
-| **Extensibility (other devices, other outputs)** | Pluggable device backends and output types (HID, game input, MIDI, custom) so the stack isn’t EEG-only or keyboard-only. | Medium | BrainFlow is device-agnostic; output side is often custom. Explicit abstraction for “action outlets” is a differentiator. |
-| **Local-first, no mandatory cloud** | Full workflow and runtime work offline; no required cloud auth or hosted services. | Low | Aligns with privacy and lab/embedded use; contrasts with cloud-first platforms (e.g. NeuraScale). |
-| **Integrated Python/notebook + Rust runtime** | Use Python/notebooks for training and experiments while the runtime stays in Rust (performance, deployability); clear IPC contract. | High | Many setups use Python end-to-end; Rust runtime + Python ML bridge with defined IPC is a distinct architecture. |
-| **HID (keyboard/mouse) output out of the box** | Map decoder decisions to OS-level input (keyboard/mouse) without building a custom driver or middleware. | Medium | Research often stays at “classification result”; productized HID output (e.g. enigo-style) is a practical differentiator. |
+| **E2E tests where they add value** | Validates full user flow (e.g. Hub discover→connect→stream or runtime profile→decoder→action) without over-investing. | HIGH | Keep E2E minimal; use for critical paths only. Validation harness (Soak, LatencyMatrix, BootMatrix) is existing E2E-style asset. |
+| **Stable validation harness in CI** | Soak/LatencyMatrix/BootMatrix run in CI so regressions in runtime behavior are caught. | MEDIUM | Depends on: neurohid-service binary, control port, optional Python bridge. Deferred per PROJECT.md but aligns with “thorough testing.” |
+| **Rust + Python coverage story** | Single story for “what we test” across the monorepo. | MEDIUM | Document what is unit vs integration vs E2E; which tests run per commit vs nightly. |
 
 ### Anti-Features (Commonly Requested, Often Problematic)
 
-Features that seem attractive but create cost or misalignment with “developer tooling” or local-first goals.
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|--------------|
+| **E2E for every feature** | “Test like a user.” | Slow, flaky, high maintenance; blocks quick feedback. | Test pyramid: many unit, some integration, few E2E for critical paths only. |
+| **Hard-coded sleeps in tests** | Simple way to “wait for async.” | Primary cause of flakiness; fails under load or slow CI. | Condition-based waits, test doubles, or bounded retries with clear success criteria. |
+| **Testing mock behavior** | Easy to make green. | Doesn’t validate real behavior; false confidence. | Test real behavior; use mocks only to isolate boundaries (and verify real contracts at integration). |
+| **100% coverage target** | “Fully tested.” | Diminishing returns; can push logic into tests or discourage refactors. | Target critical paths and boundaries; measure coverage for visibility, not as a single goal. |
+
+### Dependencies on Existing NeuroHID Capabilities
+
+- **Device/signal/decoder/action pipeline** — Integration tests need a runnable pipeline (mock device or LSL/BrainFlow simulation).
+- **Rust↔Python IPC** — Integration tests for bridge/control depend on `neurohid-ipc` and Python `neurohid_ml` client.
+- **Validation harness** — Soak/LatencyMatrix/BootMatrix depend on `neurohid-service` binary and control protocol; extending or running them in CI builds on existing harness.
+- **Config/profile storage** — Integration tests that load profiles depend on `neurohid-storage` and documented config format.
+
+---
+
+## 2. Native BrainFlow Integration
+
+### Table Stakes (Users Expect These)
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| **First-class documentation** | BCI/EEG tooling is complex; BrainFlow users expect docs on how NeuroHID uses BrainFlow (board IDs, params, session lifecycle). | LOW–MEDIUM | Point to BrainFlow official docs; add NeuroHID-specific: “using BrainFlow with NeuroHID,” config fields, troubleshooting. |
+| **Runnable examples** | BrainFlow ecosystem emphasizes examples (e.g. BoardShim + params → prepare_session → start_stream → get_board_data). | LOW–MEDIUM | At least one example: discover/connect/stream with a real or synthetic BrainFlow board, matching BrainFlow’s own pattern. |
+| **Hub discovery/connection UX for BrainFlow** | Users expect to discover and connect BrainFlow devices from the Hub like LSL streams. | MEDIUM | Depends on: Hub devices screen (today LSL-oriented), ServiceManager, control protocol. BrainFlow discovery uses board_id + params (serial_port, ip_address, timeout, etc.). |
+| **Device-agnostic API preserved** | Existing DeviceProvider/Device abstraction must still hold; BrainFlow is one backend. | LOW | Already the case: `neurohid-device` has BrainFlow adapter (currently simulation); real SDK behind `brainflow` feature. |
+
+### Differentiators (Competitive Advantage)
+
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| **Board-specific config in Hub** | Per-board params (serial port, IP, timeout) and presets in UI instead of raw config edits. | MEDIUM–HIGH | Depends on BrainFlow board catalogue (e.g. Supported Boards), `BrainFlowConfig` in neurohid-types, and Hub settings/device UX. |
+| **Unified streaming path (BrainFlow → pipeline)** | BrainFlow streams feed the same signal pipeline as LSL/mock; one path for decoding and actions. | MEDIUM | Real BrainFlow SDK integration: session lifecycle (prepare_session/start_stream/stop_stream/release_session) mapped to Device/SampleStream; channel config from board metadata. |
+| **Synthetic/dummy board in CI** | BrainFlow provides synthetic/playback boards; using them in CI avoids hardware. | LOW–MEDIUM | Enables integration tests and Hub E2E without physical devices. |
+
+### Anti-Features (Commonly Requested, Often Problematic)
 
 | Feature | Why Requested | Why Problematic | Alternative |
-|---------|---------------|-----------------|-------------|
-| **Mandatory cloud or hosted backend** | Ease of deployment, “single sign-on,” sync. | Conflicts with local-first; lock-in and privacy concerns for labs/developers. | Optional cloud for backup/collab; default path stays local. |
-| **Single-device or single-vendor lock-in** | Simpler support, tighter optimization. | Developers expect to swap hardware; lock-in limits adoption. | Device-agnostic API + multiple backends (LSL, BrainFlow, Mock, Serial). |
-| **No CLI or scriptable API** | Simpler product surface. | Blocks automation, headless use, and integration with other tools. | Always provide CLI and/or library entrypoints alongside GUI. |
-| **Opaque or proprietary data/model formats** | Perceived IP or “stickiness.” | Prevents reproducibility, tool reuse, and ONNX-style decoder portability. | Open, documented formats (e.g. ONNX for models; standard or documented for recordings). |
-| **GUI-only for critical operations** | “Easier” for some users. | Power users and pipelines need scriptable flows. | GUI for exploration; same operations available via CLI/SDK. |
-| **Real-time everything by default** | “BCI must be real-time.” | Can force premature optimization and complexity (e.g. hard real-time guarantees) before product fit. | Target “low enough latency” (e.g. &lt;100ms) and measure; avoid over-promising hard real-time. |
-| **All-in-one monolithic app with no composability** | One install, one UX. | Prevents embedding, custom pipelines, and reuse in other tools. | SDK + CLI + formats so the stack can be composed or embedded. |
-| **Requiring coding for basic device check** | “Developers can code.” | First step is “see my signals”; forcing code for that loses users. | Simple GUI or CLI to stream/visualize without writing code. |
+|---------|---------------|-----------------|--------------|
+| **BrainFlow-only Hub** | “Simplify for one backend.” | Breaks multi-backend (LSL, Mock, Serial) and device-agnostic value. | Keep LSL + BrainFlow + Mock in one devices UX; BrainFlow as first-class, not only. |
+| **Copy-paste of BrainFlow examples without abstraction** | Quick to wire. | Bypasses DeviceProvider/Device; duplicates lifecycle and config. | Wrap BrainFlow in existing traits; document how BoardShim/params map to NeuroHID config and discovery. |
+| **Real hardware required for docs/examples** | “Test on real device.” | Blocks contributors and CI. | Prefer synthetic/playback board in examples and CI; document real hardware as optional. |
 
-## Feature Dependencies
+### Dependencies on Existing NeuroHID Capabilities
+
+- **DeviceProvider/Device traits** — BrainFlow backend implements same interface as LSL/Mock/Serial; current simulation adapter in `neurohid-device/src/brainflow.rs` is the pattern; real SDK behind `brainflow` feature.
+- **Discovery and core** — `neurohid-core` discovery (e.g. `tasks/device/discovery.rs`) and runtime must treat BrainFlow as a discoverable backend with config (e.g. `BrainFlowConfig`, board_id, params).
+- **Hub devices screen** — Today shows `ControlSnapshot.discovered_streams` (LSL-oriented). BrainFlow discovery/connection must appear there (rescan, connect, disconnect) via same control protocol.
+- **Config and types** — `neurohid-types` already has `BrainFlowConfig`; storage and profile must persist BrainFlow board_id and connection params.
+- **SDK** — `neurohid-sdk` already has `device-brainflow` feature; first-class BrainFlow means documented, stable, and usable from SDK + examples.
+
+---
+
+## 3. Framework-vs-Hub Separation
+
+### Table Stakes (Users Expect These)
+
+| Feature | Why Expected | Complexity | Notes |
+|---------|--------------|------------|-------|
+| **Clear “what devs depend on”** | Embedders and SDK users need a single, stable surface (crates, features, docs) so they don’t depend on Hub internals. | MEDIUM | Today: `neurohid-sdk` with feature-gated re-exports. Refine so “framework” = types + chosen components + core facade; document it explicitly. |
+| **Hub as one application** | Hub is “our app” on top of the framework; its code and deps are distinct from the framework surface. | MEDIUM | Structural boundary in-repo: Hub depends on framework (core + facade), not on every component crate directly where avoidable. Crate-boundaries already say: core → (hub \| sdk \| binary). |
+| **Documented boundary** | Contributors and users need to know what is framework vs Hub. | LOW | Docs: “Framework surface” (SDK + core facade + listed crates) vs “Hub application” (neurohid-hub, binaries that launch Hub/service/validate). |
+| **No reverse coupling** | Component crates must not depend on Hub or GUI. | LOW | Already in `docs/crate-boundaries.md`: types → components → core → (hub \| sdk \| binary). |
+
+### Differentiators (Competitive Advantage)
+
+| Feature | Value Proposition | Complexity | Notes |
+|---------|-------------------|------------|-------|
+| **Framework as distinct crate set or layout** | Enables future split (e.g. framework in own repo) and clearer versioning. | MEDIUM | In-repo: framework = e.g. neurohid-types + neurohid-device/signal/platform/ipc/storage/calibration + neurohid-core, with a single “framework” or SDK entrypoint; Hub and neurohid binary depend only on that + neurohid-hub. |
+| **Stable SDK feature matrix** | Embedders choose only what they need (device, signal, runtime, no Hub). | LOW | Already present (`neurohid-sdk` features); document and stabilize so “framework” = SDK default/recommended feature set without Hub. |
+| **Single binary still works** | neurohid (Hub), neurohid-service, neurohid-validate remain the shipped products. | LOW | Separation is structural and dependency-direction, not necessarily more binaries. |
+
+### Anti-Features (Commonly Requested, Often Problematic)
+
+| Feature | Why Requested | Why Problematic | Alternative |
+|---------|---------------|-----------------|--------------|
+| **Hub depending on every component directly** | “Hub needs device/signal/ipc.” | Blurs framework boundary; embedders can’t depend on “just runtime” without pulling Hub. | Hub uses core facade (and core pulls components); SDK exposes same facade with feature flags. |
+| **Two separate repos in v1.1** | “Clean split.” | PROJECT.md says full repo split is planned for later milestone. | In-repo structural boundary first; document path to future repo split. |
+| **“Framework” as a single crate that re-exports everything** | Simpler dependency. | Can create a god-crate and hide component boundaries. | Prefer: clear set of crates that form the framework + one SDK (or facade) crate that re-exports; Hub depends on that set. |
+| **Breaking existing binaries** | “Pure framework.” | Compatibility constraint: keep neurohid, neurohid-service, neurohid-validate. | Same binaries; dependency graph and docs change, not entry points. |
+
+### Dependencies on Existing NeuroHID Capabilities
+
+- **neurohid-sdk** — Already the public facade; framework separation formalizes “framework = what SDK exposes (optionally without hub)” and possibly a documented “framework” subset of workspace.
+- **neurohid-core** — Orchestration and facade; Hub and runtime binaries already depend on core. Core must remain the composition layer that pulls in components.
+- **docs/crate-boundaries.md** — Already defines layers (types → components → core → hub \| sdk \| binary); update to name “framework” and “Hub application” explicitly.
+- **Cargo workspace** — No need to move crates physically yet; dependency direction and documentation define the boundary.
+
+---
+
+## Feature Dependencies (v1.1)
 
 ```
-Device discovery/connection
-    └──requires──> Real-time streaming (or mock stream)
-                        └──enables──> Recording/export, Real-time visualization
+Thorough testing
+    ├── depends on: Device/signal/decoder pipeline, IPC, config/storage, validation harness
+    └── enables: Confidence for BrainFlow and framework changes
 
-Signal processing pipeline
-    └──requires──> Streaming (samples in)
-    └──enables──> Decoder inference
+Native BrainFlow (docs/examples + Hub UX)
+    ├── depends on: DeviceProvider/Device, BrainFlowConfig, Hub devices screen, ServiceManager, control protocol
+    └── enables: Deeper integration (board config, real streaming) in same or later milestone
 
-Decoder inference
-    └──requires──> Signal pipeline (or features), Trained model (e.g. ONNX)
-    └──enables──> Standalone runtime, HID output
+Native BrainFlow (deeper: board config, streaming)
+    └── depends on: First-class docs + examples + Hub discovery/connection UX, real BrainFlow SDK behind feature
 
-Calibration/setup wizard
-    └──enhances──> Device connection, Decoder training (better baselines)
-
-Hub-as-IDE
-    └──requires──> Device discovery, Visualization, (optional) Python/notebook integration
-    └──enhances──> Single coherent path, Composable SDK (same primitives in GUI)
-
-Standalone runtime
-    └──requires──> Device → signal → decoder → action pipeline, Config/profile storage
-    └──enhances──> Single coherent path (use same decoder as in Hub)
-
-Composable SDK + CLI + formats
-    └──requires──> Documented APIs and formats
-    └──enhances──> Extensibility (other devices/outputs)
-
-Extensibility (other devices/outputs)
-    └──requires──> Device-agnostic API, Abstract action/outlet layer
+Framework-vs-Hub separation
+    ├── depends on: neurohid-sdk, neurohid-core, crate-boundaries
+    └── enables: Clear embedder story; future repo split
 ```
 
-### Dependency Notes
+### Cross-Cutting
 
-- **Decoder inference** depends on **signal pipeline** (or precomputed features) and a **trained model**; recording/export supports offline training that produces that model.
-- **Standalone runtime** is only meaningful once the pipeline (device → signal → decoder → action) exists and can be configured (e.g. profile, model path).
-- **Hub-as-IDE** and **standalone runtime** share the same pipeline and config; they are two surfaces (interactive vs headless), not two stacks.
-- **Composable SDK/CLI/formats** enable **extensibility**: new device backends and new output types plug in without changing core orchestration.
+- **Testing** does not block BrainFlow or framework separation, but broader tests and flakiness reduction reduce risk when adding BrainFlow and refactoring boundaries.
+- **BrainFlow** and **framework separation** are independent: either can proceed in parallel; Hub UX for BrainFlow should use the same “framework” surface (core/discovery) that separation clarifies.
 
-## MVP Definition
+---
 
-### Launch With (v1)
+## MVP Definition (v1.1)
 
-Minimum viable product for “coherent path from device to action” and “usable by developers.”
+### Launch With (v1.1)
 
-- [x] **Device discovery and connection** — Already validated (LSL, Mock, Serial, BrainFlow).
-- [x] **Real-time streaming and signal pipeline** — Already validated (DeviceTask → SignalTask, filters/features).
-- [x] **Decoder inference and HID output** — Already validated (DecoderTask, tract-onnx, ActionTask/OutletTask).
-- [ ] **Hub-as-IDE experience** — Extensive observability and interactivity for setup, calibration, and training (in progress).
-- [ ] **Standalone runtime experience** — Run in background with attached decoder; device streams drive actions (in progress).
-- [ ] **Coherent “standard path”** — Documented defaults and one clear path: device setup → calibration → training → action output.
-- [ ] **Composable building blocks** — SDK + CLI + shared formats so components can be mixed by others.
-- [ ] **Calibration** — Wizard/games (validated in codebase); ensure they are first-class in the standard path.
+- [ ] **Thorough testing** — Broader and deeper coverage (Rust + Python); reduce flakiness (condition-based waits, isolation); add integration tests at IPC and pipeline boundaries; E2E only where valuable (e.g. one critical path).
+- [ ] **Native BrainFlow (first wave)** — First-class docs (NeuroHID + BrainFlow); runnable examples (synthetic board); Hub discovery/connection UX for BrainFlow devices (discover, connect, disconnect in Devices screen).
+- [ ] **Framework-vs-Hub separation** — Structural boundary in-repo: framework as distinct crate set or layout that Hub depends on; documented “framework surface” and “Hub as one app”; no new binaries; full repo split deferred.
 
-### Add After Validation (v1.x)
+### Add After v1.1 (as scope or follow-up)
 
-- [ ] **Extensibility** — Clear APIs/plugins for other biosignal devices and other output types (game, MIDI, custom).
-- [ ] **Richer Hub workbench** — Advanced visualization, experiment templates, better Python/notebook integration.
-- [ ] **Performance and latency** — Profiling, tuning, optional latency guarantees where feasible.
+- [ ] **BrainFlow deeper integration** — Board-specific config in Hub, real SDK behind `brainflow` feature, streaming path BrainFlow → pipeline; synthetic board in CI.
+- [ ] **Validation harness in CI** — Soak/LatencyMatrix/BootMatrix in CI (PROJECT.md defers RUNT-04/RUNT-05 but aligns with thorough testing).
 
-### Future Consideration (v2+)
+### Future Consideration
 
-- [ ] **Optional cloud** — Backup, sync, or collaboration (only if local-first remains the default).
-- [ ] **Mobile or embedded targets** — Desktop and headless first per PROJECT.md.
-- [ ] **General end-consumer product** — After power-user/developer tooling is solid.
+- [ ] **Framework in separate repo** — After in-repo boundary is stable and documented.
 
-## Feature Prioritization Matrix
+---
+
+## Feature Prioritization Matrix (v1.1)
 
 | Feature | User Value | Implementation Cost | Priority |
 |---------|------------|---------------------|----------|
-| Device discovery/connection | HIGH | Done | P1 |
-| Real-time streaming | HIGH | Done | P1 |
-| Signal processing pipeline | HIGH | Done | P1 |
-| Decoder inference + HID output | HIGH | Done | P1 |
-| Recording/export | HIGH | Low–Med | P1 |
-| Real-time visualization | HIGH | Medium | P1 |
-| Calibration wizard | HIGH | Done (polish) | P1 |
-| Hub-as-IDE (observability, training) | HIGH | High | P1 |
-| Standalone runtime | HIGH | Medium | P1 |
-| Coherent standard path (docs, defaults) | HIGH | Medium | P1 |
-| Composable SDK + CLI + formats | HIGH | Medium | P1 |
-| Documentation and examples | HIGH | Low | P1 |
-| Extensibility (devices/outputs) | MEDIUM | Medium | P2 |
-| Local-first, no mandatory cloud | HIGH | Done (constraint) | P1 |
+| Broader/deeper unit + integration tests | HIGH | MEDIUM | P1 |
+| Flakiness reduction | HIGH | MEDIUM | P1 |
+| E2E where valuable (minimal) | MEDIUM | MEDIUM–HIGH | P2 |
+| BrainFlow docs + examples | HIGH | LOW–MEDIUM | P1 |
+| Hub BrainFlow discovery/connection UX | HIGH | MEDIUM | P1 |
+| BrainFlow board config + real streaming | MEDIUM | HIGH | P2 |
+| Framework-vs-Hub structural boundary | HIGH | MEDIUM | P1 |
+| Documented framework vs Hub | HIGH | LOW | P1 |
 
-**Priority key:** P1 = must have for launch; P2 = should have when possible.
+**Priority key:** P1 = must have for v1.1; P2 = should have within or right after v1.1.
 
-## Competitor Feature Analysis
-
-| Feature | BrainFlow | OpenViBE | OpenBCI (GUI + ecosystem) | NeuraScale | NeuroHID approach |
-|---------|-----------|----------|---------------------------|------------|-------------------|
-| Device-agnostic API | Yes (BoardShim, 65+ boards) | Yes (30+ devices, acquisition server) | Focus on OpenBCI hardware; BrainFlow for multi-device | Yes (30+ devices, LSL) | DeviceProvider/Device traits; LSL, Mock, Serial, BrainFlow |
-| Real-time streaming | Yes | Yes | Yes (GUI, BrainFlow) | Yes (LSL, &lt;100ms) | DeviceTask → SignalTask; LSL primary |
-| Signal processing | Yes (filters, ML API) | Yes (boxes: CSP, xDAWN, etc.) | Via BrainFlow / external | Yes (pipeline) | neurohid-signal filter/feature pipeline |
-| IDE / workbench | No (library) | Yes (Designer, graph-based) | GUI for viz + record; dev in separate IDE | Cloud platform, APIs | Hub-as-IDE: dashboard, devices, profiles, calibration, viz, python_lab, jupyter_ide |
-| Standalone runtime | No (you build it) | Run scenarios (not headless service) | No | Cloud runtime | neurohid-service; headless, config-driven |
-| CLI / scriptable | Bindings only | Scripting (Lua, Python, MATLAB) | OpenBCI-Stream CLI (e.g. HDF5 export) | REST/GraphQL/gRPC | neurohid-ml CLI; SDK for embedders |
-| Export formats | App-dependent | Tracker, files | HDF5 (OpenBCI-Stream) | Platform storage | Documented formats; ONNX for models |
-| HID/output | No | Demos (game-like) | Community projects (e.g. eeg-mouse) | Application-level | ActionTask → OutletTask (enigo); first-class HID |
-| Local-first | Yes | Yes | Yes | No (GCP) | Yes (local IPC, no required cloud) |
+---
 
 ## Sources
 
-- BrainFlow: [Features](https://brainflow.org/features/), [User API](https://brainflow.readthedocs.io/en/stable/UserAPI.html), [ONNX integration](https://brainflow.org/2022-09-08-onnx-tf/) (MEDIUM confidence — official).
-- OpenViBE: [Features](https://openvibe.inria.fr/features), [Designer](https://openvibe.inria.fr/designer) (MEDIUM confidence — official).
-- OpenBCI: [For Developers](https://docs.openbci.com/ForDevelopers/ForDevelopersLanding/), [OpenBCI GUI](https://docs.openbci.com/Software/OpenBCISoftware/GUIDocs/), OpenBCI-Stream CLI / HDF5 (MEDIUM confidence — official docs).
-- Lab Streaming Layer: [Developer guide](https://labstreaminglayer.readthedocs.io/dev/dev_guide.html), [App development](https://labstreaminglayer.readthedocs.io/dev/app_dev.html) (MEDIUM confidence — official).
-- NeuraScale: [Introduction](https://docs.neurascale.io/) — latency, device support, APIs (MEDIUM confidence — official).
-- BCI tooling fragmentation and pitfalls: arXiv 2506.16168 (AI for EEG-based BCI), EEGUnity/transformer BCI limitations (LOW confidence — research papers, not product docs).
-- EEG to HID control: eeg-mouse, GPAC (Graz), MindDesktop (LOW confidence — individual projects).
+- BrainFlow: [Code Samples](https://brainflow.readthedocs.io/en/stable/Examples.html), [Supported Boards](https://brainflow.readthedocs.io/en/stable/SupportedBoards.html), [Installation](https://brainflow.readthedocs.io/en/stable/BuildBrainFlow.html) (MEDIUM confidence — official docs).
+- Testing: Flakiness (async/waits, concurrency) — arXiv 2502.02760 (Rust flaky tests); E2E flakiness prevention (condition-based waits, isolation, avoid hard sleeps) — TestResult.co, LeadWithSkills, FullScale 2025 (MEDIUM confidence); test pyramid and when E2E adds value — CD Migration Guide, testing best practices (MEDIUM confidence).
+- Framework vs app separation: Azure SDK repo structure, Fuchsia RFC-0241 (platform/external split), Kotlin Multiplatform module configuration (MEDIUM confidence — official or RFC).
+- NeuroHID: PROJECT.md, crate-boundaries.md, STRUCTURE.md, neurohid-device brainflow.rs, neurohid-sdk Cargo.toml, neurohid-validate.rs, Hub devices.rs (HIGH confidence — repo).
 
 ---
-*Feature research for: Biosignal/EEG developer tooling (NeuroHID)*  
-*Researched: 2026-02-20*
+*Feature research for: NeuroHID v1.1 (testing, BrainFlow, framework-vs-Hub)*  
+*Researched: 2026-02-21*

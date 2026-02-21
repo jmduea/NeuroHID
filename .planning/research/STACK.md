@@ -1,141 +1,199 @@
-# Stack Research
+# Stack Research: v1.1 Additions (Testing, BrainFlow, Framework Boundary)
 
-**Project:** NeuroHID (biosignal/EEG developer tooling — subsequent milestone)
-**Domain:** Biosignal/EEG developer tooling and decoder pipelines
-**Researched:** 2026-02-20
-**Confidence:** MEDIUM (official PyPI/docs for versions; ecosystem from WebSearch)
+**Domain:** NeuroHID v1.1 — testing depth, native BrainFlow integration, framework-vs-Hub structural separation  
+**Researched:** 2026-02-21  
+**Confidence:** HIGH (testing, framework); MEDIUM (BrainFlow Rust integration path)
 
-## Recommended Stack
+## Scope
 
-### Core Technologies
+This document covers **only** stack additions or changes required for the three v1.1 feature areas. Existing stack (Rust 2024/1.85+, Python 3.12+, uv, neurohid-* crates, eframe/egui, tract-onnx, IPC, etc.) is unchanged and not re-researched.
 
-| Technology | Version | Purpose | Why Recommended |
-|------------|---------|---------|------------------|
-| **MNE-Python** | 1.11.0 | EEG/MEG/biosignal analysis, preprocessing, decoding, I/O | De facto standard for neurophysiology in Python; EDF/BDF/XDF support, ML decoding tutorials, active maintenance. Python ≥3.10. |
-| **Lab Streaming Layer (LSL)** | pylsl 1.18.1 | Real-time streaming and sync across devices/apps | Standard in BCI/research for multi-device, multi-app streams; PyBCI, BrainFlow, pyOpenNFT all use LSL. Use pylsl for Python; liblsl for Rust (e.g. workspace-patched lsl-sys). |
-| **BrainFlow** | 5.20.1 (Python) | Device SDK for EEG/EMG/ECG acquisition | Uniform API across 9 languages (Python, Rust, C++, etc.); broad device support (OpenBCI, Muse, Mentalab, etc.). Use when adding devices beyond custom/LSL-only. |
-| **ONNX + ONNX Runtime** | onnx 1.20.1, onnxruntime 1.24.2 | Model export and inference for decoders | Interop between PyTorch/TF training and Rust/Python inference; runtime is the standard deployment engine. Python ≥3.10. |
-| **tract-onnx** (Rust) | 0.22 | ONNX inference in Rust runtime | Fits NeuroHID’s existing Rust decoder path; no Python runtime in deployed service. Keep aligned with ONNX opset used by Python export. |
+---
 
-### Decoder Pipeline (Python ML side)
+## 1. Thorough Testing (Rust + Python, flakiness, integration/E2E)
 
-| Technology | Version | Purpose | When to Use |
-|------------|---------|---------|-------------|
-| **PyTorch** | ≥2.10 | Training and export of decoder models | Default for custom neural decoders and ONNX export; already in NeuroHID. |
-| **scikit-learn** | ≥1.8 | Classical ML (e.g. LDA, SVM) and pipelines | Lightweight decoders, calibration baselines, feature selection. |
-| **scipy** | ≥1.11 | Filters, spectral/statistical helpers | Preprocessing and feature extraction in trainer/offline analysis. |
-| **numpy** | ≥1.26 (MNE) / project choice | Array ops and model I/O | Core dependency; align with MNE (e.g. &lt;3 if using pylsl 1.18.1). |
+### Recommended Additions
 
-### Supporting Libraries
+#### Rust
 
-| Library | Version | Purpose | When to Use |
-|---------|---------|---------|--------------|
-| **pyxdf** | ≥1.17 | Read/write XDF (LSL-recorded) files | Offline analysis of LSL recordings; MNE’s XDF example uses pyxdf. |
-| **pylsl** | 1.18.1 | LSL Python bindings | Any Python component that consumes or publishes LSL streams (trainer, mock devices, Hub tooling). |
-| **onnx** (Python) | ≥1.19 | ONNX graph build/export/check | Export from PyTorch/sklearn to ONNX for runtime; validate shapes. |
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| **cargo-nextest** | 0.9.x (latest stable) | Test runner | Faster than `cargo test` (parallel per-test), built-in retries for flaky tests, JUnit XML for CI, timeout controls; integrates with existing `cargo llvm-cov` so CI can run nextest then coverage. |
+| **cargo-llvm-cov** | (already in CI) | Code coverage | Keep current setup; officially recommended, works with nextest (`cargo llvm-cov --no-run` + `cargo nextest run` or use nextest’s coverage support where available). No new add. |
+| **tokio-test** | 0.4 (existing) | Async test utilities | Keep; no change. |
+| **approx** | 0.5.1 (workspace) | Float assertions | Keep; no change. |
 
-### Data Formats
+- **Integration / E2E:** No new framework. Continue current pattern: integration tests as `--test` crates (e.g. `neurohid-core --test extension_outlet_e2e`), and targeted binary tests (e.g. `neurohid --bin neurohid-service`). Add more such tests where valuable; no extra stack.
+- **Flakiness:** Use nextest’s `retries` in config (e.g. `.config/nextest.toml` or `nextest.toml` in repo) for known-flaky tests; prefer fixing root cause and use retries sparingly.
 
-| Format | Role | Tooling |
-|--------|------|---------|
-| **EDF/EDF+** | Standard 16-bit EEG file format | MNE `read_raw_edf`; write via pyedflib or MNELAB if needed. |
-| **BDF** | 24-bit BioSemi variant | MNE `read_raw_bdf`. |
-| **XDF** | Multi-stream LSL recordings | pyxdf for load; LSL for record. Use for “record from Hub/runtime, analyze offline”. |
+#### Python
 
-### Development Tools
+| Technology | Version | Purpose | Why |
+|------------|---------|---------|-----|
+| **pytest** | ≥9.0.2 (existing) | Test runner | Keep. |
+| **pytest-cov** | ≥7.0.0 (existing) | Coverage | Keep; already in CI with Codecov. |
+| **pytest-asyncio** | ≥1.3.0 (existing) | Async tests | Keep. |
+| **pytest-rerunfailures** | ≥14.0 | Flaky retries | Rerun failing tests N times (CLI or `@pytest.mark.flaky`); use sparingly; avoid with pytest-xdist if mixing parallel + reruns. |
 
-| Tool | Purpose | Notes |
-|------|---------|------|
-| **uv** | Python env and package management | Project standard; use `uv run --project python` / `uv sync --directory python`. |
-| **pytest** | Python tests | ≥9.0; use with pytest-cov, pytest-asyncio for async IPC tests. |
-| **ruff / black / mypy** | Lint, format, type-check | Per `python/AGENTS.md`; line-length 100. |
-| **JupyterLab** | Notebooks for exploration and Hub IDE | ≥4.4; fits “Hub as IDE” and composable SDK/CLI. |
+- **Flakiness:** Prefer fixing order/races; add `pytest-rerunfailures` only for identified flaky tests. Document in `python/pyproject.toml` and optionally in `conftest.py` (e.g. `--reruns 2` for specific marks).
 
-## Installation
+### What NOT to Add (Testing)
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| A separate E2E “framework” (e.g. Playwright for Hub) for v1.1 | Scope and maintenance cost; Hub already has egui_kittest. | More unit/integration tests and existing binary/integration test pattern. |
+| cargo-tarpaulin | We already use cargo-llvm-cov in CI; Tarpaulin weaker on non-Linux. | Keep cargo-llvm-cov. |
+| pytest-xdist + rerunfailures together by default | Rerun behavior can be inconsistent when parallel. | Add rerunfailures only where needed; avoid parallel for flaky suites if both are used. |
+
+### Integration with Existing Stack
+
+- **Rust:** Add `nextest` as a dev/CI tool (install via `cargo install cargo-nextest` or CI action). Optionally add `nextest.toml` at repo root with `retries = 2` for selected tests and `run.tests.timeout`; CI can run `cargo nextest run --workspace` instead of `cargo test --workspace`, and keep existing `cargo llvm-cov` job (nextest is compatible with llvm-cov workflows).
+- **Python:** Add `pytest-rerunfailures` to `[project.optional-dependencies]` or dev deps in `python/pyproject.toml`; no change to `uv` or test entrypoints (`uv run --project python pytest ...`).
+
+---
+
+## 2. Native BrainFlow Integration (docs/examples/Hub UX, then board config/streaming)
+
+### Current State
+
+- **neurohid-device** has a BrainFlow **simulation** adapter (feature `brainflow`): wraps Mock with BrainFlow-like board metadata; **no** real BrainFlow SDK linked.
+- **neurohid-types** has `BrainFlowConfig` (e.g. `board_id`, `serial_port`).
+- Hub Settings already expose a BrainFlow backend option and config; backend is mock-based today.
+
+### Recommended Stack for Native BrainFlow
+
+#### Rust (real SDK integration)
+
+| Technology | Version / Source | Purpose | Why |
+|------------|------------------|---------|-----|
+| **BrainFlow core (C/C++)** | Build from source (BrainFlow repo `tools/build.py`) | Native libs | BrainFlow has no prebuilt Rust crate on crates.io; Rust binding is in-tree and requires built C/C++ core and dynamic libs. |
+| **BrainFlow Rust binding** | In-tree: `brainflow-dev/brainflow` → `rust_package/brainflow` | BoardShim, API | Official binding; build with `cargo build --features generate_binding` after core is built; crate name `brainflow`, not on crates.io. |
+
+- **Dependency option A (recommended for v1.1):** Add BrainFlow as a **git dependency** pointing at `brainflow-dev/brainflow` (e.g. `brainflow = { git = "https://github.com/brainflow-dev/brainflow", rev = "<tag-or-commit>" }`) in `neurohid-device` under a new feature (e.g. `brainflow-native`) so default build stays mock-only. Build requires: (1) user/CI builds BrainFlow core and sets `BRAINFLOW_DIR` or installs libs to a standard path; (2) neurohid-device’s build script finds libs and links. This implies documenting build order and platform steps (Windows/Linux/macOS) in `docs/` and optionally a small CI job that builds BrainFlow then builds `neurohid-device` with `brainflow-native`.
+- **Dependency option B:** Vendor `rust_package/brainflow` into repo (submodule or copy) and depend via `path = "..."`; same “build core first” requirement, more control at cost of upkeep.
+- **Do not** add a third-party “brainflow” crate from crates.io for the official API; the only official Rust support is in the BrainFlow repo.
+
+#### Python (already aligned)
+
+- **brainflow** on PyPI (e.g. ≥5.20 per existing research) for docs, examples, and any Python-side Hub/scripting. No stack change; ensure docs/examples reference `uv run --project python` and optional `brainflow` dependency if examples use it.
+
+### Documentation and Examples (stack-adjacent)
+
+- **Docs:** Add/update `docs/brainflow.md` (or equivalent): build order (BrainFlow core → Rust binding), env vars, platform notes, feature flags (`brainflow` vs `brainflow-native`), and how Hub discovery/connection UX maps to `BrainFlowConfig` / `BrainFlowProvider`.
+- **Examples:** Add runnable examples (Rust and/or Python) that use the native BrainFlow API (BoardShim, get_board_data) for discovery and streaming; these live in repo and are referenced from docs.
+- **Hub UX:** No new GUI framework; extend existing egui Settings/Devices screens and config types. No stack addition.
+
+### What NOT to Add (BrainFlow)
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| A separate “brainflow-sys” crate from crates.io | No official crate; in-tree binding uses bindgen. | Git/path dep on BrainFlow’s `rust_package/brainflow`. |
+| Bundling BrainFlow C/C++ in our repo | Licensing and build complexity. | Document “build BrainFlow first”; optional CI that builds BrainFlow then neurohid. |
+| Replacing Mock BrainFlow adapter with native-only | CI and no-hardware dev need the mock. | Keep mock adapter; add native path behind `brainflow-native` (or similar) feature. |
+
+### Integration with Existing Crates
+
+- **neurohid-device:** Add optional dep `brainflow = { git = "..." }` under feature `brainflow-native`; in `brainflow.rs` (or a new `brainflow_native.rs`), implement `DeviceProvider`/`Device` using BoardShim when `brainflow-native` is enabled, keeping current mock adapter when only `brainflow` is enabled or for tests.
+- **neurohid-types:** Keep `BrainFlowConfig`; no change.
+- **neurohid-core / neurohid-hub:** No new direct BrainFlow deps; they use device abstraction only.
+- **Python:** Use `brainflow` from PyPI in examples/docs where needed; optional dev/example dep in `python/pyproject.toml`.
+
+---
+
+## 3. Framework vs Hub Structural Separation
+
+### Recommendation: Layout and Documentation Only
+
+No new frameworks or crates.io dependencies. The existing crate graph already supports a clear boundary:
+
+- **Framework** = reusable surface: `neurohid-types`, `neurohid-device`, `neurohid-signal`, `neurohid-platform`, `neurohid-ipc`, `neurohid-storage`, `neurohid-calibration`, `neurohid-core`, `neurohid-sdk`.
+- **Application** = Hub and binaries: `neurohid-hub`, `neurohid` (binaries: neurohid, neurohid-service, neurohid-validate).
+
+Dependency direction is already correct (Hub depends on core/sdk, not directly on device/signal per `docs/crate-boundaries.md`).
+
+### Optional Tooling (No New Deps)
+
+| Approach | Purpose | Notes |
+|----------|---------|--------|
+| **Workspace group** | Clarify “framework” vs “app” in one place | In root `Cargo.toml`, `[workspace]` has no formal groups; could add a comment block or a `[target]`/metadata listing framework crates. No Cargo feature for this. |
+| **Docs** | Single source of truth | Add or update `docs/crate-boundaries.md` (or `docs/framework-surface.md`) with an explicit “Framework surface” section: list framework crates, state that Hub is one application on top, and that a future full split (e.g. framework repo) will preserve this boundary. |
+| **Optional facade crate** | Single “framework” entrypoint | Could introduce `neurohid-framework` that re-exports only the public API of the framework crates (similar to SDK but scoped to “what the framework offers”). This is a structural choice, not a new external dependency; defer unless product needs a single dependency name. |
+
+### What NOT to Add
+
+| Avoid | Why | Use Instead |
+|-------|-----|-------------|
+| A new “framework” framework or meta-crate from crates.io | Goal is boundary clarity, not a new runtime. | Document boundary; optionally one facade crate. |
+| Moving crates to a different repo in v1.1 | Planned for a later milestone. | In-repo layout and docs only. |
+
+### Integration with Existing Stack
+
+- No changes to `Cargo.toml` dependencies for framework boundary only.
+- CI and build remain `cargo build --workspace` / `cargo test --workspace`; no new tools.
+- `neurohid-sdk` continues to be the public re-export surface for embedders; framework boundary doc can state that SDK is the recommended external dependency and that Hub is one consumer of the same framework.
+
+---
+
+## Summary Table: v1.1 Stack Additions
+
+| Area | Add | Version / Source | Where |
+|------|-----|------------------|--------|
+| Testing (Rust) | cargo-nextest | 0.9.x | Dev/CI tool; optional `nextest.toml` |
+| Testing (Python) | pytest-rerunfailures | ≥14.0 | Optional/dev dep in `python/pyproject.toml` |
+| BrainFlow (Rust) | BrainFlow Rust binding | git: brainflow-dev/brainflow, rust_package/brainflow | neurohid-device, feature `brainflow-native` |
+| BrainFlow (build) | BrainFlow C/C++ core | Build from source (tools/build.py) | Docs + optional CI |
+| Framework boundary | (none) | — | Docs + optional workspace metadata or facade crate |
+
+---
+
+## Installation / Quick Reference
 
 ```bash
-# Python (uv)
-uv sync --directory python   # uses python/pyproject.toml
+# Rust: nextest (dev/CI)
+cargo install cargo-nextest
 
-# Core biosignal/EEG stack (if adding to a fresh env)
-uv add mne>=1.11.0 pylsl>=1.18 brainflow>=5.20 pyxdf>=1.17
-uv add onnx>=1.19 onnxruntime>=1.24 torch scipy scikit-learn numpy
+# Python: flaky retries (optional)
+uv add --project python --optional dev pytest-rerunfailures
+
+# BrainFlow: not installed via Cargo; build BrainFlow core then use git dep (see docs).
 ```
 
-Rust: existing workspace; LSL via optional `neurohid-device` with workspace-patched `lsl-sys`. BrainFlow Rust from source after building C++ core (see BrainFlow docs).
+---
 
 ## Alternatives Considered
 
 | Recommended | Alternative | When to Use Alternative |
-|-------------|-------------|--------------------------|
-| MNE-Python | EEGLAB (MATLAB), FieldTrip | When team or pipeline is already MATLAB-based. |
-| LSL | Custom TCP/UDP, MQTT | LSL when you need sync and ecosystem compatibility; custom when you own all endpoints and need minimal deps. |
-| BrainFlow | Vendor SDKs only | BrainFlow when supporting many devices with one API; vendor SDK when one device and vendor support is required. |
-| ONNX Runtime | Python-only inference (Torch) | ONNX when deploying in Rust or other non-Python runtimes, or when you want one artifact for multiple runtimes. |
-| tract-onnx | onnxruntime-rs / candle | tract-onnx when already in use and opset coverage is sufficient; consider others if hitting unsupported ops. |
+|-------------|-------------|-------------------------|
+| cargo-nextest | Keep `cargo test` only | If CI is already fast enough and flakiness is minimal. |
+| cargo-llvm-cov (keep) | cargo-tarpaulin | Tarpaulin if Linux-only and ptrace is preferred; we already use llvm-cov and need cross-platform. |
+| pytest-rerunfailures | flaky (PyPI) | Both work; rerunfailures is more common and CLI-friendly. |
+| BrainFlow git/path dep | Vendor full BrainFlow repo | Vendor if we need to patch Rust binding or pin an unreleased fix. |
+| Document framework boundary | New neurohid-framework crate | Add facade crate only if we want a single “framework” dependency name before a future repo split. |
 
-## What NOT to Use
-
-| Avoid | Why | Use Instead |
-|-------|-----|-------------|
-| **Bare `python` in scripts/docs** | Project policy is uv-first. | `uv run --project python` / `uv run --directory python`. |
-| **Conda for this project** | Repo standard is uv; lockfile and CI are uv-based. | uv for Python. |
-| **Legacy LSL forks** | Old pylsl/chkothe forks; liblsl ABI can differ. | Official labstreaminglayer/pylsl and sccn/liblsl (or patched lsl-sys in workspace). |
-| **Python &lt;3.10 for new code** | MNE 1.11 and onnx/onnxruntime require ≥3.10. | Python 3.12+ per PROJECT.md. |
-| **numpy 3.x with pylsl** | pylsl 1.18.1 constrains numpy to &lt; 3. | numpy &lt; 3 where pylsl is in the same env; otherwise follow MNE (numpy ≥1.26, &lt; 3). |
-| **Building a custom streaming protocol** | LSL is the standard for BCI/research; reinventing fragments the ecosystem. | LSL for streaming; XDF for recorded streams. |
-| **Proprietary BCI stacks as the only path** | Composable SDK/CLI/formats require open, documented interfaces. | Use open formats (ONNX, EDF/XDF) and LSL/BrainFlow/MNE as the standard path. |
-
-## Stack Patterns by Variant
-
-**If building Hub-as-IDE / notebooks only (no Rust runtime):**
-- Use Python-only: MNE, pylsl, pyxdf, PyTorch, onnx, onnxruntime.
-- Decoder can stay in Python (onnxruntime) for simplicity.
-
-**If running decoders in standalone Rust runtime:**
-- Train/export in Python (PyTorch → ONNX); run inference in Rust with tract-onnx.
-- Keep ONNX opset and input/output shapes documented so Python export and Rust inference stay in sync.
-
-**If adding non-EEG biosignals (EMG, etc.):**
-- Keep MNE for EEG-heavy analysis; use BrainFlow for multi-modal device access.
-- Same LSL/XDF and ONNX decoder pipeline can carry other signal types if channel semantics are defined.
-
-**If exposing composable CLI/formats:**
-- Prefer EDF/XDF and ONNX as interchange formats; document channel layouts and decoder I/O in docs.
-- Use LSL stream names/types so third-party tools can discover and consume streams.
+---
 
 ## Version Compatibility
 
-| Package A | Compatible With | Notes |
-|-----------|-----------------|-------|
-| mne 1.11.0 | Python ≥3.10, numpy &lt;3, ≥1.26, scipy ≥1.11 | MNE PyPI deps. |
-| pylsl 1.18.1 | Python ≥3.9, numpy &lt;3, ≥1.21 | On non-Windows, liblsl must be available (e.g. PYLSL_LIB or system lib). |
-| brainflow 5.20.1 | numpy, setuptools (no strict version) | Precompiled wheels for x64 Win/Linux/macOS; Rust from source. |
-| onnx 1.20.1 | Python ≥3.10, numpy ≥1.23.2, protobuf ≥4.25.1 | Export and graph manipulation. |
-| onnxruntime 1.24.2 | Python ≥3.10, numpy ≥1.21.6 | Use one of onnxruntime or onnxruntime-gpu per env. |
-| tract-onnx 0.22 | Rust, ONNX models (opset) | Verify opset compatibility with Python-exported models. |
+| Item | Compatible With | Notes |
+|------|-----------------|--------|
+| cargo-nextest 0.9.x | Rust 1.85+ | No conflict with workspace rust-version. |
+| cargo-llvm-cov (existing) | cargo nextest | Use `cargo llvm-cov` with test run from nextest or keep current CI flow. |
+| pytest-rerunfailures ≥14.0 | pytest ≥9 | Matches current pytest. |
+| BrainFlow rust_package | BrainFlow core (built) | Must build core first; Rust crate has older deps (e.g. ndarray 0.15) — may need to wrap or use only in brainflow-native feature to avoid pulling old deps into main graph. |
 
-## Confidence
+**Note on BrainFlow Rust deps:** The in-tree `brainflow` crate uses older `ndarray` and other deps. Prefer depending on it only under `brainflow-native` and not re-exporting its types in the main API surface; wrap BoardShim in neurohid-device’s existing types to keep the rest of the workspace on current ndarray/serde.
 
-| Area | Level | Reason |
-|------|-------|--------|
-| Core (MNE, LSL, BrainFlow) | HIGH | Versions from PyPI and official docs (mne.tools, brainflow.readthedocs.io, pypi.org/project/pylsl). |
-| Decoder (ONNX, onnxruntime, tract) | HIGH | PyPI and crates.io; tract-onnx version from repo. |
-| Ecosystem (PyBCI, pyxdf, formats) | MEDIUM | PyPI + MNE docs + WebSearch; not re-verified with Context7. |
-| “Standard 2025 stack” claim | MEDIUM | LSL and MNE are widely cited; BrainFlow and ONNX adoption from docs and search; no single authoritative “BCI stack” document. |
+---
 
 ## Sources
 
-- [MNE-Python 1.11.0](https://mne.tools/stable/index.html) — homepage, capabilities
-- [PyPI: mne](https://pypi.org/project/mne/) — 1.11.0, deps (Python ≥3.10, numpy &lt;3,≥1.26, scipy ≥1.11)
-- [PyPI: brainflow](https://pypi.org/project/brainflow/) — 5.20.1
-- [BrainFlow Installation](https://brainflow.readthedocs.io/en/stable/BuildBrainFlow.html) — Python pip, Rust from source
-- [PyPI: pylsl](https://pypi.org/project/pylsl/) — 1.18.1, numpy &lt;3,≥1.21
-- [PyPI: onnxruntime](https://pypi.org/project/onnxruntime/) — 1.24.2
-- [PyPI: onnx](https://pypi.org/project/onnx/) — 1.20.1
-- [PyPI: pyxdf](https://pypi.org/project/pyxdf/) — 1.17.0 (WebSearch)
-- [.planning/codebase/STACK.md](.planning/codebase/STACK.md) — existing NeuroHID Rust/Python stack
-- WebSearch: EEG/biosignal developer tooling 2025, PyBCI, LSL, decoder pipelines, EDF/XDF/MNE
+- cargo-nextest: [nexte.st](https://nexte.st), [docs](https://nexte.st/docs/running), [changelog](https://nexte.st/changelog) — HIGH.
+- cargo-llvm-cov: [crates.io](https://crates.io/crates/cargo-llvm-cov), [taiki-e/install-action](https://github.com/taiki-e/install-action) (existing in CI) — HIGH.
+- Rust coverage: Rust Project Primer, rustc instrument-coverage; cargo-tarpaulin vs llvm-cov — MEDIUM.
+- pytest-rerunfailures: [pytest-rerunfailures docs](https://pytest-rerunfailures.readthedocs.io/stable) — HIGH.
+- BrainFlow: [BuildBrainFlow](https://brainflow.readthedocs.io/en/stable/BuildBrainFlow.html) (Rust: build from source), [brainflow-dev/brainflow rust_package](https://github.com/brainflow-dev/brainflow/tree/master/rust_package), [Data Format](https://brainflow.readthedocs.io/en/stable/DataFormatDesc.html) — HIGH for build path; MEDIUM for Rust crate version/dep alignment.
+- Framework boundary: `docs/crate-boundaries.md`, `.planning/codebase/ARCHITECTURE.md` — HIGH.
 
 ---
-*Stack research for: biosignal/EEG developer tooling and decoder pipelines (subsequent milestone).*
+*Stack research for: NeuroHID v1.1 (testing, BrainFlow, framework boundary)*  
+*Researched: 2026-02-21*

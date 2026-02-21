@@ -1,217 +1,212 @@
-# Architecture Patterns
+# Architecture Research: v1.1 Integration (Testing, BrainFlow, Framework–Hub Separation)
 
-**Domain:** Biosignal / EEG developer tooling
-**Researched:** 2026-02-20
-**Confidence:** MEDIUM (ecosystem patterns from LSL/BrainFlow/MNE/review literature; NeuroHID alignment from codebase)
+**Domain:** Integration of new milestone features into existing NeuroHID architecture  
+**Researched:** 2026-02-21  
+**Confidence:** HIGH (codebase and planning docs; no new external ecosystem)
 
-## Standard Architecture
+## Purpose
 
-### System Overview
+This document answers how **(1) thorough testing**, **(2) native BrainFlow integration**, and **(3) framework–vs–Hub separation** integrate with the existing Rust/Python architecture. It identifies integration points, new vs modified components, data-flow impact, and a suggested build order for roadmap phases.
 
-Biosignal/EEG developer tooling systems are typically structured as a **linear pipeline** from hardware to output, with an optional **orchestration/IDE layer** for development and a **standalone runtime** for deployment. Streaming middleware (e.g. LSL) often sits between acquisition and processing as a pub/sub boundary.
+---
 
-```
-┌─────────────────────────────────────────────────────────────────────────────────┐
-│                    Development / IDE layer (optional)                             │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐  │
-│  │ Device UI   │  │ Calibration  │  │ Trainer /   │  │ Visualization /        │  │
-│  │ & discovery │  │ & profiles  │  │ Lab / IDE   │  │ Jupyter / observability │  │
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └───────────┬─────────────┘  │
-├─────────┴────────────────┴────────────────┴────────────────────┴─────────────────┤
-│                         Control & config (IPC / RPC / storage)                     │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│                         Runtime pipeline (signal → action)                          │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│  ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────────┐    │
-│  │ Acquisition  │───▶│ Preprocessing │───▶│ Decoding /   │───▶│ Output /      │    │
-│  │ (device /     │    │ (filter,      │    │ inference    │    │ action        │    │
-│  │  LSL inlet)  │    │  features)    │    │ (ONNX etc.)  │    │ (HID / custom)│    │
-│  └──────────────┘    └──────────────┘    └──────────────┘    └──────────────┘    │
-├───────────────────────────────────────────────────────────────────────────────────┤
-│  Optional: streaming middleware (LSL outlet/inlet, resolver) between components    │
-└─────────────────────────────────────────────────────────────────────────────────┘
-```
-
-### Component Boundaries
-
-| Component | Responsibility | Communicates With |
-|-----------|----------------|-------------------|
-| **Acquisition** | Discover devices, connect, produce raw/time-aligned samples (or consume LSL streams). Abstract hardware via a single API (e.g. BrainFlow BoardShim, LSL inlets). | Preprocessing (samples downstream); optional IDE (discovery/connection status); config/storage (device settings). |
-| **Preprocessing** | Filter, re-reference, artifact handling, feature extraction. May be real-time (ring buffer / chunk-based) or batch. | Acquisition (ingest samples); Decoding (emit feature vectors or epochs); optional IDE (live viz). |
-| **Decoding / inference** | Map features (or raw windows) to decisions (classes, continuous control). Load and run models (ONNX, sklearn-style pipelines). | Preprocessing (features in); Output (decisions out); optional ML bridge (training, model updates). |
-| **Output / action** | Translate decisions into effector commands: HID (keyboard/mouse), game input, MIDI, or custom. | Decoding (decisions in); platform layer (enigo, etc.); optional IDE (outlet status). |
-| **Streaming middleware (optional)** | LSL: outlets (producers), inlets (consumers), resolver (discovery). Decouples acquisition from processing across processes/machines; provides sync and XDF recording. | Acquisition (outlet from device); Preprocessing (inlet); external recorders (Lab Recorder). |
-| **Control & config** | Profiles, calibration results, model paths, enable/disable output. Persisted storage; RPC or IPC for runtime control. | All pipeline components (config); IDE (snapshots, commands); standalone runtime (same protocol). |
-| **IDE / Hub** | Device setup, calibration, training workflows, visualization, Jupyter/lab, observability. Talks to runtime via control IPC; may embed or launch runtime. | Control (requests/snapshots); optional direct viz from pipeline (e.g. stream tap). |
-| **Standalone runtime** | Headless process running the pipeline (device → signal → decoder → action). Same core as “runtime” above; no GUI. Controlled via same IPC/CLI. | Control (config, commands); pipeline components (internally). |
-
-### Data Flow
-
-**Primary (runtime) — unidirectional:**
+## Existing Architecture (Baseline)
 
 ```
-[Device/LSL] → raw samples → [Preprocessing] → features/epochs → [Decoder] → decisions → [Output] → HID/custom
+┌─────────────────────────────────────────────────────────────────────────────┐
+│  neurohid (bins)  neurohid-hub  neurohid-sdk                                 │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  neurohid-core (runtime, service, tasks, facade)                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  neurohid-device  neurohid-signal  neurohid-platform  neurohid-ipc           │
+│  neurohid-storage  neurohid-calibration                                       │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  neurohid-types                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Acquisition → Preprocessing:** Stream of samples (chunks or sample-by-sample). Typed by channel count, sample rate, optional LSL timestamps.
-- **Preprocessing → Decoding:** Feature vectors or epoched data at fixed intervals or event-driven.
-- **Decoding → Output:** Discrete or continuous decisions (e.g. class id, confidence, regression value).
-- **Output → effector:** Platform-specific actions (key press, mouse move, etc.).
+**Data flow (unchanged by v1.1 scope):**  
+DeviceTask → SignalTask → DecoderTask → ActionTask → OutletTask; Hub/CLI use `RuntimeHandle` and `neurohid_core::facade` (IPC, storage). Python bridge over IPC for ML/ErrP/training.
 
-**Control (bidirectional):**
+---
 
-```
-[Hub / CLI] ←→ IPC/RPC ←→ [Runtime]  ;  [Runtime] ←→ [Storage] (config, profiles, secrets)
-```
+## 1. Thorough Testing — Integration
 
-- Clients send control requests (snapshot, set_output_enabled, load_profile, etc.).
-- Runtime responds with snapshots (state, integrity, telemetry) and applies commands.
-- Config and profiles are read at startup and on demand; calibration/model paths come from storage.
+### Integration Points
 
-**ML bridge (optional, often out-of-band):**
+| Where | What | Notes |
+|-------|------|--------|
+| **Rust crates** | Co-located `#[cfg(test)] mod tests`; optional `tests/` for integration | Existing pattern; extend coverage and add integration tests where valuable |
+| **neurohid-core** | `tests/` directory (e.g. `extension_outlet_e2e.rs`) | Already has one e2e-style integration test; add more IPC/service integration tests here |
+| **neurohid-hub** | Unit tests in-screen or in app; optional integration tests | Real IPC connect/disconnect/reconnect tests referenced in CHANGELOG; reduce flakiness here |
+| **Python** | `python/tests/` (pytest + unittest API); `python/pyproject.toml` (coverage) | Extend coverage, stabilize async/flaky tests |
+| **CI** | `cargo test --workspace`; pytest with coverage; optional Rust coverage (e.g. tarpaulin) | Coverage reporting (Codecov) already in CHANGELOG; formalize gates and flakiness mitigation |
 
-```
-[Runtime] → events/telemetry → [Python bridge] → training/ErrP → model/feedback → [Runtime]
-```
+### New vs Modified Components
 
-- Runtime streams decision events and telemetry to Python for training or ErrP.
-- Python returns model artifacts or feedback; runtime loads new models or adjusts behavior via control/config.
+| Component | Status | Change |
+|-----------|--------|--------|
+| **Rust coverage tooling** | **New** (optional) | Add `cargo-tarpaulin` or similar to manifests/CI for coverage; no new crates |
+| **Rust integration test layout** | **Modified** | More tests under `crates/neurohid-core/tests/` and possibly `crates/neurohid-hub/tests/`; no new crate |
+| **Python tests** | **Modified** | Same layout (`python/tests/`); improve coverage, fixtures, and async stability |
+| **CI workflow** | **Modified** | Stricter coverage gates, flakiness handling (retries, quarantine), optional Rust coverage upload |
 
-### Suggested Build Order (for roadmap)
+### Data Flow Impact
 
-Dependencies between components imply this order:
+**None.** Testing is cross-cutting: it exercises existing data flow and contracts. No change to DeviceTask → … → OutletTask or to IPC/bridge protocols. Integration tests may spawn real runtime or use in-process mocks (as `extension_outlet_e2e` does).
 
-1. **Types and config** — Shared domain types, config and profile schema, storage interface. No runtime behavior; everything else depends on this.
-2. **Acquisition** — Device abstraction and at least one backend (e.g. LSL, mock, or BrainFlow). Enables “signal in” for the rest of the pipeline.
-3. **Preprocessing** — Filter/feature pipeline consuming acquisition output. Depends on types and acquisition.
-4. **Decoding** — Load and run models; consume preprocessing output, emit decisions. Depends on types and preprocessing.
-5. **Output** — Map decisions to actions; platform layer (HID, etc.). Depends on types and decoding.
-6. **Core runtime** — Orchestrate tasks (device → signal → decoder → action → outlet); channels and supervisor. Depends on all pipeline components.
-7. **Control & IPC** — Transport and protocol for control RPC and optional event stream. Runtime and clients depend on it.
-8. **Storage** — Persistence for config, profiles, secrets. Runtime and Hub depend on it.
-9. **Standalone runtime binary** — Thin wrapper around core runtime + control + storage; no GUI. Enables “run in background” use case.
-10. **SDK / CLI / formats** — Public API surface, CLI commands, shared file formats (e.g. ONNX, profile schema). Can be incremental once runtime exists.
-11. **Hub (IDE-like)** — GUI for discovery, calibration, profiles, visualization, Python lab, Jupyter. Depends on control, storage, and optional embedded/external runtime.
-12. **Extensibility** — Pluggable device backends, output types, and (optionally) middleware. Design from the start; implement after core pipeline and SDK are stable.
+### Testing Layout and Ownership
 
-Rationale: Pipeline stages must exist before orchestration; orchestration and control must exist before a standalone runtime and Hub; SDK and formats stabilize the contract before broadening extensibility and IDE features.
+- **Unit tests:** Remain co-located in each crate (`#[cfg(test)] mod tests`); ownership stays with the crate.
+- **Integration tests:** Owned by the crate that composes the behavior (e.g. `neurohid-core` for pipeline/extension, `neurohid-core` or `neurohid-hub` for IPC). Prefer `neurohid-core/tests/` for runtime/service/IPC integration; `neurohid-hub/tests/` only if tests are Hub-specific (e.g. UI/control flow).
+- **E2E:** Current pattern is in-process integration test (e.g. outlet e2e). Broader E2E (full pipeline, multiple processes) can live in a dedicated step in CI or a small `tests/e2e/`-style layout under repo root if needed later; not a new crate.
+- **Python:** Keep all tests under `python/tests/`; ownership with Python package.
 
-## Architectural Patterns
+---
 
-### Pattern 1: Device-agnostic acquisition API
+## 2. Native BrainFlow Integration — Integration
 
-**What:** Single trait or interface (e.g. `Device` / `DeviceProvider`, BrainFlow’s `BoardShim`) for discovery, connect, start/stop stream, and read samples. Backends (LSL, Serial, BrainFlow, Mock) implement the same interface.
+### Integration Points
 
-**When to use:** Any multi-device or multi-backend support; research and product both benefit from swapping hardware without changing pipeline code.
+| Where | What | Notes |
+|-------|------|--------|
+| **neurohid-types** | `BrainFlowConfig`, `DeviceBackend::BrainFlow` | **Existing.** Possibly extend with board-specific options (e.g. serial port, stream params) for deeper integration |
+| **neurohid-device** | `brainflow.rs` (currently simulation adapter wrapping Mock) | **Modified.** Today: no real SDK; normalize board metadata only. Native: link BrainFlow SDK, implement `Device`/`DeviceProvider` with real `BoardShim` (prepare_session, start_stream, get_board_data) |
+| **neurohid-core/tasks/device** | `create_brainflow_provider(config)` in `discovery.rs` | **Modified.** Already feature-gated; no signature change for “real” backend — same `Box<dyn DeviceProvider>` |
+| **Hub (neurohid-hub)** | Devices screen: discovery, connection UX, backend dropdown | **Modified.** “Serial/BrainFlow parity” note; add BrainFlow discovery/connection UX and any board/config UI |
+| **Docs** | Device docs, stream semantics, BrainFlow-specific how-to | **New** (docs only). Document BrainFlow as first-class backend; examples (config snippets, minimal connect flow) |
+| **Python** | No direct BrainFlow in Python for v1.1 device path | Device path is Rust-only; Python bridge unchanged |
 
-**Trade-offs:** Pro: portable apps, testable with mocks. Con: abstraction can hide backend-specific options; may need extension points for device-specific config.
+### New vs Modified Components
 
-### Pattern 2: Task-based runtime with channel boundaries
+| Component | Status | Change |
+|-----------|--------|--------|
+| **neurohid-device** | **Modified** | `brainflow.rs`: add native SDK path behind same trait (feature “brainflow” can mean real SDK when enabled); keep simulation path for CI/docs where no hardware) |
+| **neurohid-types** | **Modified** | Optional: extend `BrainFlowConfig` for board id, port, stream params if needed for native UX |
+| **neurohid-core** | **Modified** | Discovery only if config shape changes; otherwise unchanged |
+| **neurohid-hub** | **Modified** | Devices screen: BrainFlow discovery/connect UX, parity with LSL/Serial where applicable |
+| **Docs + examples** | **New** | New or updated docs (BrainFlow setup, Hub UX); optional minimal example (e.g. config + connect) |
 
-**What:** Each pipeline stage runs as a concurrent task (or thread). Stages communicate via bounded channels (samples, features, decisions). A supervisor monitors task health and triggers shutdown on critical failure.
+### Data Flow Impact
 
-**When to use:** Real-time pipelines where latency and backpressure matter; when you want clear boundaries and testable units.
+**No change to pipeline shape.** BrainFlow remains one more backend behind `DeviceProvider`/`Device`. Samples still flow: BrainFlowDevice → DeviceTask → SignalTask → … . Only the source of samples changes (real hardware vs current mock). Optional: if BrainFlow-specific stream params (e.g. chunk size) are exposed, they stay inside device/signal boundary.
 
-**Trade-offs:** Pro: backpressure, clear data flow, isolated failure. Con: more moving parts; channel types and buffer sizes must be tuned.
+### BrainFlow Placement
 
-### Pattern 3: LSL as optional streaming boundary
+- **Ownership:** Device backend stays in **neurohid-device** (same as LSL, Serial, Mock). No new crate.
+- **Feature gate:** Keep `brainflow` feature; when “native” is implemented, the same feature can enable real SDK (with optional “brainflow-mock” or env for CI without hardware).
+- **Docs/UX first:** Implement documentation and Hub discovery/connection UX before or in parallel with deeper SDK wiring; avoids blocking on SDK details.
 
-**What:** Use LSL outlets at the acquisition edge (or after preprocessing) and inlets in the next stage. Resolver for discovery. Enables multi-process or multi-machine pipelines and standard tools (Lab Recorder, XDF).
+---
 
-**When to use:** When you need sync across streams, recording to XDF, or decoupling acquisition from processing across processes. Not required if a single-process pipeline is enough.
+## 3. Framework–vs–Hub Separation — Integration
 
-**Trade-offs:** Pro: interoperability, sync, ecosystem tools. Con: extra process/network; latency and setup complexity.
+### Integration Points
 
-### Pattern 4: Same runtime core for Hub and standalone
+| Where | What | Notes |
+|-------|------|--------|
+| **Repo layout** | Structural boundary: “framework” vs “Hub app” | Framework = types + component crates + core + SDK surface. Hub = neurohid-hub + neurohid binaries. Same repo; no split yet |
+| **neurohid-sdk** | Public API for embedders | **Existing.** Becomes the documented “framework” surface; Hub must not rely on SDK-internal or Hub-only types from framework |
+| **neurohid-core::facade** | Re-exports for IPC/storage so Hub doesn’t depend on neurohid-ipc/neurohid-storage directly | **Existing.** Enforces “Hub depends on core only” for runtime access |
+| **neurohid-hub** | Depends only on neurohid-core (and transitively what core needs) | **Existing.** Already uses facade; no direct device/signal deps in production. Separation work is clarity and docs, not new deps |
+| **Docs** | Document “framework” vs “Hub as one app” | **New.** Single doc or section: what is the framework (crates, facade, SDK), what is the Hub (app that uses framework) |
 
-**What:** One “runtime” (orchestration + pipeline + control) used by both the IDE-like Hub (embedded or launched) and the headless service. Only the entrypoint and UI differ.
+### New vs Modified Components
 
-**When to use:** When you want “develop and observe in Hub” and “run in background without Hub” without maintaining two pipelines.
+| Component | Status | Change |
+|-----------|--------|--------|
+| **Crate graph** | **Unchanged** | types → components → core → (hub | sdk | binary). No new crates; no dependency reversal |
+| **neurohid-sdk** | **Modified (docs/features)** | Document as the framework entrypoint; ensure feature set (e.g. runtime, device, ipc) is the “official” embedder surface |
+| **neurohid-hub** | **Modified (docs/clarity)** | No new deps; possibly audit that Hub does not reach into component crates except via core/facade |
+| **Docs** | **New** | `docs/framework-and-hub.md` (or equivalent): framework boundary, crate map, “Hub is one app on top of framework” |
 
-**Trade-offs:** Pro: single code path, consistent behavior. Con: runtime must be testable and controllable without GUI.
+### Data Flow Impact
 
-### Pattern 5: IPC for control and ML bridge
+**None.** Separation is structural and documentary. Same data flow; same IPC and control; Hub still talks to runtime via RuntimeHandle and facade. Full framework split to another repo is out of scope for v1.1.
 
-**What:** Local transport (named pipe, loopback TCP) for control RPC (snapshot, commands) and optional event stream (decisions, telemetry) to a Python (or other) process for training/ErrP.
+### Framework Boundary (In-Repo)
 
-**When to use:** When ML/training lives in Python and runtime in Rust/C++; when you need a single control plane for both Hub and CLI.
+- **Framework:** neurohid-types, neurohid-device, neurohid-signal, neurohid-platform, neurohid-ipc, neurohid-storage, neurohid-calibration, neurohid-core, neurohid-sdk (and optionally neurohid-outlet-example as example consumer). “What devs build on.”
+- **Hub:** neurohid-hub + neurohid binaries. “Our app” that uses the framework via neurohid-core and neurohid-core::facade.
+- **Boundary rule:** Hub and other apps depend on the framework through neurohid-core (and neurohid-sdk for embedders). They do not depend on component crates directly for production code; facade and SDK re-exports are the boundary.
 
-**Trade-offs:** Pro: language-agnostic boundary, clear protocol. Con: versioning and serialization discipline; reconnect and fallback behavior required.
+---
+
+## Suggested Build Order for v1.1 Phases
+
+Dependencies between the three features suggest this order:
+
+1. **Framework–Hub separation (structural + docs)**  
+   - **Rationale:** Defines the boundary that testing and BrainFlow will live within. No code flow change; documentation and optional dependency audit.  
+   - **Deliverables:** Doc describing framework vs Hub; SDK as documented framework surface; Hub audited to use only core/facade.  
+   - **Enables:** Clear ownership for “where do tests live” and “BrainFlow stays in device layer.”
+
+2. **Thorough testing (coverage, flakiness, integration/E2E)**  
+   - **Rationale:** Improves confidence before adding native BrainFlow (which can introduce hardware/CI variability).  
+   - **Deliverables:** Rust coverage tooling and CI gates; more integration tests (e.g. IPC in neurohid-core/neurohid-hub); Python coverage and flakiness fixes; E2E only where valuable.  
+   - **Enables:** Safe refactor of brainflow.rs (simulation vs native) with tests in place.
+
+3. **Native BrainFlow (docs/UX then deeper)**  
+   - **Rationale:** Docs and Hub UX first give users a path and don’t block on SDK details; deeper integration (real SDK, board config, streaming) follows.  
+   - **Deliverables:** BrainFlow docs and examples; Hub discovery/connection UX for BrainFlow; then (as scope allows) real BrainFlow SDK in neurohid-device, with simulation path retained for CI.  
+   - **Depends on:** Framework boundary (so BrainFlow stays clearly in device layer); testing (so new code is covered and CI stays stable).
+
+**Phase ordering rationale:**  
+- Separation is independent and cheap (docs + audit).  
+- Testing benefits from a clear “framework” boundary for test ownership.  
+- BrainFlow benefits from both: framework boundary keeps BrainFlow in one place; testing reduces regressions when adding native SDK.
+
+---
+
+## Integration Points Summary
+
+### Internal Boundaries (v1.1-relevant)
+
+| Boundary | Communication | v1.1 Note |
+|----------|---------------|------------|
+| Testing ↔ Crates | Tests live in crates or in crate `tests/` | No new cross-crate test crate; integration tests in neurohid-core (and optionally neurohid-hub) |
+| BrainFlow ↔ Pipeline | DeviceProvider/Device → DeviceTask → SignalTask | Unchanged; BrainFlow is one more backend in neurohid-device |
+| Framework ↔ Hub | neurohid-core (facade) + neurohid-sdk | Document and enforce; Hub uses only core/facade for runtime access |
+
+### New vs Modified (Checklist)
+
+| Area | New | Modified |
+|------|-----|----------|
+| Testing | Rust coverage in CI (optional); possibly e2e layout under repo root | neurohid-core/tests, neurohid-hub tests, Python tests, CI workflow |
+| BrainFlow | Docs, examples | neurohid-device/brainflow.rs, neurohid-types (optional config), Hub devices screen |
+| Framework–Hub | Doc (framework-and-hub) | neurohid-sdk docs, neurohid-hub audit, crate-boundaries.md |
+
+---
 
 ## Anti-Patterns to Avoid
 
-### Anti-Pattern 1: Tight coupling of pipeline stages to UI
+### Testing
 
-**What people do:** Hard-wire pipeline logic inside the IDE or Hub so that “run in background” requires a different code path.
+- **Scattering integration tests across many crates:** Prefer a small number of “integration” owners (e.g. neurohid-core for runtime/IPC, neurohid-hub only if Hub-specific). Avoid a dedicated “integration test crate” that depends on everything.
+- **E2E that require hardware or heavy processes in every CI run:** Prefer in-process integration tests (like extension_outlet_e2e); add full pipeline E2E only where value is clear and flakiness is controlled.
 
-**Why it's wrong:** Duplication, drift, and bugs between “run from Hub” and “run as service.”
+### BrainFlow
 
-**Do this instead:** Implement pipeline and control in a core runtime; Hub and service are two entrypoints that build and drive the same runtime via control IPC.
+- **Putting BrainFlow logic in core or hub:** Keep all BrainFlow-specific code in neurohid-device behind the existing Device/DeviceProvider traits; core only calls `create_brainflow_provider(config)`.
+- **Breaking the simulation path:** Keep the current mock-based BrainFlow adapter for CI and docs; native SDK can be a separate code path behind the same feature or a build-time choice.
 
-### Anti-Pattern 2: No device abstraction
+### Framework–Hub
 
-**What people do:** Write acquisition code for one device or driver; add more devices by copy-pasting and branching.
+- **Hub depending on neurohid-device or neurohid-signal directly:** Hub should use neurohid-core (and facade) only for runtime/config; device/signal are framework internals.
+- **New “framework” crate that just re-exports:** The framework is the existing set of crates (types → components → core) plus neurohid-sdk as the public surface; document that rather than adding a new meta-crate for v1.1.
 
-**Why it's wrong:** Unmaintainable; swapping devices or adding mocks is costly.
-
-**Do this instead:** Introduce a device/provider abstraction and implement backends (LSL, BrainFlow, mock, etc.) behind it; keep pipeline code device-agnostic.
-
-### Anti-Pattern 3: Decoding and output coupled to a single effector type
-
-**What people do:** Decoder output is “keyboard only” or “one game API”; adding MIDI or custom output requires changing decoder or core.
-
-**Why it's wrong:** Limits extensibility and forces rewrites for new output types.
-
-**Do this instead:** Decoder emits generic “decisions”; an output/action layer maps decisions to one or more effector types (HID, game, MIDI, custom) via a small adapter interface.
-
-### Anti-Pattern 4: Global mutable state for pipeline config
-
-**What people do:** Global variables or singletons for device selection, model path, output enabled.
-
-**Why it's wrong:** Hard to test, race-prone, and unclear ownership when multiple clients (Hub, CLI) control the runtime.
-
-**Do this instead:** Explicit config and profile objects; control RPC to mutate state; runtime holds a single source of truth and responds with snapshots.
-
-## Integration Points
-
-### External / ecosystem
-
-| Service / system | Integration pattern | Notes |
-|------------------|---------------------|--------|
-| LSL (liblsl) | Inlets in acquisition or after device driver; optional outlets for recording | Use resolver for discovery; respect chunk size and buffer for latency. |
-| BrainFlow | Implement acquisition backend behind device trait; call BoardShim prepare_session/start_stream/get_board_data | Same process; no LSL required unless you also stream to LSL. |
-| MNE / MNE-LSL | Python side: StreamLSL for intake; optional preprocessing/decoding in Python; IPC or LSL back to runtime if needed | MNE-realtime deprecated for LSL; prefer mne-lsl. |
-| Lab Recorder / XDF | Consume LSL streams; no direct API from runtime | Run as separate process; ensure stream metadata (channel count, sfreq) is correct. |
-
-### Internal boundaries
-
-| Boundary | Communication | Notes |
-|----------|---------------|--------|
-| Acquisition ↔ Preprocessing | Samples (in-process channels or LSL) | Define sample type and chunk size once; keep timestamps if needed for sync. |
-| Preprocessing ↔ Decoding | Feature vectors or epochs | Fixed schema so decoder and trainer agree; version model input schema. |
-| Decoding ↔ Output | Decisions (e.g. class, confidence, value) | Keep decision type generic; output layer does effector-specific mapping. |
-| Runtime ↔ Hub / CLI | IPC (control RPC + optional event stream) | Version protocol; handle reconnect and backward compatibility. |
-| Runtime ↔ Python bridge | IPC (events to Python; model/feedback from Python) | Same transport as control or separate channel; define envelope format. |
-| Runtime ↔ Storage | Read/write config, profiles, secrets | Encrypt sensitive data; use OS keyring for keys; avoid storing raw credentials in config. |
-
-## Scalability Considerations
-
-| Scale | Architecture adjustments |
-|-------|---------------------------|
-| Single user, one device | Single process runtime; optional LSL only for recording or external tools. |
-| Single user, multiple streams | LSL or multi-backend acquisition; one pipeline per “profile” or merged streams; keep decoder/output per use case. |
-| Many users (e.g. lab) | Typically multiple independent runtimes (one per station); shared formats and CLI for consistency; no need for a central server unless you add one. |
-
-For NeuroHID’s stated scope (local-first, desktop and headless, power users/developers), scaling “out” to many users is secondary; the main scaling concern is **throughput and latency** of the pipeline (sample rate, buffer sizes, decoder lag). Prefer clear boundaries and measurable latency over multi-tenant architecture.
+---
 
 ## Sources
 
-- LSL: [Introduction — Labstreaminglayer 1.13](https://labstreaminglayer.readthedocs.io/info/intro.html) — Stream outlet/inlet, resolver, samples/chunks, XDF.
-- MNE-LSL: [Introduction to real-time LSL streams](https://mne.tools/mne-lsl/stable/generated/tutorials/00_introduction.html) — StreamLSL, PlayerLSL, ring buffer, MNE-style API.
-- BrainFlow: [BrainFlow documentation](https://brainflow.readthedocs.io/en/stable/index.html) — Data Acquisition API vs Signal Processing/ML API; BoardShim; multi-language.
-- BCI pipeline: Literature (e.g. acquisition → preprocessing → decoding → output) — [Signal acquisition review (ScienceDirect 2024)](https://www.sciencedirect.com/science/article/pii/S2667325824001559); [BCI decoding toolbox (Frontiers 2024)](https://www.frontiersin.org/journals/human-neuroscience/articles/10.3389/fnhum.2024.1358809/full).
-- NeuroHID codebase: `.planning/codebase/ARCHITECTURE.md`, `PROJECT.md` — Layers, tasks, data flow, Hub vs service.
+- `.planning/PROJECT.md` — v1.1 milestone and requirements
+- `.planning/codebase/ARCHITECTURE.md` — Layers, tasks, data flow
+- `.planning/codebase/TESTING.md` — Current test layout and patterns
+- `docs/architecture-rust-core.md`, `docs/crate-boundaries.md` — Crate map and dependency rules
+- `docs/integration-architecture.md` — Data flow and device backends
+- `crates/neurohid-device/src/brainflow.rs` — Current BrainFlow (simulation) implementation
+- `crates/neurohid-core/src/lib.rs` — Facade re-exports
+- `.planning/codebase/CONCERNS.md` — E2E and coverage notes
 
 ---
-*Architecture research for: biosignal/EEG developer tooling (NeuroHID subsequent milestone: Hub-as-IDE, standalone runtime, SDK/CLI/formats, extensibility).*
-*Researched: 2026-02-20*
+*Architecture research for: v1.1 Testing, BrainFlow, Framework–Hub separation (integration only).*
