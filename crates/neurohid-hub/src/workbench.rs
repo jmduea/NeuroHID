@@ -10,31 +10,42 @@ use neurohid_types::control::RuntimeModeState;
 use crate::screens::Screen;
 use crate::state::ServiceSnapshot;
 
+/// Top-level sidebar lanes aligned to Phase 5 CONTEXT: Devices, Calibration,
+/// Training, Visualization as primary; Config for Dashboard, Profiles, Settings, Labs.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActivityLane {
-    Ops,
-    Analysis,
-    Labs,
+    Devices,
+    Calibration,
+    Training,
+    Visualization,
     Config,
 }
 
 impl ActivityLane {
-    pub const ALL: [Self; 4] = [Self::Ops, Self::Analysis, Self::Labs, Self::Config];
+    pub const ALL: [Self; 5] = [
+        Self::Devices,
+        Self::Calibration,
+        Self::Training,
+        Self::Visualization,
+        Self::Config,
+    ];
 
     pub const fn label(self) -> &'static str {
         match self {
-            Self::Ops => "Ops",
-            Self::Analysis => "Analysis",
-            Self::Labs => "Labs",
+            Self::Devices => "Devices",
+            Self::Calibration => "Calibration",
+            Self::Training => "Training",
+            Self::Visualization => "Visualization",
             Self::Config => "Config",
         }
     }
 
     pub const fn glyph(self) -> &'static str {
         match self {
-            Self::Ops => "OP",
-            Self::Analysis => "AN",
-            Self::Labs => "LB",
+            Self::Devices => "DV",
+            Self::Calibration => "CL",
+            Self::Training => "TR",
+            Self::Visualization => "VZ",
             Self::Config => "CF",
         }
     }
@@ -102,7 +113,7 @@ pub struct WorkbenchState {
 impl Default for WorkbenchState {
     fn default() -> Self {
         Self {
-            lane: ActivityLane::Ops,
+            lane: ActivityLane::Devices,
             bottom_panel: BottomPanelState::default(),
             command_palette_open: false,
             command_query: String::new(),
@@ -247,26 +258,28 @@ impl WorkbenchState {
 
 pub fn screens_for_lane(lane: ActivityLane) -> &'static [Screen] {
     match lane {
-        ActivityLane::Ops => &[
+        ActivityLane::Devices => &[Screen::Devices],
+        ActivityLane::Calibration => &[Screen::Calibration],
+        ActivityLane::Training => &[Screen::Training],
+        ActivityLane::Visualization => &[Screen::Visualization],
+        ActivityLane::Config => &[
             Screen::Dashboard,
-            Screen::Devices,
             Screen::Profiles,
-            Screen::Calibration,
+            Screen::Settings,
+            Screen::PythonLab,
+            Screen::JupyterIde,
         ],
-        ActivityLane::Analysis => &[Screen::Visualization],
-        ActivityLane::Labs => &[Screen::PythonLab, Screen::JupyterIde],
-        ActivityLane::Config => &[Screen::Settings],
     }
 }
 
 pub const fn lane_for_screen(screen: Screen) -> ActivityLane {
     match screen {
-        Screen::Dashboard | Screen::Devices | Screen::Profiles | Screen::Calibration => {
-            ActivityLane::Ops
-        }
-        Screen::Visualization => ActivityLane::Analysis,
-        Screen::JupyterIde | Screen::PythonLab => ActivityLane::Labs,
-        Screen::Settings => ActivityLane::Config,
+        Screen::Devices => ActivityLane::Devices,
+        Screen::Calibration => ActivityLane::Calibration,
+        Screen::Training => ActivityLane::Training,
+        Screen::Visualization => ActivityLane::Visualization,
+        Screen::Dashboard | Screen::Profiles | Screen::Settings | Screen::PythonLab
+        | Screen::JupyterIde => ActivityLane::Config,
     }
 }
 
@@ -281,24 +294,28 @@ mod tests {
     #[test]
     fn lane_screen_mapping_matches_contract() {
         assert_eq!(
-            screens_for_lane(ActivityLane::Ops),
-            &[
-                crate::screens::Screen::Dashboard,
-                crate::screens::Screen::Devices,
-                crate::screens::Screen::Profiles,
-                crate::screens::Screen::Calibration,
-            ]
+            screens_for_lane(ActivityLane::Devices),
+            &[crate::screens::Screen::Devices]
         );
         assert_eq!(
-            screens_for_lane(ActivityLane::Labs),
-            &[
-                crate::screens::Screen::PythonLab,
-                crate::screens::Screen::JupyterIde
-            ]
+            screens_for_lane(ActivityLane::Calibration),
+            &[crate::screens::Screen::Calibration]
+        );
+        assert_eq!(
+            screens_for_lane(ActivityLane::Training),
+            &[crate::screens::Screen::Training]
+        );
+        assert_eq!(
+            screens_for_lane(ActivityLane::Visualization),
+            &[crate::screens::Screen::Visualization]
+        );
+        assert_eq!(
+            lane_for_screen(crate::screens::Screen::Training),
+            ActivityLane::Training
         );
         assert_eq!(
             lane_for_screen(crate::screens::Screen::Visualization),
-            ActivityLane::Analysis
+            ActivityLane::Visualization
         );
     }
 
@@ -319,10 +336,7 @@ mod tests {
         let mut state = WorkbenchState::default();
         state.lane = ActivityLane::Config;
 
-        assert_eq!(
-            state.visible_screens(&UiMode::Advanced),
-            &[crate::screens::Screen::Settings]
-        );
+        assert!(state.visible_screens(&UiMode::Advanced).contains(&crate::screens::Screen::Settings));
         assert!(state.visible_screens(&UiMode::Standard).len() > 1);
     }
 

@@ -1469,6 +1469,8 @@ mod tests {
                             pipeline_integrity_degraded: false,
                             integrity_issue_count: 0,
                             stage_health_summary: Some("signal:ok".to_string()),
+                            recording_active: false,
+                            current_session_id: None,
                         },
                     ),
                     ControlCommand::SetCalibrationMode { enabled } => {
@@ -1617,6 +1619,8 @@ mod tests {
                                         pipeline_integrity_degraded: false,
                                         integrity_issue_count: 0,
                                         stage_health_summary: Some("signal:ok".to_string()),
+                                        recording_active: false,
+                                        current_session_id: None,
                                     },
                                 ),
                                 ControlCommand::SetCalibrationMode { enabled } => {

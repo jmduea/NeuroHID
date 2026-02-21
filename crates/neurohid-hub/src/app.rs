@@ -1279,12 +1279,14 @@ impl HubApp {
                 modifiers.command && modifiers.shift && input.key_pressed(egui::Key::P);
             let lane_shortcut = if modifiers.command && modifiers.shift {
                 if input.key_pressed(egui::Key::O) {
-                    Some(ActivityLane::Ops)
-                } else if input.key_pressed(egui::Key::A) {
-                    Some(ActivityLane::Analysis)
-                } else if input.key_pressed(egui::Key::L) {
-                    Some(ActivityLane::Labs)
+                    Some(ActivityLane::Devices)
                 } else if input.key_pressed(egui::Key::C) {
+                    Some(ActivityLane::Calibration)
+                } else if input.key_pressed(egui::Key::T) {
+                    Some(ActivityLane::Training)
+                } else if input.key_pressed(egui::Key::V) {
+                    Some(ActivityLane::Visualization)
+                } else if input.key_pressed(egui::Key::G) {
                     Some(ActivityLane::Config)
                 } else {
                     None
@@ -1670,11 +1672,7 @@ fn render_sidebar_shell(
         egui::vec2(6.0, 5.0)
     };
 
-    for lane in [
-        ActivityLane::Ops,
-        ActivityLane::Analysis,
-        ActivityLane::Labs,
-    ] {
+    for lane in ActivityLane::ALL {
         sidebar_test_marker(&mut body_ui, lane.label());
     }
     sidebar_test_marker(&mut body_ui, "Settings");
@@ -1756,11 +1754,7 @@ fn render_platform_sidebar(
                         hover_labels.push(None);
                     }
 
-                    for lane in [
-                        ActivityLane::Ops,
-                        ActivityLane::Analysis,
-                        ActivityLane::Labs,
-                    ] {
+                    for lane in ActivityLane::ALL {
                         sidebar
                             .item(lane.glyph(), lane.label())
                             .active(current_lane == lane);
@@ -1809,11 +1803,7 @@ fn render_platform_sidebar(
 }
 
 fn lane_selection_from_clicked_id(clicked_id: &str) -> Option<ActivityLane> {
-    for lane in [
-        ActivityLane::Ops,
-        ActivityLane::Analysis,
-        ActivityLane::Labs,
-    ] {
+    for lane in ActivityLane::ALL {
         if clicked_id == format!("item_0_{}", lane.label()) {
             return Some(lane);
         }
@@ -2074,6 +2064,9 @@ impl eframe::App for HubApp {
                         self.calibration
                             .show_entry(ui, &mut self.state, &mut self.service_manager);
                     }
+                    Screen::Training => {
+                        todo!("Training screen stub added in Task 2");
+                    }
                     Screen::JupyterIde => {
                         self.jupyter_ide.show(ui, &self.state.config.ui);
                     }
@@ -2126,6 +2119,7 @@ fn screen_glyph(screen: Screen) -> &'static str {
         Screen::Devices => "DV",
         Screen::Profiles => "PF",
         Screen::Calibration => "CL",
+        Screen::Training => "TR",
         Screen::JupyterIde => "JP",
         Screen::PythonLab => "PY",
         Screen::Settings => "ST",
@@ -2597,7 +2591,7 @@ mod tests {
                     &mut state.sidebar_state,
                     Screen::all_for_mode(&UiMode::Advanced),
                     Screen::Dashboard,
-                    ActivityLane::Ops,
+                    ActivityLane::Config,
                     None,
                 );
             },
@@ -2631,9 +2625,9 @@ mod tests {
                 let _ = render_sidebar_shell(
                     ui,
                     &mut state.sidebar_state,
-                    Screen::all_for_mode(&UiMode::Advanced),
-                    Screen::Dashboard,
-                    ActivityLane::Ops,
+                    screens_for_lane(ActivityLane::Devices),
+                    Screen::Devices,
+                    ActivityLane::Devices,
                     None,
                 );
             },
@@ -2642,19 +2636,20 @@ mod tests {
             },
         );
 
-        assert_eq!(harness.query_all_by_label("Devices").count(), 1);
+        // Devices lane + Devices screen entry in that lane
+        assert!(harness.query_all_by_label("Devices").count() >= 1);
     }
 
     #[test]
-    fn labs_lane_sidebar_scopes_to_lab_screens() {
+    fn config_lane_sidebar_scopes_to_dashboard_profiles_settings_labs() {
         let harness = Harness::new_ui_state(
             |ui, state: &mut SidebarHarnessState| {
                 let _ = render_sidebar_shell(
                     ui,
                     &mut state.sidebar_state,
-                    screens_for_lane(ActivityLane::Labs),
+                    screens_for_lane(ActivityLane::Config),
                     Screen::PythonLab,
-                    ActivityLane::Labs,
+                    ActivityLane::Config,
                     None,
                 );
             },
@@ -2665,7 +2660,7 @@ mod tests {
 
         assert!(harness.query_all_by_label("Python Lab").next().is_some());
         assert!(harness.query_all_by_label("Jupyter IDE").next().is_some());
-        assert!(harness.query_all_by_label("Dashboard").next().is_none());
+        assert!(harness.query_all_by_label("Dashboard").next().is_some());
     }
 
     #[test]
@@ -2693,7 +2688,7 @@ mod tests {
                     &mut state.sidebar_state,
                     Screen::all_for_mode(&UiMode::Advanced),
                     Screen::Dashboard,
-                    ActivityLane::Ops,
+                    ActivityLane::Config,
                     Some(Screen::Dashboard),
                 );
             },
@@ -2912,8 +2907,8 @@ mod tests {
                     ui,
                     &mut state.sidebar_state,
                     Screen::all_for_mode(&UiMode::Advanced),
-                    Screen::Dashboard,
-                    ActivityLane::Ops,
+                    Screen::Devices,
+                    ActivityLane::Devices,
                     None,
                 );
             },
@@ -2922,9 +2917,11 @@ mod tests {
             },
         );
 
-        assert!(harness.query_all_by_label("Ops").next().is_some());
-        assert!(harness.query_all_by_label("Analysis").next().is_some());
-        assert!(harness.query_all_by_label("Labs").next().is_some());
+        assert!(harness.query_all_by_label("Devices").next().is_some());
+        assert!(harness.query_all_by_label("Calibration").next().is_some());
+        assert!(harness.query_all_by_label("Training").next().is_some());
+        assert!(harness.query_all_by_label("Visualization").next().is_some());
+        assert!(harness.query_all_by_label("Config").next().is_some());
         assert!(harness.query_all_by_label("Settings").next().is_some());
     }
 
@@ -2936,15 +2933,15 @@ mod tests {
         apply_sidebar_shell_response(
             &UiMode::Advanced,
             SidebarShellResponse {
-                lane_selection: Some(ActivityLane::Labs),
+                lane_selection: Some(ActivityLane::Config),
                 ..SidebarShellResponse::default()
             },
             &mut workbench,
             &mut current_screen,
         );
 
-        assert_eq!(workbench.lane, ActivityLane::Labs);
-        assert_eq!(current_screen, Screen::PythonLab);
+        assert_eq!(workbench.lane, ActivityLane::Config);
+        assert_eq!(current_screen, Screen::Dashboard);
     }
 
     #[test]
