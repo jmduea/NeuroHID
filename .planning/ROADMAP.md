@@ -123,5 +123,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Standalone runtime and control | 2/2 | Complete    | 2026-02-20 |
 | 3. SDK/CLI for device and pipeline config | 2/2 | Complete   | 2026-02-20 |
 | 4. Standard path and recording | 3/3 | Complete    | 2026-02-20 |
-| 5. Hub-as-IDE | 4/6 | In Progress|  |
+| 5. Hub-as-IDE | 5/6 | In Progress|  |
 | 6. Composable and extensible | 0/? | Not started | - |

@@ -286,6 +286,9 @@ impl CalibrationScreen {
         }
     }
 
+    /// Persists calibration outputs to the active profile so results are tied to
+    /// profile/identity for reproducibility (HUB-02). Uses state.active_profile_id
+    /// and state.profile_store; no-op if no active profile.
     fn persist_calibration_outputs(
         &self,
         state: &mut HubState,
