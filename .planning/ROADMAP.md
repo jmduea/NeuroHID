@@ -96,7 +96,7 @@ Plans:
 - [x] 05-03-PLAN.md — Calibration game list/grid, wizard, persist to profile (HUB-02)
 - [x] 05-04-PLAN.md — Training screen split layout (config | live progress/metrics) (HUB-03)
 - [x] 05-05-PLAN.md — Visualization customizable and open with Run (HUB-04)
-- [ ] 05-06-PLAN.md — Primary workflow (Run in Hub/background, resume state, docs) (HUB-05)
+- [x] 05-06-PLAN.md — Primary workflow (Run in Hub/background, resume state, docs) (HUB-05)
 
 ### Phase 6: Composable and extensible
 **Goal**: Pipeline components are swappable and new device/output types can be added via published contracts.
@@ -123,5 +123,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5 → 6
 | 2. Standalone runtime and control | 2/2 | Complete    | 2026-02-20 |
 | 3. SDK/CLI for device and pipeline config | 2/2 | Complete   | 2026-02-20 |
 | 4. Standard path and recording | 3/3 | Complete    | 2026-02-20 |
-| 5. Hub-as-IDE | 5/6 | In Progress|  |
+| 5. Hub-as-IDE | 6/6 | Complete | 2026-02-21 |
 | 6. Composable and extensible | 0/? | Not started | - |

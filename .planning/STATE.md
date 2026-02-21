@@ -10,13 +10,13 @@ See: .planning/PROJECT.md (updated 2026-02-20)
 ## Current Position
 
 Phase: 5 of 6 (Hub-as-IDE)
-Plan: 3 of 6 in current phase
-Current Plan: 03
+Plan: 6 of 6 in current phase
+Current Plan: 06
 Total Plans in Phase: 6
-Status: Plan 05-03 complete (Calibration game list, wizard, persist to profile; HUB-02)
-Last activity: 2026-02-21 — Plan 05-03 executed (game list/grid, single-game panel, persist to active profile)
+Status: Plan 05-06 complete (Primary workflow, Run in Hub/background, resume state; HUB-05)
+Last activity: 2026-02-21 — Plan 05-06 executed (resume state, runtime mode UI, workflow docs)
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -43,6 +43,7 @@ Progress: [█████░░░░░] 50%
 | Phase 04 P01 | 5min | 1 task | 2 files |
 | Phase 04 P02 | — | 3 tasks | 12+ files |
 | Phase 05-hub-as-ide P02 | 15 | 2 tasks | 2 files |
+| Phase 05-hub-as-ide P06 | 15 | 3 tasks | 7 files |
 
 ## Accumulated Context
 
@@ -62,6 +63,7 @@ Recent decisions affecting current work:
 - [Phase 05-hub-as-ide]: Status bar shows Devices X/Y and Signal % from any screen; strip always visible (0/0 when stopped)
 - [Phase 05-hub-as-ide]: Training screen split layout (config | live progress); Train on collected data stub; live metrics from ControlSnapshot + trainer_snapshot()
 - [Phase 05-hub-as-ide]: Calibration game list/grid (Grid Maze, Target Tracking); single-game panel via new_for_game(kind); results persisted to active profile (HUB-02)
+- [Phase 05-hub-as-ide]: Resume state as last_screen in UiConfig; Run in Hub / Run in background as user-facing labels (HUB-05)
 
 ### Pending Todos
 
@@ -74,5 +76,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-02-21
-Stopped at: Completed 05-03-PLAN.md (Calibration game list, wizard, persist to profile). Next: 05-04 (Training screen split).
+Stopped at: Completed 05-06-PLAN.md (Primary workflow, Run in Hub/background, resume state).
 Resume file: None
