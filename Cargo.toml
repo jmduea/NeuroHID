@@ -16,6 +16,7 @@ members = [
     "crates/neurohid-calibration",
     "crates/neurohid-outlet-example",
     "apps/neuroide-hub",
+    "apps/neuroide",
 ]
 
 # Shared dependencies across all crates - ensures version consistency

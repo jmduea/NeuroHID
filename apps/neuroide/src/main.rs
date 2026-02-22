@@ -1,4 +1,4 @@
-//! # NeuroHID Hub
+//! # NeuroIDE
 //!
 //! The unified GUI application for NeuroHID. Combines device management,
 //! calibration, profile management, and service control into a single window.
@@ -7,7 +7,6 @@ use eframe::egui;
 
 use neuroide_hub::HubApp;
 
-#[path = "../tracing_init.rs"]
 mod tracing_init;
 
 struct CombinedLogger {
@@ -148,7 +147,7 @@ fn main() {
     init_hub_logger().expect("Failed to initialize Hub logger");
     tracing_init::init_tracing("info").expect("Failed to initialize tracing");
 
-    tracing::info!("Starting NeuroHID Hub");
+    tracing::info!("Starting NeuroIDE");
 
     // On Unix, ignore SIGPIPE so that broken clipboard connections (arboard/x11rb)
     // return EPIPE errors instead of killing the process.
@@ -184,13 +183,13 @@ fn main() {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 800.0])
             .with_min_inner_size([960.0, 640.0])
-            .with_title("NeuroHID Hub"),
+            .with_title("NeuroIDE"),
         ..Default::default()
     };
 
     // Run the application
     match eframe::run_native(
-        "NeuroHID Hub",
+        "NeuroIDE",
         options,
         Box::new(move |cc| Ok(Box::new(HubApp::new(cc, runtime)))),
     ) {

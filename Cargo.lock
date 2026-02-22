@@ -2972,29 +2972,6 @@ dependencies = [
 [[package]]
 name = "neurohid"
 version = "0.1.0"
-dependencies = [
- "anyhow",
- "clap",
- "ctrlc",
- "eframe",
- "egui 0.33.3",
- "egui_logger",
- "log",
- "neurohid-core",
- "neurohid-ipc",
- "neurohid-storage",
- "neurohid-types",
- "neuroide-hub",
- "serde",
- "serde_json",
- "signal-hook",
- "tokio",
- "toml",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "windows-service",
-]
 
 [[package]]
 name = "neurohid-calibration"
@@ -3202,6 +3179,26 @@ dependencies = [
  "neurohid-ipc",
  "neurohid-types",
  "toml",
+]
+
+[[package]]
+name = "neuroide"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "eframe",
+ "egui 0.33.3",
+ "egui_logger",
+ "log",
+ "neurohid-core",
+ "neurohid-types",
+ "neuroide-hub",
+ "signal-hook",
+ "tokio",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
 ]
 
 [[package]]
