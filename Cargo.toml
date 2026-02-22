@@ -70,7 +70,7 @@ eframe = { version = "0.33.3", default-features = false }
 approx = "0.5.1"
 
 # Python bindings
-pyo3 = { version = "0.23", features = ["abi3-py312"] }
+pyo3 = { version = "0.28", features = ["abi3-py314"] }
 
 [workspace.package]
 version = "0.1.0"

@@ -211,11 +211,16 @@ class NeuroHidIpcClient:
                     "ipckit package is required for local_socket IPC mode"
                 )
             channel = ipckit.IpcChannel.connect(self.ipc_endpoint)
-            channel.send_json(envelope)
-            response = channel.recv_json()
-            if not isinstance(response, dict):
-                raise RuntimeError("invalid local_socket IPC response: expected object")
-            return response
+            try:
+                channel.send_json(envelope)
+                response = channel.recv_json()
+                if not isinstance(response, dict):
+                    raise RuntimeError(
+                        "invalid local_socket IPC response: expected object"
+                    )
+                return response
+            finally:
+                channel.close()
 
         retries = max(self.connect_retries, 0)
         attempt = 0
@@ -348,19 +353,22 @@ class NeuroHidIpcClient:
                     "ipckit package is required for local_socket IPC mode"
                 )
             channel = ipckit.IpcChannel.connect(self.ipc_endpoint)
-            channel.send_json(envelope)
-            while max_messages is None or emitted < max_messages:
-                response = channel.recv_json()
-                if not isinstance(response, dict):
-                    raise RuntimeError("invalid runtime.events stream envelope")
-                payload = _runtime_event_payload(response)
-                yield payload
-                emitted += 1
-                if (
-                    payload.get("type") == "lifecycle"
-                    and payload.get("state") == "subscription_closed"
-                ):
-                    break
+            try:
+                channel.send_json(envelope)
+                while max_messages is None or emitted < max_messages:
+                    response = channel.recv_json()
+                    if not isinstance(response, dict):
+                        raise RuntimeError("invalid runtime.events stream envelope")
+                    payload = _runtime_event_payload(response)
+                    yield payload
+                    emitted += 1
+                    if (
+                        payload.get("type") == "lifecycle"
+                        and payload.get("state") == "subscription_closed"
+                    ):
+                        break
+            finally:
+                channel.close()
             return
 
         host, port = self._tcp_target()

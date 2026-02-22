@@ -12,16 +12,12 @@ name = "neurohid_bindings"
 crate-type = ["cdylib"]
 
 [dependencies]
-# PyO3: stable ABI targeting Python 3.13+ (free-threaded capable)
+# PyO3: stable ABI targeting Python 3.14+ (free-threaded capable)
 pyo3 = { workspace = true }
 
 # IPC transport (framing + local-socket connect)
 ipckit = { workspace = true }
 tokio = { workspace = true }
-serde_json = { workspace = true }
-
-# Error handling
-thiserror = { workspace = true }
 
 [lints]
 workspace = true
