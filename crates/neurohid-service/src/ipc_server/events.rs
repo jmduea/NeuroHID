@@ -1,7 +1,7 @@
 use std::collections::{HashSet, VecDeque};
 
 use neurohid_ipc::{
-    IpcChannel, RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe, RuntimeTelemetry,
+    RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe, RuntimeTelemetry,
     TrainerStatus,
 };
 use neurohid_types::{
