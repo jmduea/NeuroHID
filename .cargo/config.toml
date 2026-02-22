@@ -1,0 +1,2 @@
+[env]
+PYO3_PYTHON = "c:/dev/neurohid/python/.venv/Scripts/python.exe"

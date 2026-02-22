@@ -3,12 +3,10 @@
 use std::sync::Arc;
 
 use pyo3::prelude::*;
-use tokio::sync::{broadcast, Mutex};
+use tokio::sync::{Mutex, broadcast};
 use tracing::warn;
 
-use crate::types::{
-    PyAction, PyFeatureVector, PyRuntimeEvent, PySample, PyStreamMarker,
-};
+use crate::types::{PyAction, PyFeatureVector, PyRuntimeEvent, PySample, PyStreamMarker};
 
 // NOTE: Free-threaded Python 3.14 — no GIL exists.
 // All stream items are returned via `future_into_py` which converts
@@ -54,7 +52,7 @@ impl PySampleStream {
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
                             "stream closed",
-                        ))
+                        ));
                     }
                 }
             }
@@ -97,7 +95,7 @@ impl PyFeatureStream {
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
                             "stream closed",
-                        ))
+                        ));
                     }
                 }
             }
@@ -140,7 +138,7 @@ impl PyActionStream {
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
                             "stream closed",
-                        ))
+                        ));
                     }
                 }
             }
@@ -174,9 +172,7 @@ impl PyMarkerStream {
             loop {
                 let mut guard = rx.lock().await;
                 match guard.recv().await {
-                    Ok(marker) => {
-                        return Ok(PyStreamMarker { inner: marker })
-                    }
+                    Ok(marker) => return Ok(PyStreamMarker { inner: marker }),
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         drop(guard);
                         warn!("MarkerStream lagged, dropped {n} items");
@@ -185,7 +181,7 @@ impl PyMarkerStream {
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
                             "stream closed",
-                        ))
+                        ));
                     }
                 }
             }
@@ -219,9 +215,7 @@ impl PyEventStream {
             loop {
                 let mut guard = rx.lock().await;
                 match guard.recv().await {
-                    Ok(event) => {
-                        return Ok(PyRuntimeEvent { inner: event })
-                    }
+                    Ok(event) => return Ok(PyRuntimeEvent { inner: event }),
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         drop(guard);
                         warn!("EventStream lagged, dropped {n} items");
@@ -230,7 +224,7 @@ impl PyEventStream {
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
                             "stream closed",
-                        ))
+                        ));
                     }
                 }
             }

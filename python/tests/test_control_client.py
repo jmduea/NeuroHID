@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import importlib
-import json
 import sys
 import unittest
 from pathlib import Path
@@ -87,7 +86,9 @@ class ControlClientTests(unittest.TestCase):
         client = _control.NeuroHidControlClient(runtime)
         result = client.set_learning_enabled(False)
         self.assertEqual(result, {"status": "ok"})
-        self.assertEqual(runtime.commands, [("set_learning_enabled", {"enabled": False})])
+        self.assertEqual(
+            runtime.commands, [("set_learning_enabled", {"enabled": False})]
+        )
 
     def test_rescan_streams_sends_command(self) -> None:
         runtime = _FakeRuntime()
@@ -101,7 +102,9 @@ class ControlClientTests(unittest.TestCase):
         client = _control.NeuroHidControlClient(runtime)
         result = client.connect_stream("stream-abc")
         self.assertEqual(result, {"status": "ok"})
-        self.assertEqual(runtime.commands, [("connect_stream", {"stream_id": "stream-abc"})])
+        self.assertEqual(
+            runtime.commands, [("connect_stream", {"stream_id": "stream-abc"})]
+        )
 
     def test_set_fallback_policy_dispatches_control(self) -> None:
         runtime = _FakeRuntime()
@@ -126,7 +129,9 @@ class ControlClientTests(unittest.TestCase):
         client = _control.NeuroHidControlClient(runtime)
         stream_id = client.ensure_connected_stream(rescan=False)
         self.assertEqual(stream_id, "stream-1")
-        self.assertEqual(runtime.commands, [("connect_stream", {"stream_id": "stream-1"})])
+        self.assertEqual(
+            runtime.commands, [("connect_stream", {"stream_id": "stream-1"})]
+        )
 
     def test_eligible_eeg_stream_filter(self) -> None:
         self.assertTrue(

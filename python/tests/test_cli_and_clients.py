@@ -5,8 +5,6 @@ import json
 import sys
 import unittest
 from pathlib import Path
-from types import SimpleNamespace
-from unittest.mock import patch, MagicMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 

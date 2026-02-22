@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -493,7 +492,6 @@ def _run_control(args: argparse.Namespace) -> None:
         return
 
     raise SystemExit(f"Unknown control action: {args.action}")
-
 
 
 def main(argv: Sequence[str] | None = None) -> None:

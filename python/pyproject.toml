@@ -78,6 +78,11 @@ source = ["neurohid_ml"]
 show_missing = true
 skip_covered = true
 
+[dependency-groups]
+dev = [
+    "maturin>=1.12.4",
+]
+
 [[tool.mypy.overrides]]
 module = ["scipy", "scipy.*", "sklearn", "sklearn.*"]
 ignore_missing_imports = true

@@ -75,7 +75,9 @@ class NotebookHelperTests(unittest.TestCase):
             _notebook.NeuroHidNotebook,
             "_run_command",
             autospec=True,
-            return_value=subprocess.CompletedProcess(args=["ok"], returncode=0, stdout=""),
+            return_value=subprocess.CompletedProcess(
+                args=["ok"], returncode=0, stdout=""
+            ),
         ) as run_command:
             notebook.train_profile_candidate(
                 "profile-1",

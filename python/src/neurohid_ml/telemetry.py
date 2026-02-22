@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from neurohid_ml.control import NotebookError
-
 
 class NeuroHidTelemetryClient:
     """Async runtime-events reader backed by an in-process ``RuntimeHandle``.

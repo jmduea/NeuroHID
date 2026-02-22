@@ -58,9 +58,8 @@ def __getattr__(name: str):
         return globals()[name]
 
     if name in {"NeuroHidNotebook", "NotebookError"}:
-        from neurohid_ml.notebook import NeuroHidNotebook
-
         from neurohid_ml.control import NotebookError
+        from neurohid_ml.notebook import NeuroHidNotebook
 
         globals().update(
             {

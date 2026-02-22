@@ -28,14 +28,10 @@ impl PySystemConfig {
     #[staticmethod]
     fn from_dict(dict: &Bound<'_, PyDict>) -> PyResult<Self> {
         let json_mod = PyModule::import(dict.py(), "json")?;
-        let json_str: String = json_mod
-            .call_method1("dumps", (dict,))?
-            .extract()?;
+        let json_str: String = json_mod.call_method1("dumps", (dict,))?.extract()?;
         let inner: neurohid_types::config::SystemConfig =
             serde_json::from_str(&json_str).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "invalid SystemConfig: {e}"
-                ))
+                pyo3::exceptions::PyValueError::new_err(format!("invalid SystemConfig: {e}"))
             })?;
         Ok(Self { inner })
     }
