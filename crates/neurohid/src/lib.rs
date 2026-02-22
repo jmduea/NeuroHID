@@ -12,11 +12,15 @@
 //! | `signal` | `neurohid-signal` | Real-time biosignal processing pipeline |
 //! | `device` | `neurohid-device` | Device abstraction layer for biosensors |
 //! | `device-lsl` | `neurohid-device` + LSL | Device layer with Lab Streaming Layer support |
-//! | `platform` | `neurohid-platform` | Cross-platform HID emulation |
 //! | `storage` | `neurohid-storage` | Secure profile and config storage |
 //! | `ipc` | `neurohid-ipc` | IPC layer for Rust↔Python communication |
 //! | `runtime` | `neurohid-core` | Managed runtime/service APIs |
 //! | `full` | All of the above | Everything enabled |
+//!
+//! > **Note:** HID platform output (`neurohid-platform`) is an internal concern
+//! > accessed through the managed runtime (`neurohid-core`). It is not re-exported
+//! > by this facade to prevent internal implementation details from leaking into
+//! > the embedder-facing API surface.
 //!
 //! ## Quick Start
 //!
@@ -43,9 +47,6 @@ pub use neurohid_signal as signal;
 
 #[cfg(feature = "device")]
 pub mod device;
-
-#[cfg(feature = "platform")]
-pub use neurohid_platform as platform;
 
 #[cfg(feature = "storage")]
 pub mod config;
@@ -242,29 +243,6 @@ mod tests {
         fn module_reexports_accessible() {
             let _ = std::any::type_name::<device::mock::MockDevice>();
             let _ = std::any::type_name::<device::serial::SerialProvider>();
-        }
-    }
-
-    // ───────────── platform ─────────────
-
-    #[cfg(feature = "platform")]
-    mod platform_tests {
-        use crate::platform;
-
-        #[test]
-        fn platform_config_default() {
-            let cfg = platform::traits::PlatformConfig::default();
-            let _ = format!("{cfg:?}");
-        }
-
-        #[test]
-        fn trait_type_accessible() {
-            let _ = std::any::type_name::<dyn platform::traits::Platform>();
-        }
-
-        #[test]
-        fn permission_hint_type_exists() {
-            let _ = std::any::type_name::<platform::traits::PermissionHint>();
         }
     }
 

@@ -21,7 +21,6 @@ signal = ["dep:neurohid-signal"]
 device = ["dep:neurohid-device"]
 device-lsl = ["device", "neurohid-device/lsl"]
 device-brainflow = ["device", "neurohid-device/brainflow"]
-platform = ["dep:neurohid-platform"]
 storage = ["dep:neurohid-storage"]
 ipc = ["dep:neurohid-ipc"]
 runtime = ["dep:neurohid-core"]
@@ -31,7 +30,6 @@ full = [
     "device",
     "device-lsl",
     "device-brainflow",
-    "platform",
     "storage",
     "ipc",
     "runtime",
@@ -41,7 +39,6 @@ full = [
 neurohid-types = { path = "../neurohid-types", optional = true }
 neurohid-signal = { path = "../neurohid-signal", optional = true }
 neurohid-device = { path = "../neurohid-device", optional = true }
-neurohid-platform = { path = "../neurohid-platform", optional = true }
 neurohid-storage = { path = "../neurohid-storage", optional = true }
 neurohid-ipc = { path = "../neurohid-ipc", optional = true }
 neurohid-core = { path = "../neurohid-core", optional = true }
