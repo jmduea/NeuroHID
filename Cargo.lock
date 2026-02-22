@@ -2973,7 +2973,6 @@ dependencies = [
 name = "neurohid"
 version = "0.1.0"
 dependencies = [
- "neurohid-calibration",
  "neurohid-core",
  "neurohid-device",
  "neurohid-ipc",
@@ -2983,29 +2982,6 @@ dependencies = [
  "neurohid-types",
  "tempfile",
  "tokio",
-]
-
-[[package]]
-name = "neurohid-calibration"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "armas",
- "chrono",
- "eframe",
- "egui 0.33.3",
- "neurohid-device",
- "neurohid-signal",
- "neurohid-storage",
- "neurohid-types",
- "rand 0.10.0",
- "serde",
- "serde_json",
- "signal-hook",
- "thiserror 2.0.18",
- "tokio",
- "tracing",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -3211,11 +3187,11 @@ dependencies = [
  "egui_dock",
  "egui_kittest",
  "egui_logger",
- "neurohid-calibration",
  "neurohid-core",
  "neurohid-ipc",
  "neurohid-storage",
  "neurohid-types",
+ "rand 0.10.0",
  "rustfft",
  "serde",
  "serde_json",

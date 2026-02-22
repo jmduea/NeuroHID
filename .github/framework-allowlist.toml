@@ -7,7 +7,6 @@
 allowed = [
   "neurohid-types",
   "neurohid-core",
-  "neurohid-calibration",
   "neurohid-storage",
   "neurohid-ipc",
 ]

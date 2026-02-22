@@ -4,6 +4,7 @@
 //! the HubApp and all associated screens, widgets, and state management.
 
 pub mod app;
+pub mod calibration;
 pub mod data_bus;
 pub mod layout;
 pub mod screens;

@@ -15,7 +15,6 @@
 //! | `platform` | `neurohid-platform` | Cross-platform HID emulation |
 //! | `storage` | `neurohid-storage` | Secure profile and config storage |
 //! | `ipc` | `neurohid-ipc` | IPC layer for Rust↔Python communication |
-//! | `calibration` | `neurohid-calibration` | Calibration games and wizard |
 //! | `runtime` | `neurohid-core` | Managed runtime/service APIs |
 //! | `full` | All of the above | Everything enabled |
 //!
@@ -56,9 +55,6 @@ pub use neurohid_storage as storage;
 
 #[cfg(feature = "ipc")]
 pub use neurohid_ipc as ipc;
-
-#[cfg(feature = "calibration")]
-pub use neurohid_calibration as calibration;
 
 #[cfg(feature = "runtime")]
 pub use neurohid_core as runtime;
@@ -349,30 +345,6 @@ mod tests {
             let _ = std::any::type_name::<ipc::broker::IpcBroker>();
             let _ = std::any::type_name::<ipc::server::IpcServer>();
             let _ = std::any::type_name::<ipc::client::IpcClient>();
-        }
-    }
-
-    // ───────────── calibration ─────────────
-
-    #[cfg(feature = "calibration")]
-    mod calibration_tests {
-        use crate::calibration;
-
-        #[test]
-        fn wizard_state_default() {
-            let _state = calibration::wizard::WizardState::default();
-        }
-
-        #[test]
-        fn wizard_state_new() {
-            let _state = calibration::wizard::WizardState::new();
-        }
-
-        #[test]
-        fn module_reexports_accessible() {
-            let _ = std::any::type_name::<calibration::panel::CalibrationPanel>();
-            let _ = std::any::type_name::<calibration::games::GridMazeGame>();
-            let _ = std::any::type_name::<calibration::games::TargetTrackingGame>();
         }
     }
 
