@@ -54,15 +54,6 @@ pedantic = "warn"
 - Do not use bare `python` commands in docs, scripts, or automation.
 - Prefer forms such as `uv run --project python ...` or `uv run --directory python ...`.
 
-### RTK Command Policy
-
-- Prefer `rtk` wrappers for high-volume output commands where supported (`ls`, `read`, `grep`,
-  `find`, `git`, `cargo`, etc.).
-- Verify availability in a new environment with:
-  - `rtk --version`
-  - `rtk gain`
-- If a command is not supported as an RTK subcommand, use the native command directly.
-
 ### Error Handling and Unsafe Guardrails
 
 - Prefer recoverable errors (`Result`/`?`) over `unwrap()` in library paths.
