@@ -1,250 +1,209 @@
-# Pitfalls Research: Adding Testing, BrainFlow, and Framework–Hub Separation
+# Pitfalls Research: Framework Repo Split / Publishable Package in NeuroHID Monorepo
 
-**Domain:** Rust/Python biosignals stack (NeuroHID) — adding thorough testing, native BrainFlow integration, and framework-vs-Hub structural separation  
-**Researched:** 2026-02-21  
-**Confidence:** MEDIUM (codebase + official BrainFlow/docs + Rust/Python testing literature; some integration pitfalls inferred from patterns)
+**Domain:** Adding a framework repo split or publishable package to an existing Rust application monorepo; integration with Hub, CI, versioning, and path vs published dependencies.
+
+**Researched:** 2026-02-22  
+**Confidence:** HIGH (Cargo/official and documented patterns); MEDIUM where only community posts apply.
+
+---
 
 ## Critical Pitfalls
 
-### Pitfall 1: Test flakiness from async and concurrency (Rust)
+### Pitfall 1: Path-only dependencies when publishing
 
 **What goes wrong:**  
-Rust integration and E2E tests fail intermittently due to race conditions, timeouts, or task ordering. Research on Rust flaky tests shows **asynchronous wait issues** (~34%) and **concurrency problems** (~25%) as dominant causes.
+`cargo publish` (or `cargo publish --dry-run`) fails with: *"all dependencies must have a version specified when publishing"* / *"dependency \<crate-name\> does not specify a version"*. Published manifests have path stripped; Cargo requires a version so consumers can resolve the dependency from the registry.
 
 **Why it happens:**  
-Tests spawn real tasks (DeviceTask, SignalTask, IpcTask, etc.) or use IPC with timeouts; slight timing or load variance causes passes/failures. Extension E2E already depends on build order and temp dirs; adding more concurrent or IPC-heavy tests multiplies nondeterminism.
+Workspace members today use only `path = "../..."` for in-repo crates. That is valid for local and CI builds but invalid for packaging to crates.io.
 
 **How to avoid:**  
-- Use explicit wait oracles (e.g., poll until condition with bounded timeout) instead of bare `sleep`.  
-- Isolate shared resources per test (e.g., unique temp dirs, unique IPC endpoints or ports).  
-- Prefer unit tests with injected mocks for device/signal/IPC where possible; reserve E2E for fewer, well-scoped flows.  
-- Document and centralize skip conditions (e.g., “example outlet not built”) so CI doesn’t treat skip as pass-by-accident.
+For every dependency that is a workspace member and that will be published (or that the current crate depends on for publish), specify **both** `path` and `version` in the same dependency entry, e.g.  
+`neurohid-core = { path = "../neurohid-core", version = "0.2.0" }`.  
+Use `version.workspace = true` in publishable crates and a single source of truth in root `[workspace.package]` (or per-crate) so path and version stay in sync.
 
 **Warning signs:**  
-- Same test fails only on one platform or in CI.  
-- Tests that pass with `--test-threads=1` but fail with parallel runs.  
-- Reliance on fixed `sleep(Duration::from_secs(...))` in tests.
+- Any `cargo publish -p <crate> --dry-run` fails with "version" or "dependency" errors.  
+- Grep for `path = "\.\./` in publishable crates without a `version` key in the same dependency table entry.
 
 **Phase to address:**  
-Thorough testing phase (v1.1): define test tiers (unit / integration / E2E), add retry or timeout policy for known-flaky E2E only where acceptable, and add a checklist for new integration tests (resource isolation, no shared global state).
+First phase that introduces publishable framework crates (manifest/versioning phase). Add version to all workspace path deps used by publishable crates and run dry-run for each before merging.
 
 ---
 
-### Pitfall 2: Python test flakiness from non-determinism and shared state
+### Pitfall 2: Publish order and registry availability delay
 
 **What goes wrong:**  
-Python tests (bridge, decoder, trainer, IPC client) fail intermittently due to non-deterministic training, test order dependence, or shared env/process state.
+Publishing crate `foo` fails because it depends on `bar`, and either (1) `bar` was not published yet, or (2) `bar` was just published and is not yet visible to the registry index (typically up to ~10 seconds). Result: failed publish step or flaky release automation.
 
 **Why it happens:**  
-ML/training code is inherently non-deterministic unless seeds and env are fixed. Integration tests that hit the real IPC or bridge can be order-dependent or leave state that affects the next test.
+Cargo has no built-in "publish all workspace members in order." Publishing is per-crate; dependency resolution at publish time uses the registry, so dependents must be published and visible before dependers.
 
 **How to avoid:**  
-- Fix random seeds (and optionally `PYTHONHASHSEED`) in tests that run training or inference.  
-- Run integration tests in isolated processes or with fresh `uv run` invocations where needed.  
-- Avoid sharing a single long-lived IPC connection or server across tests; use per-test or per-suite setup/teardown.  
-- Keep coverage gates but avoid making coverage the only gate for flaky tests.
+(1) Publish in **topological order** (dependency graph: leaves first, then dependers).  
+(2) After each publish, **wait and retry** resolution (e.g. 10–15 s and a few retries) before publishing the next crate.  
+(3) Use or mirror the behavior of release automation (e.g. `cargo-release`, `cargo-smart-release`, or a script that topologically sorts and publishes with retries).
 
 **Warning signs:**  
-- `pytest -x` passes but full suite sometimes fails.  
-- Failures disappear when running a single test file.  
-- Coverage drops or spikes randomly in CI.
+- Single job that runs `cargo publish -p A` then immediately `cargo publish -p B` where B depends on A.  
+- No retry logic after publish when "crate not found" or resolution errors appear.
 
 **Phase to address:**  
-Thorough testing phase: document Python test isolation policy, add pytest fixtures for IPC/bridge isolation, and add a small “determinism” check (e.g., two runs of same trainer test yield same metrics when seeded).
+Phase that introduces or updates release/publish automation (e.g. "Release story" or "Publish framework" phase). Define and test publish order and add delay/retry for the registry.
 
 ---
 
-### Pitfall 3: BrainFlow “simulation” vs real SDK confusion
+### Pitfall 3: CI boundary check only sees path dependencies
 
 **What goes wrong:**  
-The current BrainFlow backend in `neurohid-device` is a **simulation adapter** (mock device behind BrainFlow-style config and board catalogue); it does **not** link the real BrainFlow SDK. Code or docs that assume real hardware or real BoardShim behavior break when switching to native BrainFlow, or vice versa.
+The current framework-boundary check (`.github/scripts/check-framework-boundary.ps1`) uses `cargo metadata` and restricts **path** dependencies of `neurohid-hub` and `neurohid` (binaries) to the allowlist. If Hub (or binaries) ever consume the framework via **version** (registry) or **git** instead of path, that dependency is no longer a "path dependency" and the script does not enforce that it is in the allowlist. You can end up with Hub depending on non-framework crates by version while the allowlist is only enforced for path deps.
 
 **Why it happens:**  
-First-class BrainFlow work includes “docs, examples, Hub UX” and then “deeper integration (board config, streaming).” It’s easy to document or test against the simulation as if it were the SDK, then hit API/lifecycle mismatches when wiring the real SDK.
+The check is defined in terms of "path deps that are workspace members" vs allowlist. The design assumes Hub and binaries depend on the framework via workspace path. Switching to "framework as published dependency" changes the dependency source, not the allowlist semantics—but the implementation only inspects path deps.
 
 **How to avoid:**  
-- Clearly label in code and docs: “BrainFlow simulation” (current) vs “BrainFlow native” (future).  
-- When adding native SDK: introduce a feature or backend variant so simulation remains the default for no-SDK builds and CI.  
-- Base native integration on official BrainFlow lifecycle: `prepare_session` → `start_stream` → `get_board_data` (or streaming API) → `stop_stream`; map NeuroHID `Device`/`Sample` to BrainFlow row layout (timestamp channel, marker channel, eeg_channels from board metadata).
+- **Option A (same repo, framework publishable):** Keep Hub and binaries depending on framework crates via **path + version**. Boundary check stays as-is (path deps must be in allowlist).  
+- **Option B (separate repo or Hub consuming by version):** Extend the boundary check so that **all** dependencies (path and registry/git) of Hub and binaries are checked: only allowlisted crate names are allowed, regardless of source. Update allowlist semantics and docs (e.g. `docs/framework-surface.md`) to "allowed crate names" not "path dependencies only."
 
 **Warning signs:**  
-- Tests or docs that assume “BrainFlow” means real hardware or real SDK without a feature flag.  
-- Hub discovery/connection UX that only works with the current simulation and has no path for real board IDs/params.
+- Hub or binaries `Cargo.toml` gains `neurohid-core = "0.2"` (or git) without CI or allowlist logic updated.  
+- Discussion of "Hub consumes framework as dependency" without deciding same-repo (path+version) vs separate-repo (version/git) and updating the check accordingly.
 
 **Phase to address:**  
-Native BrainFlow phase (first-class then deeper): in the first phase, document simulation vs native and add examples that work with both; in the deeper phase, implement real SDK behind the same `Device`/`DeviceProvider` surface and validate board metadata (e.g., `brainflow_boards.cpp`-style fields) and row layout in tests.
+Phase that defines "Hub consumes framework as dependency" and/or "clear API boundary and release story." Align boundary enforcement with the chosen consumption model (path+version vs version-only) and update CI and docs in that phase.
 
 ---
 
-### Pitfall 4: BrainFlow API and build mismatches (when adding real SDK)
+### Pitfall 4: Version skew between path and published
 
 **What goes wrong:**  
-Rust bindings for BrainFlow require building the C++ core first; board IDs and metadata live in C constants and must be kept in sync across bindings. Mismatches in board ID enum, row layout (timestamp/marker/eeg_channels), or build order cause runtime errors or wrong data mapping.
+Local dev uses path; after publish, external (or CI) consumers use version. If the version in `Cargo.toml` (or `workspace.package`) is out of sync with what was actually published, or if some framework crates are bumped and others are not, you get "version not found," broken resolution, or subtle ABI/behavior mismatch.
 
 **Why it happens:**  
-BrainFlow’s Rust binding relies on generated code; adding new boards requires updating `brainflow_constants.h`, the board controller, and “all bindings” (including Rust, e.g. via `cargo build --features generate_binding`). Row layout is board-specific and defined in `brainflow_boards.cpp`.
+Multiple places can hold version numbers (root `[workspace.package]`, each crate’s `version`, dependency `version = "x.y.z"`). Manual or partial bumps, or publishing a subset of crates, create skew.
 
 **How to avoid:**  
-- Pin and document a BrainFlow version for the native backend; document build steps (build C++ core, then Rust) in development-guide and CI if native is enabled.  
-- Map BrainFlow’s 2D row layout explicitly to NeuroHID `Sample` (and any channel metadata); don’t assume a single layout for all boards.  
-- Use BrainFlow’s synthetic board (or playback) in CI/tests where possible so native tests don’t require hardware.
+- Single source of truth for framework crate versions (e.g. `version.workspace = true` and one `[workspace.package]` version, or a release script that sets versions from one input).  
+- For path+version deps, use the same version source (e.g. workspace) so that "bump once" updates both the crate and its dependents’ requirement.  
+- In release automation: bump all publishable framework crates that changed (or the whole framework surface) together, then publish in topological order.
 
 **Warning signs:**  
-- Build failures on CI with “BrainFlow not found” or missing symbols.  
-- Runtime errors when reading samples (wrong row index, wrong channel count).  
-- Hub or runtime showing wrong channel names or counts for a board.
+- Different version numbers in root vs in a crate’s `Cargo.toml`.  
+- Dependency `version = "0.2.0"` while the depended-on crate is already `0.3.0`.  
+- No automation or checklist for "bump and publish" that keeps path and published in sync.
 
 **Phase to address:**  
-Deeper BrainFlow integration phase: add a “native BrainFlow” build/CI path (optional job or feature), document board metadata and row mapping in `neurohid-device`, and add at least one integration test using synthetic board.
+Versioning and release phase. Define versioning policy (single version vs independent semver) and implement it in manifests and release steps.
 
 ---
 
-### Pitfall 5: Framework–Hub separation breaks Hub or runtime
+### Pitfall 5: Cyclic dev-dependencies break publish
 
 **What goes wrong:**  
-While moving to a clear “framework” (what devs depend on) vs “Hub” (one app on top), dependency or feature changes break the Hub GUI or the headless runtime: missing symbols, broken re-exports, or Hub depending on crates it should not (e.g. device/signal directly instead of via core).
+Locally, `cargo build` and `cargo test` succeed, but `cargo publish --dry-run` fails or publish fails because a cycle appears when both dependencies and dev-dependencies must be resolvable from the registry (e.g. `foo` depends on `bar`, `bar`’s dev-dependencies depend on `foo`).
 
 **Why it happens:**  
-Hub currently depends on `neurohid-core`, `neurohid-ipc`, `neurohid-storage`, `neurohid-calibration`; core exposes a `facade` for IPC and storage. Moving types or removing re-exports, or changing which crates the “framework” includes, can break Hub or the main binary if they still rely on the old structure. Rust’s public API is sensitive: even adding new public items can break downstream that use `use crate::*`.
+Cargo allows cycles that involve only dev-dependencies for local builds (build order can still be acyclic). For publish, all deps must be on the registry, so the cycle becomes a real constraint.
 
 **How to avoid:**  
-- Define the “framework” surface in one place (e.g. `neurohid-core` + `neurohid-sdk` re-exports) and document it; Hub must depend only on that surface (and calibration if needed), not on component crates directly.  
-- When moving code: do dependency changes and facade updates in one coherent change set; run full workspace tests and Hub/service/validate binaries after.  
-- Consider `cargo-public-api` or similar to track intentional API surface and catch accidental breaking changes.
+- Avoid dev-dependency cycles between workspace crates that are publishable or that publishable crates depend on.  
+- If present: remove the cycle (e.g. move shared test helpers to a small crate, or stub tests for publish), or use a publish-time workaround (e.g. strip dev-dependencies before `cargo publish` and document it)—prefer removing the cycle.
 
 **Warning signs:**  
-- Hub or `neurohid-service` fails to build after a “framework” refactor.  
-- New dep in Hub on `neurohid-device` or `neurohid-signal` (reverses existing boundary).  
-- Doc says “use core::facade” but code still imports from `neurohid_ipc` or `neurohid_storage` in Hub.
+- `cargo publish -p <crate> --dry-run` fails with resolution or cycle errors after local tests pass.  
+- `cargo metadata` or dependency graph tools show a cycle involving dev-dependencies between framework crates.
 
 **Phase to address:**  
-Framework vs Hub separation phase: enforce and document “Hub depends only on core (and calibration); core re-exports what Hub needs”; add a boundary check (script or CI) that Hub’s Cargo.toml does not depend on component crates other than those allowed.
+Phase that makes framework crates publishable. Audit dev-dependencies of all publishable (and their in-repo dependents) for cycles; fix before first publish.
 
 ---
 
-### Pitfall 6: E2E and integration tests that assume runtime/Hub process layout
+### Pitfall 6: Forgetting publish metadata on newly publishable crates
 
 **What goes wrong:**  
-Integration or E2E tests start the real service or Hub, or rely on a specific process/port layout; when framework separation or startup order changes, tests become flaky or start failing (e.g. port in use, timeout waiting for “ready”).
+`cargo publish` rejects a crate because required metadata is missing: e.g. `license` or `license-file`, `description`, `repository` (and often `readme`, `homepage`, `keywords`). crates.io also requires that dependencies specify a version when publishing.
 
 **Why it happens:**  
-Tests were written against a single binary or a fixed startup sequence; after splitting or changing how the runtime is built or how the Hub connects, the test’s assumptions no longer hold.
+Crates that were `publish = false` never needed crates.io metadata. Flipping to publishable without adding metadata causes immediate publish failure.
 
 **How to avoid:**  
-- Prefer in-process or in-memory integration tests where possible (e.g. `RuntimeBuilder` + `NeuroHidService` in test, no separate process).  
-- If tests start a real process, use unique temp dirs and ephemeral ports (or a single well-known test port with mutex/serialization).  
-- Document “contract” for “runtime ready” (e.g. control RPC responds) and wait for that instead of a fixed delay.  
-- Keep E2E tests minimal and focused (e.g. extension outlet load, one control round-trip); don’t grow them into full workflow tests without explicit isolation.
+Before marking a crate publishable: (1) set `publish = true` only after adding required fields; (2) use `cargo publish -p <crate> --dry-run` and fix every warning/error; (3) Prefer inheriting shared fields from `[workspace.package]` (e.g. `license.workspace = true`, `repository.workspace = true`) so one place stays correct.
 
 **Warning signs:**  
-- “Address already in use” or “connection refused” in CI.  
-- Tests that `sleep` then assume runtime is up.  
-- E2E that only passes when run after a specific other job or in a specific order.
+- New or newly publishable crate has no `description` or `license` in its `Cargo.toml`.  
+- Dry-run not run (or not in CI) for every publishable crate before first release.
 
 **Phase to address:**  
-Thorough testing phase: document integration/E2E test policy (in-process vs subprocess, ports, timeouts), and add a single “runtime ready” helper used by all tests that start the service.
-
----
-
-### Pitfall 7: IPC contract drift between Rust and Python
-
-**What goes wrong:**  
-Rust runtime and Python bridge share an IPC protocol (envelope, channels, message shapes). Changes to one side (e.g. new field, new channel, or different serialization) break the other; tests pass in isolation but fail when both run together, or in production.
-
-**Why it happens:**  
-Protocol and API reference live in docs and possibly in shared types; implementation on both sides can drift if changes are made without updating the other side and the compatibility matrix.
-
-**How to avoid:**  
-- Treat IPC as a versioned contract: document in `protocol-and-api.md` (or equivalent) and run the existing “IPC compat matrix” CI (Rust transport + Python client tests) on every protocol-touching change.  
-- Prefer shared schema or generated types where feasible (e.g. one source of truth for message shapes).  
-- When adding BrainFlow or new runtime features that affect IPC, extend the contract and update both Rust and Python in the same milestone.
-
-**Warning signs:**  
-- Python tests pass but “unified service multiplexing smoke” or “Python IPC surface smoke” fails.  
-- New Rust event types or control RPCs that Python never handles (or vice versa).  
-- Protocol docs out of date with code.
-
-**Phase to address:**  
-All three feature areas: any change that touches IPC (testing with IPC, BrainFlow events, or framework re-exports of IPC types) must trigger protocol verification; keep “protocol” in the impact classifier so CI runs protocol contracts when needed.
-
----
-
-## Moderate Pitfalls
-
-### Pitfall 8: Coverage gates hiding flakiness
-
-**What goes wrong:**  
-Rust or Python coverage gates (e.g. `RUST_COVERAGE_MIN`, `PYTHON_COVERAGE_MIN`) pass because flaky tests are retried or skipped, so coverage looks good while real failures are masked.
-
-**Prevention:**  
-Don’t retry flaky tests by default in CI; fix or quarantine them. Use coverage on stable tests; if a test is skipped (e.g. extension not built), ensure the gate explicitly allows that skip and doesn’t count it as covered.
-
----
-
-### Pitfall 9: Framework surface re-export bloat
-
-**What goes wrong:**  
-The “framework” (core + SDK) re-exports too many types from component crates, so that adding or changing a component forces a major version or breaks embedders. Effective Rust recommends not exposing dependency types in your API when avoidable.
-
-**Prevention:**  
-Re-export only what embedders (Hub, external users) need. Prefer core-owned types and adapters at the boundary; document the stable facade and use `cargo-public-api` to track it. When adding BrainFlow or new device types, expose them through the existing Device/Provider abstraction, not raw BrainFlow types.
-
----
-
-### Pitfall 10: Hub UX parity for BrainFlow vs LSL/Mock
-
-**What goes wrong:**  
-Hub discovery/connection UX works well for LSL or Mock but BrainFlow (simulation or native) is a second-class path: wrong labels, missing board list, or no way to set board-specific params (port, MAC, etc.).
-
-**Prevention:**  
-In first-class BrainFlow phase, treat BrainFlow as a peer backend in the UI: same discovery/connection flow, backend selector, and config for board ID and params. Use the same normalized device metadata (e.g. `DeviceId`, `source_id`) so the rest of the pipeline stays backend-agnostic.
+First phase that makes framework crates publishable. Checklist: required metadata + dry-run for each crate; add a CI job that runs `cargo publish --dry-run` for all publishable packages.
 
 ---
 
 ## Technical Debt Patterns
 
 | Shortcut | Immediate Benefit | Long-term Cost | When Acceptable |
-|----------|-------------------|----------------|-----------------|
-| Skip E2E when extension not built | Fast CI when example not built | Easy to forget to build; coverage gap | Only with explicit skip reason and doc; prefer CI to build example first |
-| Add `sleep` in integration test to “wait for ready” | Test passes locally | Flaky under load; slows CI | Never as permanent solution; use condition + timeout |
-| Hub depends on neurohid-ipc directly | Fewer indirections | Breaks framework boundary; harder to split later | No; use core::facade |
-| Document “BrainFlow” without simulation vs native | Simpler docs | Confusion when adding real SDK | No; clarify from first-class phase |
-| New public re-export in core to unblock Hub | Quick fix | Expands API surface; breakage risk for embedders | Only if documented as part of framework surface and reviewed |
+|----------|-------------------|----------------|------------------|
+| Publish only leaf crates (e.g. `neurohid`, `neurohid-sdk`) and keep all framework crates path-only | No need to add version to many path deps or fix publish order | Downstream cannot depend on framework by version; no clean "framework" package for Python bindings or other repos | Only if framework is never consumed by version |
+| Single version for all framework crates (e.g. 0.2.0 everywhere) | Simple bumps; one number to manage | Any breaking change in one crate forces a major/minor bump for the whole surface; less flexible semver | Acceptable and common for a cohesive framework; document policy |
+| Temporarily stripping dev-dependencies before publish to break cycles | Unblocks publish quickly | Easy to forget; different behavior from normal build; maintenance burden | Never preferred; remove cycle instead |
+| Keeping Hub on path deps only (no version) while framework is publishable | Boundary check unchanged; no CI changes | Hub never tests "consuming published framework"; possible skew between path and published behavior | Acceptable near term; add optional CI that builds Hub against published versions later |
 
 ---
 
 ## Integration Gotchas
 
 | Integration | Common Mistake | Correct Approach |
-|-------------|----------------|-------------------|
-| BrainFlow (native) | Assume current simulation = real SDK; ignore prepare_session/start_stream lifecycle | Treat simulation as mock; map BoardShim lifecycle and row layout to Device/Sample; use synthetic board in CI |
-| BrainFlow (Rust build) | Expect crate to build without C++ core | Document and automate: build BrainFlow C++ then Rust; optional CI job or feature |
-| IPC (Rust ↔ Python) | Change envelope or channel on one side only | Update protocol doc and both implementations; run IPC compat matrix CI |
-| Hub ↔ Runtime | Add Hub dependency on device/signal/core internals | Hub uses only core (and calibration); runtime access via RuntimeHandle and core::facade |
-| Extension E2E | Rely on global target dir or one-off build | CI builds neurohid-outlet-example first; test uses CARGO_MANIFEST_DIR/target to find dylib; unique temp dir per run |
+|-------------|----------------|------------------|
+| **Hub ↔ framework** | Switching Hub to `neurohid-core = "0.2"` (registry) without updating boundary check | Either keep Hub on `path + version` and keep current check, or add check for registry deps so only allowlisted names are allowed |
+| **CI (framework-boundary)** | Assuming "path deps" and "allowed deps" are the same forever | When adding publish path, decide: same-repo path+version (check stays) or version/git (extend check to all dependency sources) |
+| **CI (publish)** | Running `cargo publish` for multiple crates in arbitrary or parallel order | Publish in topological order; add delay/retry after each publish for registry visibility |
+| **Versioning** | Bumping only one or two crates when many depend on them | Bump all affected framework crates in one change; publish in dependency order |
+| **neurohid-sdk / neurohid (binaries)** | They currently have path-only deps; adding framework publish without fixing them | Add `version` to every workspace path dep in neurohid and neurohid-sdk before (or as part of) framework publish; run dry-run for both |
 
 ---
 
-## Phase-Specific Warnings
+## Moderate Pitfalls
 
-| Phase Topic | Likely Pitfall | Mitigation |
-|-------------|----------------|------------|
-| Thorough testing | Flakiness from async/concurrency and IPC timing | Isolate resources; explicit wait oracles; document test tiers and retry policy |
-| Thorough testing | Python non-determinism and shared state | Fix seeds; per-test IPC/env isolation; determinism check for trainer tests |
-| Native BrainFlow (first-class) | Simulation vs native confusion in docs/UX | Label “simulation” vs “native”; same UX path for BrainFlow as other backends |
-| Native BrainFlow (deeper) | Board ID/row layout/build mismatches | Pin BrainFlow version; document build; map rows explicitly; synthetic board in CI |
-| Framework vs Hub | Breaking Hub or runtime with dep/facade changes | Single coherent refactor; Hub only on core (+ calibration); boundary check in CI |
-| Any (IPC touch) | Protocol drift | Run protocol impact and IPC compat matrix; update both Rust and Python |
+### Forgetting `publish = false` on Hub when framework is publishable
+
+**What goes wrong:**  
+If Hub is accidentally set to `publish = true`, someone might publish it to crates.io. Hub is an application that depends on the framework; it usually should not be a published library.
+
+**Prevention:**  
+Keep `publish = false` in `neurohid-hub/Cargo.toml` unless you explicitly decide to publish a "hub library." Document in crate-boundaries or framework-surface that Hub is an app, not a published crate.
+
+---
+
+### workspace.package and workspace.dependencies
+
+**What goes wrong:**  
+If some crates use `version.workspace = true` and others override with a literal version, or if `[workspace.dependencies]` entries for workspace members omit `version`, you get inconsistent or unpublishable manifests.
+
+**Prevention:**  
+Use `version.workspace = true` for all publishable framework crates and one `[workspace.package]` version (or a small set). For workspace member deps, use `path` + `version` (or a workspace dependency that includes version). Do not mix literal versions for framework crates with workspace inheritance without a clear policy.
 
 ---
 
 ## "Looks Done But Isn't" Checklist
 
-- [ ] **BrainFlow “first-class”:** Often missing clear simulation vs native story — verify docs and Hub UX distinguish them and that “deeper” has a build path.
-- [ ] **Testing “thorough”:** Often missing isolation and determinism — verify no shared global state, seeds fixed in Python ML tests, and E2E use “runtime ready” instead of sleep.
-- [ ] **Framework separation:** Often missing enforcement — verify Hub Cargo.toml has no disallowed deps and that facade is the single documented way for Hub to get IPC/storage.
-- [ ] **E2E extension test:** Often missing “build first” in CI — verify extension outlet is built before `extension_outlet_e2e` and that skip is explicit when lib missing.
-- [ ] **IPC contract:** Often missing dual-side update — verify protocol doc and both Rust and Python implementations updated together when adding/changing messages.
+- [ ] **Publishable framework:** Every workspace path dependency in a publishable crate has a `version` key — verify with `cargo publish -p <crate> --dry-run` for each.
+- [ ] **Boundary enforcement:** If Hub can depend on framework by version/git, CI checks **all** deps (path + registry) against allowlist — verify script and docs.
+- [ ] **Release order:** Publish workflow or script uses topological order and delay/retry — verify with a test run or doc.
+- [ ] **Version single source:** All framework versions come from one place (e.g. workspace.package) and path deps reference it — verify grep for literal versions in framework crates.
+- [ ] **Dev-dependency cycles:** No cycle among framework crates involving dev-deps — verify with `cargo metadata` or dependency-graph and dry-run.
+- [ ] **Metadata:** Every publishable crate has license, description, repository (and readme if applicable) — verify dry-run and CI.
+
+---
+
+## Recovery Strategies
+
+| Pitfall | Recovery Cost | Recovery Steps |
+|---------|---------------|----------------|
+| Path-only deps at publish | LOW | Add `version` to each path dep (and optionally `version.workspace = true`), re-run dry-run. |
+| Wrong publish order / registry delay | LOW | Re-run publish in correct order; add retry/sleep in automation. |
+| Boundary check no longer applies (Hub on version) | MEDIUM | Extend check to all deps by name; update allowlist semantics and docs; add tests. |
+| Version skew | MEDIUM | Bump and re-publish affected crates in order; document version policy to avoid repeat. |
+| Dev-dependency cycle | MEDIUM | Remove cycle (extract test helper crate or drop cyclic dev-dep); optionally yank broken version if already published. |
+| Missing metadata | LOW | Add fields, re-run dry-run, re-publish. |
 
 ---
 
@@ -252,24 +211,25 @@ In first-class BrainFlow phase, treat BrainFlow as a peer backend in the UI: sam
 
 | Pitfall | Prevention Phase | Verification |
 |---------|------------------|--------------|
-| Rust test flakiness (async/concurrency) | Thorough testing | Integration tests run with parallelism; no sleep-only waits; checklist for new tests |
-| Python test flakiness (non-determinism/shared state) | Thorough testing | pytest isolation documented; seeded trainer test; no order-dependent failures |
-| BrainFlow simulation vs SDK confusion | Native BrainFlow (first-class + deeper) | Docs and code paths clearly separate simulation and native; examples run with both |
-| BrainFlow API/build mismatches | Native BrainFlow (deeper) | Optional native CI job; row mapping doc; synthetic board test |
-| Framework–Hub breakage | Framework vs Hub separation | Hub builds with only core (+ calibration); boundary script/CI passes |
-| E2E assumptions (process/ports) | Thorough testing | E2E policy doc; in-process preferred; “runtime ready” helper used |
-| IPC contract drift | All (when touching IPC) | Protocol impact triggers compat matrix; protocol doc updated |
+| Path-only deps when publishing | Phase: Make framework publishable / manifest & versioning | `cargo publish -p <each> --dry-run` passes; CI runs dry-run for all publishable crates |
+| Publish order and delay | Phase: Release story / publish automation | Publish job or script documents and uses topological order + retry; test run succeeds |
+| CI boundary only path deps | Phase: Hub consumes framework / API boundary & release | If Hub uses version: boundary script checks all deps; if path+version: script unchanged and documented |
+| Version skew path vs published | Phase: Versioning & release | Single version source; checklist or automation bumps consistently |
+| Cyclic dev-dependencies | Phase: Make framework publishable | Dry-run passes for all; dependency graph has no cycle among publishable + deps |
+| Missing publish metadata | Phase: Make framework publishable | Required fields set; dry-run and CI enforce |
 
 ---
 
 ## Sources
 
-- BrainFlow: [BrainFlow Dev](https://brainflow.readthedocs.io/en/stable/BrainFlowDev.html) (add new boards, Rust bindings, emulator), [Adding new boards](https://brainflow.org/2022-11-01-adding-new-boards/) (board IDs, bindings, metadata).
-- Rust flaky tests: “A Preliminary Study of Fixed Flaky Tests in Rust Projects on GitHub” (async ~34%, concurrency ~25%).
-- Python flakiness: Trunk.io / pytest guidance (concurrency, order, external deps, ML non-determinism).
-- Rust API stability: Effective Rust (re-exports, avoid exposing dependency types); Stack Overflow / predr.ag (breaking changes, glob imports).
-- NeuroHID: `.planning/PROJECT.md`, `docs/crate-boundaries.md`, `docs/integration-architecture.md`, `crates/neurohid-core/src/lib.rs` (facade), `crates/neurohid-device/src/brainflow.rs` (simulation adapter), `crates/neurohid-core/tests/extension_outlet_e2e.rs`, CI workflows (IPC compat matrix, extension E2E).
+- [Publishing on crates.io - The Cargo Book](https://doc.rust-lang.org/cargo/reference/publishing.html) — metadata and packaging.
+- [RFC 2906: workspace dependencies and metadata](https://rust-lang.github.io/rfcs/2906-cargo-workspace-deduplicate.html) — path + version for workspace members.
+- [Gotchas to Publish Rust Crates in a Workspace](https://blog.iany.me/2020/10/gotchas-to-publish-rust-crates-in-a-workspace/) — version on path deps, publish order, 10s delay, cyclic dev-deps, slow publish.
+- [Lindera issue #358](https://github.com/lindera/lindera/issues/358) — workspace.dependencies and versions when publishing.
+- [Cargo issue #1169](https://github.com/rust-lang/cargo/issues/1169) — no `cargo publish --all`; manual order.
+- [Cargo issue #4242](https://github.com/rust-lang/cargo/issues/4242) — cyclic dev-dependencies and publish.
+- Project: `.github/framework-allowlist.toml`, `.github/scripts/check-framework-boundary.ps1`, `docs/framework-surface.md`, `docs/crate-boundaries.md`, `crates/*/Cargo.toml` (path deps, publish flags).
 
 ---
-*Pitfalls research for: adding testing, BrainFlow integration, and framework–Hub separation to NeuroHID*  
-*Researched: 2026-02-21*
+*Pitfalls research for: adding framework repo split or publishable package to NeuroHID monorepo; integration (Hub, CI, versioning, path vs published).*
+*Researched: 2026-02-22*

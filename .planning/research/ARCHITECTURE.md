@@ -1,212 +1,255 @@
-# Architecture Research: v1.1 Integration (Testing, BrainFlow, Framework–Hub Separation)
+# Architecture Research: Framework Repo Split and Publishable Package
 
-**Domain:** Integration of new milestone features into existing NeuroHID architecture  
-**Researched:** 2026-02-21  
-**Confidence:** HIGH (codebase and planning docs; no new external ecosystem)
+**Domain:** Rust framework delivery model (publishable-in-place vs separate repo); integration with existing NeuroHID architecture and Hub-as-consumer.
+**Researched:** 2026-02-22
+**Confidence:** HIGH (based on in-repo codebase and planning docs; no external ecosystem dependency)
 
-## Purpose
+## Executive Summary
 
-This document answers how **(1) thorough testing**, **(2) native BrainFlow integration**, and **(3) framework–vs–Hub separation** integrate with the existing Rust/Python architecture. It identifies integration points, new vs modified components, data-flow impact, and a suggested build order for roadmap phases.
+The existing architecture is a layered monorepo: **types → component crates → neurohid-core → applications** (Hub, binaries, SDK). The v1.1 boundary (framework surface + Hub allowlist) is already enforced; v1.2 adds a **delivery model** so the framework can be consumed as a dependency (version or git) instead of only path deps. Integration is **additive**: same component boundaries and data flow; only **dependency source** and **build/release flows** change. No new runtime components are required. A clear **publish order** (types → components → core) and optional **separate repo** layout are defined so Hub (and later Python bindings) have a stable API to depend on.
 
----
+## Standard Architecture (Current + After Delivery Model)
 
-## Existing Architecture (Baseline)
+### System Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│  neurohid (bins)  neurohid-hub  neurohid-sdk                                 │
+│  APPLICATIONS (consumers of framework)                                       │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  neurohid-core (runtime, service, tasks, facade)                             │
+│  neurohid-hub   neurohid (bins)   neurohid-sdk   [future: Python bindings]   │
+│       │                │                │                     │              │
+│       └────────────────┴────────────────┴─────────────────────┘              │
+│                                    │                                          │
+│                    dependency: path (today) OR version/git (v1.2)             │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  neurohid-device  neurohid-signal  neurohid-platform  neurohid-ipc           │
-│  neurohid-storage  neurohid-calibration                                       │
+│  FRAMEWORK SURFACE (what gets published or moved to framework repo)          │
 ├─────────────────────────────────────────────────────────────────────────────┤
-│  neurohid-types                                                              │
+│  neurohid-core (orchestration + facade)                                      │
+│       │ depends on                                                           │
+│  neurohid-types │ neurohid-device │ neurohid-signal │ neurohid-platform │    │
+│  neurohid-ipc  │ neurohid-storage │ neurohid-calibration                     │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
-**Data flow (unchanged by v1.1 scope):**  
-DeviceTask → SignalTask → DecoderTask → ActionTask → OutletTask; Hub/CLI use `RuntimeHandle` and `neurohid_core::facade` (IPC, storage). Python bridge over IPC for ML/ErrP/training.
+### Component Responsibilities (Unchanged)
 
----
+| Component | Responsibility | Delivery-model impact |
+|-----------|----------------|------------------------|
+| neurohid-types | Shared domain/config/control types | Must be published first (or in same repo first in publish order). |
+| neurohid-device, -signal, -platform, -ipc, -storage, -calibration | Isolated capabilities | Published after types; no API change. |
+| neurohid-core | Orchestration, tasks, facade re-exports | Published last among framework crates; stable API is binding prep. |
+| neurohid-hub | One application (GUI) | Consumes framework via allowlist only; dependency source switches path → version/git. |
+| neurohid (binaries), neurohid-sdk | Entrypoints and embedder facade | Same; SDK already has optional deps—today path, after v1.2 version. |
 
-## 1. Thorough Testing — Integration
+## Integration with Existing Architecture
 
-### Integration Points
+### What Stays the Same
 
-| Where | What | Notes |
-|-------|------|--------|
-| **Rust crates** | Co-located `#[cfg(test)] mod tests`; optional `tests/` for integration | Existing pattern; extend coverage and add integration tests where valuable |
-| **neurohid-core** | `tests/` directory (e.g. `extension_outlet_e2e.rs`) | Already has one e2e-style integration test; add more IPC/service integration tests here |
-| **neurohid-hub** | Unit tests in-screen or in app; optional integration tests | Real IPC connect/disconnect/reconnect tests referenced in CHANGELOG; reduce flakiness here |
-| **Python** | `python/tests/` (pytest + unittest API); `python/pyproject.toml` (coverage) | Extend coverage, stabilize async/flaky tests |
-| **CI** | `cargo test --workspace`; pytest with coverage; optional Rust coverage (e.g. tarpaulin) | Coverage reporting (Codecov) already in CHANGELOG; formalize gates and flakiness mitigation |
+- **Layer map:** types → components → core → applications (see `docs/crate-boundaries.md`, `docs/framework-surface.md`).
+- **Hub allowlist:** neurohid-types, neurohid-core, neurohid-calibration, neurohid-storage, neurohid-ipc. No new crates on allowlist.
+- **Data flow:** Signal → HID and Runtime ↔ Python bridge unchanged. No new tasks or channels.
+- **Facade rule:** Hub (and embedders) use `neurohid_core::facade` and core’s public API; they do not depend on neurohid-device, neurohid-signal, neurohid-platform directly.
+- **CI boundary:** check-hub-deps (allowlist) remains; can be extended to “Hub must build with framework from version/git” when not using path deps.
 
-### New vs Modified Components
+### What Changes (New or Modified)
 
-| Component | Status | Change |
-|-----------|--------|--------|
-| **Rust coverage tooling** | **New** (optional) | Add `cargo-tarpaulin` or similar to manifests/CI for coverage; no new crates |
-| **Rust integration test layout** | **Modified** | More tests under `crates/neurohid-core/tests/` and possibly `crates/neurohid-hub/tests/`; no new crate |
-| **Python tests** | **Modified** | Same layout (`python/tests/`); improve coverage, fixtures, and async stability |
-| **CI workflow** | **Modified** | Stricter coverage gates, flakiness handling (retries, quarantine), optional Rust coverage upload |
+| Area | Current | After (publishable-in-place) | After (separate repo) |
+|------|---------|------------------------------|------------------------|
+| **Dependency source (Hub, SDK, binaries)** | Path only (`path = "../neurohid-core"` etc.) | Version from workspace or crates.io (e.g. `neurohid-core = { version = "0.1" }`) | Git dependency or crates.io (e.g. `neurohid-core = { git = "https://github.com/.../neurohid-framework", tag = "v0.1.0" }`) |
+| **Framework crates publish** | All `publish = false` except neurohid, neurohid-sdk | Framework crates `publish = true`; versions in dependency order | Framework repo publishes same set (or single umbrella crate) |
+| **Build/release pipeline** | Single workspace build; publish workflow only runs for neurohid + neurohid-sdk (SDK’s path deps make full publish invalid for crates.io) | New: publish workflow publishes framework crates in order (types → components → core), then applications | New: framework repo has its own version + publish; main repo CI depends on framework ref |
+| **Repo boundaries** | One repo | One repo, framework = subset of crates | Two repos: framework repo (types + components + core), application repo (Hub, binaries, SDK, Python) or monorepo that pulls framework as dep |
 
-### Data Flow Impact
+### Integration Points (Explicit)
 
-**None.** Testing is cross-cutting: it exercises existing data flow and contracts. No change to DeviceTask → … → OutletTask or to IPC/bridge protocols. Integration tests may spawn real runtime or use in-process mocks (as `extension_outlet_e2e` does).
+| Integration point | Role in v1.2 |
+|-------------------|--------------|
+| **Hub `Cargo.toml`** | Switch path deps to version (or git) for framework allowlist crates; or keep path for dev and use version in release. |
+| **neurohid-core public API and `facade`** | Becomes the **stable API surface** for “framework” and prep for Python bindings; avoid breaking changes or document them. |
+| **neurohid-sdk `Cargo.toml`** | Optional deps today are path; switch to version deps once framework crates are published so `cargo publish -p neurohid-sdk` is valid. |
+| **`.github/framework-allowlist.toml`** | Unchanged; still lists which crates Hub may depend on (same set, different source). |
+| **CI: check-hub-deps** | Still enforce allowlist; add optional job “build Hub against published/git framework” if using version/git. |
+| **CI: publish-crates** | Extend to publish framework crates in dependency order before neurohid-sdk and neurohid. |
+| **Python bindings (future)** | No new components this milestone; core’s stable API and types are the boundary for a future FFI layer. |
 
-### Testing Layout and Ownership
+## Recommended Options: Publishable-in-Place vs Separate Repo
 
-- **Unit tests:** Remain co-located in each crate (`#[cfg(test)] mod tests`); ownership stays with the crate.
-- **Integration tests:** Owned by the crate that composes the behavior (e.g. `neurohid-core` for pipeline/extension, `neurohid-core` or `neurohid-hub` for IPC). Prefer `neurohid-core/tests/` for runtime/service/IPC integration; `neurohid-hub/tests/` only if tests are Hub-specific (e.g. UI/control flow).
-- **E2E:** Current pattern is in-process integration test (e.g. outlet e2e). Broader E2E (full pipeline, multiple processes) can live in a dedicated step in CI or a small `tests/e2e/`-style layout under repo root if needed later; not a new crate.
-- **Python:** Keep all tests under `python/tests/`; ownership with Python package.
+### Option A: Publishable-in-Place (same repo)
 
----
+**What:** Keep all crates in the current workspace. Set `publish = true` and coherent versions for the framework set. Hub and binaries depend on framework via **version** (workspace or crates.io). Build order is unchanged; release flow adds a **publish order** for crates.io.
 
-## 2. Native BrainFlow Integration — Integration
+**Pros:** No repo split; single history and CI; easy to keep docs and code in sync.  
+**Cons:** Monorepo stays large; release process must respect dependency order.
 
-### Integration Points
+**Build order (for publish):**
 
-| Where | What | Notes |
-|-------|------|--------|
-| **neurohid-types** | `BrainFlowConfig`, `DeviceBackend::BrainFlow` | **Existing.** Possibly extend with board-specific options (e.g. serial port, stream params) for deeper integration |
-| **neurohid-device** | `brainflow.rs` (currently simulation adapter wrapping Mock) | **Modified.** Today: no real SDK; normalize board metadata only. Native: link BrainFlow SDK, implement `Device`/`DeviceProvider` with real `BoardShim` (prepare_session, start_stream, get_board_data) |
-| **neurohid-core/tasks/device** | `create_brainflow_provider(config)` in `discovery.rs` | **Modified.** Already feature-gated; no signature change for “real” backend — same `Box<dyn DeviceProvider>` |
-| **Hub (neurohid-hub)** | Devices screen: discovery, connection UX, backend dropdown | **Modified.** “Serial/BrainFlow parity” note; add BrainFlow discovery/connection UX and any board/config UI |
-| **Docs** | Device docs, stream semantics, BrainFlow-specific how-to | **New** (docs only). Document BrainFlow as first-class backend; examples (config snippets, minimal connect flow) |
-| **Python** | No direct BrainFlow in Python for v1.1 device path | Device path is Rust-only; Python bridge unchanged |
+1. neurohid-types  
+2. neurohid-device, neurohid-signal, neurohid-platform, neurohid-ipc, neurohid-storage, neurohid-calibration (no inter-deps among these; can parallelize)  
+3. neurohid-core  
+4. neurohid-hub, neurohid, neurohid-sdk (applications; SDK and neurohid binary need framework published first if they use version deps)
 
-### New vs Modified Components
+### Option B: Separate Repo (framework repo)
 
-| Component | Status | Change |
-|-----------|--------|--------|
-| **neurohid-device** | **Modified** | `brainflow.rs`: add native SDK path behind same trait (feature “brainflow” can mean real SDK when enabled); keep simulation path for CI/docs where no hardware) |
-| **neurohid-types** | **Modified** | Optional: extend `BrainFlowConfig` for board id, port, stream params if needed for native UX |
-| **neurohid-core** | **Modified** | Discovery only if config shape changes; otherwise unchanged |
-| **neurohid-hub** | **Modified** | Devices screen: BrainFlow discovery/connect UX, parity with LSL/Serial where applicable |
-| **Docs + examples** | **New** | New or updated docs (BrainFlow setup, Hub UX); optional minimal example (e.g. config + connect) |
+**What:** New repo containing only framework crates (types + components + core). Main repo (Hub, binaries, SDK, Python) depends on framework via **git tag** or **crates.io**. Same layer map and API; dependency source is external.
 
-### Data Flow Impact
+**Pros:** Clear ownership boundary; framework can version and release independently; smaller application repo.  
+**Cons:** Cross-repo changes and version bumps; CI in main repo must pin framework ref; docs may live in two places.
 
-**No change to pipeline shape.** BrainFlow remains one more backend behind `DeviceProvider`/`Device`. Samples still flow: BrainFlowDevice → DeviceTask → SignalTask → … . Only the source of samples changes (real hardware vs current mock). Optional: if BrainFlow-specific stream params (e.g. chunk size) are exposed, they stay inside device/signal boundary.
+**Build order:** Inside framework repo: same as above (types → components → core). Main repo build: fetch framework dependency (git/crates.io), then build Hub/binaries/SDK.
 
-### BrainFlow Placement
+## Recommended Project Structure (Per Option)
 
-- **Ownership:** Device backend stays in **neurohid-device** (same as LSL, Serial, Mock). No new crate.
-- **Feature gate:** Keep `brainflow` feature; when “native” is implemented, the same feature can enable real SDK (with optional “brainflow-mock” or env for CI without hardware).
-- **Docs/UX first:** Implement documentation and Hub discovery/connection UX before or in parallel with deeper SDK wiring; avoids blocking on SDK details.
+### Publishable-in-Place (no structural change)
 
----
+```
+neurohid/                    # same repo
+├── crates/
+│   ├── neurohid-types       # publish = true, first in order
+│   ├── neurohid-device      # publish = true
+│   ├── neurohid-signal      # publish = true
+│   ├── neurohid-platform    # publish = true
+│   ├── neurohid-ipc         # publish = true
+│   ├── neurohid-storage     # publish = true
+│   ├── neurohid-calibration # publish = true
+│   ├── neurohid-core        # publish = true
+│   ├── neurohid-hub         # publish = false; deps = version or path
+│   ├── neurohid             # publish = true; deps = version or path
+│   ├── neurohid-sdk         # publish = true; optional deps = version
+│   └── neurohid-outlet-example
+├── python/
+└── .github/workflows        # publish-crates: publish framework then apps
+```
 
-## 3. Framework–vs–Hub Separation — Integration
+### Separate Repo (framework repo layout)
 
-### Integration Points
+```
+neurohid-framework/          # new repo
+├── crates/
+│   ├── neurohid-types
+│   ├── neurohid-device
+│   ├── neurohid-signal
+│   ├── neurohid-platform
+│   ├── neurohid-ipc
+│   ├── neurohid-storage
+│   ├── neurohid-calibration
+│   └── neurohid-core
+├── Cargo.toml               # workspace with only these members
+└── .github/workflows        # version bump + publish to crates.io
 
-| Where | What | Notes |
-|-------|------|--------|
-| **Repo layout** | Structural boundary: “framework” vs “Hub app” | Framework = types + component crates + core + SDK surface. Hub = neurohid-hub + neurohid binaries. Same repo; no split yet |
-| **neurohid-sdk** | Public API for embedders | **Existing.** Becomes the documented “framework” surface; Hub must not rely on SDK-internal or Hub-only types from framework |
-| **neurohid-core::facade** | Re-exports for IPC/storage so Hub doesn’t depend on neurohid-ipc/neurohid-storage directly | **Existing.** Enforces “Hub depends on core only” for runtime access |
-| **neurohid-hub** | Depends only on neurohid-core (and transitively what core needs) | **Existing.** Already uses facade; no direct device/signal deps in production. Separation work is clarity and docs, not new deps |
-| **Docs** | Document “framework” vs “Hub as one app” | **New.** Single doc or section: what is the framework (crates, facade, SDK), what is the Hub (app that uses framework) |
+neurohid/                    # existing repo (Hub, apps, Python)
+├── crates/
+│   ├── neurohid-hub         # dependency: neurohid-core = { git = "..." }
+│   ├── neurohid
+│   ├── neurohid-sdk
+│   └── ...
+├── python/
+└── Cargo.toml               # workspace; framework deps from git/crates.io
+```
 
-### New vs Modified Components
+## Data Flow (Unchanged)
 
-| Component | Status | Change |
-|-----------|--------|--------|
-| **Crate graph** | **Unchanged** | types → components → core → (hub | sdk | binary). No new crates; no dependency reversal |
-| **neurohid-sdk** | **Modified (docs/features)** | Document as the framework entrypoint; ensure feature set (e.g. runtime, device, ipc) is the “official” embedder surface |
-| **neurohid-hub** | **Modified (docs/clarity)** | No new deps; possibly audit that Hub does not reach into component crates except via core/facade |
-| **Docs** | **New** | `docs/framework-and-hub.md` (or equivalent): framework boundary, crate map, “Hub is one app on top of framework” |
+- **Request/control flow:** Hub or CLI → ControlRequest (IPC) → runtime → ControlSnapshot. No change when Hub consumes framework as dependency.
+- **Signal → HID:** DeviceTask → SignalTask → DecoderTask → ActionTask → OutletTask (unchanged).
+- **State:** Config/profile in neurohid-storage; runtime and Hub state as today. No new data flows introduced by the delivery model.
 
-### Data Flow Impact
+## Build Order and Phases for Implementation
 
-**None.** Separation is structural and documentary. Same data flow; same IPC and control; Hub still talks to runtime via RuntimeHandle and facade. Full framework split to another repo is out of scope for v1.1.
+### Phase 1: Publishable-in-place (recommended first)
 
-### Framework Boundary (In-Repo)
+1. **Enable publish and versions**  
+   Set `publish = true` and consistent versions for: neurohid-types, neurohid-device, neurohid-signal, neurohid-platform, neurohid-ipc, neurohid-storage, neurohid-calibration, neurohid-core. Ensure `[workspace.package]` version/repository is correct.
 
-- **Framework:** neurohid-types, neurohid-device, neurohid-signal, neurohid-platform, neurohid-ipc, neurohid-storage, neurohid-calibration, neurohid-core, neurohid-sdk (and optionally neurohid-outlet-example as example consumer). “What devs build on.”
-- **Hub:** neurohid-hub + neurohid binaries. “Our app” that uses the framework via neurohid-core and neurohid-core::facade.
-- **Boundary rule:** Hub and other apps depend on the framework through neurohid-core (and neurohid-sdk for embedders). They do not depend on component crates directly for production code; facade and SDK re-exports are the boundary.
+2. **Publish workflow (dependency order)**  
+   Extend `.github/workflows/publish-crates.yml` to publish framework crates in order: types first, then the six components (parallel if no inter-deps), then core. Then publish neurohid-sdk and neurohid (so they can depend on published framework).
 
----
+3. **Hub and binaries: dependency source**  
+   - **Option 3a:** Keep path deps for local dev; use version deps only in release builds or in a separate “release” Cargo.toml profile.  
+   - **Option 3b:** Switch Hub and binaries to version deps (e.g. workspace version) so that `cargo build` in the repo still works (workspace dependency resolution).  
+   Prefer 3b for simplicity: e.g. `neurohid-core = { version = "0.1", path = "../neurohid-core" }` (path overrides version when present) or workspace version only.
 
-## Suggested Build Order for v1.1 Phases
+4. **SDK**  
+   Change optional dependencies from `path = "..."` to `version = "0.1"` (or workspace) so `cargo publish -p neurohid-sdk` is valid for crates.io.
 
-Dependencies between the three features suggest this order:
+5. **CI**  
+   Add or adjust a job that verifies “Hub builds with framework as crates.io (or workspace) dependency” and keep check-hub-deps (allowlist) as-is.
 
-1. **Framework–Hub separation (structural + docs)**  
-   - **Rationale:** Defines the boundary that testing and BrainFlow will live within. No code flow change; documentation and optional dependency audit.  
-   - **Deliverables:** Doc describing framework vs Hub; SDK as documented framework surface; Hub audited to use only core/facade.  
-   - **Enables:** Clear ownership for “where do tests live” and “BrainFlow stays in device layer.”
+### Phase 2: Optional separate repo
 
-2. **Thorough testing (coverage, flakiness, integration/E2E)**  
-   - **Rationale:** Improves confidence before adding native BrainFlow (which can introduce hardware/CI variability).  
-   - **Deliverables:** Rust coverage tooling and CI gates; more integration tests (e.g. IPC in neurohid-core/neurohid-hub); Python coverage and flakiness fixes; E2E only where valuable.  
-   - **Enables:** Safe refactor of brainflow.rs (simulation vs native) with tests in place.
+1. **Extract framework**  
+   Create neurohid-framework repo; copy or move types + 6 components + core; minimal Cargo.toml workspace; no Hub, no binaries, no Python.
 
-3. **Native BrainFlow (docs/UX then deeper)**  
-   - **Rationale:** Docs and Hub UX first give users a path and don’t block on SDK details; deeper integration (real SDK, board config, streaming) follows.  
-   - **Deliverables:** BrainFlow docs and examples; Hub discovery/connection UX for BrainFlow; then (as scope allows) real BrainFlow SDK in neurohid-device, with simulation path retained for CI.  
-   - **Depends on:** Framework boundary (so BrainFlow stays clearly in device layer); testing (so new code is covered and CI stays stable).
+2. **Version and publish from framework repo**  
+   Establish versioning (e.g. 0.1.0) and a workflow to publish to crates.io in the same dependency order.
 
-**Phase ordering rationale:**  
-- Separation is independent and cheap (docs + audit).  
-- Testing benefits from a clear “framework” boundary for test ownership.  
-- BrainFlow benefits from both: framework boundary keeps BrainFlow in one place; testing reduces regressions when adding native SDK.
+3. **Main repo consumes framework**  
+   In neurohid (main repo), replace path deps for framework crates with git (e.g. `tag = "v0.1.0"`) or crates.io version. Hub allowlist remains the same set of crate names; source is git/crates.io.
 
----
+4. **CI in main repo**  
+   Pin framework ref (tag or version); run check-hub-deps and full build against that ref.
 
-## Integration Points Summary
+### Phase ordering rationale
 
-### Internal Boundaries (v1.1-relevant)
-
-| Boundary | Communication | v1.1 Note |
-|----------|---------------|------------|
-| Testing ↔ Crates | Tests live in crates or in crate `tests/` | No new cross-crate test crate; integration tests in neurohid-core (and optionally neurohid-hub) |
-| BrainFlow ↔ Pipeline | DeviceProvider/Device → DeviceTask → SignalTask | Unchanged; BrainFlow is one more backend in neurohid-device |
-| Framework ↔ Hub | neurohid-core (facade) + neurohid-sdk | Document and enforce; Hub uses only core/facade for runtime access |
-
-### New vs Modified (Checklist)
-
-| Area | New | Modified |
-|------|-----|----------|
-| Testing | Rust coverage in CI (optional); possibly e2e layout under repo root | neurohid-core/tests, neurohid-hub tests, Python tests, CI workflow |
-| BrainFlow | Docs, examples | neurohid-device/brainflow.rs, neurohid-types (optional config), Hub devices screen |
-| Framework–Hub | Doc (framework-and-hub) | neurohid-sdk docs, neurohid-hub audit, crate-boundaries.md |
-
----
+- **Publishable-in-place first:** Delivers “Hub consumes framework as dependency” and “clear release story” without repo split; validates publish order and versioning in one repo.  
+- **Separate repo second (if desired):** Adds a clean repo boundary and independent framework releases; can be done after publish order and versioning are stable.
 
 ## Anti-Patterns to Avoid
 
-### Testing
+### Reverse or circular dependencies
 
-- **Scattering integration tests across many crates:** Prefer a small number of “integration” owners (e.g. neurohid-core for runtime/IPC, neurohid-hub only if Hub-specific). Avoid a dedicated “integration test crate” that depends on everything.
-- **E2E that require hardware or heavy processes in every CI run:** Prefer in-process integration tests (like extension_outlet_e2e); add full pipeline E2E only where value is clear and flakiness is controlled.
+**What:** Core depending on Hub, or a component depending on core.  
+**Why bad:** Layer map and allowlist assume types → components → core → applications.  
+**Do instead:** Keep dependency direction; add new APIs in core/facade or types when Hub needs something from a component.
 
-### BrainFlow
+### Hub depending outside the allowlist
 
-- **Putting BrainFlow logic in core or hub:** Keep all BrainFlow-specific code in neurohid-device behind the existing Device/DeviceProvider traits; core only calls `create_brainflow_provider(config)`.
-- **Breaking the simulation path:** Keep the current mock-based BrainFlow adapter for CI and docs; native SDK can be a separate code path behind the same feature or a build-time choice.
+**What:** Adding neurohid-device, neurohid-signal, or neurohid-platform as direct Hub deps.  
+**Why bad:** Breaks framework boundary and CI.  
+**Do instead:** Expose types/APIs via neurohid-core (or facade) and keep Hub allowlist unchanged.
 
-### Framework–Hub
+### Publishing out of order
 
-- **Hub depending on neurohid-device or neurohid-signal directly:** Hub should use neurohid-core (and facade) only for runtime/config; device/signal are framework internals.
-- **New “framework” crate that just re-exports:** The framework is the existing set of crates (types → components → core) plus neurohid-sdk as the public surface; document that rather than adding a new meta-crate for v1.1.
+**What:** Publishing neurohid-core before neurohid-types or a component.  
+**Why bad:** crates.io publish will fail (missing dependency).  
+**Do instead:** Publish in dependency order: types → components → core → applications.
 
----
+### Unversioned or unstable “framework” API for bindings
+
+**What:** Changing core’s public API or facade without regard for future FFI.  
+**Why bad:** Python bindings will target this surface; churn forces binding rewrites.  
+**Do instead:** Treat neurohid-core’s public API and facade as stable; document and avoid breaking changes (or use semver and explicit minor bumps).
+
+## Scalability Considerations
+
+| Concern | Publishable-in-place | Separate repo |
+|---------|----------------------|---------------|
+| Many framework contributors | Single PR flow; version bumps in same repo | Framework repo can have its own PR/merge flow |
+| Release cadence | One release workflow; framework and apps versioned together or in lockstep | Framework can release independently; main repo pins ref |
+| Python bindings (future) | Single repo for Rust + Python; bindings depend on published core/types | Bindings in main repo depend on published or git framework |
+
+## Summary: New vs Modified Components
+
+| Item | New? | Description |
+|------|------|-------------|
+| Framework as a *delivery unit* | Yes (concept) | The set of crates (types + components + core) with a release story; no new code crate. |
+| Umbrella crate (e.g. neurohid-framework) | Optional | Single crate that re-exports the surface for one-line dependency; convenience only. |
+| Repo “neurohid-framework” | Optional | New repo only if choosing separate-repo; same crates as today. |
+| Hub Cargo.toml | Modified | Dependency source path → version or git. |
+| neurohid-sdk Cargo.toml | Modified | Optional deps path → version. |
+| publish-crates workflow | Modified | Publish framework crates in order, then apps. |
+| check-hub-deps / CI | Unchanged or extended | Allowlist unchanged; optional “build against published/git framework” job. |
+| neurohid-core API / facade | Unchanged (behavior) | Treated as stable for binding prep; no structural change. |
 
 ## Sources
 
-- `.planning/PROJECT.md` — v1.1 milestone and requirements
-- `.planning/codebase/ARCHITECTURE.md` — Layers, tasks, data flow
-- `.planning/codebase/TESTING.md` — Current test layout and patterns
-- `docs/architecture-rust-core.md`, `docs/crate-boundaries.md` — Crate map and dependency rules
-- `docs/integration-architecture.md` — Data flow and device backends
-- `crates/neurohid-device/src/brainflow.rs` — Current BrainFlow (simulation) implementation
-- `crates/neurohid-core/src/lib.rs` — Facade re-exports
-- `.planning/codebase/CONCERNS.md` — E2E and coverage notes
+- `.planning/PROJECT.md` — v1.2 goal and target features
+- `.planning/codebase/ARCHITECTURE.md` — existing layers and data flow
+- `.planning/codebase/STRUCTURE.md` — crate layout and placement
+- `docs/framework-surface.md` — framework surface and Hub allowlist
+- `docs/crate-boundaries.md` — layer map and dependency direction
+- `.github/framework-allowlist.toml` — Hub allowlist
+- `Cargo.toml` (workspace and crates) — current publish flags and path deps
+- `.github/workflows/publish-crates.yml` — current publish scope (neurohid, neurohid-sdk only)
 
 ---
-*Architecture research for: v1.1 Testing, BrainFlow, Framework–Hub separation (integration only).*
+*Architecture research for: framework repo split and publishable package (v1.2)*  
+*Researched: 2026-02-22*
