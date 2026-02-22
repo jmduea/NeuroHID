@@ -14,9 +14,14 @@ A single, composable path from biosignal device to actionable output — with an
 
 **Shipped:** v1.1 Testing, BrainFlow & Framework Separation (2026-02-21) — 4 phases, 12 plans. Framework–Hub boundary documented and CI-enforced; thorough testing (nextest, integration/E2E, coverage thresholds, docs/testing.md); BrainFlow first-class (docs, synthetic board replaces mock, Hub UX) and deeper (brainflow-native feature, pinned 5.13.0, same pipeline as LSL). All 17 v1.1 requirements validated.
 
-## Next Milestone Goals
+## Current Milestone: v1.2 Framework consumable (prep for Python bindings)
 
-To be defined via `/gsd:new-milestone` (questioning → research → requirements → roadmap). Candidates from deferred/out-of-scope: validation harness in CI (TEST-06), board-specific BrainFlow params (BRAIN-09), framework repo split (FRAME-05), latency profiling (RUNT-04/05), Hub/notebook enhancements.
+**Goal:** Split the framework into a separate repo or publishable package so the Hub and other apps consume it as a dependency, enabling a future milestone to add Python bindings (scriptable runtime from Python, PyPI package, tighter ML bridge).
+
+**Target features:**
+- Framework as separate repo or publishable package; Hub consumes it as dependency
+- Clear API boundary and release story for the framework
+- Prep for Python bindings (this milestone does not implement bindings)
 
 
 ## Requirements
@@ -85,4 +90,4 @@ To be defined via `/gsd:new-milestone` (questioning → research → requirement
 | BrainFlow first-class then deeper (v1.1) | Docs/UX first, then board config/streaming as scope allows | ✓ Shipped v1.1 |
 
 ---
-*Last updated: 2026-02-21 after v1.1 milestone complete*
+*Last updated: 2026-02-22 — Milestone v1.2 started*

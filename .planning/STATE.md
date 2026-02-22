@@ -5,13 +5,14 @@
 See: .planning/PROJECT.md (updated 2026-02-21)
 
 **Core value:** A single, composable path from biosignal device to actionable output — with an IDE-like experience for building and training decoders and a standalone runtime for using them — so that developers and power users don't have to piece together disparate libraries and tools.
-**Current focus:** Planning next milestone (v1.2 or later).
+**Current focus:** Phase not started (defining requirements).
 
 ## Current Position
 
-Milestone v1.1 complete (2026-02-21). All 4 phases (7–10), 12 plans shipped. Archived to .planning/milestones/v1.1-ROADMAP.md and v1.1-REQUIREMENTS.md.
-
-Progress: v1.1 complete. Next: `/gsd:new-milestone` to define next milestone.
+Phase: Not started (defining requirements)
+Plan: —
+Status: Defining requirements
+Last activity: 2026-02-22 — Milestone v1.2 started
 
 ## Performance Metrics
 
