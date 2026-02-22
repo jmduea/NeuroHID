@@ -17,10 +17,6 @@ name = "neurohid"
 path = "src/bin/neurohid.rs"
 
 [[bin]]
-name = "neurohid-service"
-path = "src/bin/neurohid-service.rs"
-
-[[bin]]
 name = "neurohid-validate"
 path = "src/bin/neurohid-validate.rs"
 

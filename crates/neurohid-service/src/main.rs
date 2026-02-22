@@ -317,9 +317,7 @@ struct ServiceLaunchConfig {
 #[cfg(windows)]
 static SERVICE_LAUNCH_CONFIG: std::sync::OnceLock<ServiceLaunchConfig> = std::sync::OnceLock::new();
 
-#[path = "neurohid-service/runtime_events.rs"]
 mod runtime_events;
-#[path = "../tracing_init.rs"]
 mod tracing_init;
 
 use runtime_events::{

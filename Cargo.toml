@@ -11,6 +11,7 @@ members = [
     "crates/neurohid-platform",
     "crates/neurohid-storage",
     "crates/neurohid-ipc",
+    "crates/neurohid-service",
     "crates/neurohid-calibration",
     "crates/neurohid-outlet-example",
     "apps/neuroide-hub",

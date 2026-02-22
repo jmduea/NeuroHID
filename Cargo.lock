@@ -3129,6 +3129,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "neurohid-service"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "ctrlc",
+ "neurohid-core",
+ "neurohid-ipc",
+ "neurohid-storage",
+ "neurohid-types",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "windows-service",
+]
+
+[[package]]
 name = "neurohid-signal"
 version = "0.1.0"
 dependencies = [
