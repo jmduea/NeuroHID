@@ -47,7 +47,6 @@ impl PySampleStream {
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         drop(guard);
                         warn!("SampleStream lagged, dropped {n} items");
-                        continue;
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
@@ -90,7 +89,6 @@ impl PyFeatureStream {
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         drop(guard);
                         warn!("FeatureStream lagged, dropped {n} items");
-                        continue;
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
@@ -133,7 +131,6 @@ impl PyActionStream {
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         drop(guard);
                         warn!("ActionStream lagged, dropped {n} items");
-                        continue;
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
@@ -176,7 +173,6 @@ impl PyMarkerStream {
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         drop(guard);
                         warn!("MarkerStream lagged, dropped {n} items");
-                        continue;
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
@@ -219,7 +215,6 @@ impl PyEventStream {
                     Err(broadcast::error::RecvError::Lagged(n)) => {
                         drop(guard);
                         warn!("EventStream lagged, dropped {n} items");
-                        continue;
                     }
                     Err(broadcast::error::RecvError::Closed) => {
                         return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(

@@ -78,13 +78,24 @@ class IpcClient:
         A ``neurohid.RuntimeHandle`` obtained from ``await RuntimeBuilder(...).start()``.
     config:
         Optional bridge configuration (heartbeat interval, etc.).
+    typed:
+        When ``True`` (default), use ``trainer_recv_typed`` so that
+        ``decision_event`` and ``errp_window`` payloads arrive as typed
+        objects with numpy-backed arrays instead of plain dicts.
     """
 
-    def __init__(self, runtime: Any, config: IpcConfig | None = None) -> None:
+    def __init__(
+        self,
+        runtime: Any,
+        config: IpcConfig | None = None,
+        *,
+        typed: bool = True,
+    ) -> None:
         self.config = config or IpcConfig()
         self._runtime = runtime
         self.connected = False
         self.sequence = 0
+        self._typed = typed
 
     async def connect(self) -> bool:
         """Register a trainer session with the runtime."""
@@ -125,17 +136,30 @@ class IpcClient:
         await self._runtime.trainer_send(envelope)
 
     async def receive_envelope(self) -> Optional[dict[str, Any]]:
-        """Receive one envelope from the runtime, or ``None`` on timeout/close."""
+        """Receive one envelope from the runtime, or ``None`` on timeout/close.
+
+        When ``typed=True`` (the default), ``decision_event`` and
+        ``errp_window`` payloads are typed objects with numpy attributes
+        rather than plain dicts.
+        """
         if not self.connected:
             return None
         try:
+            recv_coro = (
+                self._runtime.trainer_recv_typed()
+                if self._typed
+                else self._runtime.trainer_recv()
+            )
             result = await asyncio.wait_for(
-                self._runtime.trainer_recv(),
+                recv_coro,
                 timeout=self.config.recv_timeout_sec,
             )
             if result is None:
                 return None
-            return json.loads(result)
+            # trainer_recv_typed already returns a dict; trainer_recv returns JSON
+            if isinstance(result, str):
+                return json.loads(result)
+            return result
         except asyncio.TimeoutError:
             return None
         except Exception as error:  # noqa: BLE001
@@ -235,18 +259,27 @@ class BridgeSession:
         )
         return False
 
-    async def handle_decision_event(self, payload: dict[str, Any]) -> None:
-        _ = str(payload.get("decision_id") or f"dec_{now_micros()}")
-        decoder_confidence = float(
-            np.clip(float(payload.get("decoder_confidence") or 0.0), 0.0, 1.0)
-        )
-        signal_quality = float(
-            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
-        )
-
-        feature_values = payload.get("feature_values")
-        if isinstance(feature_values, list):
-            np.asarray(feature_values, dtype=np.float32)
+    async def handle_decision_event(self, payload: Any) -> None:
+        # Typed payload (DecisionEvent object with numpy attrs)
+        if hasattr(payload, "decoder_confidence"):
+            decoder_confidence = float(
+                np.clip(payload.decoder_confidence, 0.0, 1.0)
+            )
+            signal_quality = float(
+                np.clip(payload.signal_quality, 0.0, 1.0)
+            )
+            # payload.feature_values is already a numpy array — no conversion
+        else:
+            # Legacy dict path
+            decoder_confidence = float(
+                np.clip(float(payload.get("decoder_confidence") or 0.0), 0.0, 1.0)
+            )
+            signal_quality = float(
+                np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
+            )
+            feature_values = payload.get("feature_values")
+            if isinstance(feature_values, list):
+                np.asarray(feature_values, dtype=np.float32)
 
         self.stats.replay_size += 1
         self.stats.training_step += 1
@@ -263,37 +296,60 @@ class BridgeSession:
             self.stats.entropy, _bernoulli_entropy(decoder_confidence), alpha=0.05
         )
 
-    async def handle_errp_window(self, payload: dict[str, Any]) -> None:
-        decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
-        action_timestamp = int(payload.get("action_timestamp_us") or now_micros())
-        signal_quality = float(
-            np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
-        )
-
-        channels = payload.get("channel_data")
-        if isinstance(channels, list) and channels:
-            try:
-                matrix = np.asarray(channels, dtype=np.float32)
-                if matrix.ndim == 2 and matrix.shape[0] > 0 and matrix.shape[1] > 0:
-                    if self.errp.is_calibrated:
-                        detected = self.errp.detect(matrix.T)
-                        error_probability = float(
-                            np.clip(detected.error_probability, 0.0, 1.0)
-                        )
-                        confidence = float(np.clip(detected.confidence, 0.0, 1.0))
-                    else:
-                        error_probability = 0.0
-                        confidence = 0.0
+    async def handle_errp_window(self, payload: Any) -> None:
+        # Typed payload (ErrpWindow object with numpy attrs)
+        if hasattr(payload, "channel_data"):
+            decision_id = str(payload.decision_id)
+            action_timestamp = int(payload.action_timestamp_us)
+            signal_quality = float(
+                np.clip(float(payload.signal_quality) if hasattr(payload, "signal_quality") else 0.0, 0.0, 1.0)
+            )
+            # payload.channel_data is already a 2D numpy array (channels, samples)
+            matrix = payload.channel_data
+            if isinstance(matrix, np.ndarray) and matrix.ndim == 2 and matrix.shape[0] > 0 and matrix.shape[1] > 0:
+                if self.errp.is_calibrated:
+                    detected = self.errp.detect(matrix.T)
+                    error_probability = float(
+                        np.clip(detected.error_probability, 0.0, 1.0)
+                    )
+                    confidence = float(np.clip(detected.confidence, 0.0, 1.0))
                 else:
                     error_probability = 0.0
                     confidence = 0.0
-            except Exception as error:  # noqa: BLE001
+            else:
                 error_probability = 0.0
                 confidence = 0.0
-                self.stats.last_error = f"errp_window analysis failed: {error}"
         else:
-            error_probability = 0.0
-            confidence = 0.0
+            # Legacy dict path
+            decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
+            action_timestamp = int(payload.get("action_timestamp_us") or now_micros())
+            signal_quality = float(
+                np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
+            )
+            channels = payload.get("channel_data")
+            if isinstance(channels, list) and channels:
+                try:
+                    matrix = np.asarray(channels, dtype=np.float32)
+                    if matrix.ndim == 2 and matrix.shape[0] > 0 and matrix.shape[1] > 0:
+                        if self.errp.is_calibrated:
+                            detected = self.errp.detect(matrix.T)
+                            error_probability = float(
+                                np.clip(detected.error_probability, 0.0, 1.0)
+                            )
+                            confidence = float(np.clip(detected.confidence, 0.0, 1.0))
+                        else:
+                            error_probability = 0.0
+                            confidence = 0.0
+                    else:
+                        error_probability = 0.0
+                        confidence = 0.0
+                except Exception as error:  # noqa: BLE001
+                    error_probability = 0.0
+                    confidence = 0.0
+                    self.stats.last_error = f"errp_window analysis failed: {error}"
+            else:
+                error_probability = 0.0
+                confidence = 0.0
 
         self.stats.value_loss = _ema(
             self.stats.value_loss, error_probability, alpha=0.12

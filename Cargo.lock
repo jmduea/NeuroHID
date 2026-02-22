@@ -3083,8 +3083,10 @@ dependencies = [
  "neurohid-ipc",
  "neurohid-storage",
  "neurohid-types",
+ "numpy",
  "pyo3",
  "pyo3-async-runtimes",
+ "pythonize",
  "serde",
  "serde_json",
  "tokio",
@@ -3393,6 +3395,22 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "numpy"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "778da78c64ddc928ebf5ad9df5edf0789410ff3bdbf3619aed51cd789a6af1e2"
+dependencies = [
+ "libc",
+ "ndarray 0.16.1",
+ "num-complex",
+ "num-integer",
+ "num-traits",
+ "pyo3",
+ "pyo3-build-config",
+ "rustc-hash 2.1.1",
 ]
 
 [[package]]
@@ -4168,6 +4186,16 @@ dependencies = [
  "pyo3-build-config",
  "quote",
  "syn 2.0.114",
+]
+
+[[package]]
+name = "pythonize"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b79f670c9626c8b651c0581011b57b6ba6970bb69faf01a7c4c0cfc81c43f95"
+dependencies = [
+ "pyo3",
+ "serde",
 ]
 
 [[package]]

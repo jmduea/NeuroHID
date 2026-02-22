@@ -10,6 +10,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - In-process Python bindings (`neurohid-py` crate) via PyO3 0.28 targeting free-threaded Python 3.14+ — replaces socket-based IPC shim with direct `RuntimeHandle` access, async stream iterators, and trainer protocol methods (see [ADR-001](docs/adr/ADR-001-in-process-python-bindings.md))
+- **Zero-copy numeric bridge** (`neurohid-py`): `PySample.values`, `PyFeatureVector.values`, and `PySample.quality` now return **numpy arrays** (single memcpy) instead of Python lists; backward-compatible `values_list()` / `quality_list()` methods preserve the old list-based API
+- Typed trainer payload wrappers: `PyDecisionEvent` (with numpy `feature_values`) and `PyErrpWindow` (with 2-D numpy `channel_data`) exposed to Python
+- `RuntimeHandle.trainer_recv_typed()` method returning typed payload objects for `decision_event` and `errp_window` messages (plain dict fallback via `pythonize` for other types)
+- `RuntimeHandle.recv_sample_batch(n)` and `recv_feature_batch(n)` batch methods that collect *n* items and return a single 2-D numpy array
+- Typed extractors on `PyRuntimeEvent`: `sample()`, `feature()`, `action()`, `decision_event()`, `errp_window()`
+- Workspace dependencies: `numpy` 0.28 and `pythonize` 0.28 for PyO3 numpy bindings and serde→Python conversion
 - Repository root dual-license texts (`LICENSE-MIT`, `LICENSE-APACHE`) to match declared workspace licensing policy
 - Device discovery→connection lifecycle design reference at `docs/plans/2026-02-15-device-discovery-connection-design.md`, including interactive/headless flow mapping and troubleshooting guidance
 - BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
@@ -51,6 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Config cleanup**: consolidated 19 serde default functions into struct-level `#[serde(default)]` + `Default` impls; deleted dead `ServiceState` from `neurohid-types::config`; deleted unused XDF parsing types from `neurohid-types::signal`
 - **Runtime cleanup**: centralized `ServiceState` → `ControlSnapshot` projection into `to_control_snapshot()` method; extracted `ack_command()` helper to deduplicate 11 identical dispatch match arms
 - **Signal pipeline**: cached Welch PSD from feature extraction for temporal state updates — eliminates redundant Goertzel band-power approximation per extraction cycle
+- Python ML bridge `IpcClient` now defaults to `typed=True`, using `trainer_recv_typed()` for numpy-backed payloads; pass `typed=False` to restore the prior JSON-string behaviour
+- `serde_to_pydict` helper in `neurohid-py` replaced JSON intermediate serialization with `pythonize::pythonize()` for lower-overhead Rust→Python dict conversion
 - Python ML bridge (`neurohid-ml`) migrated from socket-based IPC to in-process PyO3 bindings: `IpcClient` now wraps `RuntimeHandle.trainer_*()`, control client takes `RuntimeHandle` directly, telemetry client wraps `subscribe_events()`, CLI commands use `RuntimeBuilder` instead of IPC endpoint arguments
 - Python package `neurohid_bindings` renamed to `neurohid` (module name matches `#[pymodule]`)
 - Python version requirement bumped to `>=3.14` (free-threaded CPython)

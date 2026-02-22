@@ -3,6 +3,7 @@
 //! Types that are complex or have many fields use serde-based `from_dict`/
 //! `to_dict` conversion. Simpler types expose fields directly.
 
+use numpy::{PyArray1, PyArray2, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 
@@ -205,13 +206,28 @@ impl PySample {
         self.inner.sequence_number
     }
 
+    /// Channel values as a numpy array (single memcpy, no Python float boxing).
     #[getter]
-    fn values(&self) -> Vec<f32> {
+    fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f32>> {
+        PyArray1::from_slice(py, &self.inner.values)
+    }
+
+    /// Channel values as a Python list (backward-compat).
+    fn values_list(&self) -> Vec<f32> {
         self.inner.values.clone()
     }
 
+    /// Quality indicators as a numpy array, or ``None``.
     #[getter]
-    fn quality(&self) -> Option<Vec<f32>> {
+    fn quality<'py>(&self, py: Python<'py>) -> Option<Bound<'py, PyArray1<f32>>> {
+        self.inner
+            .quality
+            .as_deref()
+            .map(|q| PyArray1::from_slice(py, q))
+    }
+
+    /// Quality indicators as a Python list (backward-compat).
+    fn quality_list(&self) -> Option<Vec<f32>> {
         self.inner.quality.clone()
     }
 
@@ -241,8 +257,14 @@ pub struct PyFeatureVector {
 
 #[pymethods]
 impl PyFeatureVector {
+    /// Feature values as a numpy array (single memcpy, no Python float boxing).
     #[getter]
-    fn values(&self) -> Vec<f32> {
+    fn values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f32>> {
+        PyArray1::from_slice(py, &self.inner.values)
+    }
+
+    /// Feature values as a Python list (backward-compat).
+    fn values_list(&self) -> Vec<f32> {
         self.inner.values.clone()
     }
 
@@ -504,10 +526,174 @@ impl PyTrainerSnapshot {
 }
 
 // ---------------------------------------------------------------------------
-// RuntimeEvent — serde round-trip
+// DecisionEvent — typed wrapper with numpy access
+// ---------------------------------------------------------------------------
+
+/// A runtime decision event with numpy-backed feature values.
+///
+/// Access ``feature_values`` as a numpy array instead of going through JSON.
+#[pyclass(name = "DecisionEvent", skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyDecisionEvent {
+    pub inner: neurohid_ipc::DecisionEvent,
+}
+
+#[pymethods]
+impl PyDecisionEvent {
+    #[getter]
+    fn decision_id(&self) -> &str {
+        &self.inner.decision_id
+    }
+
+    #[getter]
+    fn timestamp_us(&self) -> Timestamp {
+        self.inner.timestamp_us
+    }
+
+    /// Feature values as a numpy array (single memcpy).
+    #[getter]
+    fn feature_values<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f32>> {
+        PyArray1::from_slice(py, &self.inner.feature_values)
+    }
+
+    #[getter]
+    fn decoder_confidence(&self) -> f32 {
+        self.inner.decoder_confidence
+    }
+
+    #[getter]
+    fn signal_quality(&self) -> f32 {
+        self.inner.signal_quality
+    }
+
+    #[getter]
+    fn action(&self) -> PyAction {
+        PyAction {
+            inner: self.inner.action.clone(),
+        }
+    }
+
+    #[getter]
+    fn decoder_model_version(&self) -> Option<&str> {
+        self.inner.decoder_model_version.as_deref()
+    }
+
+    #[getter]
+    fn stream_id(&self) -> Option<&str> {
+        self.inner.stream_id.as_deref()
+    }
+
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        serde_to_pydict(py, &self.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "DecisionEvent(id='{}', confidence={:.3})",
+            self.inner.decision_id, self.inner.decoder_confidence
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ErrpWindow — typed wrapper with numpy 2D array
+// ---------------------------------------------------------------------------
+
+/// An `ErrP` analysis window with numpy-backed channel data.
+///
+/// ``channel_data`` returns a 2D numpy array of shape ``(channels, samples)``
+/// instead of nested Python lists.
+#[pyclass(name = "ErrpWindow", skip_from_py_object)]
+#[derive(Clone)]
+pub struct PyErrpWindow {
+    pub inner: neurohid_ipc::ErrpWindow,
+}
+
+#[pymethods]
+impl PyErrpWindow {
+    #[getter]
+    fn decision_id(&self) -> &str {
+        &self.inner.decision_id
+    }
+
+    #[getter]
+    fn action_timestamp_us(&self) -> Timestamp {
+        self.inner.action_timestamp_us
+    }
+
+    #[getter]
+    fn window_start_us(&self) -> Timestamp {
+        self.inner.window_start_us
+    }
+
+    #[getter]
+    fn window_end_us(&self) -> Timestamp {
+        self.inner.window_end_us
+    }
+
+    #[getter]
+    fn sample_rate_hz(&self) -> f32 {
+        self.inner.sample_rate_hz
+    }
+
+    #[getter]
+    fn channel_labels(&self) -> Vec<String> {
+        self.inner.channel_labels.clone()
+    }
+
+    /// Channel data as a 2D numpy array of shape ``(channels, samples)``.
+    ///
+    /// Each row is one channel's time-series segment. Single memcpy into
+    /// a contiguous numpy buffer.
+    #[getter]
+    fn channel_data<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray2<f32>>> {
+        let rows = self.inner.channel_data.len();
+        if rows == 0 {
+            return PyArray2::from_vec2(py, &[]).map_err(|e| {
+                pyo3::exceptions::PyRuntimeError::new_err(format!(
+                    "empty array construction failed: {e}"
+                ))
+            });
+        }
+        let cols = self.inner.channel_data[0].len();
+        // Flatten row-major for numpy (C-contiguous).
+        let flat: Vec<f32> = self
+            .inner
+            .channel_data
+            .iter()
+            .flat_map(|row| row.iter().copied())
+            .collect();
+        PyArray1::from_vec(py, flat).reshape([rows, cols])
+    }
+
+    #[getter]
+    fn signal_quality(&self) -> f32 {
+        self.inner.signal_quality
+    }
+
+    fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        serde_to_pydict(py, &self.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        let channels = self.inner.channel_data.len();
+        let samples = self.inner.channel_data.first().map_or(0, Vec::len);
+        format!(
+            "ErrpWindow(id='{}', shape=({channels}, {samples}))",
+            self.inner.decision_id
+        )
+    }
+}
+
+// ---------------------------------------------------------------------------
+// RuntimeEvent — serde round-trip + typed accessors
 // ---------------------------------------------------------------------------
 
 /// A runtime event from the broadcast stream.
+///
+/// Use ``event_type`` to determine the variant, then use typed accessors
+/// like ``sample()``, ``feature()``, ``decision_event()``, ``errp_window()``
+/// to extract inner data with numpy-backed arrays.
 #[pyclass(name = "RuntimeEvent", skip_from_py_object)]
 #[derive(Clone)]
 pub struct PyRuntimeEvent {
@@ -516,7 +702,7 @@ pub struct PyRuntimeEvent {
 
 #[pymethods]
 impl PyRuntimeEvent {
-    /// The event variant name (e.g. "sample", "action_emitted", "snapshot").
+    /// The event variant name (e.g. "sample", "`action_emitted`", "snapshot").
     #[getter]
     fn event_type(&self) -> &str {
         match &self.inner {
@@ -539,6 +725,56 @@ impl PyRuntimeEvent {
         }
     }
 
+    /// Extract the inner ``Sample`` if this is a sample event, else ``None``.
+    fn sample(&self) -> Option<PySample> {
+        match &self.inner {
+            neurohid_ipc::RuntimeEvent::Sample { sample } => Some(PySample {
+                inner: sample.clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Extract the inner ``FeatureVector`` if this is a `feature_frame` event.
+    fn feature(&self) -> Option<PyFeatureVector> {
+        match &self.inner {
+            neurohid_ipc::RuntimeEvent::FeatureFrame { feature } => Some(PyFeatureVector {
+                inner: feature.clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Extract the inner ``Action`` if this is an `action_emitted` event.
+    fn action(&self) -> Option<PyAction> {
+        match &self.inner {
+            neurohid_ipc::RuntimeEvent::ActionEmitted { action } => Some(PyAction {
+                inner: action.clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Extract the inner ``DecisionEvent`` with numpy feature values.
+    fn decision_event(&self) -> Option<PyDecisionEvent> {
+        match &self.inner {
+            neurohid_ipc::RuntimeEvent::DecisionEvent { event } => Some(PyDecisionEvent {
+                inner: event.clone(),
+            }),
+            _ => None,
+        }
+    }
+
+    /// Extract the inner ``ErrpWindow`` with numpy channel data.
+    fn errp_window(&self) -> Option<PyErrpWindow> {
+        match &self.inner {
+            neurohid_ipc::RuntimeEvent::ErrpWindow { window } => Some(PyErrpWindow {
+                inner: window.clone(),
+            }),
+            _ => None,
+        }
+    }
+
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         serde_to_pydict(py, &self.inner)
     }
@@ -556,11 +792,9 @@ fn serde_to_pydict<'py, T: ::serde::Serialize>(
     py: Python<'py>,
     value: &T,
 ) -> PyResult<Bound<'py, PyAny>> {
-    let json_str = serde_json::to_string(value).map_err(|e| {
+    pythonize::pythonize(py, value).map_err(|e| {
         pyo3::exceptions::PyRuntimeError::new_err(format!("serialization failed: {e}"))
-    })?;
-    let json_mod = PyModule::import(py, "json")?;
-    json_mod.call_method1("loads", (json_str,))
+    })
 }
 
 /// Register type classes on the module.
@@ -575,6 +809,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyStreamMarker>()?;
     m.add_class::<PyControlSnapshot>()?;
     m.add_class::<PyTrainerSnapshot>()?;
+    m.add_class::<PyDecisionEvent>()?;
+    m.add_class::<PyErrpWindow>()?;
     m.add_class::<PyRuntimeEvent>()?;
     Ok(())
 }

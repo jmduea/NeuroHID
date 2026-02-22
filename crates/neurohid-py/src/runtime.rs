@@ -5,6 +5,7 @@
 
 use std::sync::Arc;
 
+use numpy::{PyArray1, PyArrayMethods};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use tokio::sync::Mutex;
@@ -17,13 +18,16 @@ use crate::storage::PyProfileStore;
 use crate::streams::{
     PyActionStream, PyEventStream, PyFeatureStream, PyMarkerStream, PySampleStream,
 };
-use crate::types::{PyControlSnapshot, PyProfileId, PySystemConfig, PyTrainerSnapshot};
+use crate::types::{
+    PyControlSnapshot, PyDecisionEvent, PyErrpWindow, PyProfileId, PySystemConfig,
+    PyTrainerSnapshot,
+};
 
 // ---------------------------------------------------------------------------
 // RuntimeBuilder
 // ---------------------------------------------------------------------------
 
-/// Builder for a managed NeuroHID runtime instance.
+/// Builder for a managed `NeuroHID` runtime instance.
 ///
 /// ```python
 /// builder = RuntimeBuilder(SystemConfig.default())
@@ -100,7 +104,7 @@ impl PyRuntimeBuilder {
 
 /// Live handle to a running managed runtime.
 ///
-/// Provides synchronous getters (snapshot, is_alive), async commands,
+/// Provides synchronous getters (snapshot, `is_alive`), async commands,
 /// stream subscriptions, and trainer bridge methods.
 #[pyclass(name = "RuntimeHandle")]
 pub struct PyRuntimeHandle {
@@ -155,8 +159,8 @@ impl PyRuntimeHandle {
 
     /// Send a command string to the runtime.
     ///
-    /// Supported commands (pass as string): "stop", "rescan_streams",
-    /// "reload_model", "promote_candidate_model", "ml_bridge_reconnect".
+    /// Supported commands (pass as string): "stop", "`rescan_streams`",
+    /// "`reload_model`", "`promote_candidate_model`", "`ml_bridge_reconnect`".
     ///
     /// For commands with parameters, use the dict overload.
     #[pyo3(signature = (command, **kwargs))]
@@ -268,6 +272,93 @@ impl PyRuntimeHandle {
         PyEventStream::new(self.ipc.subscribe_runtime_bridge_events())
     }
 
+    // -- Batched stream subscriptions (numpy) -------------------------------
+
+    /// Collect ``batch_size`` samples and return as a 2D numpy array.
+    ///
+    /// Returns shape ``(batch_size, channels)`` with dtype ``float32``.
+    /// Blocks (async) until the batch is full or the stream closes.
+    fn recv_sample_batch<'py>(
+        &self,
+        py: Python<'py>,
+        batch_size: usize,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let mut rx = self.ipc.subscribe_samples();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rows: Vec<Vec<f32>> = Vec::with_capacity(batch_size);
+            while rows.len() < batch_size {
+                match rx.recv().await {
+                    Ok(sample) => rows.push(sample.values),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            if rows.is_empty() {
+                return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
+                    "stream closed before any samples received",
+                ));
+            }
+            let cols = rows[0].len();
+            let flat: Vec<f32> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+            let n_rows = rows.len();
+            Python::try_attach(|py| {
+                let arr = PyArray1::from_vec(py, flat)
+                    .reshape([n_rows, cols])
+                    .map_err(|e| {
+                        pyo3::exceptions::PyRuntimeError::new_err(format!(
+                            "batch reshape failed: {e}"
+                        ))
+                    })?;
+                Ok(arr.into_any().unbind())
+            })
+            .ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Python interpreter not available")
+            })?
+        })
+    }
+
+    /// Collect ``batch_size`` feature vectors and return as a 2D numpy array.
+    ///
+    /// Returns shape ``(batch_size, dims)`` with dtype ``float32``.
+    fn recv_feature_batch<'py>(
+        &self,
+        py: Python<'py>,
+        batch_size: usize,
+    ) -> PyResult<Bound<'py, PyAny>> {
+        let mut rx = self.ipc.subscribe_features();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let mut rows: Vec<Vec<f32>> = Vec::with_capacity(batch_size);
+            while rows.len() < batch_size {
+                match rx.recv().await {
+                    Ok(fv) => rows.push(fv.values),
+                    Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => {}
+                    Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+                }
+            }
+            if rows.is_empty() {
+                return Err(pyo3::exceptions::PyStopAsyncIteration::new_err(
+                    "stream closed before any features received",
+                ));
+            }
+            let cols = rows[0].len();
+            let flat: Vec<f32> = rows.iter().flat_map(|r| r.iter().copied()).collect();
+            let n_rows = rows.len();
+            Python::try_attach(|py| {
+                let arr = PyArray1::from_vec(py, flat)
+                    .reshape([n_rows, cols])
+                    .map_err(|e| {
+                        pyo3::exceptions::PyRuntimeError::new_err(format!(
+                            "batch reshape failed: {e}"
+                        ))
+                    })?;
+                Ok(arr.into_any().unbind())
+            })
+            .ok_or_else(|| {
+                pyo3::exceptions::PyRuntimeError::new_err("Python interpreter not available")
+            })?
+        })
+    }
+
     // -- Trainer bridge methods ---------------------------------------------
 
     /// Notify the runtime that a trainer has connected (async).
@@ -308,6 +399,9 @@ impl PyRuntimeHandle {
     /// Receive one trainer-stream envelope from the runtime (async).
     /// Returns a JSON string, or `None` if the channel is closed.
     /// The Python caller should `json.loads()` the result to get a dict.
+    ///
+    /// Prefer ``trainer_recv_typed`` for numeric-heavy payloads to avoid
+    /// JSON round-trips.
     fn trainer_recv<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
         let ipc = self.ipc.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -321,6 +415,88 @@ impl PyRuntimeHandle {
                     })?;
                     Ok(Some(json_str))
                 }
+                None => Ok(None),
+            }
+        })
+    }
+
+    /// Receive one trainer-stream envelope and return a Python dict with
+    /// typed payload extraction.
+    ///
+    /// Returns a dict with keys: ``v``, ``channel``, ``msg_type``, ``seq``,
+    /// ``sent_at_us``, ``session_id``, ``request_id``, ``payload``.
+    ///
+    /// When ``msg_type`` is ``"decision_event"`` or ``"errp_window"``, the
+    /// ``payload`` value is a typed ``DecisionEvent`` or ``ErrpWindow``
+    /// object with numpy-backed arrays. For other message types the payload
+    /// is a plain Python dict.
+    ///
+    /// Returns ``None`` if the channel is closed.
+    fn trainer_recv_typed<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        let ipc = self.ipc.clone();
+        pyo3_async_runtimes::tokio::future_into_py(py, async move {
+            let maybe_envelope = ipc.recv_trainer_envelope().await;
+            match maybe_envelope {
+                Some(envelope) => Python::try_attach(|py| {
+                    let dict = pyo3::types::PyDict::new(py);
+                    dict.set_item("v", envelope.v)?;
+                    dict.set_item(
+                        "channel",
+                        serde_json::to_string(&envelope.channel).map_err(|e| {
+                            pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                "channel serialize: {e}"
+                            ))
+                        })?,
+                    )?;
+                    dict.set_item("msg_type", &envelope.msg_type)?;
+                    dict.set_item("seq", envelope.seq)?;
+                    dict.set_item("sent_at_us", envelope.sent_at_us)?;
+                    dict.set_item("session_id", &envelope.session_id)?;
+                    dict.set_item("request_id", &envelope.request_id)?;
+
+                    // Typed payload extraction for hot-path message types.
+                    let payload: Py<PyAny> = match envelope.msg_type.as_str() {
+                        "decision_event" => {
+                            let event: neurohid_ipc::DecisionEvent =
+                                serde_json::from_value(envelope.payload).map_err(|e| {
+                                    pyo3::exceptions::PyValueError::new_err(format!(
+                                        "decision_event decode: {e}"
+                                    ))
+                                })?;
+                            PyDecisionEvent { inner: event }
+                                .into_pyobject(py)?
+                                .unbind()
+                                .into()
+                        }
+                        "errp_window" => {
+                            let window: neurohid_ipc::ErrpWindow =
+                                serde_json::from_value(envelope.payload).map_err(|e| {
+                                    pyo3::exceptions::PyValueError::new_err(format!(
+                                        "errp_window decode: {e}"
+                                    ))
+                                })?;
+                            PyErrpWindow { inner: window }
+                                .into_pyobject(py)?
+                                .unbind()
+                                .into()
+                        }
+                        _ => {
+                            // Fallback: convert payload serde_json::Value → Python dict
+                            pythonize::pythonize(py, &envelope.payload)
+                                .map_err(|e| {
+                                    pyo3::exceptions::PyRuntimeError::new_err(format!(
+                                        "payload pythonize: {e}"
+                                    ))
+                                })?
+                                .unbind()
+                        }
+                    };
+                    dict.set_item("payload", payload)?;
+                    Ok(Some(dict.unbind()))
+                })
+                .ok_or_else(|| {
+                    pyo3::exceptions::PyRuntimeError::new_err("Python interpreter not available")
+                })?,
                 None => Ok(None),
             }
         })

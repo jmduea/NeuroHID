@@ -39,3 +39,29 @@ This package communicates with the Rust runtime **in-process** via PyO3 bindings
 features, actions, markers, and runtime events as async iterators and sends
 commands/trainer messages through `RuntimeHandle` methods — no socket transport or
 serialization overhead. See [ADR-001](adr/ADR-001-in-process-python-bindings.md).
+
+### Numeric Data Transfer
+
+Numeric arrays cross the Rust→Python boundary as **numpy arrays** (single
+memcpy into a contiguous numpy buffer) rather than Python lists:
+
+- `PySample.values` / `PyFeatureVector.values` → `numpy.ndarray` (float32)
+- `PySample.quality` → optional `numpy.ndarray` (float32)
+- `PyDecisionEvent.feature_values` → `numpy.ndarray` (float32)
+- `PyErrpWindow.channel_data` → 2-D `numpy.ndarray` (channels × samples)
+
+Backward-compatible `values_list()` / `quality_list()` methods return plain
+Python lists for callers that do not need numpy.
+
+### Batch & Typed Receive
+
+`RuntimeHandle` exposes batch methods for collecting multiple data points into
+a single 2-D numpy array (one `await` → one contiguous buffer):
+
+- `recv_sample_batch(n)` — collect *n* samples into shape `(n, channels)`
+- `recv_feature_batch(n)` — collect *n* feature vectors into shape `(n, features)`
+
+The trainer bridge uses `trainer_recv_typed()` by default. For
+`decision_event` and `errp_window` message types the payload is a typed
+Python object with numpy-backed attributes; other message types fall back to
+a plain Python dict via `pythonize`.

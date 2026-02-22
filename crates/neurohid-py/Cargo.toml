@@ -15,6 +15,8 @@ crate-type = ["cdylib"]
 # PyO3: stable ABI targeting Python 3.14+ (free-threaded capable)
 pyo3 = { workspace = true }
 pyo3-async-runtimes = { workspace = true }
+numpy = { workspace = true }
+pythonize = { workspace = true }
 
 # NeuroHID runtime embedding (in-process, no IPC socket)
 neurohid-core = { path = "../neurohid-core" }
