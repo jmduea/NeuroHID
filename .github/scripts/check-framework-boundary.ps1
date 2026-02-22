@@ -1,5 +1,5 @@
-# Enforces the framework boundary: neurohid-hub and neurohid (binaries) may only have path
-# dependencies that appear in the canonical allowlist. No permanent exceptions; fix by
+# Enforces the framework boundary: neuroide-hub, neuroide, and neurohid-service may only have
+# path dependencies that appear in the canonical allowlist. No permanent exceptions; fix by
 # re-export from core or by updating the allowlist and code together.
 #
 # Allowlist source: .github/framework-allowlist.toml (single source of truth).
@@ -35,11 +35,12 @@ function Get-AllowlistSection {
 }
 
 $allowlistContent = Get-Content -Path $AllowlistPath -Raw
-$hubAllowed = @(Get-AllowlistSection -Content $allowlistContent -Section 'hub')
-$binariesAllowed = @(Get-AllowlistSection -Content $allowlistContent -Section 'binaries')
+$hubAllowed = @(Get-AllowlistSection -Content $allowlistContent -Section 'neuroide-hub')
+$neuroideAllowed = @(Get-AllowlistSection -Content $allowlistContent -Section 'neuroide')
+$serviceAllowed = @(Get-AllowlistSection -Content $allowlistContent -Section 'neurohid-service')
 
-if ($hubAllowed.Count -eq 0 -or $binariesAllowed.Count -eq 0) {
-    Write-Error "Could not parse [hub] and [binaries].allowed from $AllowlistPath"
+if ($hubAllowed.Count -eq 0 -or $neuroideAllowed.Count -eq 0 -or $serviceAllowed.Count -eq 0) {
+    Write-Error "Could not parse [neuroide-hub], [neuroide], and [neurohid-service].allowed from $AllowlistPath"
 }
 
 $metadataJson = & cargo metadata --format-version=1 2>&1
@@ -66,8 +67,9 @@ function Get-PathDeps {
 }
 
 $packagesToCheck = @(
-    @{ Name = 'neurohid-hub'; Allowed = $hubAllowed },
-    @{ Name = 'neurohid'; Allowed = $binariesAllowed }
+    @{ Name = 'neuroide-hub'; Allowed = $hubAllowed },
+    @{ Name = 'neuroide'; Allowed = $neuroideAllowed },
+    @{ Name = 'neurohid-service'; Allowed = $serviceAllowed }
 )
 
 $failed = $false

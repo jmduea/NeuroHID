@@ -2,21 +2,20 @@
 
 ## Scope
 
-Covers the Rust workspace under `crates/` and the runtime/application binaries
-in `crates/neurohid`. Each crate's `lib.rs` contains detailed module-level
+Covers the Rust workspace under `crates/` and `apps/` and the runtime/application binaries.
+Each crate's `lib.rs` contains detailed module-level
 documentation — this document provides the high-level view.
 
 ## Crate Layer Map
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  neurohid (binaries: neurohid, neurohid-service,            │
-│            neurohid-validate)                                │
+│  neuroide (GUI app)    neurohid-service    neurohid-validate │
 ├─────────────────────────────────────────────────────────────┤
-│  neurohid-sdk (facade, feature-gated re-exports)            │
+│  neurohid (facade, feature-gated re-exports)                │
 ├─────────────────────────────────────────────────────────────┤
-│  neurohid-hub       neurohid-calibration                    │
-│  (GUI screens)      (calibration games/wizard)              │
+│  neuroide-hub         neurohid-calibration                  │
+│  (GUI screens)        (calibration games/wizard)            │
 ├─────────────────────────────────────────────────────────────┤
 │  neurohid-core (task orchestration + runtime pipeline)      │
 ├─────────────────────────────────────────────────────────────┤
@@ -38,7 +37,7 @@ placement rules and the dependency direction policy.
 
 | Binary | Purpose |
 |---|---|
-| `neurohid` | Desktop hub/GUI and management shell |
+| `neuroide` | Desktop hub/GUI and management shell |
 | `neurohid-service` | Headless long-running service |
 | `neurohid-validate` | Soak/latency/boot matrix verification |
 
@@ -46,7 +45,7 @@ placement rules and the dependency direction policy.
 
 ```text
 crates/
-├── neurohid/src/bin/       # Binary entry points
+├── neurohid/              # Feature-gated library facade
 ├── neurohid-core/          # Task orchestration runtime
 ├── neurohid-types/         # Shared contracts (config/control/IPC/signal/action)
 ├── neurohid-device/        # EEG device backends (LSL, Serial, Mock, BrainFlow)
@@ -54,9 +53,12 @@ crates/
 ├── neurohid-platform/      # Cross-platform HID emission
 ├── neurohid-ipc/           # IPC v3 transport + broker
 ├── neurohid-storage/       # Encrypted profile/model persistence
-├── neurohid-hub/           # egui GUI (screens, widgets, workbench)
 ├── neurohid-calibration/   # Calibration games + wizard
-└── neurohid-sdk/           # Feature-gated SDK facade
+├── neurohid-service/       # Headless service binary
+└── neurohid-validate/      # Validation harness binary
+apps/
+├── neuroide/               # Desktop GUI app (egui)
+└── neuroide-hub/           # Hub library (screens, widgets, workbench)
 ```
 
 ## Hub UI Screens

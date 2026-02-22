@@ -1,4 +1,4 @@
-//! # NeuroHID SDK
+//! # NeuroHID
 //!
 //! A feature-gated facade crate that provides access to NeuroHID's internal
 //! libraries. Enable only the features you need to keep compile times fast
@@ -17,20 +17,19 @@
 //! | `ipc` | `neurohid-ipc` | IPC layer for Rust↔Python communication |
 //! | `calibration` | `neurohid-calibration` | Calibration games and wizard |
 //! | `runtime` | `neurohid-core` | Managed runtime/service APIs |
-//! | `hub` | `neurohid-hub` | Hub GUI library |
 //! | `full` | All of the above | Everything enabled |
 //!
 //! ## Quick Start
 //!
 //! ```toml
 //! [dependencies]
-//! neurohid-sdk = { version = "0.1", features = ["device", "signal"] }
+//! neurohid = { version = "0.1", features = ["device", "signal"] }
 //! ```
 //!
 //! ```rust,ignore
-//! use neurohid_sdk::types;
-//! use neurohid_sdk::device;
-//! use neurohid_sdk::signal;
+//! use neurohid::types;
+//! use neurohid::device;
+//! use neurohid::signal;
 //! ```
 //!
 //! For managed runtime embedding, see:
@@ -64,8 +63,25 @@ pub use neurohid_calibration as calibration;
 #[cfg(feature = "runtime")]
 pub use neurohid_core as runtime;
 
-#[cfg(feature = "hub")]
-pub use neurohid_hub as hub;
+/// Commonly used types for quick imports.
+///
+/// ```rust,ignore
+/// use neurohid::prelude::*;
+/// ```
+pub mod prelude {
+    #[cfg(feature = "types")]
+    pub use neurohid_types::{
+        ConnectionState, DeviceId, Key, MouseButton, ProfileId,
+        config::SystemConfig,
+        signal::{ChannelId, FeatureVector, Sample},
+    };
+    #[cfg(feature = "runtime")]
+    pub use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle};
+    #[cfg(feature = "device")]
+    pub use neurohid_device::traits::{Device, DeviceProvider};
+    #[cfg(feature = "signal")]
+    pub use neurohid_signal::pipeline::{PipelineConfig, SignalPipeline};
+}
 
 #[cfg(test)]
 mod tests {
@@ -78,7 +94,6 @@ mod tests {
         #[test]
         fn system_config_default() {
             let cfg = types::config::SystemConfig::default();
-            // SystemConfig exists and is Default
             let _ = format!("{cfg:?}");
         }
 
@@ -196,7 +211,6 @@ mod tests {
 
         #[test]
         fn module_reexports_accessible() {
-            // Verify public modules are accessible through the SDK
             let _ = std::any::type_name::<signal::buffer::SampleBuffer>();
             let _ = std::any::type_name::<signal::filter::FilterChain>();
             let _ = std::any::type_name::<signal::features::FeatureExtractor>();
@@ -266,7 +280,6 @@ mod tests {
 
         #[test]
         fn data_paths_constructible() {
-            // Use a temp dir to avoid touching real paths
             let tmp = std::env::temp_dir().join("neurohid-sdk-test");
             let paths = storage::paths::DataPaths::new(Some(tmp));
             assert!(paths.is_ok());
@@ -388,43 +401,11 @@ mod tests {
         }
     }
 
-    // ───────────── hub ─────────────
-
-    #[cfg(feature = "hub")]
-    mod hub_tests {
-        use crate::hub;
-
-        #[test]
-        fn workbench_state_default() {
-            let state = hub::workbench::WorkbenchState::default();
-            let _ = format!("{state:?}");
-        }
-
-        #[test]
-        fn layout_manager_default() {
-            let _lm = hub::layout::LayoutManager::default();
-        }
-
-        #[test]
-        fn activity_lane_variants_exist() {
-            let _ops = hub::workbench::ActivityLane::Ops;
-            let _ = format!("{_ops:?}");
-        }
-
-        #[test]
-        fn module_reexports_accessible() {
-            let _ = std::any::type_name::<hub::app::HubApp>();
-            let _ = std::any::type_name::<hub::data_bus::DataBus>();
-            let _ = std::any::type_name::<hub::service_manager::ServiceManager>();
-        }
-    }
-
     // ───────────── cross-feature coherence ─────────────
 
     #[cfg(all(feature = "types", feature = "device", feature = "device-brainflow"))]
     #[test]
     fn device_id_shared_across_crates() {
-        // DeviceId from types is the same type used in device crate
         let id = crate::types::DeviceId::new("coherence-test");
         let cfg = crate::types::config::BrainFlowConfig::default();
         let _provider = crate::device::BrainFlowProvider::new(cfg);
@@ -434,7 +415,6 @@ mod tests {
     #[cfg(all(feature = "types", feature = "signal"))]
     #[test]
     fn sample_type_shared_across_crates() {
-        // Sample from types is the type consumed by signal pipeline
         let sample = crate::types::signal::Sample::new(vec![1.0, 2.0]);
         let buf = crate::signal::buffer::SampleBuffer::new(
             crate::signal::buffer::BufferConfig::default(),

@@ -10,11 +10,11 @@ Real-time biosignal processing pipeline for NeuroHID.
 
 ## Usage
 
-This crate is typically used as a dependency by `neurohid-core`. End users should use the `neurohid-sdk` facade crate with the `signal` feature enabled.
+This crate is typically used as a dependency by `neurohid-core`. End users should use the `neurohid` facade crate with the `signal` feature enabled.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["signal"] }
+neurohid = { version = "0.1", features = ["signal"] }
 ```
 
 ## License

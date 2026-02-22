@@ -3,7 +3,6 @@ resolver = "2"
 
 members = [
     "crates/neurohid",
-    "crates/neurohid-sdk",
     "crates/neurohid-types",
     "crates/neurohid-core",
     "crates/neurohid-signal",
@@ -11,9 +10,12 @@ members = [
     "crates/neurohid-platform",
     "crates/neurohid-storage",
     "crates/neurohid-ipc",
+    "crates/neurohid-service",
+    "crates/neurohid-validate",
     "crates/neurohid-calibration",
-    "crates/neurohid-hub",
     "crates/neurohid-outlet-example",
+    "apps/neuroide-hub",
+    "apps/neuroide",
 ]
 
 # Shared dependencies across all crates - ensures version consistency

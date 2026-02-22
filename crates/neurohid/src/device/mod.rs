@@ -21,4 +21,7 @@ pub use neurohid_device::*;
 #[cfg(all(feature = "device", feature = "runtime"))]
 mod api;
 #[cfg(all(feature = "device", feature = "runtime"))]
-pub use api::{connect_by_criteria, connect_by_id, list_streams_discovery, list_streams_via_runtime, StreamConnectionHandle};
+pub use api::{
+    connect_by_criteria, connect_by_id, list_streams_discovery, list_streams_via_runtime,
+    StreamConnectionHandle,
+};

@@ -2973,27 +2973,16 @@ dependencies = [
 name = "neurohid"
 version = "0.1.0"
 dependencies = [
- "anyhow",
- "clap",
- "ctrlc",
- "eframe",
- "egui 0.33.3",
- "egui_logger",
- "log",
+ "neurohid-calibration",
  "neurohid-core",
- "neurohid-hub",
+ "neurohid-device",
  "neurohid-ipc",
+ "neurohid-platform",
+ "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
- "serde",
- "serde_json",
- "signal-hook",
+ "tempfile",
  "tokio",
- "toml",
- "tracing",
- "tracing-log",
- "tracing-subscriber",
- "windows-service",
 ]
 
 [[package]]
@@ -3068,35 +3057,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neurohid-hub"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "armas",
- "chrono",
- "eframe",
- "egui 0.33.3",
- "egui-async",
- "egui_code_editor",
- "egui_console",
- "egui_dock",
- "egui_kittest",
- "egui_logger",
- "neurohid-calibration",
- "neurohid-core",
- "neurohid-ipc",
- "neurohid-storage",
- "neurohid-types",
- "rustfft",
- "serde",
- "serde_json",
- "signal-hook",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "neurohid-ipc"
 version = "0.1.0"
 dependencies = [
@@ -3141,20 +3101,24 @@ dependencies = [
 ]
 
 [[package]]
-name = "neurohid-sdk"
+name = "neurohid-service"
 version = "0.1.0"
 dependencies = [
- "neurohid-calibration",
+ "anyhow",
+ "clap",
+ "ctrlc",
  "neurohid-core",
- "neurohid-device",
- "neurohid-hub",
  "neurohid-ipc",
- "neurohid-platform",
- "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
- "tempfile",
+ "serde",
+ "serde_json",
+ "signal-hook",
  "tokio",
+ "toml",
+ "tracing",
+ "tracing-subscriber",
+ "windows-service",
 ]
 
 [[package]]
@@ -3199,6 +3163,66 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "neurohid-validate"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "neurohid-ipc",
+ "neurohid-types",
+ "toml",
+]
+
+[[package]]
+name = "neuroide"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "eframe",
+ "egui 0.33.3",
+ "egui_logger",
+ "log",
+ "neurohid-core",
+ "neurohid-types",
+ "neuroide-hub",
+ "signal-hook",
+ "tokio",
+ "tracing",
+ "tracing-log",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "neuroide-hub"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "armas",
+ "chrono",
+ "eframe",
+ "egui 0.33.3",
+ "egui-async",
+ "egui_code_editor",
+ "egui_console",
+ "egui_dock",
+ "egui_kittest",
+ "egui_logger",
+ "neurohid-calibration",
+ "neurohid-core",
+ "neurohid-ipc",
+ "neurohid-storage",
+ "neurohid-types",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

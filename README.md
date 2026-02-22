@@ -85,13 +85,13 @@ Hybrid Rust/Python monorepo:
 
 ```bash
 # Desktop GUI hub
-cargo run -p neurohid --bin neurohid
+cargo run -p neuroide
 
 # Headless service
-cargo run -p neurohid --bin neurohid-service
+cargo run -p neurohid-service
 
 # Validation harness (soak/latency/boot matrix)
-cargo run -p neurohid --bin neurohid-validate
+cargo run -p neurohid-validate
 
 # Python ML bridge
 uv run --directory python neurohid-ml bridge

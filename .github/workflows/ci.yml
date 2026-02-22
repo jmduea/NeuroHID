@@ -220,7 +220,7 @@ jobs:
       - name: Install LSL (Linux)
         run: sudo apt-get update && sudo apt-get install -y liblsl-dev
       - name: Build neurohid-service
-        run: cargo build -p neurohid --bin neurohid-service
+        run: cargo build -p neurohid-service
       - name: Install Python dependencies
         run: uv sync --directory python --extra dev
       - name: Run E2E test (service + Python client)
@@ -264,7 +264,7 @@ jobs:
         if: matrix.transport == 'local_socket'
         run: cargo test -p neurohid-ipc explicit_local_socket_transport_roundtrips_messages -- --nocapture
       - name: Unified service multiplexing smoke
-        run: cargo test -p neurohid --bin neurohid-service runtime_events_subscription_does_not_block_control_rpc -- --nocapture
+        run: cargo test -p neurohid-service runtime_events_subscription_does_not_block_control_rpc -- --nocapture
       - name: Python IPC surface smoke
         run: >
           uv run --project python python -m unittest

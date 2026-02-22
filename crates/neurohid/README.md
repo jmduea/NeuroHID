@@ -1,10 +1,10 @@
-# neurohid-sdk
+# neurohid
 
-Feature-gated SDK for [NeuroHID](https://github.com/jmduea/neurohid) — a brain-computer interface that transforms EEG devices into standard PC peripherals.
+Feature-gated facade for [NeuroHID](https://github.com/jmduea/neurohid) — a brain-computer interface that transforms EEG devices into standard PC peripherals.
 
 ## Overview
 
-`neurohid-sdk` is a thin facade crate that re-exports NeuroHID's internal libraries behind feature flags. Enable only what you need to keep compile times fast and dependency trees minimal.
+`neurohid` is a thin facade crate that re-exports NeuroHID's internal libraries behind feature flags. Enable only what you need to keep compile times fast and dependency trees minimal.
 
 ## Features
 
@@ -17,9 +17,8 @@ Feature-gated SDK for [NeuroHID](https://github.com/jmduea/neurohid) — a brain
 | `platform` | `neurohid-platform` | Cross-platform HID emulation (mouse, keyboard) |
 | `storage` | `neurohid-storage` | Encrypted profile and configuration storage |
 | `ipc` | `neurohid-ipc` | IPC layer for Rust ↔ Python ML communication |
-| `calibration` | `neurohid-calibration` | Calibration games and first-run wizard (egui + Armas-backed controls) |
+| `calibration` | `neurohid-calibration` | Calibration games and first-run wizard |
 | `runtime` | `neurohid-core` | Managed runtime/service APIs |
-| `hub` | `neurohid-hub` | Hub GUI library |
 | `full` | *all of the above* | Everything enabled |
 
 ## Usage
@@ -28,15 +27,15 @@ Add to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["device", "signal"] }
+neurohid = { version = "0.1", features = ["device", "signal"] }
 ```
 
 Then in your code:
 
 ```rust
-use neurohid_sdk::types;
-use neurohid_sdk::device::{DeviceProvider, Device};
-use neurohid_sdk::signal;
+use neurohid::types;
+use neurohid::device;
+use neurohid::signal;
 ```
 
 ## Runtime Embedding Example
@@ -44,15 +43,8 @@ use neurohid_sdk::signal;
 Embed the managed runtime API in your own host process:
 
 ```bash
-cargo run -p neurohid-sdk --example embedded_runtime --features "runtime,types"
+cargo run -p neurohid --example embedded_runtime --features "runtime,types"
 ```
-
-The example demonstrates:
-
-- Creating `RuntimeBuilder` with `SystemConfig`
-- Starting/stopping runtime tasks from a host application
-- Reading `RuntimeSnapshot` telemetry
-- Sending runtime control commands (`RescanStreams`, `Stop`)
 
 ## License
 

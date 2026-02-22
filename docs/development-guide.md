@@ -43,13 +43,13 @@ cargo build -p neurohid-device --no-default-features
 
 ```bash
 # GUI hub
-cargo run -p neurohid --bin neurohid
+cargo run -p neuroide
 
 # Headless service
-cargo run -p neurohid --bin neurohid-service
+cargo run -p neurohid-service
 
 # Validation harness
-cargo run -p neurohid --bin neurohid-validate -- --help
+cargo run -p neurohid-validate -- --help
 
 # Python ML bridge
 uv run --directory python neurohid-ml bridge

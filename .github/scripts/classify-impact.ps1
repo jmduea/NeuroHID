@@ -39,7 +39,7 @@ function Has-RegexMatch {
 
 $changedFiles = Get-ChangedFiles
 
-$rust = Has-PathPrefix -Files $changedFiles -Prefixes @('crates/', 'Cargo.toml')
+$rust = Has-PathPrefix -Files $changedFiles -Prefixes @('crates/', 'apps/', 'Cargo.toml')
 if (-not $rust) {
     $rust = Has-RegexMatch -Files $changedFiles -Pattern '\.rs$'
 }
@@ -71,7 +71,7 @@ $automation = Has-PathPrefix -Files $changedFiles -Prefixes @('.github/')
 
 $unsafe = $false
 $changedRustFiles = $changedFiles | Where-Object {
-    $_ -like 'crates/*' -and $_ -match '\.rs$' -and (Test-Path $_)
+    ($_ -like 'crates/*' -or $_ -like 'apps/*') -and $_ -match '\.rs$' -and (Test-Path $_)
 }
 foreach ($path in $changedRustFiles) {
     if (Select-String -Path $path -Pattern '\bunsafe\b' -Quiet) {

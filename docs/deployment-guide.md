@@ -5,7 +5,7 @@ observability, and validation workflows.
 
 ## Runtime Modes
 
-- Interactive desktop mode via `neurohid` binary
+- Interactive desktop mode via `neuroide` binary
 - Headless service mode via `neurohid-service`
 - Validation mode via `neurohid-validate`
 
@@ -14,17 +14,17 @@ observability, and validation workflows.
 Typical operations (Windows service workflow is supported by the binary):
 
 ```bash
-cargo run --release -p neurohid --bin neurohid-service -- --service-command install
-cargo run --release -p neurohid --bin neurohid-service -- --service-command start
-cargo run --release -p neurohid --bin neurohid-service -- --service-command status
-cargo run --release -p neurohid --bin neurohid-service -- --service-command stop
-cargo run --release -p neurohid --bin neurohid-service -- --service-command uninstall
+cargo run --release -p neurohid-service -- --service-command install
+cargo run --release -p neurohid-service -- --service-command start
+cargo run --release -p neurohid-service -- --service-command status
+cargo run --release -p neurohid-service -- --service-command stop
+cargo run --release -p neurohid-service -- --service-command uninstall
 ```
 
 To run interactively without installing a service:
 
 ```bash
-cargo run --release -p neurohid --bin neurohid-service
+cargo run --release -p neurohid-service
 ```
 
 ## Standalone runtime (without Hub)
@@ -61,7 +61,7 @@ uv run --directory python neurohid-ml bridge --ipc-mode tcp_loopback --ipc-endpo
 Optional control endpoint exposure:
 
 ```bash
-cargo run --release -p neurohid --bin neurohid-service -- --control-port 47801
+cargo run --release -p neurohid-service -- --control-port 47801
 ```
 
 Control requests use framed IPC v3 envelopes on the `control.rpc` channel.
@@ -106,7 +106,7 @@ format are described in [protocol-and-api](protocol-and-api.md).
 
 ## Observability and Tracing
 
-Runtime binaries (`neurohid`, `neurohid-service`) emit structured `tracing` logs with low-overhead
+Runtime binaries (`neuroide`, `neurohid-service`) emit structured `tracing` logs with low-overhead
 defaults.
 
 - Default format: JSON (`NEUROHID_LOG_FORMAT=json`)
@@ -165,13 +165,13 @@ Use the built-in validation binary to run soak, latency, and boot-mode matrix ch
 
 ```bash
 # 24h soak with periodic forced bridge reconnects
-cargo run -p neurohid --bin neurohid-validate -- soak --duration-secs 86400 --reconnect-interval-secs 120
+cargo run -p neurohid-validate -- soak --duration-secs 86400 --reconnect-interval-secs 120
 
 # Full/fallback/degraded latency/resource comparison
-cargo run -p neurohid --bin neurohid-validate -- latency-matrix --duration-secs-per-mode 120
+cargo run -p neurohid-validate -- latency-matrix --duration-secs-per-mode 120
 
 # No-Python-bridge boot scenario matrix
-cargo run -p neurohid --bin neurohid-validate -- boot-matrix --settle-secs 8
+cargo run -p neurohid-validate -- boot-matrix --settle-secs 8
 ```
 
 Use `--service-bin <path>` (or `NEUROHID_SERVICE_BIN`) when the validation binary cannot

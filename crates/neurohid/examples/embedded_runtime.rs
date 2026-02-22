@@ -3,15 +3,15 @@
 //! Uses BrainFlow synthetic board (board_id 0) — no hardware required.
 //!
 //! Run with:
-//!   cargo run -p neurohid-sdk --example embedded_runtime --features "runtime,types"
+//!   cargo run -p neurohid --example embedded_runtime --features "runtime,types"
 
 #[cfg(all(feature = "runtime", feature = "types"))]
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     use std::time::Duration;
 
-    use neurohid_sdk::runtime::runtime::{RuntimeBuilder, RuntimeCommand};
-    use neurohid_sdk::types::config::{BrainFlowConfig, DeviceBackend, SystemConfig};
+    use neurohid::runtime::runtime::{RuntimeBuilder, RuntimeCommand};
+    use neurohid::types::config::{BrainFlowConfig, DeviceBackend, SystemConfig};
 
     let mut config = SystemConfig::default();
     config.device.backend = DeviceBackend::BrainFlow;
@@ -44,6 +44,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 fn main() {
     eprintln!(
         "This example requires features 'runtime' and 'types'.\n\
-         Run: cargo run -p neurohid-sdk --example embedded_runtime --features \"runtime,types\""
+         Run: cargo run -p neurohid --example embedded_runtime --features \"runtime,types\""
     );
 }

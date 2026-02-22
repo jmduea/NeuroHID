@@ -1,13 +1,12 @@
-//! # NeuroHID Hub
+//! # NeuroIDE
 //!
 //! The unified GUI application for NeuroHID. Combines device management,
 //! calibration, profile management, and service control into a single window.
 
 use eframe::egui;
 
-use neurohid_hub::HubApp;
+use neuroide_hub::HubApp;
 
-#[path = "../tracing_init.rs"]
 mod tracing_init;
 
 struct CombinedLogger {
@@ -48,7 +47,9 @@ fn init_hub_logger() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("Failed to initialize combined logger: {}", error))
 }
 
-const CLI_SUBCOMMANDS: &[&str] = &["device", "config", "pipeline", "control", "daemon", "record"];
+const CLI_SUBCOMMANDS: &[&str] = &[
+    "device", "config", "pipeline", "control", "daemon", "record",
+];
 
 /// Handle `neurohid extensions list` and `neurohid extensions refresh`. Uses the same
 /// discovery/registry as core; exits 0 with list or non-zero on discovery failure.
@@ -60,10 +61,9 @@ fn run_extensions_cli(args: &[String]) -> bool {
     if sub != "list" && sub != "refresh" {
         return false;
     }
-    let mut registry =
-        neurohid_core::extension_registry::ExtensionRegistry::new(
-            neurohid_core::extension_registry::default_extension_paths(),
-        );
+    let mut registry = neurohid_core::extension_registry::ExtensionRegistry::new(
+        neurohid_core::extension_registry::default_extension_paths(),
+    );
     if let Err(e) = registry.scan() {
         eprintln!("neurohid extensions: discovery failed: {}", e);
         std::process::exit(1);
@@ -123,13 +123,21 @@ fn maybe_dispatch_to_service() {
 fn locate_service_binary() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("."));
-        let name = if cfg!(windows) { "neurohid-service.exe" } else { "neurohid-service" };
+        let name = if cfg!(windows) {
+            "neurohid-service.exe"
+        } else {
+            "neurohid-service"
+        };
         let candidate = dir.join(name);
         if candidate.exists() {
             return candidate;
         }
     }
-    let name = if cfg!(windows) { "neurohid-service.exe" } else { "neurohid-service" };
+    let name = if cfg!(windows) {
+        "neurohid-service.exe"
+    } else {
+        "neurohid-service"
+    };
     std::path::PathBuf::from(name)
 }
 
@@ -139,14 +147,14 @@ fn main() {
     init_hub_logger().expect("Failed to initialize Hub logger");
     tracing_init::init_tracing("info").expect("Failed to initialize tracing");
 
-    tracing::info!("Starting NeuroHID Hub");
+    tracing::info!("Starting NeuroIDE");
 
     // On Unix, ignore SIGPIPE so that broken clipboard connections (arboard/x11rb)
     // return EPIPE errors instead of killing the process.
     #[cfg(unix)]
     {
-        use std::sync::Arc;
         use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
         let _ = signal_hook::flag::register(
             signal_hook::consts::SIGPIPE,
             Arc::new(AtomicBool::new(false)),
@@ -175,13 +183,13 @@ fn main() {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1280.0, 800.0])
             .with_min_inner_size([960.0, 640.0])
-            .with_title("NeuroHID Hub"),
+            .with_title("NeuroIDE"),
         ..Default::default()
     };
 
     // Run the application
     match eframe::run_native(
-        "NeuroHID Hub",
+        "NeuroIDE",
         options,
         Box::new(move |cc| Ok(Box::new(HubApp::new(cc, runtime)))),
     ) {

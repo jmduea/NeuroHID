@@ -16,9 +16,9 @@ are allowed to depend on which layers.
    - `neurohid-core`
    - Wires component crates into end-to-end runtime behavior.
 4. UI and entrypoints
-   - `neurohid-hub` (desktop UI)
-   - `neurohid` (published binary crate)
-   - `neurohid-sdk` (published facade/re-export surface)
+   - `neuroide-hub` (desktop UI)
+   - `neuroide` (GUI app)
+   - `neurohid` (published library facade/re-export surface)
 
 ## Placement Rules
 
@@ -29,8 +29,8 @@ are allowed to depend on which layers.
 - Put runtime-to-ML transport/protocol client logic in `neurohid-ipc`.
 - Put profile/config persistence logic in `neurohid-storage`.
 - Put multi-crate runtime coordination in `neurohid-core`.
-- Put UI-only behavior and presentation in `neurohid-hub`.
-- Put public convenience exports for external Rust users in `neurohid-sdk`.
+- Put UI-only behavior and presentation in `neuroide-hub`.
+- Put public convenience exports for external Rust users in `neurohid` (the facade crate).
 
 ## Framework surface and Hub boundary
 
@@ -40,7 +40,7 @@ The framework surface (which crates and APIs embedders and Hub may depend on) an
 
 Preferred dependency flow:
 
-`types -> component crates -> core -> (hub | sdk | binary)`
+`types -> component crates -> core -> (hub | facade | app)`
 
 Avoid reverse coupling (for example, component crates depending on `core` or UI crates).
 
