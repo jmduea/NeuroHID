@@ -25,7 +25,7 @@ name = "neurohid-validate"
 path = "src/bin/neurohid-validate.rs"
 
 [dependencies]
-neurohid-hub = { path = "../neurohid-hub" }
+neuroide-hub = { path = "../../apps/neuroide-hub" }
 neurohid-core = { path = "../neurohid-core" }
 neurohid-ipc = { path = "../neurohid-ipc" }
 neurohid-storage = { path = "../neurohid-storage" }

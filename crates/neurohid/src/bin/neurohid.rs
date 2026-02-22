@@ -5,7 +5,7 @@
 
 use eframe::egui;
 
-use neurohid_hub::HubApp;
+use neuroide_hub::HubApp;
 
 #[path = "../tracing_init.rs"]
 mod tracing_init;
@@ -48,7 +48,9 @@ fn init_hub_logger() -> anyhow::Result<()> {
         .map_err(|error| anyhow::anyhow!("Failed to initialize combined logger: {}", error))
 }
 
-const CLI_SUBCOMMANDS: &[&str] = &["device", "config", "pipeline", "control", "daemon", "record"];
+const CLI_SUBCOMMANDS: &[&str] = &[
+    "device", "config", "pipeline", "control", "daemon", "record",
+];
 
 /// Handle `neurohid extensions list` and `neurohid extensions refresh`. Uses the same
 /// discovery/registry as core; exits 0 with list or non-zero on discovery failure.
@@ -60,10 +62,9 @@ fn run_extensions_cli(args: &[String]) -> bool {
     if sub != "list" && sub != "refresh" {
         return false;
     }
-    let mut registry =
-        neurohid_core::extension_registry::ExtensionRegistry::new(
-            neurohid_core::extension_registry::default_extension_paths(),
-        );
+    let mut registry = neurohid_core::extension_registry::ExtensionRegistry::new(
+        neurohid_core::extension_registry::default_extension_paths(),
+    );
     if let Err(e) = registry.scan() {
         eprintln!("neurohid extensions: discovery failed: {}", e);
         std::process::exit(1);
@@ -123,13 +124,21 @@ fn maybe_dispatch_to_service() {
 fn locate_service_binary() -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe() {
         let dir = exe.parent().unwrap_or_else(|| std::path::Path::new("."));
-        let name = if cfg!(windows) { "neurohid-service.exe" } else { "neurohid-service" };
+        let name = if cfg!(windows) {
+            "neurohid-service.exe"
+        } else {
+            "neurohid-service"
+        };
         let candidate = dir.join(name);
         if candidate.exists() {
             return candidate;
         }
     }
-    let name = if cfg!(windows) { "neurohid-service.exe" } else { "neurohid-service" };
+    let name = if cfg!(windows) {
+        "neurohid-service.exe"
+    } else {
+        "neurohid-service"
+    };
     std::path::PathBuf::from(name)
 }
 
@@ -145,8 +154,8 @@ fn main() {
     // return EPIPE errors instead of killing the process.
     #[cfg(unix)]
     {
-        use std::sync::Arc;
         use std::sync::atomic::AtomicBool;
+        use std::sync::Arc;
         let _ = signal_hook::flag::register(
             signal_hook::consts::SIGPIPE,
             Arc::new(AtomicBool::new(false)),

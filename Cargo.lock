@@ -2981,10 +2981,10 @@ dependencies = [
  "egui_logger",
  "log",
  "neurohid-core",
- "neurohid-hub",
  "neurohid-ipc",
  "neurohid-storage",
  "neurohid-types",
+ "neuroide-hub",
  "serde",
  "serde_json",
  "signal-hook",
@@ -3068,35 +3068,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "neurohid-hub"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "armas",
- "chrono",
- "eframe",
- "egui 0.33.3",
- "egui-async",
- "egui_code_editor",
- "egui_console",
- "egui_dock",
- "egui_kittest",
- "egui_logger",
- "neurohid-calibration",
- "neurohid-core",
- "neurohid-ipc",
- "neurohid-storage",
- "neurohid-types",
- "rustfft",
- "serde",
- "serde_json",
- "signal-hook",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "neurohid-ipc"
 version = "0.1.0"
 dependencies = [
@@ -3147,12 +3118,12 @@ dependencies = [
  "neurohid-calibration",
  "neurohid-core",
  "neurohid-device",
- "neurohid-hub",
  "neurohid-ipc",
  "neurohid-platform",
  "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
+ "neuroide-hub",
  "tempfile",
  "tokio",
 ]
@@ -3199,6 +3170,35 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.18",
  "tokio",
+]
+
+[[package]]
+name = "neuroide-hub"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "armas",
+ "chrono",
+ "eframe",
+ "egui 0.33.3",
+ "egui-async",
+ "egui_code_editor",
+ "egui_console",
+ "egui_dock",
+ "egui_kittest",
+ "egui_logger",
+ "neurohid-calibration",
+ "neurohid-core",
+ "neurohid-ipc",
+ "neurohid-storage",
+ "neurohid-types",
+ "rustfft",
+ "serde",
+ "serde_json",
+ "signal-hook",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]

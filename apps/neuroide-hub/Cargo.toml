@@ -1,5 +1,5 @@
 [package]
-name = "neurohid-hub"
+name = "neuroide-hub"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,11 +11,11 @@ description = "NeuroHID Hub - unified GUI for device management, calibration, an
 default = []
 
 [dependencies]
-neurohid-types = { path = "../neurohid-types" }
-neurohid-core = { path = "../neurohid-core" }
-neurohid-ipc = { path = "../neurohid-ipc" }
-neurohid-calibration = { path = "../neurohid-calibration" }
-neurohid-storage = { path = "../neurohid-storage" }
+neurohid-types = { path = "../../crates/neurohid-types" }
+neurohid-core = { path = "../../crates/neurohid-core" }
+neurohid-ipc = { path = "../../crates/neurohid-ipc" }
+neurohid-calibration = { path = "../../crates/neurohid-calibration" }
+neurohid-storage = { path = "../../crates/neurohid-storage" }
 
 # GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
 egui = { workspace = true }

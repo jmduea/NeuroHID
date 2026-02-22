@@ -65,7 +65,7 @@ pub use neurohid_calibration as calibration;
 pub use neurohid_core as runtime;
 
 #[cfg(feature = "hub")]
-pub use neurohid_hub as hub;
+pub use neuroide_hub as hub;
 
 #[cfg(test)]
 mod tests {

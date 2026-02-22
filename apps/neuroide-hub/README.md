@@ -1,4 +1,4 @@
-# neurohid-hub
+# NeuroIDE Hub
 
 NeuroHID Hub GUI library.
 
@@ -27,17 +27,17 @@ NeuroHID Hub GUI library.
 
 ## Usage
 
-This crate is a library for the `neurohid` binary. End users should use the `neurohid-sdk` facade crate with the `hub` feature enabled.
+This crate is the GUI library for the `neuroide` desktop application. End users should use the `neurohid` facade crate with the `hub` feature enabled.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["hub"] }
+neurohid = { version = "0.1", features = ["hub"] }
 ```
 
 To run the GUI:
 
 ```bash
-cargo run -p neurohid
+cargo run -p neuroide
 ```
 
 ## License
