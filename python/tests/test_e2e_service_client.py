@@ -81,7 +81,7 @@ def service_binary():
     path = _find_service_binary()
     if path is None:
         pytest.skip(
-            "neurohid-service binary not found; run cargo build -p neurohid --bin neurohid-service"
+            "neurohid-service binary not found; run cargo build -p neurohid-service"
         )
     return path
 

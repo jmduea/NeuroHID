@@ -26,7 +26,7 @@ domain models.
 ## Usage
 
 This crate is typically used as a dependency by other NeuroHID crates. End users
-should use the `neurohid-sdk` facade crate.
+should use the `neurohid` facade crate.
 
 ```toml
 [dependencies]

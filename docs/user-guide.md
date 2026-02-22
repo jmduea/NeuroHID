@@ -20,7 +20,7 @@ You have a biosignal device (e.g. EEG headset) that NeuroHID can talk to. If you
 
 If the stream isn’t found, the connect command exits with code 2. Default endpoint is `127.0.0.1:47384` unless you override it.
 
-**SDK:** From code, use the neurohid-sdk device API: list streams, then `connect_by_id` or `connect_by_criteria`; you get a handle that stays valid until disconnect. The [deployment guide](deployment-guide.md) describes transport and control endpoints if you need them.
+**SDK:** From code, use the `neurohid` facade crate device API: list streams, then `connect_by_id` or `connect_by_criteria`; you get a handle that stays valid until disconnect. The [deployment guide](deployment-guide.md) describes transport and control endpoints if you need them.
 
 ### 3. Pick a decoder (config + profile)
 
@@ -38,7 +38,7 @@ The decoder is defined by your **config** and **profile**: config holds system-w
 **Service (typical):** Start the standalone runtime so it loads your config and profile and runs the decoder:
 
 ```bash
-cargo run --release -p neurohid --bin neurohid-service
+cargo run --release -p neurohid-service
 ```
 
 Optional: `--config <path>`, `--profile <name>`, `--control-port <port>`. The decoder is loaded from the profile; device connection can be done beforehand via CLI/SDK (e.g. `neurohid device connect`) or via the Hub. For install/start/stop as a Windows service and other ops, see the [deployment guide](deployment-guide.md).
@@ -88,4 +88,4 @@ Replay feeds the session's streams through the same signal and decoder path so y
 
 ---
 
-In short: **device in hand → list/connect device (CLI or SDK) → set config and profile → run service or pipeline.** For transport, control, observability, and validation harness, use the [deployment guide](deployment-guide.md).
+In short: **device in hand → list/connect device (CLI or facade API) → set config and profile → run service or pipeline.** For transport, control, observability, and validation harness, use the [deployment guide](deployment-guide.md).

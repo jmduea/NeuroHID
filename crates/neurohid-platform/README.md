@@ -11,11 +11,11 @@ Cross-platform HID emulation abstractions for NeuroHID.
 
 ## Usage
 
-This crate is typically used as a dependency by `neurohid-core`. End users should use the `neurohid-sdk` facade crate with the `platform` feature enabled.
+This crate is typically used as a dependency by `neurohid-core`. End users should use the `neurohid` facade crate with the `platform` feature enabled.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["platform"] }
+neurohid = { version = "0.1", features = ["platform"] }
 ```
 
 ## License

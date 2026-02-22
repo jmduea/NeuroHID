@@ -11,11 +11,11 @@ Secure profile and configuration storage for NeuroHID.
 
 ## Usage
 
-This crate is typically used as a dependency by `neurohid-core` and `neurohid-hub`. End users should use the `neurohid-sdk` facade crate with the `storage` feature enabled.
+This crate is typically used as a dependency by `neurohid-core` and `neuroide-hub`. End users should use the `neurohid` facade crate with the `storage` feature enabled.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["storage"] }
+neurohid = { version = "0.1", features = ["storage"] }
 ```
 
 ## License

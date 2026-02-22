@@ -12,11 +12,11 @@ Calibration games and first-run wizard for NeuroHID.
 
 ## Usage
 
-This crate is typically used as a dependency by `neurohid-hub`. End users should use the `neurohid-sdk` facade crate with the `calibration` feature enabled.
+This crate is typically used as a dependency by `neuroide-hub`. End users should use the `neurohid` facade crate with the `calibration` feature enabled.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["calibration"] }
+neurohid = { version = "0.1", features = ["calibration"] }
 ```
 
 ## License

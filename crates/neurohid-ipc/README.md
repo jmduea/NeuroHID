@@ -12,11 +12,11 @@ IPC layer for communication between the Rust core service and the Python ML laye
 
 ## Usage
 
-This crate is typically used as a dependency by `neurohid-core` and the Python ML layer. End users should use the `neurohid-sdk` facade crate with the `ipc` feature enabled.
+This crate is typically used as a dependency by `neurohid-core` and the Python ML layer. End users should use the `neurohid` facade crate with the `ipc` feature enabled.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["ipc"] }
+neurohid = { version = "0.1", features = ["ipc"] }
 ```
 
 ## License
