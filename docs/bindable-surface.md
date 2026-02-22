@@ -1,9 +1,9 @@
 # Intended Python-Bindable Surface
 
-**Status:** Pre-binding specification (v1.2 — no PyO3/maturin code yet)  
-**Purpose:** Documents the embedder-facing Rust API items intended for exposure in the v1.3+ Python bindings milestone (BIND-03).
+**Status:** Implemented (v1.3 — `neurohid-py` crate with PyO3/maturin, see [ADR-001](adr/ADR-001-in-process-python-bindings.md))  
+**Purpose:** Documents the embedder-facing Rust API items exposed in the Python bindings.
 
-> This document is the output of BIND-02. It describes *what* should be bound, not *how*. Actual PyO3/maturin/cdylib work is deferred to the next milestone.
+> This document originated as BIND-02 output. The binding layer is now implemented in `crates/neurohid-py/` with module name `neurohid`.
 
 ---
 
@@ -114,7 +114,7 @@ The bindable surface is intentionally narrow: it covers the **managed runtime pa
 
 5. **Error types:** `neurohid_types::error::Error` is the top-level error type. Map it to a Python `NeurohidError` exception hierarchy.
 
-6. **Thread safety:** All bindable items use `Arc` / `tokio` sync primitives and are `Send + Sync`. The GIL release pattern (`py.allow_threads`) should be used for all async calls.
+6. **Thread safety:** All bindable items use `Arc` / `tokio` sync primitives and are `Send + Sync`. The binding targets free-threaded Python (3.14+); no GIL interaction is used.
 
 ---
 

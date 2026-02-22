@@ -14,8 +14,8 @@ This document is the single source for test tier definitions, isolation policy, 
 ### Integration
 
 - **Scope:** Cross-crate or cross-process; may use IPC, config load/save roundtrip, or multiple components together.
-- **Purpose:** Catch interface mismatches and boundary behavior (Rust↔Python IPC, device→signal→decoder→action pipeline, config persistence).
-- **Examples:** IPC transport tests; Python control client / bridge smoke; `ConfigStore` save-then-load roundtrip; pipeline or service-level flows.
+- **Purpose:** Catch interface mismatches and boundary behavior (in-process Python↔Rust bindings, external IPC clients, device→signal→decoder→action pipeline, config persistence).
+- **Examples:** Python control client / bridge tests using mock `RuntimeHandle`; IPC transport tests for external clients; `ConfigStore` save-then-load roundtrip; pipeline or service-level flows.
 - **Run:** May spawn processes or use temp dirs and ephemeral ports; must follow isolation policy below.
 
 ### E2E (End-to-end)

@@ -1,101 +1,32 @@
-"""Notebook-facing runtime-events client for IPC v3."""
+"""Runtime event stream client backed by an in-process ``RuntimeHandle``.
+
+The socket-based transport has been replaced by the in-process ``neurohid``
+native extension.  This module exposes a thin async wrapper around the
+``RuntimeHandle.subscribe_events()`` async iterator.
+"""
 
 from __future__ import annotations
 
-import json
-import socket
-import struct
-from dataclasses import dataclass
-from typing import Any, BinaryIO, Iterator
+from typing import Any
 
 from neurohid_ml.control import NotebookError
-from neurohid_ml.ipc import NeuroHidIpcClient
-from neurohid_ml.ipc_constants import (
-    CANONICAL_IPC_MODE,
-    CANONICAL_LOCAL_ENDPOINT,
-)
 
 
-@dataclass(slots=True)
 class NeuroHidTelemetryClient:
-    """Synchronous runtime.events reader for notebooks."""
+    """Async runtime-events reader backed by an in-process ``RuntimeHandle``.
 
-    ipc_mode: str = CANONICAL_IPC_MODE
-    ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
-    connect_timeout_secs: float = 1.5
-    read_timeout_secs: float = 0.5
-    connect_retries: int = 1
+    Parameters
+    ----------
+    runtime:
+        A ``neurohid.RuntimeHandle`` returned by ``await RuntimeBuilder(config).start()``.
+    """
 
-    def endpoint_label(self) -> str:
-        return self._ipc().endpoint_label()
+    def __init__(self, runtime: Any) -> None:
+        self._runtime = runtime
 
-    def recv(self) -> dict[str, Any] | None:
-        try:
-            event = self._ipc().poll_runtime_event(family="runtime_telemetry")
-            return event
-        except TimeoutError:
-            return None
-        except OSError as error:
-            raise NotebookError(
-                "unable to reach NeuroHID runtime.events endpoint at "
-                f"{self.endpoint_label()} ({error})"
-            ) from error
-        except RuntimeError as error:
-            raise NotebookError(str(error)) from error
+    def subscribe_events(self):
+        """Return an async iterator of ``RuntimeEvent`` objects."""
+        return self._runtime.subscribe_events()
 
-    def iter_messages(
-        self,
-        *,
-        max_messages: int | None = None,
-        families: list[str] | None = None,
-        resume_from_seq: int | None = None,
-        sample_every: int = 1,
-        max_duration_ms: int | None = None,
-        snapshot_interval_ms: int = 1_000,
-        prefer_stream: bool = True,
-    ) -> Iterator[dict[str, Any]]:
-        requested_families = families if families else ["runtime_telemetry"]
-        yield from self._ipc().iter_runtime_events(
-            max_messages=max_messages,
-            families=requested_families,
-            resume_from_seq=resume_from_seq,
-            sample_every=sample_every,
-            max_duration_ms=max_duration_ms,
-            snapshot_interval_ms=snapshot_interval_ms,
-            prefer_stream=prefer_stream,
-        )
-
-    def _ipc(self) -> NeuroHidIpcClient:
-        return NeuroHidIpcClient(
-            ipc_mode=self.ipc_mode,
-            ipc_endpoint=self.ipc_endpoint,
-            connect_timeout_secs=self.connect_timeout_secs,
-            read_timeout_secs=self.read_timeout_secs,
-            connect_retries=self.connect_retries,
-        )
-
-
-def _read_exact(reader: BinaryIO | socket.socket, size: int) -> bytes:
-    chunks = bytearray()
-    while len(chunks) < size:
-        if hasattr(reader, "recv"):
-            chunk = reader.recv(size - len(chunks))
-        else:
-            chunk = reader.read(size - len(chunks))
-        if not chunk:
-            raise EOFError("telemetry endpoint closed")
-        chunks.extend(chunk)
-    return bytes(chunks)
-
-
-def _read_framed_json(reader: BinaryIO | socket.socket) -> dict[str, Any] | None:
-    length_bytes = _read_exact(reader, 4)
-    frame_len = struct.unpack("<I", length_bytes)[0]
-    if frame_len <= 0:
-        return None
-
-    payload = _read_exact(reader, frame_len)
-    decoded = json.loads(payload.decode("utf-8"))
-    if isinstance(decoded, dict):
-        return decoded
-    return None
+    def is_alive(self) -> bool:
+        return self._runtime.is_alive()

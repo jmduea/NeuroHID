@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- In-process Python bindings (`neurohid-py` crate) via PyO3 0.28 targeting free-threaded Python 3.14+ — replaces socket-based IPC shim with direct `RuntimeHandle` access, async stream iterators, and trainer protocol methods (see [ADR-001](docs/adr/ADR-001-in-process-python-bindings.md))
 - Repository root dual-license texts (`LICENSE-MIT`, `LICENSE-APACHE`) to match declared workspace licensing policy
 - Device discovery→connection lifecycle design reference at `docs/plans/2026-02-15-device-discovery-connection-design.md`, including interactive/headless flow mapping and troubleshooting guidance
 - BMAD-native NeuroHID automation module scaffold at `_bmad/neurohid/*` with registered workflows `neurohid-phase-workflow` and `migrate-legacy-infra`, plus top-level guidance migration in `AGENTS.md`
@@ -45,6 +46,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Python ML bridge (`neurohid-ml`) migrated from socket-based IPC to in-process PyO3 bindings: `IpcClient` now wraps `RuntimeHandle.trainer_*()`, control client takes `RuntimeHandle` directly, telemetry client wraps `subscribe_events()`, CLI commands use `RuntimeBuilder` instead of IPC endpoint arguments
+- Python package `neurohid_bindings` renamed to `neurohid` (module name matches `#[pymodule]`)
+- Python version requirement bumped to `>=3.14` (free-threaded CPython)
 - Private-phase CI/workflow runner policy now targets dedicated self-hosted labels (`self-hosted` + OS + `neurohid-ci`) across branch policy, CI, architecture, crate-boundaries, Python quality, release, and publish workflows, with a `ci.yml` macOS lane toggle (`ENABLE_MACOS`) to allow pragmatic macOS de-scope when needed
 - Pre-merge validation and coverage enforcement behavior is unchanged under self-hosted execution (Rust/Python quality gates plus `PYTHON_COVERAGE_MIN` and `RUST_COVERAGE_MIN` thresholds remain active)
 - Workspace `lsl-sys` patch source now uses a shared git-pinned upstream (`[patch.crates-io]` with fixed `rev`) for reproducible Linux behavior across multiple applications without repo-local vendoring

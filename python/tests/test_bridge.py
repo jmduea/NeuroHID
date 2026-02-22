@@ -118,12 +118,17 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
 
 
 class BridgeConfigTests(unittest.TestCase):
-    def test_tcp_mode_resolves_endpoint(self) -> None:
+    def test_default_config_heartbeat_interval(self) -> None:
+        config = _bridge.IpcConfig()
+        self.assertEqual(config.heartbeat_interval_sec, 0.5)
+
+    def test_custom_config_values(self) -> None:
         config = _bridge.IpcConfig(
-            ipc_mode="tcp_loopback", ipc_endpoint="127.0.0.1:47384"
+            heartbeat_interval_sec=2.0,
+            recv_timeout_sec=1.0,
         )
-        self.assertEqual(config.ipc_mode, "tcp_loopback")
-        self.assertEqual(config.ipc_endpoint, "127.0.0.1:47384")
+        self.assertEqual(config.heartbeat_interval_sec, 2.0)
+        self.assertEqual(config.recv_timeout_sec, 1.0)
 
 
 if __name__ == "__main__":

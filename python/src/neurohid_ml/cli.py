@@ -14,12 +14,6 @@ import time
 from pathlib import Path
 from typing import Sequence
 
-from neurohid_ml.ipc_constants import (
-    CANONICAL_IPC_MODE,
-    CANONICAL_LOCAL_ENDPOINT,
-    DEFAULT_CONTROL_PIPE_NAME,
-)
-
 
 def _add_training_hyperparameter_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--model-version", type=str, default="candidate-0")
@@ -50,22 +44,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="NeuroHID ML tools")
     subparsers = parser.add_subparsers(dest="command")
 
-    bridge = subparsers.add_parser("bridge", help="run the realtime IPC bridge")
+    bridge = subparsers.add_parser("bridge", help="run the in-process trainer bridge")
     bridge.add_argument(
-        "--ipc-mode",
-        choices=["local_socket", "tcp_loopback"],
-        default=CANONICAL_IPC_MODE,
-        help="canonical bridge IPC mode",
-    )
-    bridge.add_argument(
-        "--ipc-endpoint",
-        default=CANONICAL_LOCAL_ENDPOINT,
-        help="canonical bridge endpoint path/name or host:port",
+        "--config-json",
+        type=str,
+        default=None,
+        help="optional JSON object for SystemConfig to start the runtime",
     )
 
     control = subparsers.add_parser(
         "control",
-        help="send one control command to neurohid-service",
+        help="send one control command (requires an in-process runtime)",
     )
     control.add_argument(
         "action",
@@ -76,9 +65,6 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
             "set_learning_enabled",
             "set_fallback_policy",
             "ml_bridge_reconnect",
-            "daemon_start",
-            "daemon_stop",
-            "daemon_status",
             "reload_model",
             "promote_candidate_model",
             "rescan_streams",
@@ -95,82 +81,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     control.add_argument("--stream-id", type=str)
     control.add_argument(
-        "--ipc-mode",
-        choices=["local_socket", "tcp_loopback"],
-        default=CANONICAL_IPC_MODE,
-        help="canonical control IPC mode",
-    )
-    control.add_argument(
-        "--ipc-endpoint",
-        default=DEFAULT_CONTROL_PIPE_NAME
-        if os.name == "nt"
-        else CANONICAL_LOCAL_ENDPOINT,
-        help="canonical IPC endpoint path/name or loopback address",
-    )
-    control.add_argument(
-        "--service-bin",
-        default="neurohid-service",
-        help="service binary used by auto-start behavior",
-    )
-    control.add_argument(
-        "--auto-start-service",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="attempt auto-start when control endpoint is unavailable",
-    )
-
-    telemetry_read = subparsers.add_parser(
-        "telemetry-read",
-        help="read runtime.events IPC envelopes",
-    )
-    telemetry_read.add_argument(
-        "--ipc-mode",
-        choices=["local_socket", "tcp_loopback"],
-        default=CANONICAL_IPC_MODE,
-        help="canonical runtime.events IPC mode",
-    )
-    telemetry_read.add_argument(
-        "--ipc-endpoint",
-        default=DEFAULT_CONTROL_PIPE_NAME
-        if os.name == "nt"
-        else CANONICAL_LOCAL_ENDPOINT,
-        help="canonical IPC endpoint path/name or loopback address",
-    )
-    telemetry_read.add_argument(
-        "--max-messages",
-        type=int,
-        default=1,
-        help="number of envelopes to print before exiting",
-    )
-    telemetry_read.add_argument(
-        "--family",
-        action="append",
-        default=[],
-        help="runtime.events family filter (repeatable)",
-    )
-    telemetry_read.add_argument(
-        "--resume-from-seq",
-        type=int,
+        "--config-json",
+        type=str,
         default=None,
-        help="resume stream from this sequence id when supported",
-    )
-    telemetry_read.add_argument(
-        "--sample-every",
-        type=int,
-        default=1,
-        help="downsample sample events by keeping every Nth message",
-    )
-    telemetry_read.add_argument(
-        "--max-duration-ms",
-        type=int,
-        default=None,
-        help="request stream closure after N ms",
-    )
-    telemetry_read.add_argument(
-        "--snapshot-interval-ms",
-        type=int,
-        default=1000,
-        help="snapshot cadence for subscription streams",
+        help="optional JSON object for SystemConfig to start the runtime",
     )
 
     trainer = subparsers.add_parser(
@@ -489,15 +403,27 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
         time.sleep(args.poll_interval_secs)
 
 
+def _start_runtime_from_args(args: argparse.Namespace):
+    """Start an in-process runtime from optional --config-json CLI argument."""
+    from neurohid import RuntimeBuilder, SystemConfig
+
+    config_json = getattr(args, "config_json", None)
+    if config_json:
+        config = SystemConfig.from_dict(json.loads(config_json))
+    else:
+        config = SystemConfig.from_dict({})
+
+    async def _start():
+        return await RuntimeBuilder(config).start()
+
+    return asyncio.run(_start())
+
+
 def _run_control(args: argparse.Namespace) -> None:
     from neurohid_ml.control import NeuroHidControlClient
 
-    client = NeuroHidControlClient(
-        ipc_mode=args.ipc_mode,
-        ipc_endpoint=args.ipc_endpoint,
-        service_bin=args.service_bin,
-        auto_start_service=args.auto_start_service,
-    )
+    runtime = _start_runtime_from_args(args)
+    client = NeuroHidControlClient(runtime)
 
     if args.action == "snapshot":
         print(json.dumps(client.snapshot(), indent=2, sort_keys=True))
@@ -537,15 +463,6 @@ def _run_control(args: argparse.Namespace) -> None:
     if args.action == "ml_bridge_reconnect":
         print(json.dumps(client.reconnect_bridge(), indent=2, sort_keys=True))
         return
-    if args.action == "daemon_start":
-        print(json.dumps(client.daemon_start(), indent=2, sort_keys=True))
-        return
-    if args.action == "daemon_stop":
-        print(json.dumps(client.daemon_stop(), indent=2, sort_keys=True))
-        return
-    if args.action == "daemon_status":
-        print(json.dumps(client.daemon_status(), indent=2, sort_keys=True))
-        return
     if args.action == "reload_model":
         print(json.dumps(client.reload_model(), indent=2, sort_keys=True))
         return
@@ -578,23 +495,6 @@ def _run_control(args: argparse.Namespace) -> None:
     raise SystemExit(f"Unknown control action: {args.action}")
 
 
-def _run_telemetry_read(args: argparse.Namespace) -> None:
-    from neurohid_ml.telemetry import NeuroHidTelemetryClient
-
-    client = NeuroHidTelemetryClient(
-        ipc_mode=args.ipc_mode,
-        ipc_endpoint=args.ipc_endpoint,
-    )
-    for message in client.iter_messages(
-        max_messages=max(args.max_messages, 0),
-        families=args.family or None,
-        resume_from_seq=args.resume_from_seq,
-        sample_every=max(args.sample_every, 1),
-        max_duration_ms=args.max_duration_ms,
-        snapshot_interval_ms=max(args.snapshot_interval_ms, 100),
-    ):
-        print(json.dumps(message, indent=2, sort_keys=True))
-
 
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
@@ -602,12 +502,8 @@ def main(argv: Sequence[str] | None = None) -> None:
     if args.command == "bridge":
         from neurohid_ml.bridge import main_async as bridge_main_async
 
-        asyncio.run(
-            bridge_main_async(
-                ipc_mode=args.ipc_mode,
-                ipc_endpoint=args.ipc_endpoint,
-            )
-        )
+        runtime = _start_runtime_from_args(args)
+        asyncio.run(bridge_main_async(runtime))
         return
 
     if args.command == "train-candidate":
@@ -632,10 +528,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.command == "control":
         _run_control(args)
-        return
-
-    if args.command == "telemetry-read":
-        _run_telemetry_read(args)
         return
 
     raise SystemExit(f"Unknown command: {args.command}")

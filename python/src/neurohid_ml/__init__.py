@@ -4,14 +4,10 @@ NeuroHID ML - Python Machine Learning Components
 This package contains the machine learning components for NeuroHID:
 - decoder: The RL policy network (PPO) that translates brain signals to actions
 - errp: Error-Related Potential detection for implicit feedback
-- bridge: IPC client for communicating with the Rust core service
+- bridge: In-process trainer bridge communicating via RuntimeHandle
 
-The package is designed to run as a separate process from the Rust core,
-communicating via local IPC transport (named pipe on Windows, loopback TCP
-for non-Windows development). This architecture provides:
-1. Process isolation (Python crashes don't stop the Rust service)
-2. Full access to the PyTorch ecosystem
-3. Hot-reloading of ML code without restarting the service
+All runtime communication uses the ``neurohid`` native extension module's
+in-process ``RuntimeHandle`` rather than socket-based IPC.
 """
 
 __version__ = "0.1.0"
@@ -62,7 +58,9 @@ def __getattr__(name: str):
         return globals()[name]
 
     if name in {"NeuroHidNotebook", "NotebookError"}:
-        from neurohid_ml.notebook import NeuroHidNotebook, NotebookError
+        from neurohid_ml.notebook import NeuroHidNotebook
+
+        from neurohid_ml.control import NotebookError
 
         globals().update(
             {
@@ -72,16 +70,11 @@ def __getattr__(name: str):
         )
         return globals()[name]
 
-    if name in {"NeuroHidControlClient", "NotebookError"}:
-        from neurohid_ml.control import NeuroHidControlClient, NotebookError
+    if name == "NeuroHidControlClient":
+        from neurohid_ml.control import NeuroHidControlClient
 
-        globals().update(
-            {
-                "NeuroHidControlClient": NeuroHidControlClient,
-                "NotebookError": NotebookError,
-            }
-        )
-        return globals()[name]
+        globals().update({"NeuroHidControlClient": NeuroHidControlClient})
+        return NeuroHidControlClient
 
     if name == "NeuroHidTelemetryClient":
         from neurohid_ml.telemetry import NeuroHidTelemetryClient

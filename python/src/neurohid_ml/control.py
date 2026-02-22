@@ -1,116 +1,95 @@
-"""Control-plane client for NeuroHID service endpoints."""
+"""Control-plane client for an in-process NeuroHID runtime.
+
+Wraps a ``neurohid.RuntimeHandle`` obtained from ``RuntimeBuilder.start()``
+and exposes synchronous convenience methods that mirror the old IPC control
+client API.
+"""
 
 from __future__ import annotations
 
 import json
-import os
-import subprocess
-import time
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
-from neurohid_ml.ipc import NeuroHidIpcClient, events_to_dataframe, observation_to_numpy
-from neurohid_ml.ipc_constants import (
-    CANONICAL_IPC_MODE,
-    CANONICAL_LOCAL_ENDPOINT,
-)
-from neurohid_ml.ipc_constants import (
-    parse_tcp_endpoint as _parse_tcp_endpoint,
-)
+from neurohid_ml.ipc import events_to_dataframe, observation_to_numpy
 
 
 class NotebookError(RuntimeError):
     """Raised when a notebook/control convenience operation fails."""
 
 
-@dataclass(slots=True)
 class NeuroHidControlClient:
-    """Synchronous control client for NeuroHID IPC endpoints."""
+    """Synchronous control client backed by an in-process ``RuntimeHandle``.
 
-    ipc_mode: str = CANONICAL_IPC_MODE
-    ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
-    service_bin: str = "neurohid-service"
-    auto_start_service: bool = True
-    service_launch_command: str | None = None
-    service_start_wait_secs: float = 1.0
-    connect_timeout_secs: float = 1.5
-    read_timeout_secs: float = 1.5
-    connect_retries: int = 1
-    _service_process: subprocess.Popen[str] | None = field(
-        default=None,
-        init=False,
-        repr=False,
-    )
+    Parameters
+    ----------
+    runtime:
+        A ``neurohid.RuntimeHandle`` returned by ``await RuntimeBuilder(config).start()``.
+    """
 
-    def _control_payload_snapshot(self, response: dict[str, Any], key: str) -> dict[str, Any]:
-        """Extract snapshot dict from control.rpc response; accept single or double payload."""
-        payload = response.get("payload", {})
-        if not isinstance(payload, dict):
-            raise NotebookError(f"invalid control response: {response}")
-        snapshot = payload.get(key)
-        if isinstance(snapshot, dict):
-            return snapshot
-        inner = payload.get("payload", {})
-        if isinstance(inner, dict):
-            snapshot = inner.get(key)
-            if isinstance(snapshot, dict):
-                return snapshot
-        raise NotebookError(f"invalid control response: {response}")
+    def __init__(self, runtime: Any) -> None:
+        self._runtime = runtime
+
+    # -- Snapshots -----------------------------------------------------------
 
     def snapshot(self) -> dict[str, Any]:
-        response = self.send_command({"type": "snapshot"})
-        return self._control_payload_snapshot(response, "snapshot")
+        """Return a point-in-time runtime state snapshot as a dict."""
+        return self._runtime.snapshot().to_dict()
 
     def trainer_snapshot(self) -> dict[str, Any]:
-        response = self.send_command({"type": "trainer_snapshot"})
-        return self._control_payload_snapshot(response, "snapshot")
+        """Return the trainer bridge status snapshot as a dict."""
+        return self._runtime.trainer_snapshot().to_dict()
+
+    # -- Simple commands (synchronous, fire-and-forget) ----------------------
 
     def set_output_enabled(self, enabled: bool) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "set_output_enabled", "enabled": bool(enabled)}
-        )
+        self._runtime.command("toggle_output", enabled=bool(enabled))
+        return {"status": "ok"}
 
     def set_learning_enabled(self, enabled: bool) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "set_learning_enabled", "enabled": bool(enabled)}
-        )
+        self._runtime.command("set_learning_enabled", enabled=bool(enabled))
+        return {"status": "ok"}
+
+    def reconnect_bridge(self) -> dict[str, Any]:
+        self._runtime.command("ml_bridge_reconnect")
+        return {"status": "ok"}
+
+    def reload_model(self) -> dict[str, Any]:
+        self._runtime.command("reload_model")
+        return {"status": "ok"}
+
+    def promote_candidate_model(self) -> dict[str, Any]:
+        self._runtime.command("promote_candidate_model")
+        return {"status": "ok"}
+
+    def rescan_streams(self) -> dict[str, Any]:
+        self._runtime.command("rescan_streams")
+        return {"status": "ok"}
+
+    def connect_stream(self, stream_id: str) -> dict[str, Any]:
+        self._runtime.command("connect_stream", stream_id=str(stream_id))
+        return {"status": "ok"}
+
+    def disconnect_stream(self, stream_id: str) -> dict[str, Any]:
+        self._runtime.command("disconnect_stream", stream_id=str(stream_id))
+        return {"status": "ok"}
+
+    # -- Control requests (synchronous, round-trip via dispatch_control_sync) -
 
     def set_fallback_policy(self, policy: dict[str, Any]) -> dict[str, Any]:
         if not isinstance(policy, dict):
             raise NotebookError("fallback policy must be a JSON object")
-        return self.send_command({"type": "set_fallback_policy", "policy": policy})
+        return self.dispatch_control({"type": "set_fallback_policy", "policy": policy})
 
-    def reconnect_bridge(self) -> dict[str, Any]:
-        return self.send_command({"type": "ml_bridge_reconnect"})
+    def dispatch_control(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Send an arbitrary ``ControlRequest`` and return the response dict.
 
-    def daemon_start(self) -> dict[str, Any]:
-        return self._run_daemon_command("start")
+        Uses the synchronous ``dispatch_control_sync`` method on the native
+        ``RuntimeHandle``.
+        """
+        result_json = self._runtime.dispatch_control_sync(json.dumps(request))
+        return json.loads(result_json)
 
-    def daemon_stop(self) -> dict[str, Any]:
-        return self._run_daemon_command("stop")
-
-    def daemon_status(self) -> dict[str, Any]:
-        return self._run_daemon_command("status")
-
-    def reload_model(self) -> dict[str, Any]:
-        return self.send_command({"type": "reload_model"})
-
-    def promote_candidate_model(self) -> dict[str, Any]:
-        return self.send_command({"type": "promote_candidate_model"})
-
-    def rescan_streams(self) -> dict[str, Any]:
-        return self.send_command({"type": "rescan_streams"})
-
-    def connect_stream(self, stream_id: str) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "connect_stream", "stream_id": str(stream_id)}
-        )
-
-    def disconnect_stream(self, stream_id: str) -> dict[str, Any]:
-        return self.send_command(
-            {"type": "disconnect_stream", "stream_id": str(stream_id)}
-        )
+    # -- Stream discovery helpers --------------------------------------------
 
     def ensure_connected_stream(self, *, rescan: bool = True) -> str | None:
         if rescan:
@@ -140,223 +119,40 @@ class NeuroHidControlClient:
 
         return None
 
-    def send_command(self, command: dict[str, Any]) -> dict[str, Any]:
-        response_payload = self._request_endpoint(command)
-        if isinstance(response_payload, str):
-            try:
-                decoded = json.loads(response_payload)
-            except json.JSONDecodeError as error:
-                raise NotebookError(
-                    f"invalid control response payload: {error}"
-                ) from error
-            if isinstance(decoded, dict) and isinstance(decoded.get("payload"), dict):
-                response_payload = decoded.get("payload", {})
-            elif isinstance(decoded, dict):
-                response_payload = decoded
-            else:
-                raise NotebookError("invalid control response payload: expected object")
-        response = {"payload": response_payload}
-        response_payload = response.get("payload", {})
-        if response_payload.get("type") == "error":
-            raise NotebookError(
-                response_payload.get("message", "unknown control error")
-            )
-        return response
+    # -- In-process stream subscriptions (async iterators) -------------------
 
-    def endpoint_label(self) -> str:
-        return self._build_ipc_client().endpoint_label()
+    def subscribe_samples(self):
+        """Return an async iterator of ``Sample`` objects."""
+        return self._runtime.subscribe_samples()
 
-    def subscribe_events(
-        self,
-        *,
-        max_messages: int | None = None,
-        families: list[str] | None = None,
-        resume_from_seq: int | None = None,
-        sample_every: int = 1,
-        max_duration_ms: int | None = None,
-        snapshot_interval_ms: int = 1_000,
-        prefer_stream: bool = True,
-    ) -> Iterator[dict[str, Any]]:
-        ipc = self._build_ipc_client()
-        return ipc.iter_runtime_events(
-            max_messages=max_messages,
-            families=families,
-            resume_from_seq=resume_from_seq,
-            sample_every=sample_every,
-            max_duration_ms=max_duration_ms,
-            snapshot_interval_ms=snapshot_interval_ms,
-            prefer_stream=prefer_stream,
-        )
+    def subscribe_features(self):
+        """Return an async iterator of ``FeatureVector`` objects."""
+        return self._runtime.subscribe_features()
+
+    def subscribe_actions(self):
+        """Return an async iterator of ``Action`` objects."""
+        return self._runtime.subscribe_actions()
+
+    def subscribe_markers(self):
+        """Return an async iterator of ``StreamMarker`` objects."""
+        return self._runtime.subscribe_markers()
+
+    def subscribe_events(self):
+        """Return an async iterator of ``RuntimeEvent`` objects."""
+        return self._runtime.subscribe_events()
+
+    # -- Runtime lifecycle ---------------------------------------------------
+
+    def is_alive(self) -> bool:
+        return self._runtime.is_alive()
+
+    # -- Data helpers --------------------------------------------------------
 
     def observation_to_numpy(self, event_payload: dict[str, Any]) -> Any:
         return observation_to_numpy(event_payload)
 
     def events_to_dataframe(self, events: list[dict[str, Any]]) -> Any:
         return events_to_dataframe(events)
-
-    def _request_endpoint(self, command: dict[str, Any]) -> dict[str, Any]:
-        first_error, response = self._try_configured_endpoint(command)
-        if response is not None:
-            return response
-
-        service_start_error: str | None = None
-        service_start_attempted = False
-        if self.auto_start_service:
-            service_start_attempted = True
-            try:
-                started = self._start_service_background()
-            except NotebookError as error:
-                started = False
-                service_start_error = str(error)
-
-            if started:
-                time.sleep(max(self.service_start_wait_secs, 0.0))
-                first_error, response = self._try_configured_endpoint(command)
-                if response is not None:
-                    return response
-
-        error_suffix = f" ({first_error})" if first_error is not None else ""
-        startup_suffix = ""
-        if service_start_error is not None:
-            startup_suffix = f" Auto-start failed: {service_start_error}."
-        elif service_start_attempted:
-            startup_suffix = (
-                " Auto-start was attempted; if this is the first run and "
-                "`cargo run` is building in the background, wait 10-30 seconds and retry."
-            )
-
-        raise NotebookError(
-            "unable to reach NeuroHID control endpoint at "
-            f"{self.endpoint_label()}{error_suffix}. "
-            "Ensure `neurohid` or `neurohid-service --foreground` is running, "
-            "or pass an explicit endpoint via "
-            "NeuroHidControlClient(ipc_mode=..., ipc_endpoint=...)."
-            f"{startup_suffix}"
-        )
-
-    def _try_configured_endpoint(
-        self, command: dict[str, Any]
-    ) -> tuple[Exception | None, dict[str, Any] | None]:
-        first_error: Exception | None = None
-        try:
-            ipc = self._build_ipc_client()
-            response = ipc.send_control_command(command)
-            return first_error, response
-        except Exception as error:  # noqa: BLE001
-            if first_error is None:
-                first_error = error
-            return first_error, None
-
-    def _build_ipc_client(self) -> NeuroHidIpcClient:
-        return NeuroHidIpcClient(
-            ipc_mode=self.ipc_mode,
-            ipc_endpoint=self.ipc_endpoint,
-            connect_timeout_secs=self.connect_timeout_secs,
-            read_timeout_secs=self.read_timeout_secs,
-            connect_retries=self.connect_retries,
-        )
-
-    def _start_service_background(self) -> bool:
-        if self._service_process is not None and self._service_process.poll() is None:
-            return True
-
-        commands = self._service_launch_commands()
-        errors: list[str] = []
-        for command, cwd in commands:
-            try:
-                process = _spawn_background_process(command, cwd=cwd)
-                time.sleep(0.35)
-                exit_code = process.poll()
-                if exit_code is not None:
-                    errors.append(
-                        " ".join(command)
-                        + f" (exited immediately with code {exit_code})"
-                    )
-                    continue
-                self._service_process = process
-                return True
-            except OSError as error:
-                errors.append(f"{' '.join(command)} ({error})")
-
-        raise NotebookError(
-            "failed to auto-start neurohid service: " + "; ".join(errors)
-        )
-
-    def _service_launch_commands(self) -> list[tuple[list[str], str | None]]:
-        if self.service_launch_command:
-            return [(["cmd", "/D", "/S", "/C", self.service_launch_command], None)]
-
-        repo_root_path = Path(__file__).resolve().parents[3]
-        binary_name = "neurohid-service.exe" if os.name == "nt" else "neurohid-service"
-        built_binary_path = repo_root_path / "target" / "debug" / binary_name
-        port_override = self._daemon_control_port_override()
-
-        foreground_cmd = [self.service_bin, "--foreground"]
-        if port_override is not None:
-            foreground_cmd.extend(["--control-port", str(port_override)])
-
-        commands: list[tuple[list[str], str | None]] = [(foreground_cmd, None)]
-
-        if built_binary_path.exists():
-            built_cmd = [str(built_binary_path), "--foreground"]
-            if port_override is not None:
-                built_cmd.extend(["--control-port", str(port_override)])
-            commands.append(
-                (
-                    built_cmd,
-                    str(repo_root_path),
-                )
-            )
-
-        cargo_cmd = [
-            "cargo",
-            "run",
-            "--bin",
-            "neurohid-service",
-            "--",
-            "--foreground",
-        ]
-        if port_override is not None:
-            cargo_cmd.extend(["--control-port", str(port_override)])
-
-        commands.append(
-            (
-                cargo_cmd,
-                str(repo_root_path),
-            )
-        )
-        return commands
-
-    def _run_daemon_command(self, command: str) -> dict[str, Any]:
-        cmd = [self.service_bin, "daemon", command]
-        port_override = self._daemon_control_port_override()
-        if port_override is not None:
-            cmd.extend(["--control-port", str(port_override)])
-        completed = subprocess.run(cmd, check=False, text=True, capture_output=True)
-        if completed.returncode != 0:
-            details = ""
-            if completed.stdout:
-                details += f"\nstdout:\n{completed.stdout}"
-            if completed.stderr:
-                details += f"\nstderr:\n{completed.stderr}"
-            raise NotebookError(
-                f"daemon command failed ({completed.returncode}): {' '.join(cmd)}{details}"
-            )
-        return {
-            "payload": {
-                "type": "daemon_status",
-                "command": command,
-                "stdout": completed.stdout.strip(),
-                "stderr": completed.stderr.strip(),
-            }
-        }
-
-    def _daemon_control_port_override(self) -> int | None:
-        ipc = self._build_ipc_client()
-        if ipc.ipc_mode.strip().lower() != "tcp_loopback":
-            return None
-        _, port = _parse_tcp_endpoint(self.ipc_endpoint)
-        return port
 
 
 def _is_eligible_eeg_stream(stream: dict[str, Any]) -> bool:
@@ -375,27 +171,3 @@ def _is_eligible_eeg_stream(stream: dict[str, Any]) -> bool:
         return True
 
     return stream_type in {"EEG/EmotivEEG", "EEG"}
-
-
-def _spawn_background_process(
-    command: list[str],
-    *,
-    cwd: str | None,
-) -> subprocess.Popen[str]:
-    kwargs: dict[str, Any] = {
-        "stdin": subprocess.DEVNULL,
-        "stdout": subprocess.DEVNULL,
-        "stderr": subprocess.DEVNULL,
-        "text": True,
-        "cwd": cwd,
-    }
-
-    if os.name == "nt":
-        create_new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
-        detached_process = getattr(subprocess, "DETACHED_PROCESS", 0)
-        create_no_window = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-        kwargs["creationflags"] = (
-            create_new_process_group | detached_process | create_no_window
-        )
-
-    return subprocess.Popen(command, **kwargs)

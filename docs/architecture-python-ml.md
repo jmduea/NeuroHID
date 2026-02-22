@@ -25,7 +25,7 @@ This document covers the Python package in `python/` (`src/neurohid_ml`) and rel
 
 - Runtime: `torch`, `onnx`, `numpy`, `scipy`, `scikit-learn`, `jupyterlab`
 - Dev quality: `pytest`, `pytest-cov`, `pytest-asyncio`, `black`, `ruff`, `mypy`
-- Python version: `>=3.12`
+- Python version: `>=3.14` (free-threaded CPython)
 
 ## Test Surface
 
@@ -34,5 +34,8 @@ notebook helpers, and lab kernel behavior.
 
 ## Integration Boundary
 
-This part receives runtime events and returns ML outputs/health through the local bridge protocol,
-keeping model lifecycle concerns isolated from latency-critical Rust components.
+This package communicates with the Rust runtime **in-process** via PyO3 bindings
+(`neurohid-py` crate, module name `neurohid`). Python code receives samples,
+features, actions, markers, and runtime events as async iterators and sends
+commands/trainer messages through `RuntimeHandle` methods — no socket transport or
+serialization overhead. See [ADR-001](adr/ADR-001-in-process-python-bindings.md).

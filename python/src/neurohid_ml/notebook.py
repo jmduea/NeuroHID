@@ -5,53 +5,40 @@ This module provides a small convenience layer for Jupyter workflows:
 - runtime telemetry polling
 - bridge reconnect
 - profile training/export/staging wrappers
+
+All communication uses an in-process ``RuntimeHandle`` obtained from the
+``neurohid`` native extension.
 """
 
 from __future__ import annotations
 
 import subprocess
-import time
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from neurohid_ml.control import NeuroHidControlClient, NotebookError
-from neurohid_ml.ipc_constants import (
-    CANONICAL_IPC_MODE,
-    CANONICAL_LOCAL_ENDPOINT,
-)
 from neurohid_ml.telemetry import NeuroHidTelemetryClient
 
 
 @dataclass(slots=True)
 class NeuroHidNotebook:
-    """Ergonomic API surface for Jupyter notebooks."""
+    """Ergonomic API surface for Jupyter notebooks.
 
-    ipc_mode: str = CANONICAL_IPC_MODE
-    ipc_endpoint: str = CANONICAL_LOCAL_ENDPOINT
+    Parameters
+    ----------
+    runtime:
+        A ``neurohid.RuntimeHandle`` returned by ``await RuntimeBuilder(config).start()``.
+    service_bin:
+        Path to the service binary used for subprocess training/export commands.
+    """
+
+    runtime: Any
     service_bin: str = "neurohid-service"
-    auto_start_service: bool = True
-    service_launch_command: str | None = None
-    service_start_wait_secs: float = 1.0
-    connect_timeout_secs: float = 1.5
-    read_timeout_secs: float = 1.5
-    connect_retries: int = 1
-    ml_connect_timeout_secs: float = 1.5
-    ml_read_timeout_secs: float = 0.2
     _control: NeuroHidControlClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._control = NeuroHidControlClient(
-            ipc_mode=self.ipc_mode,
-            ipc_endpoint=self.ipc_endpoint,
-            service_bin=self.service_bin,
-            auto_start_service=self.auto_start_service,
-            service_launch_command=self.service_launch_command,
-            service_start_wait_secs=self.service_start_wait_secs,
-            connect_timeout_secs=self.connect_timeout_secs,
-            read_timeout_secs=self.read_timeout_secs,
-            connect_retries=self.connect_retries,
-        )
+        self._control = NeuroHidControlClient(self.runtime)
 
     def snapshot(self) -> dict[str, Any]:
         return self._control.snapshot()
@@ -71,15 +58,6 @@ class NeuroHidNotebook:
     def reconnect_bridge(self) -> dict[str, Any]:
         return self._control.reconnect_bridge()
 
-    def daemon_start(self) -> dict[str, Any]:
-        return self._control.daemon_start()
-
-    def daemon_stop(self) -> dict[str, Any]:
-        return self._control.daemon_stop()
-
-    def daemon_status(self) -> dict[str, Any]:
-        return self._control.daemon_status()
-
     def reload_model(self) -> dict[str, Any]:
         return self._control.reload_model()
 
@@ -98,83 +76,30 @@ class NeuroHidNotebook:
     def ensure_connected_stream(self, *, rescan: bool = True) -> str | None:
         return self._control.ensure_connected_stream(rescan=rescan)
 
-    def subscribe_events(
-        self,
-        *,
-        max_messages: int | None = None,
-        families: list[str] | None = None,
-        resume_from_seq: int | None = None,
-        sample_every: int = 1,
-        max_duration_ms: int | None = None,
-        snapshot_interval_ms: int = 1_000,
-        prefer_stream: bool = True,
-    ) -> Iterator[dict[str, Any]]:
-        return self._control.subscribe_events(
-            max_messages=max_messages,
-            families=families,
-            resume_from_seq=resume_from_seq,
-            sample_every=sample_every,
-            max_duration_ms=max_duration_ms,
-            snapshot_interval_ms=snapshot_interval_ms,
-            prefer_stream=prefer_stream,
-        )
+    def subscribe_samples(self):
+        """Return an async iterator of ``Sample`` objects."""
+        return self._control.subscribe_samples()
 
-    def subscribe_observations(
-        self,
-        *,
-        max_messages: int | None = None,
-        resume_from_seq: int | None = None,
-        sample_every: int = 1,
-        max_duration_ms: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        return self.subscribe_events(
-            max_messages=max_messages,
-            families=["observation_frame"],
-            resume_from_seq=resume_from_seq,
-            sample_every=sample_every,
-            max_duration_ms=max_duration_ms,
-        )
+    def subscribe_features(self):
+        """Return an async iterator of ``FeatureVector`` objects."""
+        return self._control.subscribe_features()
 
-    def subscribe_events_with_reconnect(
-        self,
-        *,
-        max_messages: int | None = None,
-        families: list[str] | None = None,
-        resume_from_seq: int | None = None,
-        sample_every: int = 1,
-        max_duration_ms: int | None = None,
-        snapshot_interval_ms: int = 1_000,
-        reconnect_attempts: int = 3,
-        reconnect_backoff_secs: float = 0.3,
-    ) -> Iterator[dict[str, Any]]:
-        emitted = 0
-        attempts = 0
-        resume_cursor = resume_from_seq
-        while max_messages is None or emitted < max_messages:
-            remaining = None if max_messages is None else max_messages - emitted
-            try:
-                for event in self.subscribe_events(
-                    max_messages=remaining,
-                    families=families,
-                    resume_from_seq=resume_cursor,
-                    sample_every=sample_every,
-                    max_duration_ms=max_duration_ms,
-                    snapshot_interval_ms=snapshot_interval_ms,
-                ):
-                    attempts = 0
-                    emitted += 1
-                    seq = event.get("_seq")
-                    if isinstance(seq, int):
-                        resume_cursor = seq
-                    yield event
-                    if max_messages is not None and emitted >= max_messages:
-                        return
-                return
-            except NotebookError:
-                attempts += 1
-                if attempts > max(reconnect_attempts, 0):
-                    raise
-                time.sleep(max(reconnect_backoff_secs, 0.0))
+    def subscribe_actions(self):
+        """Return an async iterator of ``Action`` objects."""
+        return self._control.subscribe_actions()
+
+    def subscribe_markers(self):
+        """Return an async iterator of ``StreamMarker`` objects."""
+        return self._control.subscribe_markers()
+
+    def subscribe_events(self):
+        """Return an async iterator of ``RuntimeEvent`` objects."""
+        return self._control.subscribe_events()
+
+    def is_alive(self) -> bool:
+        return self._control.is_alive()
+
+    # -- Data helpers --------------------------------------------------------
 
     def observation_to_numpy(self, event_payload: dict[str, Any]) -> Any:
         return self._control.observation_to_numpy(event_payload)
@@ -182,23 +107,12 @@ class NeuroHidNotebook:
     def events_to_dataframe(self, events: list[dict[str, Any]]) -> Any:
         return self._control.events_to_dataframe(events)
 
+    # -- Telemetry -----------------------------------------------------------
+
     def telemetry_client(self) -> NeuroHidTelemetryClient:
-        return NeuroHidTelemetryClient(
-            ipc_mode=self.ipc_mode,
-            ipc_endpoint=self.ipc_endpoint,
-            connect_timeout_secs=self.ml_connect_timeout_secs,
-            read_timeout_secs=self.ml_read_timeout_secs,
-        )
+        return NeuroHidTelemetryClient(self.runtime)
 
-    def recv_telemetry(self) -> dict[str, Any] | None:
-        return self.telemetry_client().recv()
-
-    def iter_telemetry(
-        self,
-        *,
-        max_messages: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        return self.telemetry_client().iter_messages(max_messages=max_messages)
+    # -- Subprocess training/export helpers ----------------------------------
 
     def train_profile_candidate(
         self,

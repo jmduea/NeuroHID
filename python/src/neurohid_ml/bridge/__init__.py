@@ -1,78 +1,36 @@
-"""Runtime ML bridge (protocol v3) for NeuroHID.
+"""Runtime ML bridge (protocol v3) for NeuroHID — in-process variant.
 
 This module implements the trainer-side endpoint for the NeuroHID runtime ML
-protocol v3. On Windows it defaults to named pipes; on non-Windows it defaults
-to TCP loopback for development.
+protocol v3.  Communication goes through the in-process ``RuntimeHandle``
+trainer bridge methods instead of sockets/pipes.
 """
 
 from __future__ import annotations
 
-import argparse
 import asyncio
 import json
-import os
-import struct
 import time
 from dataclasses import dataclass
-from typing import Any, BinaryIO, Optional
+from typing import Any, Optional
 
 import numpy as np
 
 from neurohid_ml.errp import ErrPConfig, ErrPDetector
-from neurohid_ml.ipc_constants import (
-    CANONICAL_IPC_MODE,
-    CANONICAL_LOCAL_ENDPOINT,
-    CANONICAL_TCP_PORT,
-)
-from neurohid_ml.ipc_constants import (
-    parse_tcp_endpoint as _parse_tcp_endpoint,
-)
-
-ipckit: Any
-try:
-    from neurohid_bindings import (
-        IpcChannel as _IpcChannelNative,  # type: ignore[import-not-found]
-    )
-
-    class _IpcKitCompat:
-        """Minimal shim so existing call-sites can use `ipckit.IpcChannel` attribute access."""
-
-        IpcChannel = _IpcChannelNative
-
-    ipckit = _IpcKitCompat()
-except Exception:  # pragma: no cover - optional dependency
-    ipckit = None
 
 IPC_PROTOCOL_VERSION = 3
-DEFAULT_IPC_ENDPOINT = CANONICAL_LOCAL_ENDPOINT
 
 
 @dataclass
 class IpcConfig:
-    """Configuration for trainer<->runtime ML bridge connectivity."""
+    """Configuration for the trainer bridge loop."""
 
-    ipc_mode: str = CANONICAL_IPC_MODE
-    ipc_endpoint: str = DEFAULT_IPC_ENDPOINT
-    connect_timeout_sec: float = 5.0
-    recv_timeout_sec: float = 0.2
-    auto_reconnect: bool = True
-    reconnect_delay_sec: float = 1.0
-    max_reconnect_attempts: int = 0
     heartbeat_interval_sec: float = 0.5
-
-    def __post_init__(self) -> None:
-        mode = (self.ipc_mode or "").strip().lower()
-        if not mode:
-            mode = "local_socket"
-        if mode not in {"local_socket", "tcp_loopback"}:
-            raise RuntimeError(f"unsupported ipc_mode '{self.ipc_mode}'")
-        self.ipc_mode = mode
-        self.ipc_endpoint = self.ipc_endpoint.strip() or DEFAULT_IPC_ENDPOINT
+    recv_timeout_sec: float = 0.2
 
 
 @dataclass
 class BridgeStats:
-    """Lightweight trainer runtime stats surfaced via `trainer_status`."""
+    """Lightweight trainer runtime stats surfaced via ``trainer_status``."""
 
     replay_size: int = 0
     training_step: int = 0
@@ -86,7 +44,6 @@ class BridgeStats:
 
 def now_micros() -> int:
     """Current unix timestamp in microseconds."""
-
     return time.time_ns() // 1_000
 
 
@@ -113,93 +70,47 @@ def _bernoulli_entropy(probability: float) -> float:
 
 
 class IpcClient:
-    """Trainer-side IPC client with v3 envelope framing."""
+    """Trainer-side bridge client backed by an in-process ``RuntimeHandle``.
 
-    def __init__(self, config: IpcConfig):
-        self.config = config
-        self.reader: Optional[asyncio.StreamReader] = None
-        self.writer: Optional[asyncio.StreamWriter] = None
-        self.pipe: Optional[BinaryIO] = None
-        self.ipc_channel: Any | None = None
+    Parameters
+    ----------
+    runtime:
+        A ``neurohid.RuntimeHandle`` obtained from ``await RuntimeBuilder(...).start()``.
+    config:
+        Optional bridge configuration (heartbeat interval, etc.).
+    """
+
+    def __init__(self, runtime: Any, config: IpcConfig | None = None) -> None:
+        self.config = config or IpcConfig()
+        self._runtime = runtime
         self.connected = False
         self.sequence = 0
 
     async def connect(self) -> bool:
-        """Connect to runtime bridge endpoint."""
-
+        """Register a trainer session with the runtime."""
         try:
-            if self.config.ipc_mode == "tcp_loopback":
-                host, port = _parse_tcp_endpoint(self.config.ipc_endpoint)
-                reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(host, port),
-                    timeout=self.config.connect_timeout_sec,
-                )
-                self.reader = reader
-                self.writer = writer
-
-                sock = writer.get_extra_info("socket")
-                if sock is not None:
-                    import socket
-
-                    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-            else:
-                if ipckit is not None:
-                    self.ipc_channel = await asyncio.wait_for(
-                        asyncio.to_thread(
-                            ipckit.IpcChannel.connect, self.config.ipc_endpoint
-                        ),
-                        timeout=self.config.connect_timeout_sec,
-                    )
-                else:
-                    if os.name != "nt":
-                        raise RuntimeError(
-                            "named_pipe transport is only supported on Windows hosts"
-                        )
-                    self.pipe = await asyncio.wait_for(
-                        asyncio.to_thread(self._open_named_pipe_blocking),
-                        timeout=self.config.connect_timeout_sec,
-                    )
-
+            session_id = str(now_micros())
+            await self._runtime.trainer_connect(session_id)
             self.connected = True
             return True
         except Exception as error:  # noqa: BLE001
-            endpoint = self.endpoint_label()
-            print(f"Bridge connect failed ({endpoint}): {error}")
+            print(f"Bridge connect failed: {error}")
             self.connected = False
-            self.reader = None
-            self.writer = None
-            self.pipe = None
-            self.ipc_channel = None
             return False
 
     async def disconnect(self) -> None:
-        """Disconnect and release transport handles."""
-
-        if self.writer is not None:
-            self.writer.close()
-            await self.writer.wait_closed()
-        self.writer = None
-        self.reader = None
-
-        if self.ipc_channel is not None:
-            channel = self.ipc_channel
-            self.ipc_channel = None
-            close_fn = getattr(channel, "close", None)
-            if callable(close_fn):
-                await asyncio.to_thread(close_fn)
-
-        if self.pipe is not None:
-            pipe = self.pipe
-            self.pipe = None
-            await asyncio.to_thread(pipe.close)
-
+        """Disconnect the trainer session."""
+        if self.connected:
+            try:
+                await self._runtime.trainer_disconnect()
+            except Exception:  # noqa: BLE001
+                pass
         self.connected = False
 
     async def send_envelope(
         self, kind: str, session_id: str, payload: dict[str, Any]
     ) -> None:
-        """Send one protocol v3 envelope to runtime."""
-
+        """Send one protocol v3 envelope to the runtime via the trainer bridge."""
         self.sequence += 1
         envelope = {
             "v": IPC_PROTOCOL_VERSION,
@@ -211,45 +122,20 @@ class IpcClient:
             "request_id": None,
             "payload": payload,
         }
-        await self._send_raw_message(envelope)
+        await self._runtime.trainer_send(envelope)
 
     async def receive_envelope(self) -> Optional[dict[str, Any]]:
-        """Receive one envelope if available, else `None` on timeout."""
-
+        """Receive one envelope from the runtime, or ``None`` on timeout/close."""
         if not self.connected:
             return None
-
         try:
-            if self.config.ipc_mode == "tcp_loopback":
-                if self.reader is None:
-                    return None
-                length_buf = await asyncio.wait_for(
-                    self.reader.readexactly(4), timeout=self.config.recv_timeout_sec
-                )
-                length = struct.unpack("<I", length_buf)[0]
-                body = await self.reader.readexactly(length)
-            else:
-                if self.ipc_channel is not None:
-                    decoded = await asyncio.wait_for(
-                        asyncio.to_thread(self.ipc_channel.recv_json),
-                        timeout=self.config.recv_timeout_sec,
-                    )
-                    if isinstance(decoded, dict):
-                        return decoded
-                    return None
-                if self.pipe is None:
-                    return None
-                # Named pipe reads are performed on a worker thread and may block
-                # until runtime sends a frame. We avoid per-read timeouts here to
-                # prevent spawning leaked background reads.
-                length_buf = await asyncio.to_thread(self._pipe_read_exact, 4)
-                length = struct.unpack("<I", length_buf)[0]
-                body = await asyncio.to_thread(self._pipe_read_exact, length)
-
-            decoded = json.loads(body.decode("utf-8"))
-            if isinstance(decoded, dict):
-                return decoded
-            return None
+            result = await asyncio.wait_for(
+                self._runtime.trainer_recv(),
+                timeout=self.config.recv_timeout_sec,
+            )
+            if result is None:
+                return None
+            return json.loads(result)
         except asyncio.TimeoutError:
             return None
         except Exception as error:  # noqa: BLE001
@@ -258,59 +144,7 @@ class IpcClient:
             return None
 
     def endpoint_label(self) -> str:
-        return self.config.ipc_endpoint
-
-    async def _send_raw_message(self, message: dict[str, Any]) -> None:
-        if not self.connected:
-            raise ConnectionError("Bridge is not connected")
-
-        payload = json.dumps(message, separators=(",", ":")).encode("utf-8")
-        frame = struct.pack("<I", len(payload)) + payload
-
-        if self.config.ipc_mode == "tcp_loopback":
-            if self.writer is None:
-                raise ConnectionError("TCP writer unavailable")
-            self.writer.write(frame)
-            await self.writer.drain()
-            return
-
-        if self.ipc_channel is not None:
-            await asyncio.to_thread(self.ipc_channel.send_json, message)
-            return
-
-        if self.pipe is None:
-            raise ConnectionError("Named pipe handle unavailable")
-
-        await asyncio.to_thread(self.pipe.write, frame)
-        await asyncio.to_thread(self.pipe.flush)
-
-    def _open_named_pipe_blocking(self) -> BinaryIO:
-        deadline = time.monotonic() + self.config.connect_timeout_sec
-        last_error: Optional[Exception] = None
-
-        while time.monotonic() < deadline:
-            try:
-                # Unbuffered read/write binary mode works for byte-stream pipes.
-                return open(self.config.ipc_endpoint, "r+b", buffering=0)
-            except OSError as error:
-                last_error = error
-                time.sleep(0.1)
-
-        raise TimeoutError(
-            f"timed out opening named pipe {self.config.ipc_endpoint}: {last_error}"
-        )
-
-    def _pipe_read_exact(self, size: int) -> bytes:
-        if self.pipe is None:
-            raise ConnectionError("Named pipe handle unavailable")
-
-        data = bytearray()
-        while len(data) < size:
-            chunk = self.pipe.read(size - len(data))
-            if not chunk:
-                raise EOFError("named pipe closed")
-            data.extend(chunk)
-        return bytes(data)
+        return "in-process"
 
 
 class BridgeSession:
@@ -325,7 +159,6 @@ class BridgeSession:
 
     async def run(self) -> None:
         """Run the connected bridge loop until disconnect/shutdown."""
-
         await self.send_hello()
 
         while self.client.connected:
@@ -347,7 +180,6 @@ class BridgeSession:
 
     async def handle_runtime_message(self, envelope: dict[str, Any]) -> bool:
         """Handle one runtime->trainer envelope. Returns True to stop session."""
-
         version = int(envelope.get("v", 0))
         if version != IPC_PROTOCOL_VERSION:
             await self.send_protocol_error(
@@ -396,7 +228,6 @@ class BridgeSession:
         if kind == "shutdown":
             return True
 
-        # Unknown runtime message kinds are recoverable.
         await self.send_protocol_error(
             code="unsupported_kind",
             message=f"trainer does not handle runtime message kind '{kind}'",
@@ -425,7 +256,6 @@ class BridgeSession:
         self.stats.signal_quality_ema = _ema(
             self.stats.signal_quality_ema, signal_quality, alpha=0.08
         )
-        # Keep trainer status fields stable as replay grows, even before ErrP labels arrive.
         self.stats.policy_loss = _ema(
             self.stats.policy_loss, max(0.0, 1.0 - decoder_confidence), alpha=0.05
         )
@@ -446,7 +276,6 @@ class BridgeSession:
                 matrix = np.asarray(channels, dtype=np.float32)
                 if matrix.ndim == 2 and matrix.shape[0] > 0 and matrix.shape[1] > 0:
                     if self.errp.is_calibrated:
-                        # Current detector expects [samples, channels].
                         detected = self.errp.detect(matrix.T)
                         error_probability = float(
                             np.clip(detected.error_probability, 0.0, 1.0)
@@ -571,69 +400,20 @@ class BridgeSession:
         )
 
 
-async def main_async(
-    ipc_mode: str = "local_socket",
-    ipc_endpoint: str = DEFAULT_IPC_ENDPOINT,
-) -> None:
-    """Run reconnecting trainer bridge loop."""
+async def main_async(runtime: Any) -> None:
+    """Run the trainer bridge loop against an in-process runtime handle."""
+    client = IpcClient(runtime)
+    print("Connecting trainer bridge (in-process)...")
+    connected = await client.connect()
 
-    config = IpcConfig(
-        ipc_mode=ipc_mode,
-        ipc_endpoint=ipc_endpoint,
-    )
+    if not connected:
+        print("Trainer bridge connect failed")
+        return
 
-    attempts = 0
-    while True:
-        client = IpcClient(config)
-        print(f"Connecting trainer bridge to {client.endpoint_label()}...")
-        connected = await client.connect()
-
-        if connected:
-            attempts = 0
-            print("Trainer bridge connected")
-            session = BridgeSession(client)
-            try:
-                await session.run()
-            finally:
-                await client.disconnect()
-            print("Trainer bridge disconnected")
-        else:
-            attempts += 1
-
-        if not config.auto_reconnect:
-            return
-        if (
-            config.max_reconnect_attempts > 0
-            and attempts >= config.max_reconnect_attempts
-        ):
-            print("Max reconnect attempts reached; exiting")
-            return
-
-        await asyncio.sleep(config.reconnect_delay_sec)
-
-
-def main() -> None:
-    parser = argparse.ArgumentParser(description="NeuroHID runtime ML bridge (v3)")
-    parser.add_argument(
-        "--ipc-mode",
-        choices=["local_socket", "tcp_loopback"],
-        default="local_socket",
-        help="IPC mode",
-    )
-    parser.add_argument(
-        "--ipc-endpoint",
-        default=DEFAULT_IPC_ENDPOINT,
-        help="endpoint path/name or host:port",
-    )
-
-    args = parser.parse_args()
-    asyncio.run(
-        main_async(
-            ipc_mode=args.ipc_mode,
-            ipc_endpoint=args.ipc_endpoint,
-        )
-    )
-
-
-if __name__ == "__main__":
-    main()
+    print("Trainer bridge connected")
+    session = BridgeSession(client)
+    try:
+        await session.run()
+    finally:
+        await client.disconnect()
+    print("Trainer bridge disconnected")

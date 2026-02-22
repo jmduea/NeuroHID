@@ -20,23 +20,22 @@ uv run --directory python neurohid-ml --help
 ## Runtime Bridge Workflows
 
 ```bash
-# Start bridge with canonical IPC defaults
+# Start bridge with default configuration (in-process via PyO3 bindings)
 uv run --directory python neurohid-ml bridge
 
-# Start bridge with explicit canonical TCP endpoint
-uv run --directory python neurohid-ml bridge --ipc-mode tcp_loopback --ipc-endpoint 127.0.0.1:47384
+# Start bridge with explicit JSON configuration
+uv run --directory python neurohid-ml bridge --config-json '{"heartbeat_interval_sec": 5}'
 ```
 
-## Control and Telemetry Helpers
+## Control Helpers
 
 ```bash
-uv run --directory python neurohid-ml control snapshot --ipc-mode local_socket --ipc-endpoint neurohid.control.v3
-uv run --directory python neurohid-ml telemetry-read --max-messages 1 --ipc-mode local_socket --ipc-endpoint neurohid.control.v3
+uv run --directory python neurohid-ml control snapshot
+uv run --directory python neurohid-ml control set_output_enabled --enabled true
 ```
 
-Canonical public IPC arguments are `--ipc-mode` and `--ipc-endpoint`.
-Legacy `--transport/--host/--port/--pipe-name` flags remain compatibility aliases and emit
-deprecation warnings when used.
+The bridge and control commands communicate with the Rust runtime in-process
+via the PyO3 `neurohid` native extension (see [ADR-001](../docs/adr/ADR-001-in-process-python-bindings.md)).
 
 ## Training and Candidate Staging
 
