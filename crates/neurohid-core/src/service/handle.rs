@@ -1,8 +1,8 @@
 //! Service handle for non-blocking runtime control.
 
-use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
-use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
 
 use neurohid_ipc::{IpcEnvelope, RuntimeEvent};
 use neurohid_types::{
@@ -21,70 +21,73 @@ use crate::tasks::{RecordingRequest, TrainerIngressEvent};
 ///
 /// The handle lets the owner (e.g., the hub GUI) observe service state,
 /// toggle calibration mode, and request shutdown — all without blocking.
+///
+/// Direct field access is an internal implementation detail. Embedders should
+/// use [`crate::runtime::RuntimeHandle`] and its methods instead.
 pub struct ServiceHandle {
     /// Shared service state — read with `try_read()` from the GUI thread.
-    pub state: Arc<RwLock<ServiceState>>,
+    pub(crate) state: Arc<RwLock<ServiceState>>,
 
     /// Send `()` on this channel to request graceful shutdown.
-    pub shutdown_tx: broadcast::Sender<()>,
+    pub(crate) shutdown_tx: broadcast::Sender<()>,
 
     /// The spawned task's join handle. Await it to detect completion/panics.
-    pub join_handle: tokio::task::JoinHandle<Result<()>>,
+    pub(crate) join_handle: tokio::task::JoinHandle<Result<()>>,
 
     /// Receiver for live EEG samples during calibration mode.
     /// Only produces values when `calibration_mode` is `true`.
-    pub calibration_sample_rx: mpsc::Receiver<Sample>,
+    pub(crate) calibration_sample_rx: mpsc::Receiver<Sample>,
 
     /// Atomic flag to toggle calibration mode from the GUI thread.
-    pub calibration_mode: Arc<AtomicBool>,
+    pub(crate) calibration_mode: Arc<AtomicBool>,
 
     /// Atomic flag to pause/resume HID output without restarting the service.
-    pub output_enabled: Arc<AtomicBool>,
+    pub(crate) output_enabled: Arc<AtomicBool>,
 
     /// Send commands to the DeviceTask (connect/disconnect/rescan).
-    pub device_command_tx: mpsc::Sender<DeviceCommand>,
+    pub(crate) device_command_tx: mpsc::Sender<DeviceCommand>,
 
     /// Broadcast receiver for ALL live EEG samples (for visualization widgets).
     /// Unlike `calibration_sample_rx`, this always produces values.
-    pub sample_broadcast_rx: broadcast::Receiver<Sample>,
+    pub(crate) sample_broadcast_rx: broadcast::Receiver<Sample>,
     /// Broadcast sender for live EEG samples (for resubscribe-capable clones).
-    pub sample_broadcast_tx: broadcast::Sender<Sample>,
+    pub(crate) sample_broadcast_tx: broadcast::Sender<Sample>,
 
     /// Broadcast receiver for extracted feature vectors (for visualization widgets).
-    pub feature_broadcast_rx: broadcast::Receiver<FeatureVector>,
+    pub(crate) feature_broadcast_rx: broadcast::Receiver<FeatureVector>,
     /// Broadcast sender for extracted feature vectors (for resubscribe-capable clones).
-    pub feature_broadcast_tx: broadcast::Sender<FeatureVector>,
+    pub(crate) feature_broadcast_tx: broadcast::Sender<FeatureVector>,
 
     /// Broadcast receiver for decoded actions (for visualization widgets).
-    pub action_broadcast_rx: broadcast::Receiver<Action>,
+    pub(crate) action_broadcast_rx: broadcast::Receiver<Action>,
     /// Broadcast sender for decoded actions (for resubscribe-capable clones).
-    pub action_broadcast_tx: broadcast::Sender<Action>,
+    pub(crate) action_broadcast_tx: broadcast::Sender<Action>,
 
     /// Broadcast receiver for marker/event annotations.
-    pub marker_broadcast_rx: broadcast::Receiver<StreamMarker>,
+    pub(crate) marker_broadcast_rx: broadcast::Receiver<StreamMarker>,
     /// Broadcast sender for marker/event annotations (for resubscribe-capable clones).
-    pub marker_broadcast_tx: broadcast::Sender<StreamMarker>,
+    pub(crate) marker_broadcast_tx: broadcast::Sender<StreamMarker>,
 
     /// Send recording commands (start/stop) and receive result via oneshot in the request.
-    pub recording_command_tx: mpsc::Sender<RecordingRequest>,
+    pub(crate) recording_command_tx: mpsc::Sender<RecordingRequest>,
 
     /// Send commands to the SignalTask (e.g. runtime filter updates).
-    pub signal_command_tx: mpsc::Sender<SignalCommand>,
+    pub(crate) signal_command_tx: mpsc::Sender<SignalCommand>,
 
     /// Send commands to the DecoderTask (reload model, switch profile).
-    pub decoder_command_tx: mpsc::Sender<DecoderCommand>,
+    pub(crate) decoder_command_tx: mpsc::Sender<DecoderCommand>,
 
     /// In-process trainer ingress channel (transport -> IPC task protocol engine).
-    pub trainer_ingress_tx: mpsc::Sender<TrainerIngressEvent>,
+    pub(crate) trainer_ingress_tx: mpsc::Sender<TrainerIngressEvent>,
 
     /// In-process trainer egress channel (IPC task protocol engine -> transport).
-    pub trainer_egress_rx: Arc<Mutex<mpsc::Receiver<IpcEnvelope>>>,
+    pub(crate) trainer_egress_rx: Arc<Mutex<mpsc::Receiver<IpcEnvelope>>>,
 
     /// Broadcast receiver for runtime bridge-derived events.
-    pub runtime_event_broadcast_rx: broadcast::Receiver<RuntimeEvent>,
+    pub(crate) runtime_event_broadcast_rx: broadcast::Receiver<RuntimeEvent>,
 
     /// Broadcast sender for runtime bridge-derived events (for resubscribe-capable clones).
-    pub runtime_event_broadcast_tx: broadcast::Sender<RuntimeEvent>,
+    pub(crate) runtime_event_broadcast_tx: broadcast::Sender<RuntimeEvent>,
 }
 
 impl ServiceHandle {

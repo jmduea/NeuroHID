@@ -21,8 +21,8 @@ Requirements for milestone v1.2 (Framework consumable — prep for Python bindin
 
 ### Prep for Python bindings (API boundary only)
 
-- [ ] **BIND-01**: Single embedder-facing surface documented; audit complete so no internal types leak into that public API (core facade / SDK)
-- [ ] **BIND-02**: Documented "intended bindable surface" for future bindings milestone; no PyO3/maturin/cdylib or Python-facing code in v1.2
+- [x] **BIND-01**: Single embedder-facing surface documented; audit complete so no internal types leak into that public API (core facade / SDK)
+- [x] **BIND-02**: Documented "intended bindable surface" for future bindings milestone; no PyO3/maturin/cdylib or Python-facing code in v1.2
 
 ## Future requirements (v1.3+)
 
@@ -60,13 +60,14 @@ Which phases cover which requirements. Updated during roadmap creation.
 | REL-01 | — | Pending |
 | REL-02 | — | Pending |
 | REL-03 | — | Pending |
-| BIND-01 | — | Pending |
-| BIND-02 | — | Pending |
+| BIND-01 | API surface audit | ✅ Complete (2026-02-22) |
+| BIND-02 | API surface audit | ✅ Complete (2026-02-22) |
 
 **Coverage:**
+
 - v1.2 requirements: 8 total
-- Mapped to phases: 0
-- Unmapped: 8 ⚠️
+- Mapped to phases: 2 (BIND-01, BIND-02)
+- Unmapped: 6 ⚠️ (FRAME-06, FRAME-07, FRAME-08, REL-01, REL-02, REL-03)
 
 ---
 *Requirements defined: 2026-02-22*

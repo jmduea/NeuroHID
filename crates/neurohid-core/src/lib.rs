@@ -15,6 +15,12 @@ pub mod observability;
 pub mod recording;
 pub mod runtime;
 pub mod service;
+/// Internal pipeline task implementations.
+///
+/// Not part of the stable embedder API. Use [`runtime::RuntimeBuilder`] and
+/// [`runtime::RuntimeHandle`] instead. This module is hidden from documentation
+/// and may change without notice.
+#[doc(hidden)]
 pub mod tasks;
 
 /// Re-exports from downstream crates used by the hub and other embedders.
@@ -24,8 +30,8 @@ pub mod tasks;
 /// component crates directly.
 pub mod facade {
     // IPC types needed by hub external-mode control path.
-    pub use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport, send_control_request_blocking};
+    pub use neurohid_ipc::{send_control_request_blocking, IpcClient, IpcConfig, IpcTransport};
 
     // Storage types needed by hub initialization and state.
-    pub use neurohid_storage::{ConfigStore, DataPaths, ProfileStore, SecureStorage, initialize};
+    pub use neurohid_storage::{initialize, ConfigStore, DataPaths, ProfileStore, SecureStorage};
 }
