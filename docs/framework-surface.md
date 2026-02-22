@@ -13,7 +13,7 @@ The framework surface is the set of crates (and their public APIs) that embedder
 | Layer | Crates | Role |
 |-------|--------|------|
 | Types | `neurohid-types` | Shared domain/config/control types; no internal deps |
-| Components | `neurohid-device`, `neurohid-signal`, `neurohid-platform`, `neurohid-ipc`, `neurohid-storage`, `neurohid-calibration` | Isolated capabilities (EEG backends, signal pipeline, HID, IPC, persistence, calibration) |
+| Components | `neurohid-device`, `neurohid-signal`, `neurohid-platform`, `neurohid-ipc`, `neurohid-storage` | Isolated capabilities (EEG backends, signal pipeline, HID, IPC, persistence) |
 | Orchestration | `neurohid-core` | Wires components into end-to-end runtime; exposes facade re-exports |
 | Applications | `neuroide-hub`, `neuroide` (GUI app), `neurohid` (library facade) | Hub = one app; GUI app and facade consume the framework |
 
@@ -26,7 +26,7 @@ This aligns with the layer map in [Crate Boundaries and Placement](crate-boundar
 - **Defined in:** [`.github/framework-allowlist.toml`](../.github/framework-allowlist.toml)
 - **Enforced by:** CI (a script that asserts `neuroide-hub`'s path dependencies are a subset of the allowlist)
 
-The Hub allowlist is: `neurohid-types`, `neurohid-core`, `neurohid-calibration`, `neurohid-storage`, `neurohid-ipc`. No other workspace path dependencies are allowed. There are no permanent exceptions — if Hub needs a type from a component crate, it is added to `neurohid_core::facade` or core's public API so Hub does not depend on that component directly.
+The Hub allowlist is: `neurohid-types`, `neurohid-core`, `neurohid-storage`, `neurohid-ipc`. No other workspace path dependencies are allowed. There are no permanent exceptions — if Hub needs a type from a component crate, it is added to `neurohid_core::facade` or core's public API so Hub does not depend on that component directly.
 
 ## Guidance for embedders
 
@@ -45,7 +45,6 @@ The Hub allowlist is: `neurohid-types`, `neurohid-core`, `neurohid-calibration`,
   neurohid-platform         neurohid-service, neurohid-validate
   neurohid-ipc
   neurohid-storage
-  neurohid-calibration
 ```
 
 Dependencies flow downward. Applications (Hub, service, validate) sit on top of the framework; they do not reach through to component crates except via the documented allowlist (for Hub: types, core, calibration, storage, ipc).

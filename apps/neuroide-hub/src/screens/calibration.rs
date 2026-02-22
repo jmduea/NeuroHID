@@ -7,11 +7,11 @@
 use eframe::egui;
 use serde::Serialize;
 
-use neurohid_calibration::panel::{CalibrationPanel, CalibrationPanelResult};
-use neurohid_calibration::GameKind;
+use crate::calibration::panel::{CalibrationPanel, CalibrationPanelResult};
+use crate::calibration::GameKind;
 use neurohid_types::model::{
-    CURRENT_ACTION_SCHEMA_VERSION, CURRENT_FEATURE_SCHEMA_VERSION, ModelManifest,
-    NormalizationStats,
+    ModelManifest, NormalizationStats, CURRENT_ACTION_SCHEMA_VERSION,
+    CURRENT_FEATURE_SCHEMA_VERSION,
 };
 use neurohid_types::profile::{CalibrationQuality, CalibrationState};
 
@@ -239,12 +239,7 @@ impl CalibrationScreen {
                 ui.horizontal(|ui| {
                     ui.vertical(|ui| {
                         let name = kind.display_name();
-                        if theme::action_button(
-                            ui,
-                            name,
-                            true,
-                            theme::ButtonTone::Primary,
-                        ) {
+                        if theme::action_button(ui, name, true, theme::ButtonTone::Primary) {
                             start_game = Some(StartChoice::SingleGame(kind));
                         }
                         ui.add_space(4.0);
@@ -268,8 +263,12 @@ impl CalibrationScreen {
             ui.separator();
             ui.add_space(8.0);
             ui.label("Or run the full calibration (both games in sequence):");
-            if theme::action_button(ui, "Start full calibration", true, theme::ButtonTone::Secondary)
-            {
+            if theme::action_button(
+                ui,
+                "Start full calibration",
+                true,
+                theme::ButtonTone::Secondary,
+            ) {
                 start_game = Some(StartChoice::Full);
             }
         });
@@ -293,7 +292,7 @@ impl CalibrationScreen {
         &self,
         state: &mut HubState,
         runtime: &tokio::runtime::Runtime,
-        quality: &neurohid_calibration::panel::CalibrationQuality,
+        quality: &crate::calibration::panel::CalibrationQuality,
     ) -> bool {
         let Some(profile_id) = state.active_profile_id.clone() else {
             tracing::warn!("Calibration completed without an active profile; skipping persistence");
@@ -382,7 +381,7 @@ impl CalibrationScreen {
 }
 
 fn to_profile_quality(
-    quality: &neurohid_calibration::panel::CalibrationQuality,
+    quality: &crate::calibration::panel::CalibrationQuality,
 ) -> CalibrationQuality {
     let trial_count = quality.correct_trials + quality.error_trials;
     let errp_accuracy = if trial_count > 0 {

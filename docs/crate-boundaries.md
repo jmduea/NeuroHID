@@ -10,7 +10,7 @@ are allowed to depend on which layers.
    - No runtime orchestration or UI behavior.
 2. Runtime component crates
    - `neurohid-device`, `neurohid-signal`, `neurohid-platform`, `neurohid-ipc`,
-     `neurohid-storage`, `neurohid-calibration`
+     `neurohid-storage`
    - Own isolated capabilities and subsystem logic.
 3. Composition/orchestration
    - `neurohid-core`
@@ -29,7 +29,7 @@ are allowed to depend on which layers.
 - Put runtime-to-ML transport/protocol client logic in `neurohid-ipc`.
 - Put profile/config persistence logic in `neurohid-storage`.
 - Put multi-crate runtime coordination in `neurohid-core`.
-- Put UI-only behavior and presentation in `neuroide-hub`.
+- Put UI-only behavior and presentation in `neuroide-hub` (including calibration panels and games).
 - Put public convenience exports for external Rust users in `neurohid` (the facade crate).
 
 ## Framework surface and Hub boundary
@@ -79,7 +79,7 @@ Keep rationale concise (3-6 bullets) unless crate ownership actually changes.
 - Change summary: Removed `neurohid-device` and `neurohid-signal` from hub deps; moved `neurohid-ipc` to dev-deps (production code uses `neurohid-core::facade` re-exports).
 - Boundary impact: minor
 - Dependency direction check:
-   - [x] No reverse coupling introduced
-   - [x] Layer map still valid
+  - [x] No reverse coupling introduced
+  - [x] Layer map still valid
 - Placement rationale: Hub should depend on `core` for runtime access, not reach through to component crates directly. IPC/storage access via `core::facade` keeps the layer hierarchy clean.
 - Follow-up needed: None.

@@ -11,8 +11,8 @@ use eframe::egui;
 
 use neurohid_types::profile::CalibrationStep;
 
-use crate::games::{GameKind, GridMazeGame, TargetTrackingGame};
-use crate::wizard::WizardState;
+use super::games::{GameKind, GridMazeGame, TargetTrackingGame};
+use super::wizard::WizardState;
 
 /// The result of rendering the calibration panel for one frame.
 #[derive(Debug, Clone, PartialEq)]

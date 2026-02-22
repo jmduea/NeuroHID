@@ -14,13 +14,13 @@ default = []
 neurohid-types = { path = "../../crates/neurohid-types" }
 neurohid-core = { path = "../../crates/neurohid-core" }
 neurohid-ipc = { path = "../../crates/neurohid-ipc" }
-neurohid-calibration = { path = "../../crates/neurohid-calibration" }
 neurohid-storage = { path = "../../crates/neurohid-storage" }
 
 # GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
 egui = { workspace = true }
 armas = { version = "0.1.2" }
 rustfft = "6.4.1"
+rand = { workspace = true }
 egui_dock = { version = "0.18.0" }
 egui-async = "0.3.4"
 egui_code_editor = "0.2.20"
