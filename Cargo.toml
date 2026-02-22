@@ -71,6 +71,7 @@ approx = "0.5.1"
 
 # Python bindings
 pyo3 = { version = "0.28", features = ["abi3-py314"] }
+pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 
 [workspace.package]
 version = "0.1.0"

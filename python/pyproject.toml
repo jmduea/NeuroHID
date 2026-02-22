@@ -49,7 +49,7 @@ manifest-path = "../crates/neurohid-py/Cargo.toml"
 # Place the compiled extension module alongside the Python package source.
 python-source = "src"
 # Module name must match the #[pymodule] name in lib.rs.
-module-name = "neurohid_bindings"
+module-name = "neurohid"
 features = ["pyo3/extension-module"]
 
 [tool.setuptools.packages.find]
