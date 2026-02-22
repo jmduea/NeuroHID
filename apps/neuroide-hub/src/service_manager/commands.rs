@@ -40,7 +40,10 @@ impl ServiceManager {
         }
     }
 
-    pub(super) fn send_control_request(&self, request: ControlRequest) -> Result<ControlResponse, String> {
+    pub(super) fn send_control_request(
+        &self,
+        request: ControlRequest,
+    ) -> Result<ControlResponse, String> {
         let endpoint = self.control_endpoint_label();
         let request_id = request.request_id.clone();
         let command = Self::control_command_name(&request.command);

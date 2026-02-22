@@ -245,7 +245,10 @@ mod tests {
         std::fs::write(&config_path, legacy).unwrap();
 
         let loaded = store.load().await.unwrap();
-        assert_eq!(loaded.format_version, 1, "legacy file without format_version should default to 1");
+        assert_eq!(
+            loaded.format_version, 1,
+            "legacy file without format_version should default to 1"
+        );
         assert_eq!(loaded.signal.notch_filter_hz, 50.0);
     }
 

@@ -4,9 +4,9 @@
 //! stream state, and creating the appropriate device provider from config.
 
 use neurohid_device::Device;
+use neurohid_types::config::{DeviceBackend, DeviceConfig};
 use neurohid_types::device::{DeviceId, DeviceInfo, DiscoveredStream};
 use neurohid_types::error::{DeviceError, ExtensionError, Result};
-use neurohid_types::config::{DeviceBackend, DeviceConfig};
 use tokio::sync::RwLock;
 
 #[cfg(feature = "brainflow")]
@@ -151,7 +151,9 @@ pub(super) async fn create_provider(
         }
 
         DeviceBackend::Auto => {
-            tracing::info!("Using Auto device backend (LSL preferred, BrainFlow synthetic fallback)");
+            tracing::info!(
+                "Using Auto device backend (LSL preferred, BrainFlow synthetic fallback)"
+            );
             let fallback = create_brainflow_provider(config)?;
 
             match create_lsl_provider(config) {

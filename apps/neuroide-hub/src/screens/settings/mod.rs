@@ -5,7 +5,7 @@
 
 use eframe::egui;
 
-use neurohid_core::extension_registry::{default_extension_paths, ExtensionRegistry};
+use neurohid_core::extension_registry::{ExtensionRegistry, default_extension_paths};
 
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
@@ -81,7 +81,9 @@ impl SettingsScreen {
                     neurohid_types::config::DeviceBackend::Lsl => "Backend LSL".to_string(),
                     neurohid_types::config::DeviceBackend::Mock => "Backend mock".to_string(),
                     neurohid_types::config::DeviceBackend::Serial => "Backend serial".to_string(),
-                    neurohid_types::config::DeviceBackend::BrainFlow => "Backend BrainFlow".to_string(),
+                    neurohid_types::config::DeviceBackend::BrainFlow => {
+                        "Backend BrainFlow".to_string()
+                    }
                     neurohid_types::config::DeviceBackend::Extension(name) => {
                         format!("Backend extension({})", name)
                     }
@@ -148,7 +150,6 @@ impl SettingsScreen {
         });
 
         ui.add_space(16.0);
-
 
         egui::ScrollArea::vertical().show(ui, |ui| {
             if device::render(ui, state, runtime) {

@@ -38,7 +38,7 @@ use crate::tasks::latency::RollingLatency;
 use config::{
     DEFAULT_STREAM_KEY, SIGNAL_FEATURE_DEBUG_EVERY_SAMPLES, SIGNAL_SUMMARY_EVERY_SAMPLES,
 };
-use pipeline_task::{StreamBuffer, StreamRuntimeMetrics, SignalSequenceIssue};
+use pipeline_task::{SignalSequenceIssue, StreamBuffer, StreamRuntimeMetrics};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum StreamRoute {
@@ -720,9 +720,9 @@ pub fn create_signal_preprocessor(
 
 #[cfg(test)]
 mod tests {
-    use super::config;
     use super::SignalTask;
     use super::StreamRoute;
+    use super::config;
     use neurohid_types::device::DiscoveredStream;
     use neurohid_types::signal::Sample;
 

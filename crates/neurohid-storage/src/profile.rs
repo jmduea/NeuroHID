@@ -821,12 +821,21 @@ mod tests {
                 .expect("calibration_identity should be set after save_calibration");
             assert_eq!(cal_id.format_version, 1);
 
-            let exported = store.export_profile(&profile.id).await.expect("export_profile");
+            let exported = store
+                .export_profile(&profile.id)
+                .await
+                .expect("export_profile");
             assert_eq!(exported.metadata.format_version, 1);
             assert!(exported.metadata.calibration_identity.is_some());
 
-            let imported_id = store.import_profile(exported).await.expect("import_profile");
-            let reloaded = store.get_metadata(&imported_id).await.expect("get_metadata");
+            let imported_id = store
+                .import_profile(exported)
+                .await
+                .expect("import_profile");
+            let reloaded = store
+                .get_metadata(&imported_id)
+                .await
+                .expect("get_metadata");
             assert_eq!(reloaded.format_version, 1);
             assert!(
                 reloaded.calibration_identity.is_some(),

@@ -204,9 +204,8 @@ impl TrainingScreen {
 
             // Use sticky layout once we've ever seen data to avoid flicker between
             // "Waiting for trainer connection" and metrics when poll/state alternate.
-            let show_waiting_only = !self.live_metrics_layout_shown
-                && !has_metrics
-                && trainer_snapshot.is_none();
+            let show_waiting_only =
+                !self.live_metrics_layout_shown && !has_metrics && trainer_snapshot.is_none();
 
             if show_waiting_only {
                 theme::status_chip(
@@ -219,7 +218,8 @@ impl TrainingScreen {
 
             // Status line: use current trainer_snapshot when available, else cached last status (avoids flicker every poll interval)
             if let Some(trainer) = trainer_snapshot {
-                self.last_trainer_status = Some((trainer.trainer_state.clone(), trainer.trainer_connected));
+                self.last_trainer_status =
+                    Some((trainer.trainer_state.clone(), trainer.trainer_connected));
             }
             if let Some((ref state, connected)) = self.last_trainer_status {
                 let intent = if connected {
@@ -232,27 +232,34 @@ impl TrainingScreen {
             ui.add_space(6.0);
 
             // Metrics: one row for step/replay, one for losses; if no metrics at all show single placeholder
-            let has_step_or_replay = snap.trainer_replay_size.is_some() || snap.trainer_step.is_some();
+            let has_step_or_replay =
+                snap.trainer_replay_size.is_some() || snap.trainer_step.is_some();
             let has_losses = snap.trainer_policy_loss.is_some()
                 || snap.trainer_value_loss.is_some()
                 || snap.trainer_entropy.is_some();
 
             if !has_step_or_replay && !has_losses {
                 ui.label(
-                    egui::RichText::new("No metrics yet").small().color(egui::Color32::GRAY),
+                    egui::RichText::new("No metrics yet")
+                        .small()
+                        .color(egui::Color32::GRAY),
                 );
             } else {
                 ui.horizontal_wrapped(|ui| {
                     if let Some(v) = snap.trainer_replay_size {
                         ui.label(
-                            egui::RichText::new("Replay size:").small().color(egui::Color32::GRAY),
+                            egui::RichText::new("Replay size:")
+                                .small()
+                                .color(egui::Color32::GRAY),
                         );
                         ui.monospace(format!("{}", v));
                         ui.add_space(12.0);
                     }
                     if let Some(v) = snap.trainer_step {
                         ui.label(
-                            egui::RichText::new("Step:").small().color(egui::Color32::GRAY),
+                            egui::RichText::new("Step:")
+                                .small()
+                                .color(egui::Color32::GRAY),
                         );
                         ui.monospace(format!("{}", v));
                         ui.add_space(12.0);
@@ -262,21 +269,27 @@ impl TrainingScreen {
                 ui.horizontal_wrapped(|ui| {
                     if let Some(v) = snap.trainer_policy_loss {
                         ui.label(
-                            egui::RichText::new("Policy loss:").small().color(egui::Color32::GRAY),
+                            egui::RichText::new("Policy loss:")
+                                .small()
+                                .color(egui::Color32::GRAY),
                         );
                         ui.monospace(format!("{:.4}", v));
                         ui.add_space(12.0);
                     }
                     if let Some(v) = snap.trainer_value_loss {
                         ui.label(
-                            egui::RichText::new("Value loss:").small().color(egui::Color32::GRAY),
+                            egui::RichText::new("Value loss:")
+                                .small()
+                                .color(egui::Color32::GRAY),
                         );
                         ui.monospace(format!("{:.4}", v));
                         ui.add_space(12.0);
                     }
                     if let Some(v) = snap.trainer_entropy {
                         ui.label(
-                            egui::RichText::new("Entropy:").small().color(egui::Color32::GRAY),
+                            egui::RichText::new("Entropy:")
+                                .small()
+                                .color(egui::Color32::GRAY),
                         );
                         ui.monospace(format!("{:.4}", v));
                     }

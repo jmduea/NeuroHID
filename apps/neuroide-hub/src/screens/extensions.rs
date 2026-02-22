@@ -5,7 +5,7 @@
 
 use eframe::egui;
 
-use neurohid_core::extension_registry::{default_extension_paths, ExtensionRegistry};
+use neurohid_core::extension_registry::{ExtensionRegistry, default_extension_paths};
 
 use crate::state::HubState;
 use crate::theme;
@@ -56,18 +56,12 @@ impl ExtensionsScreen {
             Ok(()) => {
                 self.entries.clear();
                 for e in registry.list_outlets() {
-                    self.entries.push((
-                        "outlet".to_string(),
-                        e.name,
-                        e.path.display().to_string(),
-                    ));
+                    self.entries
+                        .push(("outlet".to_string(), e.name, e.path.display().to_string()));
                 }
                 for e in registry.list_devices() {
-                    self.entries.push((
-                        "device".to_string(),
-                        e.name,
-                        e.path.display().to_string(),
-                    ));
+                    self.entries
+                        .push(("device".to_string(), e.name, e.path.display().to_string()));
                 }
                 for e in registry.list_signal_preprocessors() {
                     self.entries.push((
@@ -113,12 +107,8 @@ impl ExtensionsScreen {
 
         theme::card_frame(ui).show(ui, |ui| {
             ui.horizontal_wrapped(|ui| {
-                let refresh_clicked = theme::action_button(
-                    ui,
-                    "Rescan",
-                    true,
-                    theme::ButtonTone::Primary,
-                );
+                let refresh_clicked =
+                    theme::action_button(ui, "Rescan", true, theme::ButtonTone::Primary);
                 if refresh_clicked {
                     self.rescan_requested = true;
                 }
@@ -152,11 +142,7 @@ impl ExtensionsScreen {
                             ui.horizontal(|ui| {
                                 ui.label(kind_label(kind));
                                 ui.label(name);
-                                ui.label(
-                                    egui::RichText::new(path.as_str())
-                                        .small()
-                                        .weak(),
-                                );
+                                ui.label(egui::RichText::new(path.as_str()).small().weak());
                             });
                         }
                     },

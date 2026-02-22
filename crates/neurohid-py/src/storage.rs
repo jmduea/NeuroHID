@@ -18,8 +18,8 @@ impl PyDataPaths {
     #[new]
     #[pyo3(signature = (root = None))]
     fn new(root: Option<String>) -> PyResult<Self> {
-        let inner =
-            neurohid_storage::DataPaths::new(root.map(std::path::PathBuf::from)).map_err(to_py_err)?;
+        let inner = neurohid_storage::DataPaths::new(root.map(std::path::PathBuf::from))
+            .map_err(to_py_err)?;
         Ok(Self { inner })
     }
 
@@ -73,10 +73,7 @@ pub struct PyProfileStore {
 #[pymethods]
 impl PyProfileStore {
     fn __repr__(&self) -> String {
-        format!(
-            "ProfileStore(root='{}')",
-            self.inner.data_root().display()
-        )
+        format!("ProfileStore(root='{}')", self.inner.data_root().display())
     }
 }
 

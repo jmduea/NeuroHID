@@ -58,8 +58,8 @@ use neurohid_types::error::DeviceError;
 
 use discovery::{create_provider, scan};
 use streaming::{
-    ActiveStream, DeviceSampleIntegrityTracker, StreamTaskContext, spawn_stream_task,
-    report_device_integrity_issue, DEVICE_SUMMARY_EVERY_SAMPLES,
+    ActiveStream, DEVICE_SUMMARY_EVERY_SAMPLES, DeviceSampleIntegrityTracker, StreamTaskContext,
+    report_device_integrity_issue, spawn_stream_task,
 };
 
 /// Update `device_connected` and `device_name` in shared state based on
@@ -85,11 +85,7 @@ async fn update_connection_state(
 }
 
 /// Toggle the `connected` flag on a single discovered stream.
-async fn set_stream_connected(
-    state: &Arc<RwLock<ServiceState>>,
-    stream_id: &str,
-    connected: bool,
-) {
+async fn set_stream_connected(state: &Arc<RwLock<ServiceState>>, stream_id: &str, connected: bool) {
     let mut st = state.write().await;
     if let Some(ds) = st.discovered_streams.iter_mut().find(|s| s.id == stream_id) {
         ds.connected = connected;
@@ -272,7 +268,11 @@ impl DeviceTask {
                     decision_id = obs::field::UNKNOWN,
                     stream_id = obs::field::UNKNOWN,
                     connected_streams = active_streams.len(),
-                    discovered_streams = self.state.try_read().map(|state| state.discovered_streams.len()).unwrap_or(0),
+                    discovered_streams = self
+                        .state
+                        .try_read()
+                        .map(|state| state.discovered_streams.len())
+                        .unwrap_or(0),
                     "Device task periodic summary"
                 );
             }

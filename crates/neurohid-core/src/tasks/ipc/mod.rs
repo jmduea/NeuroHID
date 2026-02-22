@@ -32,10 +32,10 @@ use crate::service::{DecoderCommand, IntegrityStage, ServiceState};
 use crate::tasks::{DecisionEventRecord, TrainerIngressEvent};
 
 use broker_task::{
-    is_connection_lost_error, PendingErrpWindow, StreamSampleBuffer,
     DEFAULT_ERRP_SAMPLE_RATE_HZ, DEFAULT_ERRP_STREAM_KEY, ERRP_BUFFER_RETENTION_US,
     ERRP_EMIT_GRACE_US, IPC_TELEMETRY_SUMMARY_EVERY, MAX_CANDIDATE_FUTURE_SKEW_US,
-    MAX_CANDIDATE_MODEL_BYTES, REAL_MESSAGE_POLL_MS, SIMULATED_CONNECT_DELAY_MS,
+    MAX_CANDIDATE_MODEL_BYTES, PendingErrpWindow, REAL_MESSAGE_POLL_MS, SIMULATED_CONNECT_DELAY_MS,
+    StreamSampleBuffer, is_connection_lost_error,
 };
 
 /// Runtime ML bridge task.

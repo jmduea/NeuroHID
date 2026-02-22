@@ -2,7 +2,9 @@
 
 use std::time::Instant;
 
-use neurohid_types::control::{ControlCommand, ControlRequest, ControlResponsePayload, TrainerSnapshot};
+use neurohid_types::control::{
+    ControlCommand, ControlRequest, ControlResponsePayload, TrainerSnapshot,
+};
 
 use crate::state::ServiceSnapshot;
 
@@ -119,7 +121,9 @@ impl ServiceManager {
             }
             neurohid_types::config::ServiceRuntimeMode::External => {
                 let endpoint = self.control_endpoint_label();
-                match self.send_control_request(ControlRequest::new(ControlCommand::TrainerSnapshot)) {
+                match self
+                    .send_control_request(ControlRequest::new(ControlCommand::TrainerSnapshot))
+                {
                     Ok(response) => match response.payload {
                         ControlResponsePayload::TrainerSnapshot { snapshot } => Some(snapshot),
                         ControlResponsePayload::Error { message } => {

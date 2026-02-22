@@ -7,11 +7,11 @@
 use eframe::egui;
 use serde::Serialize;
 
-use crate::calibration::panel::{CalibrationPanel, CalibrationPanelResult};
 use crate::calibration::GameKind;
+use crate::calibration::panel::{CalibrationPanel, CalibrationPanelResult};
 use neurohid_types::model::{
-    ModelManifest, NormalizationStats, CURRENT_ACTION_SCHEMA_VERSION,
-    CURRENT_FEATURE_SCHEMA_VERSION,
+    CURRENT_ACTION_SCHEMA_VERSION, CURRENT_FEATURE_SCHEMA_VERSION, ModelManifest,
+    NormalizationStats,
 };
 use neurohid_types::profile::{CalibrationQuality, CalibrationState};
 

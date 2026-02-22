@@ -616,10 +616,7 @@ impl OutletTask {
 
 #[async_trait]
 impl Outlet for OutletTask {
-    async fn run(
-        self: Box<Self>,
-        shutdown: broadcast::Receiver<()>,
-    ) -> Result<()> {
+    async fn run(self: Box<Self>, shutdown: broadcast::Receiver<()>) -> Result<()> {
         (*self).run(shutdown).await
     }
 }
@@ -636,12 +633,10 @@ pub fn create_outlet(
 ) -> Result<(Box<dyn Outlet + Send + Sync>, String)> {
     if let Some(ref ext_name) = config.extension_name {
         let name = ext_name.clone();
-        let reg = registry.ok_or_else(|| {
-            neurohid_types::error::ExtensionError::LoadError {
-                name: name.clone(),
-                reason: "extension registry not available (outlet extension requires registry)"
-                    .to_string(),
-            }
+        let reg = registry.ok_or_else(|| neurohid_types::error::ExtensionError::LoadError {
+            name: name.clone(),
+            reason: "extension registry not available (outlet extension requires registry)"
+                .to_string(),
         })?;
         let channels = OutletChannels {
             sample_rx,

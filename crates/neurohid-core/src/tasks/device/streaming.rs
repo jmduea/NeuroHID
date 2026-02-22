@@ -3,8 +3,8 @@
 //! Handles spawning per-stream tasks, reading samples, forwarding to the
 //! signal pipeline, and reporting integrity issues.
 
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use futures::StreamExt;
 use tokio::sync::{RwLock, mpsc};

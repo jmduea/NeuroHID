@@ -30,8 +30,8 @@ pub mod tasks;
 /// component crates directly.
 pub mod facade {
     // IPC types needed by hub external-mode control path.
-    pub use neurohid_ipc::{send_control_request_blocking, IpcClient, IpcConfig, IpcTransport};
+    pub use neurohid_ipc::{IpcClient, IpcConfig, IpcTransport, send_control_request_blocking};
 
     // Storage types needed by hub initialization and state.
-    pub use neurohid_storage::{initialize, ConfigStore, DataPaths, ProfileStore, SecureStorage};
+    pub use neurohid_storage::{ConfigStore, DataPaths, ProfileStore, SecureStorage, initialize};
 }

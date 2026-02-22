@@ -10,9 +10,9 @@ use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use brainflow::{
+    BoardIds, BrainFlowInputParams, BrainFlowPresets,
     board_shim::{self, eeg_channels, package_num_channel, timestamp_channel},
     brainflow_input_params::BrainFlowInputParamsBuilder,
-    BrainFlowInputParams, BrainFlowPresets, BoardIds,
 };
 use futures::Stream;
 use ndarray::Array2;
@@ -148,7 +148,8 @@ impl Device for BrainFlowNativeDevice {
             let b = board.lock().map_err(|_| DeviceError::ConnectionLost)?;
             board_shim::BoardShim::start_stream(&b, STREAM_BUFFER_SIZE, "")?;
         }
-        self.streaming.store(true, std::sync::atomic::Ordering::Relaxed);
+        self.streaming
+            .store(true, std::sync::atomic::Ordering::Relaxed);
 
         let (tx, mut rx) = mpsc::channel::<Result<Sample>>(256);
         let cancel = self.cancel.clone();
@@ -171,7 +172,7 @@ impl Device for BrainFlowNativeDevice {
         let pkg_row = package_num_channel(board_id, preset).ok();
 
         tokio::task::spawn_blocking(move || {
-                loop {
+            loop {
                 if cancel.is_cancelled() {
                     break;
                 }
@@ -231,13 +232,15 @@ impl Device for BrainFlowNativeDevice {
 
     async fn stop_streaming(&mut self) -> Result<()> {
         self.cancel.cancel();
-        self.streaming.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.streaming
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 
     async fn disconnect(&mut self) -> Result<()> {
         self.cancel.cancel();
-        self.streaming.store(false, std::sync::atomic::Ordering::Relaxed);
+        self.streaming
+            .store(false, std::sync::atomic::Ordering::Relaxed);
         Ok(())
     }
 

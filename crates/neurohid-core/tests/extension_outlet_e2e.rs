@@ -72,15 +72,8 @@ fn example_outlet_loads_and_creates_by_name() {
         extension_name: Some("neurohid-outlet-example".to_string()),
         ..OutletConfig::default()
     };
-    let (outlet, name) = create_outlet(
-        config,
-        None,
-        None,
-        None,
-        None,
-        Some(&reg),
-    )
-    .expect("create_outlet");
+    let (outlet, name) =
+        create_outlet(config, None, None, None, None, Some(&reg)).expect("create_outlet");
     assert_eq!(name, "neurohid-outlet-example");
     drop(outlet);
 

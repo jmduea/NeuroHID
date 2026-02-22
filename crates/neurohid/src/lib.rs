@@ -66,18 +66,18 @@ pub use neurohid_core as runtime;
 /// use neurohid::prelude::*;
 /// ```
 pub mod prelude {
-    #[cfg(feature = "types")]
-    pub use neurohid_types::{
-        ConnectionState, DeviceId, Key, MouseButton, ProfileId,
-        config::SystemConfig,
-        signal::{ChannelId, FeatureVector, Sample},
-    };
     #[cfg(feature = "runtime")]
     pub use neurohid_core::runtime::{RuntimeBuilder, RuntimeCommand, RuntimeHandle};
     #[cfg(feature = "device")]
     pub use neurohid_device::traits::{Device, DeviceProvider};
     #[cfg(feature = "signal")]
     pub use neurohid_signal::pipeline::{PipelineConfig, SignalPipeline};
+    #[cfg(feature = "types")]
+    pub use neurohid_types::{
+        ConnectionState, DeviceId, Key, MouseButton, ProfileId,
+        config::SystemConfig,
+        signal::{ChannelId, FeatureVector, Sample},
+    };
 }
 
 #[cfg(test)]

@@ -13,7 +13,9 @@ use neurohid_ipc::{
     send_control_request_blocking,
 };
 
-use neurohid_types::config::{BrainFlowConfig, DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig};
+use neurohid_types::config::{
+    BrainFlowConfig, DeviceBackend, IpcMode, ServiceRuntimeMode, SystemConfig,
+};
 use neurohid_types::control::{
     ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
     RuntimeModeState,

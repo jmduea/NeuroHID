@@ -24,8 +24,5 @@ pub struct SignalChannels {
 #[async_trait]
 pub trait SignalPreprocessor: Send + Sync {
     /// Run until shutdown is signalled. Consumes self (use `Box<Self>` for trait objects).
-    async fn run(
-        self: Box<Self>,
-        shutdown: broadcast::Receiver<()>,
-    ) -> Result<()>;
+    async fn run(self: Box<Self>, shutdown: broadcast::Receiver<()>) -> Result<()>;
 }

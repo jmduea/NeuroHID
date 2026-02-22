@@ -34,8 +34,8 @@ use crate::tasks::DecisionEventRecord;
 use crate::tasks::latency::RollingLatency;
 use crate::tasks::session_logger::EpisodeLogRecord;
 
-use model::{load_onnx_model, ArtifactLoader, LoadedModel, OnnxArtifactLoader};
 use inference::{lightweight_fallback_action, run_inference};
+use model::{ArtifactLoader, LoadedModel, OnnxArtifactLoader, load_onnx_model};
 
 const LATENCY_WINDOW_SIZE: usize = 512;
 const DECODER_SUMMARY_EVERY_DECISIONS: u64 = 256;
@@ -849,9 +849,9 @@ mod tests {
         NormalizationStats,
     };
 
+    use super::DecoderTask;
     use super::inference::{action_from_output, to_probability};
     use super::model::{ArtifactLoader, InferenceModel, LoadedModel};
-    use super::DecoderTask;
     use crate::service::ServiceState;
 
     #[derive(Clone)]

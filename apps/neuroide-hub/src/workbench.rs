@@ -279,8 +279,12 @@ pub const fn lane_for_screen(screen: Screen) -> ActivityLane {
         Screen::Calibration => ActivityLane::Calibration,
         Screen::Training => ActivityLane::Training,
         Screen::Visualization => ActivityLane::Visualization,
-        Screen::Dashboard | Screen::Profiles | Screen::Extensions | Screen::Settings
-        | Screen::PythonLab | Screen::JupyterIde => ActivityLane::Config,
+        Screen::Dashboard
+        | Screen::Profiles
+        | Screen::Extensions
+        | Screen::Settings
+        | Screen::PythonLab
+        | Screen::JupyterIde => ActivityLane::Config,
     }
 }
 
@@ -337,7 +341,11 @@ mod tests {
         let mut state = WorkbenchState::default();
         state.lane = ActivityLane::Config;
 
-        assert!(state.visible_screens(&UiMode::Advanced).contains(&crate::screens::Screen::Settings));
+        assert!(
+            state
+                .visible_screens(&UiMode::Advanced)
+                .contains(&crate::screens::Screen::Settings)
+        );
         assert!(state.visible_screens(&UiMode::Standard).len() > 1);
     }
 

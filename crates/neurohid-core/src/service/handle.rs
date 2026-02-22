@@ -1,8 +1,8 @@
 //! Service handle for non-blocking runtime control.
 
-use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
-use tokio::sync::{broadcast, mpsc, Mutex, RwLock};
+use std::sync::atomic::AtomicBool;
+use tokio::sync::{Mutex, RwLock, broadcast, mpsc};
 
 use neurohid_ipc::{IpcEnvelope, RuntimeEvent};
 use neurohid_types::{

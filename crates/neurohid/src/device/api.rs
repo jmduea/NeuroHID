@@ -23,10 +23,7 @@ pub fn list_streams_via_runtime(handle: &RuntimeHandle) -> Result<Vec<Discovered
 ///
 /// "Connect" means the connect command is sent; actual connection is asynchronous
 /// in the device task. Observe success via a fresh snapshot or listener.
-pub fn connect_by_id(
-    handle: &RuntimeHandle,
-    stream_id: &str,
-) -> Result<StreamConnectionHandle> {
+pub fn connect_by_id(handle: &RuntimeHandle, stream_id: &str) -> Result<StreamConnectionHandle> {
     handle
         .command(RuntimeCommand::ConnectStream {
             stream_id: stream_id.to_string(),
@@ -89,9 +86,10 @@ impl Drop for StreamConnectionHandle {
 pub async fn list_streams_discovery(
     provider: &(dyn DeviceProvider + Send + Sync),
 ) -> Result<Vec<DiscoveredStream>> {
-    let devices = provider.discover().await.map_err(|e| {
-        Error::Internal(format!("discovery failed: {}", e))
-    })?;
+    let devices = provider
+        .discover()
+        .await
+        .map_err(|e| Error::Internal(format!("discovery failed: {}", e)))?;
     Ok(devices
         .into_iter()
         .map(device_info_to_discovered_stream)

@@ -17,9 +17,7 @@ use crate::storage::PyProfileStore;
 use crate::streams::{
     PyActionStream, PyEventStream, PyFeatureStream, PyMarkerStream, PySampleStream,
 };
-use crate::types::{
-    PyControlSnapshot, PyProfileId, PySystemConfig, PyTrainerSnapshot,
-};
+use crate::types::{PyControlSnapshot, PyProfileId, PySystemConfig, PyTrainerSnapshot};
 
 // ---------------------------------------------------------------------------
 // RuntimeBuilder
@@ -53,13 +51,19 @@ impl PyRuntimeBuilder {
     }
 
     /// Attach an initialized profile store.
-    fn with_profile_store<'a>(mut slf: PyRefMut<'a, Self>, store: &PyProfileStore) -> PyRefMut<'a, Self> {
+    fn with_profile_store<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        store: &PyProfileStore,
+    ) -> PyRefMut<'a, Self> {
         slf.profile_store = Some(store.inner.clone());
         slf
     }
 
     /// Select the active profile.
-    fn with_profile_id<'a>(mut slf: PyRefMut<'a, Self>, profile_id: &PyProfileId) -> PyRefMut<'a, Self> {
+    fn with_profile_id<'a>(
+        mut slf: PyRefMut<'a, Self>,
+        profile_id: &PyProfileId,
+    ) -> PyRefMut<'a, Self> {
         slf.profile_id = Some(profile_id.inner.clone());
         slf
     }
@@ -156,11 +160,7 @@ impl PyRuntimeHandle {
     ///
     /// For commands with parameters, use the dict overload.
     #[pyo3(signature = (command, **kwargs))]
-    fn command(
-        &self,
-        command: &str,
-        kwargs: Option<&Bound<'_, PyDict>>,
-    ) -> PyResult<()> {
+    fn command(&self, command: &str, kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<()> {
         let cmd = parse_runtime_command(command, kwargs)?;
         self.ipc.command(cmd).map_err(to_py_err)
     }
@@ -176,14 +176,10 @@ impl PyRuntimeHandle {
         request_dict: &Bound<'py, PyDict>,
     ) -> PyResult<Bound<'py, PyAny>> {
         let json_mod = PyModule::import(py, "json")?;
-        let json_str: String = json_mod
-            .call_method1("dumps", (request_dict,))?
-            .extract()?;
-        let request: neurohid_types::control::ControlRequest =
-            serde_json::from_str(&json_str).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "invalid ControlRequest: {e}"
-                ))
+        let json_str: String = json_mod.call_method1("dumps", (request_dict,))?.extract()?;
+        let request: neurohid_types::control::ControlRequest = serde_json::from_str(&json_str)
+            .map_err(|e| {
+                pyo3::exceptions::PyValueError::new_err(format!("invalid ControlRequest: {e}"))
             })?;
         let ipc = self.ipc.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
@@ -201,20 +197,15 @@ impl PyRuntimeHandle {
     /// Takes a JSON string (the serialized `ControlRequest`), blocks on the
     /// embedded tokio runtime, and returns the JSON response string.
     fn dispatch_control_sync(&self, request_json: &str) -> PyResult<String> {
-        let request: neurohid_types::control::ControlRequest =
-            serde_json::from_str(request_json).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "invalid ControlRequest: {e}"
-                ))
-            })?;
+        let request: neurohid_types::control::ControlRequest = serde_json::from_str(request_json)
+            .map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("invalid ControlRequest: {e}"))
+        })?;
         let ipc = self.ipc.clone();
-        let response = crate::tokio_runtime().block_on(async move {
-            ipc.dispatch_control_request(request).await
-        });
+        let response = crate::tokio_runtime()
+            .block_on(async move { ipc.dispatch_control_request(request).await });
         serde_json::to_string(&response).map_err(|e| {
-            pyo3::exceptions::PyRuntimeError::new_err(format!(
-                "response serialization failed: {e}"
-            ))
+            pyo3::exceptions::PyRuntimeError::new_err(format!("response serialization failed: {e}"))
         })
     }
 
@@ -302,15 +293,14 @@ impl PyRuntimeHandle {
         let json_str: String = json_mod
             .call_method1("dumps", (envelope_dict,))?
             .extract()?;
-        let envelope: IpcEnvelope =
-            serde_json::from_str(&json_str).map_err(|e| {
-                pyo3::exceptions::PyValueError::new_err(format!(
-                    "invalid IpcEnvelope: {e}"
-                ))
-            })?;
+        let envelope: IpcEnvelope = serde_json::from_str(&json_str).map_err(|e| {
+            pyo3::exceptions::PyValueError::new_err(format!("invalid IpcEnvelope: {e}"))
+        })?;
         let ipc = self.ipc.clone();
         pyo3_async_runtimes::tokio::future_into_py(py, async move {
-            ipc.trainer_send_envelope(envelope).await.map_err(to_py_err)?;
+            ipc.trainer_send_envelope(envelope)
+                .await
+                .map_err(to_py_err)?;
             Ok(())
         })
     }

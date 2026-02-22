@@ -1,98 +1,96 @@
 use super::HubApp;
-use eframe::egui;
 use crate::screens::Screen;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
-use crate::theme;
 use crate::state::ServiceSnapshot;
+use crate::theme;
+use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
+use eframe::egui;
 use neurohid_types::config::UiMode;
 use neurohid_types::control::RuntimeModeState;
 use std::time::Duration;
 
-
 impl HubApp {
     pub(crate) fn maybe_notify_latency_transition(&mut self) {
-            let snapshot = &self.state.service_snapshot;
-            let was_running = self.last_service_running.replace(snapshot.running);
-            let was_degraded = self
-                .last_latency_degraded
-                .replace(snapshot.latency_degraded);
+        let snapshot = &self.state.service_snapshot;
+        let was_running = self.last_service_running.replace(snapshot.running);
+        let was_degraded = self
+            .last_latency_degraded
+            .replace(snapshot.latency_degraded);
 
-            if !self.state.config.service.notifications_enabled {
-                return;
-            }
-
-            let (Some(was_running), Some(was_degraded)) = (was_running, was_degraded) else {
-                return;
-            };
-
-            if !was_running || !snapshot.running || was_degraded == snapshot.latency_degraded {
-                return;
-            }
-
-            if snapshot.latency_degraded {
-                let message = snapshot
-                    .latency_alert_message
-                    .clone()
-                    .unwrap_or_else(|| "Runtime latency exceeded configured thresholds.".to_string());
-                self.send_desktop_notification("NeuroHID latency warning", &message);
-            } else {
-                self.send_desktop_notification(
-                    "NeuroHID latency recovered",
-                    "Runtime latency returned within configured thresholds.",
-                );
-            }
+        if !self.state.config.service.notifications_enabled {
+            return;
         }
+
+        let (Some(was_running), Some(was_degraded)) = (was_running, was_degraded) else {
+            return;
+        };
+
+        if !was_running || !snapshot.running || was_degraded == snapshot.latency_degraded {
+            return;
+        }
+
+        if snapshot.latency_degraded {
+            let message = snapshot
+                .latency_alert_message
+                .clone()
+                .unwrap_or_else(|| "Runtime latency exceeded configured thresholds.".to_string());
+            self.send_desktop_notification("NeuroHID latency warning", &message);
+        } else {
+            self.send_desktop_notification(
+                "NeuroHID latency recovered",
+                "Runtime latency returned within configured thresholds.",
+            );
+        }
+    }
     pub(crate) fn maybe_notify_runtime_mode_transition(&mut self) {
-            let snapshot = &self.state.service_snapshot;
-            let was_running = self.last_runtime_mode_running.replace(snapshot.running);
-            let previous_mode = self
-                .last_runtime_mode_state
-                .replace(snapshot.runtime_mode_state);
+        let snapshot = &self.state.service_snapshot;
+        let was_running = self.last_runtime_mode_running.replace(snapshot.running);
+        let previous_mode = self
+            .last_runtime_mode_state
+            .replace(snapshot.runtime_mode_state);
 
-            if !self.state.config.service.notifications_enabled {
-                return;
-            }
-
-            let (Some(was_running), Some(previous_mode)) = (was_running, previous_mode) else {
-                return;
-            };
-            if !was_running || !snapshot.running || previous_mode == snapshot.runtime_mode_state {
-                return;
-            }
-
-            let (title, fallback_body) = match snapshot.runtime_mode_state {
-                RuntimeModeState::Full => (
-                    "NeuroHID runtime mode: full",
-                    "Runtime recovered to full capability mode.",
-                ),
-                RuntimeModeState::Fallback => (
-                    "NeuroHID runtime mode: fallback",
-                    "Runtime entered fallback mode; capabilities may be limited.",
-                ),
-                RuntimeModeState::Degraded => (
-                    "NeuroHID runtime mode: degraded",
-                    "Runtime entered degraded mode; HID output may be limited or disabled.",
-                ),
-            };
-
-            let body = snapshot
-                .limited_capabilities_message
-                .as_deref()
-                .unwrap_or(fallback_body);
-            self.send_desktop_notification(title, body);
+        if !self.state.config.service.notifications_enabled {
+            return;
         }
+
+        let (Some(was_running), Some(previous_mode)) = (was_running, previous_mode) else {
+            return;
+        };
+        if !was_running || !snapshot.running || previous_mode == snapshot.runtime_mode_state {
+            return;
+        }
+
+        let (title, fallback_body) = match snapshot.runtime_mode_state {
+            RuntimeModeState::Full => (
+                "NeuroHID runtime mode: full",
+                "Runtime recovered to full capability mode.",
+            ),
+            RuntimeModeState::Fallback => (
+                "NeuroHID runtime mode: fallback",
+                "Runtime entered fallback mode; capabilities may be limited.",
+            ),
+            RuntimeModeState::Degraded => (
+                "NeuroHID runtime mode: degraded",
+                "Runtime entered degraded mode; HID output may be limited or disabled.",
+            ),
+        };
+
+        let body = snapshot
+            .limited_capabilities_message
+            .as_deref()
+            .unwrap_or(fallback_body);
+        self.send_desktop_notification(title, body);
+    }
     pub(crate) fn send_desktop_notification(&self, title: &str, body: &str) {
-            if let Err(error) = desktop_notify(title, body) {
-                tracing::debug!(
-                    title = title,
-                    error = %error,
-                    "Desktop notification dispatch failed"
-                );
-            }
+        if let Err(error) = desktop_notify(title, body) {
+            tracing::debug!(
+                title = title,
+                error = %error,
+                "Desktop notification dispatch failed"
+            );
         }
-
+    }
 }
-    pub(crate) fn desktop_notify(title: &str, body: &str) -> std::io::Result<()> {
+pub(crate) fn desktop_notify(title: &str, body: &str) -> std::io::Result<()> {
     #[cfg(target_os = "windows")]
     {
         desktop_notify_windows(title, body)
@@ -109,7 +107,7 @@ impl HubApp {
 }
 
 #[cfg(unix)]
-    pub(crate) fn desktop_notify_unix(title: &str, body: &str) -> std::io::Result<()> {
+pub(crate) fn desktop_notify_unix(title: &str, body: &str) -> std::io::Result<()> {
     let status = std::process::Command::new("notify-send")
         .arg(title)
         .arg(body)
@@ -126,7 +124,7 @@ impl HubApp {
 }
 
 #[cfg(target_os = "windows")]
-    pub(crate) fn desktop_notify_windows(title: &str, body: &str) -> std::io::Result<()> {
+pub(crate) fn desktop_notify_windows(title: &str, body: &str) -> std::io::Result<()> {
     let script = "$ErrorActionPreference='Stop';\
 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;\
 [Windows.Data.Xml.Dom.XmlDocument, Windows.Data.Xml.Dom.XmlDocument, ContentType = WindowsRuntime] > $null;\
@@ -158,4 +156,3 @@ $toast=[Windows.UI.Notifications.ToastNotification]::new($doc);\
         )))
     }
 }
-

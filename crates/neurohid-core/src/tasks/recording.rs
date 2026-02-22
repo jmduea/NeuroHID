@@ -42,12 +42,17 @@ pub enum RecordingCommandResult {
         session_id: String,
         output_path: String,
     },
-    Stopped { session_id: String },
+    Stopped {
+        session_id: String,
+    },
     Error(String),
 }
 
 /// Request sent to recording task: command + oneshot to reply with result.
-pub type RecordingRequest = (RecordingCommand, oneshot::Sender<std::result::Result<RecordingCommandResult, String>>);
+pub type RecordingRequest = (
+    RecordingCommand,
+    oneshot::Sender<std::result::Result<RecordingCommandResult, String>>,
+);
 
 /// Recording task: writes session folder with manifest, config snapshot, streams, actions.jsonl.
 pub struct RecordingTask {
@@ -303,11 +308,13 @@ impl RecordingTask {
         let config_path = session_dir.join("config.json");
         let config_json = serde_json::to_string_pretty(&self.system_config)
             .map_err(|e| neurohid_types::Error::internal(e.to_string()))?;
-        fs::write(&config_path, config_json)
-            .await
-            .map_err(|e| neurohid_types::Error::internal(format!("write config snapshot: {}", e)))?;
+        fs::write(&config_path, config_json).await.map_err(|e| {
+            neurohid_types::Error::internal(format!("write config snapshot: {}", e))
+        })?;
 
-        if let (Some(store), Some(profile_id)) = (self.profile_store.as_ref(), self.profile_id.as_ref()) {
+        if let (Some(store), Some(profile_id)) =
+            (self.profile_store.as_ref(), self.profile_id.as_ref())
+        {
             if let Ok(meta) = store.get_metadata(profile_id).await {
                 let profile_path = session_dir.join("profile_meta.json");
                 let profile_json = serde_json::to_string_pretty(&meta)

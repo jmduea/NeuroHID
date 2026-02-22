@@ -10,10 +10,10 @@ use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use tokio::sync::broadcast;
 
+use crate::action::Action;
 use crate::error::Result;
 use crate::event::StreamMarker;
 use crate::signal::{FeatureVector, Sample};
-use crate::action::Action;
 
 /// Slot kind for pipeline extensions. Used by the registry to list extensions per slot.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -58,8 +58,5 @@ pub struct OutletChannels {
 #[async_trait]
 pub trait Outlet: Send + Sync {
     /// Run until shutdown is signalled. Consumes self (use `Box<Self>` for trait objects).
-    async fn run(
-        self: Box<Self>,
-        shutdown: broadcast::Receiver<()>,
-    ) -> Result<()>;
+    async fn run(self: Box<Self>, shutdown: broadcast::Receiver<()>) -> Result<()>;
 }

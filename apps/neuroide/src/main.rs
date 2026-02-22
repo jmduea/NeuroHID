@@ -153,8 +153,8 @@ fn main() {
     // return EPIPE errors instead of killing the process.
     #[cfg(unix)]
     {
-        use std::sync::atomic::AtomicBool;
         use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
         let _ = signal_hook::flag::register(
             signal_hook::consts::SIGPIPE,
             Arc::new(AtomicBool::new(false)),

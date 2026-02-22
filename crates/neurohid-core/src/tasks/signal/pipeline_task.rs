@@ -59,11 +59,7 @@ impl StreamBuffer {
     }
 
     pub(super) fn rebuild_pipeline(&mut self, config: &SignalConfig) {
-        self.pipeline = build_pipeline(
-            config,
-            self.channel_count,
-            self.estimated_sample_rate_hz,
-        );
+        self.pipeline = build_pipeline(config, self.channel_count, self.estimated_sample_rate_hz);
         self.preprocessing_summary = preprocessing_summary(config);
     }
 
@@ -91,7 +87,10 @@ impl StreamBuffer {
         None
     }
 
-    pub(super) fn record_sequence(&mut self, sequence_number: Option<u64>) -> Option<SignalSequenceIssue> {
+    pub(super) fn record_sequence(
+        &mut self,
+        sequence_number: Option<u64>,
+    ) -> Option<SignalSequenceIssue> {
         let sequence_number = sequence_number?;
 
         if let Some(previous) = self.last_sequence_number {

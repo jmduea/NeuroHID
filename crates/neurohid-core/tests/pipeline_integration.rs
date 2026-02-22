@@ -14,7 +14,7 @@ use neurohid_signal::{PipelineConfig, SignalPipeline};
 use neurohid_types::config::DecoderConfig;
 use neurohid_types::observability::ObservabilityConfig;
 use neurohid_types::signal::FeatureVector;
-use tokio::sync::{broadcast, mpsc, RwLock};
+use tokio::sync::{RwLock, broadcast, mpsc};
 use tokio::time::timeout;
 
 const SAMPLE_RATE_HZ: f32 = 128.0;
@@ -78,9 +78,7 @@ async fn pipeline_device_signal_decoder_action_flow() {
     .expect("create_decoder");
 
     let (shutdown_tx, shutdown_rx) = broadcast::channel(1);
-    let decoder_handle = tokio::spawn(async move {
-        runner.run(shutdown_rx).await
-    });
+    let decoder_handle = tokio::spawn(async move { runner.run(shutdown_rx).await });
 
     // Send features and close sender so decoder can exit after draining
     for fv in features {
@@ -101,7 +99,11 @@ async fn pipeline_device_signal_decoder_action_flow() {
             }
             Ok(None) => break,
             Err(_) => {
-                assert!(received >= 1, "decoder should emit at least one action within {:?}", deadline);
+                assert!(
+                    received >= 1,
+                    "decoder should emit at least one action within {:?}",
+                    deadline
+                );
                 break;
             }
         }
@@ -110,5 +112,8 @@ async fn pipeline_device_signal_decoder_action_flow() {
     shutdown_tx.send(()).ok();
     let _ = timeout(Duration::from_secs(1), decoder_handle).await;
 
-    assert!(received >= 1, "pipeline boundary must deliver at least one action from features");
+    assert!(
+        received >= 1,
+        "pipeline boundary must deliver at least one action from features"
+    );
 }

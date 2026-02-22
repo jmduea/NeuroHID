@@ -65,13 +65,11 @@ impl DeviceProvider for BrainFlowProvider {
     ) -> Result<Box<dyn Device>> {
         #[cfg(feature = "brainflow-native")]
         if self.config.board_id != 0 || self.config.serial_port.is_some() {
-            if let Ok(native) =
-                crate::brainflow_native::connect_native(
-                    self.config.board_id,
-                    self.config.serial_port.as_deref(),
-                    device_id,
-                )
-            {
+            if let Ok(native) = crate::brainflow_native::connect_native(
+                self.config.board_id,
+                self.config.serial_port.as_deref(),
+                device_id,
+            ) {
                 return Ok(Box::new(native));
             }
             // Fall through to synthetic if native connect fails (e.g. no hardware)

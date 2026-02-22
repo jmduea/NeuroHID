@@ -20,9 +20,7 @@ use neurohid_types::config::SystemConfig;
 /// - `config_path: Some(path)` — load from the given path; YAML or TOML by extension.
 ///
 /// Returns the default `SystemConfig` if the file does not exist.
-pub async fn load(
-    config_path: Option<PathBuf>,
-) -> neurohid_storage::Result<SystemConfig> {
+pub async fn load(config_path: Option<PathBuf>) -> neurohid_storage::Result<SystemConfig> {
     let paths = DataPaths::new(neurohid_storage::default_data_dir())?;
     let store = ConfigStore::new(paths);
     match config_path {
