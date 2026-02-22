@@ -1,13 +1,13 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["maturin>=1.0,<2.0"]
+build-backend = "maturin"
 
 [project]
 name = "neurohid-ml"
 version = "0.1.0"
 description = "Python ML components for NeuroHID (decoder, ErrP detection)"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 license = { text = "MIT OR Apache-2.0" }
 authors = [{ name = "NeuroHID Contributors" }]
 classifiers = [
@@ -15,7 +15,6 @@ classifiers = [
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
@@ -29,7 +28,6 @@ dependencies = [
     "scipy>=1.17.0",
     "scikit-learn>=1.8.0",
     "jupyterlab>=4.4.0",
-    "ipckit>=0.1.6",
     "pyxdf>=1.17.3",
 ]
 
@@ -46,12 +44,21 @@ dev = [
 [project.scripts]
 neurohid-ml = "neurohid_ml.cli:main"
 
+[tool.maturin]
+# Point at the PyO3 bindings crate inside the Cargo workspace.
+manifest-path = "../crates/neurohid-py/Cargo.toml"
+# Place the compiled extension module alongside the Python package source.
+python-source = "src"
+# Module name must match the #[pymodule] name in lib.rs.
+module-name = "neurohid_bindings"
+features = ["pyo3/extension-module"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.black]
 line-length = 100
-target-version = ["py312"]
+target-version = ["py313"]
 
 [tool.ruff]
 line-length = 100
@@ -60,7 +67,7 @@ line-length = 100
 select = ["E", "F", "I", "N", "W"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.13"
 warn_return_any = true
 warn_unused_configs = true
 

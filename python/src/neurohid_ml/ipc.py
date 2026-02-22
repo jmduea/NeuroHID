@@ -20,7 +20,16 @@ from neurohid_ml.ipc_constants import (
 
 ipckit: Any
 try:
-    import ipckit  # type: ignore[import-not-found]
+    from neurohid_bindings import (
+        IpcChannel as _IpcChannelNative,  # type: ignore[import-not-found]
+    )
+
+    class _IpcKitCompat:
+        """Minimal shim so existing call-sites can use `ipckit.IpcChannel` attribute access."""
+
+        IpcChannel = _IpcChannelNative
+
+    ipckit = _IpcKitCompat()
 except Exception:  # pragma: no cover - optional dependency at import time
     ipckit = None
 

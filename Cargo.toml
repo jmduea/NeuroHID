@@ -15,6 +15,7 @@ members = [
     "crates/neurohid-outlet-example",
     "apps/neuroide-hub",
     "apps/neuroide",
+    "crates/neurohid-py",
 ]
 
 # Shared dependencies across all crates - ensures version consistency
@@ -67,6 +68,9 @@ eframe = { version = "0.33.3", default-features = false }
 
 # Testing
 approx = "0.5.1"
+
+# Python bindings
+pyo3 = { version = "0.23", features = ["abi3-py312"] }
 
 [workspace.package]
 version = "0.1.0"

@@ -180,11 +180,13 @@ jobs:
     runs-on: [self-hosted, linux, neurohid-ci]
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - uses: astral-sh/setup-uv@v4
-      - name: Install Python dependencies
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Python dependencies (builds Rust extension via maturin)
         run: uv sync --directory python --extra dev
       - name: Run Python tests with coverage gate
         run: >
@@ -214,7 +216,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL (Linux)
@@ -252,10 +254,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.13"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
-      - name: Install Python dependencies
+      - name: Install Python dependencies (builds Rust extension via maturin)
         run: uv sync --directory python --extra dev
       - name: Rust transport smoke (tcp_loopback)
         if: matrix.transport == 'tcp_loopback'
