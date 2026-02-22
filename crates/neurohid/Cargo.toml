@@ -4,12 +4,46 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish = true
-description = "Brain-computer interface — transforms EEG devices into standard PC peripherals"
+description = "NeuroHID — brain-computer interface framework for translating EEG signals into HID actions"
 keywords = ["bci", "eeg", "brain-computer-interface", "neurohid", "hid"]
 categories = ["science", "accessibility"]
+readme = "README.md"
+repository = "https://github.com/jmduea/neurohid"
+
+[lib]
+name = "neurohid"
+path = "src/lib.rs"
 
 [features]
-default = []
+default = ["types"]
+types = ["dep:neurohid-types"]
+signal = ["dep:neurohid-signal"]
+device = ["dep:neurohid-device"]
+device-lsl = ["device", "neurohid-device/lsl"]
+device-brainflow = ["device", "neurohid-device/brainflow"]
+platform = ["dep:neurohid-platform"]
+storage = ["dep:neurohid-storage"]
+ipc = ["dep:neurohid-ipc"]
+calibration = ["dep:neurohid-calibration"]
+runtime = ["dep:neurohid-core"]
+full = [
+    "types", "signal", "device", "device-lsl", "device-brainflow",
+    "platform", "storage", "ipc", "calibration", "runtime",
+]
+
+[dependencies]
+neurohid-types = { path = "../neurohid-types", optional = true }
+neurohid-signal = { path = "../neurohid-signal", optional = true }
+neurohid-device = { path = "../neurohid-device", optional = true }
+neurohid-platform = { path = "../neurohid-platform", optional = true }
+neurohid-storage = { path = "../neurohid-storage", optional = true }
+neurohid-ipc = { path = "../neurohid-ipc", optional = true }
+neurohid-calibration = { path = "../neurohid-calibration", optional = true }
+neurohid-core = { path = "../neurohid-core", optional = true }
+
+[dev-dependencies]
+tokio = { workspace = true }
+tempfile = "3.10"
 
 [lints]
 workspace = true

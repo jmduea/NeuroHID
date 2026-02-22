@@ -2972,6 +2972,18 @@ dependencies = [
 [[package]]
 name = "neurohid"
 version = "0.1.0"
+dependencies = [
+ "neurohid-calibration",
+ "neurohid-core",
+ "neurohid-device",
+ "neurohid-ipc",
+ "neurohid-platform",
+ "neurohid-signal",
+ "neurohid-storage",
+ "neurohid-types",
+ "tempfile",
+ "tokio",
+]
 
 [[package]]
 name = "neurohid-calibration"
@@ -3086,23 +3098,6 @@ dependencies = [
  "tokio-test",
  "tracing",
  "windows 0.62.2",
-]
-
-[[package]]
-name = "neurohid-sdk"
-version = "0.1.0"
-dependencies = [
- "neurohid-calibration",
- "neurohid-core",
- "neurohid-device",
- "neurohid-ipc",
- "neurohid-platform",
- "neurohid-signal",
- "neurohid-storage",
- "neurohid-types",
- "neuroide-hub",
- "tempfile",
- "tokio",
 ]
 
 [[package]]
