@@ -3194,6 +3194,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "neurohid-validate"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "neurohid-ipc",
+ "neurohid-types",
+ "toml",
+]
+
+[[package]]
 name = "neuroide-hub"
 version = "0.1.0"
 dependencies = [

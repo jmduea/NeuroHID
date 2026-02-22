@@ -1,0 +1,21 @@
+[package]
+name = "neurohid-validate"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "NeuroHID validation harness — soak, latency, and boot matrix checks"
+
+[[bin]]
+name = "neurohid-validate"
+path = "src/main.rs"
+
+[dependencies]
+neurohid-ipc = { path = "../neurohid-ipc" }
+neurohid-types = { path = "../neurohid-types" }
+clap = { version = "4.4", features = ["derive"] }
+anyhow = { workspace = true }
+toml = { workspace = true }
+
+[lints]
+workspace = true

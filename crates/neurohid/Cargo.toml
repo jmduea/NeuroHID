@@ -16,10 +16,6 @@ default = []
 name = "neurohid"
 path = "src/bin/neurohid.rs"
 
-[[bin]]
-name = "neurohid-validate"
-path = "src/bin/neurohid-validate.rs"
-
 [dependencies]
 neuroide-hub = { path = "../../apps/neuroide-hub" }
 neurohid-core = { path = "../neurohid-core" }
