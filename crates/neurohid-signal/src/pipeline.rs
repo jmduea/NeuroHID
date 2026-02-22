@@ -290,12 +290,12 @@ impl SignalPipeline {
         self.samples_since_extract = 0;
 
         // ── Extract raw features ─────────────────────────────────────
-        let raw_fv = self
+        let (raw_fv, channel_psds) = self
             .extractor
             .extract_with_temporal(&window, Some(&self.temporal))?;
 
-        // ── Update temporal state with current band powers ───────────
-        self.update_temporal(&window)?;
+        // ── Update temporal state with cached band powers ────────────
+        self.update_temporal(&channel_psds);
 
         // ── Z-score normalize ────────────────────────────────────────
         let normalized_values = self.normalizer.normalize(&raw_fv.values);
@@ -317,11 +317,8 @@ impl SignalPipeline {
         values.iter().any(|&v| v.abs() > threshold)
     }
 
-    /// Update the temporal state by extracting current band powers from the window.
-    fn update_temporal(&mut self, window: &SignalWindow) -> Result<(), SignalError> {
-        // We need band powers per (band, channel). We can compute them
-        // from the PSD that the extractor already computes, but to avoid
-        // duplicating the FFT we extract a simplified version here.
+    /// Update the temporal state using cached per-channel PSDs from the extractor.
+    fn update_temporal(&mut self, channel_psds: &[Vec<f32>]) {
         let nc = self.config.features.channel_count;
         let bands = [
             neurohid_types::signal::FrequencyBand::Delta,
@@ -334,34 +331,30 @@ impl SignalPipeline {
         let freq_res =
             self.config.features.sample_rate_hz / self.config.features.welch_segment_len as f32;
 
-        // Quick band power estimation using simple DFT energy in band.
-        // This is a lightweight approximation — the full Welch PSD was
-        // already computed in extract_with_temporal, but we don't cache it
-        // to keep the extractor stateless. The temporal update is low-frequency
-        // enough (~20 Hz) that this small redundancy is acceptable.
         let mut band_powers: Vec<Vec<f32>> = Vec::with_capacity(bands.len());
 
         for band in &bands {
             let (f_lo, f_hi) = band.range_hz();
             let f_hi = f_hi.min(self.config.features.sample_rate_hz / 2.0 - freq_res);
+            let bin_lo = (f_lo / freq_res).ceil() as usize;
+            let bin_hi = (f_hi / freq_res).floor() as usize;
             let mut ch_powers = Vec::with_capacity(nc);
 
             for ch in 0..nc {
-                if let Some(data) = window.channel(ch) {
-                    // Simple band power: sum of squared values in bandpass range.
-                    // This is a rough approximation; acceptable for temporal tracking.
-                    let power =
-                        band_power_approx(data, f_lo, f_hi, self.config.features.sample_rate_hz);
-                    ch_powers.push(power);
+                let power = if ch < channel_psds.len()
+                    && bin_hi < channel_psds[ch].len()
+                    && bin_lo <= bin_hi
+                {
+                    channel_psds[ch][bin_lo..=bin_hi].iter().sum()
                 } else {
-                    ch_powers.push(0.0);
-                }
+                    0.0
+                };
+                ch_powers.push(power);
             }
             band_powers.push(ch_powers);
         }
 
         self.temporal.update(&band_powers);
-        Ok(())
     }
 
     /// Get the most recent signal window (e.g., for ErrP detection).
@@ -397,43 +390,6 @@ impl SignalPipeline {
     pub fn feature_dim(&self) -> usize {
         self.extractor.feature_dim()
     }
-}
-
-/// Quick band power approximation using Goertzel-like energy sum.
-///
-/// For temporal tracking we don't need Welch-quality PSD — a rough
-/// estimate is sufficient and avoids a second FFT per extraction cycle.
-fn band_power_approx(data: &[f32], f_lo: f32, f_hi: f32, fs: f32) -> f32 {
-    let n = data.len() as f32;
-    if n < 4.0 {
-        return 0.0;
-    }
-
-    // Sum energy at a few probe frequencies across the band
-    let num_probes = 4;
-    let step = (f_hi - f_lo) / num_probes as f32;
-    let mut total = 0.0f32;
-
-    for k in 0..num_probes {
-        let freq = f_lo + step * (k as f32 + 0.5);
-        let w = 2.0 * std::f32::consts::PI * freq / fs;
-
-        // Goertzel: compute |X(f)|² without full FFT
-        let mut s1: f32 = 0.0;
-        let mut s2: f32 = 0.0;
-        let coeff = 2.0 * w.cos();
-
-        for &x in data {
-            let temp = x + coeff * s1 - s2;
-            s2 = s1;
-            s1 = temp;
-        }
-
-        let power = s1 * s1 + s2 * s2 - coeff * s1 * s2;
-        total += power / (n * n); // normalize
-    }
-
-    total / num_probes as f32
 }
 
 #[cfg(test)]

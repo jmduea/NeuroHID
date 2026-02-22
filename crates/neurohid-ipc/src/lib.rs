@@ -11,14 +11,14 @@ pub mod types;
 
 pub use broker::{BrokerCounters, BrokerError, IpcBroker, TrainerSessionGuard};
 pub use protocol::{
-    Ack, BrokerConfig, CandidateModelReady, ChannelPolicy, ControlRpcRequest, ControlRpcResponse,
-    ControlRpcResponsePayload, DEFAULT_CONTROL_SOCKET_ENDPOINT, DEFAULT_IPC_PORT,
-    DEFAULT_IPC_SOCKET_ENDPOINT, DEFAULT_RUNTIME_SOCKET_ENDPOINT, DecisionEvent, ErrpResult,
-    ErrpWindow, Hello, IPC_PROTOCOL_VERSION, IpcChannel, IpcConfig, IpcEnvelope, IpcTransport,
-    Ping, Pong, ProtocolError, QueueOverflowPolicy, RuntimeComponentCapability, RuntimeEvent,
-    RuntimeEventsSubscribe, RuntimeMlRole, RuntimeTelemetry, SessionBoundary, SessionBoundaryEvent,
-    Shutdown, TrainerStatus, TrainerStreamKind, TrainerStreamPayload, default_control_endpoint,
-    default_ipc_endpoint, default_loopback_endpoint, default_runtime_endpoint,
+    Ack, BrokerConfig, CandidateModelReady, ChannelPolicy, DEFAULT_CONTROL_SOCKET_ENDPOINT,
+    DEFAULT_IPC_PORT, DEFAULT_IPC_SOCKET_ENDPOINT, DEFAULT_RUNTIME_SOCKET_ENDPOINT, DecisionEvent,
+    ErrpResult, ErrpWindow, Hello, IPC_PROTOCOL_VERSION, IpcChannel, IpcConfig, IpcEnvelope,
+    IpcTransport, Ping, Pong, ProtocolError, QueueOverflowPolicy, RuntimeComponentCapability,
+    RuntimeEvent, RuntimeEventsSubscribe, RuntimeMlRole, RuntimeTelemetry, SessionBoundary,
+    SessionBoundaryEvent, Shutdown, TrainerStatus, TrainerStreamKind, TrainerStreamPayload,
+    default_control_endpoint, default_ipc_endpoint, default_loopback_endpoint,
+    default_runtime_endpoint,
 };
 
 pub use client::{

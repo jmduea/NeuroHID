@@ -6,9 +6,8 @@ pub use crate::types::{
     Shutdown, TrainerStatus,
 };
 pub use crate::types::{
-    ControlRpcRequest, ControlRpcResponse, ControlRpcResponsePayload, IPC_PROTOCOL_VERSION,
-    IpcChannel, IpcEnvelope, RuntimeComponentCapability, RuntimeEvent, RuntimeEventsSubscribe,
-    RuntimeMlKind, TrainerStreamKind, TrainerStreamPayload,
+    IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope, RuntimeComponentCapability, RuntimeEvent,
+    RuntimeEventsSubscribe, TrainerStreamKind, TrainerStreamPayload,
 };
 
 /// Default TCP port for loopback fallback mode.

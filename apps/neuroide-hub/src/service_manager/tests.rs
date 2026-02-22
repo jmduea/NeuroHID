@@ -5,11 +5,9 @@ use std::time::{Duration, Instant};
 
 use super::ServiceManager;
 use crate::state::ServiceSnapshot;
-use neurohid_ipc::{
-    ControlRpcRequest, ControlRpcResponse, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
-};
 #[cfg(windows)]
 use neurohid_ipc::{Hello, RuntimeMlRole, TrainerStreamKind};
+use neurohid_ipc::{IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope};
 #[cfg(windows)]
 use neurohid_ipc::{IpcConfig, IpcServer, IpcTransport};
 use neurohid_types::{
@@ -456,9 +454,7 @@ fn spawn_mock_named_pipe_control_server(pipe_name: String) -> thread::JoinHandle
                         && envelope.channel == IpcChannel::ControlRpc
                         && envelope.msg_type == "request"
                     {
-                        envelope
-                            .decode_payload::<ControlRpcRequest>()
-                            .map(ControlRequest::from)
+                        envelope.decode_payload::<ControlRequest>()
                     } else {
                         Err("invalid control envelope channel/msg_type".to_string())
                     };
@@ -574,7 +570,7 @@ fn spawn_mock_named_pipe_control_server(pipe_name: String) -> thread::JoinHandle
                         ),
                     };
 
-                    let response_payload = ControlRpcResponse::from(response.clone());
+                    let response_payload = response.clone();
                     let response_envelope = IpcEnvelope::new(
                         IpcChannel::ControlRpc,
                         "response",
@@ -619,21 +615,20 @@ fn read_control_request(stream: &TcpStream) -> ControlRequest {
         envelope.msg_type, "request",
         "mock control request should be request msg_type"
     );
-    let request_v3 = envelope
-        .decode_payload::<ControlRpcRequest>()
+    let request = envelope
+        .decode_payload::<ControlRequest>()
         .expect("mock control request payload should parse");
-    ControlRequest::from(request_v3)
+    request
 }
 
 fn write_control_response(stream: &mut TcpStream, response: &ControlResponse) {
-    let response_payload = ControlRpcResponse::from(response.clone());
     let envelope = IpcEnvelope::new(
         IpcChannel::ControlRpc,
         "response",
         1,
         response.request_id.clone(),
         Some("mock-control".to_string()),
-        &response_payload,
+        response,
     )
     .expect("mock control response should encode");
     write_control_envelope_sync(stream, &envelope).expect("mock control response should write");

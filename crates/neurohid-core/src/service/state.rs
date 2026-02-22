@@ -1,6 +1,10 @@
 //! Shared service state accessible by all tasks.
 
-use neurohid_types::{config::FallbackPolicy, control::RuntimeModeState, device::DiscoveredStream};
+use neurohid_types::{
+    config::FallbackPolicy,
+    control::{ControlSnapshot, RuntimeModeState},
+    device::DiscoveredStream,
+};
 
 use super::IntegrityStage;
 
@@ -346,6 +350,67 @@ impl ServiceState {
 
     fn stage_status(metrics: IntegrityStageMetrics) -> &'static str {
         if metrics.degraded { "degraded" } else { "ok" }
+    }
+
+    /// Project current state into a serializable `ControlSnapshot`.
+    pub fn to_control_snapshot(&self, uptime_secs: u64) -> ControlSnapshot {
+        ControlSnapshot {
+            running: self.active,
+            uptime_secs,
+            calibration_mode: self.calibration_mode,
+            output_enabled: self.output_enabled,
+            profile_ready: self.profile_ready,
+            decoder_ready: self.decoder_ready,
+            decoder_model_version: self.decoder_model_version.clone(),
+            active_profile_name: self.active_profile_name.clone(),
+            device_name: self.device_name.clone(),
+            outlet_name: self.outlet_name.clone(),
+            signal_name: self.signal_name.clone(),
+            decoder_name: self.decoder_name.clone(),
+            device_battery: self.device_battery,
+            signal_quality: self.signal_quality,
+            decode_latency_last_us: self.decode_latency_last_us,
+            decode_latency_p95_us: self.decode_latency_p95_us,
+            signal_latency_last_us: self.signal_latency_last_us,
+            signal_latency_p95_us: self.signal_latency_p95_us,
+            action_latency_last_us: self.action_latency_last_us,
+            action_latency_p95_us: self.action_latency_p95_us,
+            latency_degraded: self.latency_degraded,
+            latency_alert_message: self.latency_alert_message.clone(),
+            actions_emitted: self.actions_emitted,
+            errors_detected: self.errors_detected,
+            device_connected: self.device_connected,
+            ipc_connected: self.ipc_connected,
+            ipc_simulated: self.ipc_simulated,
+            task_error: self.task_error.clone(),
+            discovered_streams: self.discovered_streams.clone(),
+            routed_eeg_streams: self.routed_eeg_streams,
+            routed_motion_streams: self.routed_motion_streams,
+            routed_auxiliary_streams: self.routed_auxiliary_streams,
+            routed_unknown_streams: self.routed_unknown_streams,
+            pipeline_integrity_degraded: self.pipeline_integrity_degraded,
+            integrity_issue_count: self.integrity_issue_count,
+            stage_health_summary: self.stage_health_summary.clone(),
+            learning_enabled: self.learning_enabled,
+            ml_bridge_connected: self.ml_bridge_connected,
+            ml_bridge_stalled: self.ml_bridge_stalled,
+            runtime_mode_state: self.runtime_mode_state,
+            enabled_capabilities: self.enabled_capabilities.clone(),
+            limited_capabilities_message: self.limited_capabilities_message.clone(),
+            fallback_model_kind: self.fallback_model_kind.clone(),
+            trainer_replay_size: self.trainer_replay_size,
+            trainer_step: self.trainer_step,
+            trainer_policy_loss: self.trainer_policy_loss,
+            trainer_value_loss: self.trainer_value_loss,
+            trainer_entropy: self.trainer_entropy,
+            trainer_last_error: self.trainer_last_error.clone(),
+            candidate_promotions_succeeded: self.candidate_promotions_succeeded,
+            candidate_promotions_rejected: self.candidate_promotions_rejected,
+            candidate_last_outcome: self.candidate_last_outcome.clone(),
+            ml_protocol_version: self.ml_protocol_version,
+            recording_active: self.recording_active,
+            current_session_id: self.current_session_id.clone(),
+        }
     }
 
     pub(crate) fn recompute_integrity_rollup(&mut self) {

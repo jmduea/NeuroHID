@@ -425,64 +425,7 @@ impl RuntimeIpcHandle {
             return ControlSnapshot::default();
         };
         let uptime_secs = state.started_at.map(|t| t.elapsed().as_secs()).unwrap_or(0);
-
-        ControlSnapshot {
-            running: state.active,
-            uptime_secs,
-            calibration_mode: state.calibration_mode,
-            output_enabled: state.output_enabled,
-            profile_ready: state.profile_ready,
-            decoder_ready: state.decoder_ready,
-            decoder_model_version: state.decoder_model_version.clone(),
-            active_profile_name: state.active_profile_name.clone(),
-            device_name: state.device_name.clone(),
-            outlet_name: state.outlet_name.clone(),
-            signal_name: state.signal_name.clone(),
-            decoder_name: state.decoder_name.clone(),
-            device_battery: state.device_battery,
-            signal_quality: state.signal_quality,
-            decode_latency_last_us: state.decode_latency_last_us,
-            decode_latency_p95_us: state.decode_latency_p95_us,
-            signal_latency_last_us: state.signal_latency_last_us,
-            signal_latency_p95_us: state.signal_latency_p95_us,
-            action_latency_last_us: state.action_latency_last_us,
-            action_latency_p95_us: state.action_latency_p95_us,
-            latency_degraded: state.latency_degraded,
-            latency_alert_message: state.latency_alert_message.clone(),
-            actions_emitted: state.actions_emitted,
-            errors_detected: state.errors_detected,
-            device_connected: state.device_connected,
-            ipc_connected: state.ipc_connected,
-            ipc_simulated: state.ipc_simulated,
-            task_error: state.task_error.clone(),
-            discovered_streams: state.discovered_streams.clone(),
-            routed_eeg_streams: state.routed_eeg_streams,
-            routed_motion_streams: state.routed_motion_streams,
-            routed_auxiliary_streams: state.routed_auxiliary_streams,
-            routed_unknown_streams: state.routed_unknown_streams,
-            pipeline_integrity_degraded: state.pipeline_integrity_degraded,
-            integrity_issue_count: state.integrity_issue_count,
-            stage_health_summary: state.stage_health_summary.clone(),
-            learning_enabled: state.learning_enabled,
-            ml_bridge_connected: state.ml_bridge_connected,
-            ml_bridge_stalled: state.ml_bridge_stalled,
-            runtime_mode_state: state.runtime_mode_state,
-            enabled_capabilities: state.enabled_capabilities.clone(),
-            limited_capabilities_message: state.limited_capabilities_message.clone(),
-            fallback_model_kind: state.fallback_model_kind.clone(),
-            trainer_replay_size: state.trainer_replay_size,
-            trainer_step: state.trainer_step,
-            trainer_policy_loss: state.trainer_policy_loss,
-            trainer_value_loss: state.trainer_value_loss,
-            trainer_entropy: state.trainer_entropy,
-            trainer_last_error: state.trainer_last_error.clone(),
-            candidate_promotions_succeeded: state.candidate_promotions_succeeded,
-            candidate_promotions_rejected: state.candidate_promotions_rejected,
-            candidate_last_outcome: state.candidate_last_outcome.clone(),
-            ml_protocol_version: state.ml_protocol_version,
-            recording_active: state.recording_active,
-            current_session_id: state.current_session_id.clone(),
-        }
+        state.to_control_snapshot(uptime_secs)
     }
 
     /// Build trainer bridge snapshot from current runtime state.
@@ -515,79 +458,55 @@ impl RuntimeIpcHandle {
         None
     }
 
+    /// Send a runtime command and convert the result into an ack/error control response.
+    fn ack_command(&self, request_id: Option<String>, cmd: RuntimeCommand) -> ControlResponse {
+        match self.command(cmd) {
+            Ok(()) => ControlResponse::ack(request_id),
+            Err(error) => ControlResponse::error(request_id, error.to_string()),
+        }
+    }
+
     /// Handle one serialized control request and emit a serialized response.
     pub async fn dispatch_control_request(&self, request: ControlRequest) -> ControlResponse {
         let request_id = request.request_id.clone();
         match request.command {
             ControlCommand::Snapshot => ControlResponse::snapshot(request_id, self.snapshot()),
-            ControlCommand::Shutdown => match self.command(RuntimeCommand::Stop) {
-                Ok(()) => ControlResponse::ack(request_id),
-                Err(error) => ControlResponse::error(request_id, error.to_string()),
-            },
+            ControlCommand::Shutdown => self.ack_command(request_id, RuntimeCommand::Stop),
             ControlCommand::SetCalibrationMode { enabled } => {
-                match self.command(RuntimeCommand::ToggleCalibration { enabled }) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::ToggleCalibration { enabled })
             }
             ControlCommand::SetOutputEnabled { enabled } => {
-                match self.command(RuntimeCommand::ToggleOutput { enabled }) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::ToggleOutput { enabled })
             }
-            ControlCommand::ReloadModel => match self.command(RuntimeCommand::ReloadModel) {
-                Ok(()) => ControlResponse::ack(request_id),
-                Err(error) => ControlResponse::error(request_id, error.to_string()),
-            },
+            ControlCommand::ReloadModel => {
+                self.ack_command(request_id, RuntimeCommand::ReloadModel)
+            }
             ControlCommand::PromoteCandidateModel => {
-                match self.command(RuntimeCommand::PromoteCandidateModel) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::PromoteCandidateModel)
             }
-            ControlCommand::RescanStreams => match self.command(RuntimeCommand::RescanStreams) {
-                Ok(()) => ControlResponse::ack(request_id),
-                Err(error) => ControlResponse::error(request_id, error.to_string()),
-            },
+            ControlCommand::RescanStreams => {
+                self.ack_command(request_id, RuntimeCommand::RescanStreams)
+            }
             ControlCommand::ConnectStream { stream_id } => {
-                match self.command(RuntimeCommand::ConnectStream { stream_id }) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::ConnectStream { stream_id })
             }
             ControlCommand::DisconnectStream { stream_id } => {
-                match self.command(RuntimeCommand::DisconnectStream { stream_id }) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::DisconnectStream { stream_id })
             }
             ControlCommand::SetLearningEnabled { enabled } => {
-                match self.command(RuntimeCommand::SetLearningEnabled { enabled }) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::SetLearningEnabled { enabled })
             }
             ControlCommand::MlBridgeReconnect => {
-                match self.command(RuntimeCommand::MlBridgeReconnect) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::MlBridgeReconnect)
             }
             ControlCommand::TrainerSnapshot => {
                 ControlResponse::trainer_snapshot(request_id, self.trainer_snapshot())
             }
             ControlCommand::SetFallbackPolicy { policy } => {
-                match self.command(RuntimeCommand::SetFallbackPolicy { policy }) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::SetFallbackPolicy { policy })
             }
             ControlCommand::SetSignalConfig { signal } => {
-                match self.command(RuntimeCommand::SetSignalConfig { signal }) {
-                    Ok(()) => ControlResponse::ack(request_id),
-                    Err(error) => ControlResponse::error(request_id, error.to_string()),
-                }
+                self.ack_command(request_id, RuntimeCommand::SetSignalConfig { signal })
             }
             ControlCommand::StartRecording { output_path } => {
                 let (tx, rx) = oneshot::channel();

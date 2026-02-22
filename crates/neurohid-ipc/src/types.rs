@@ -33,25 +33,6 @@ pub const IPC_PROTOCOL_VERSION: u16 = 3;
 // Payload types (shared across trainer stream and runtime events)
 // ---------------------------------------------------------------------------
 
-/// Message kinds in the runtime ML protocol.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RuntimeMlKind {
-    Hello,
-    SessionBoundary,
-    DecisionEvent,
-    ErrpWindow,
-    RuntimeTelemetry,
-    Ping,
-    Shutdown,
-    ErrpResult,
-    TrainerStatus,
-    CandidateModelReady,
-    Pong,
-    Ack,
-    Error,
-}
-
 /// Peer role in handshake.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -200,7 +181,7 @@ pub struct Pong {
 /// Ack payload.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Ack {
-    pub ack_kind: RuntimeMlKind,
+    pub ack_kind: TrainerStreamKind,
     pub ack_seq: u64,
 }
 
@@ -298,125 +279,6 @@ impl IpcEnvelope {
 }
 
 // ---------------------------------------------------------------------------
-// Control RPC
-// ---------------------------------------------------------------------------
-
-/// Control RPC request payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ControlRpcRequest {
-    pub request_id: Option<String>,
-    pub command: ControlCommand,
-}
-
-impl From<ControlRequest> for ControlRpcRequest {
-    fn from(value: ControlRequest) -> Self {
-        Self {
-            request_id: value.request_id,
-            command: value.command,
-        }
-    }
-}
-
-impl From<ControlRpcRequest> for ControlRequest {
-    fn from(value: ControlRpcRequest) -> Self {
-        Self {
-            request_id: value.request_id,
-            command: value.command,
-        }
-    }
-}
-
-/// Control RPC response payload.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct ControlRpcResponse {
-    pub request_id: Option<String>,
-    pub payload: ControlRpcResponsePayload,
-}
-
-/// Control RPC response variants.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-#[expect(
-    clippy::large_enum_variant,
-    reason = "mirrors ControlResponsePayload for IPC wire compatibility"
-)]
-pub enum ControlRpcResponsePayload {
-    Ack,
-    Snapshot { snapshot: ControlSnapshot },
-    TrainerSnapshot { snapshot: TrainerSnapshot },
-    Error { message: String },
-    RecordingStarted {
-        session_id: String,
-        output_path: String,
-    },
-    RecordingStopped { session_id: String },
-}
-
-impl From<ControlResponse> for ControlRpcResponse {
-    fn from(value: ControlResponse) -> Self {
-        Self {
-            request_id: value.request_id,
-            payload: value.payload.into(),
-        }
-    }
-}
-
-impl From<ControlRpcResponse> for ControlResponse {
-    fn from(value: ControlRpcResponse) -> Self {
-        Self {
-            request_id: value.request_id,
-            payload: value.payload.into(),
-        }
-    }
-}
-
-impl From<ControlResponsePayload> for ControlRpcResponsePayload {
-    fn from(value: ControlResponsePayload) -> Self {
-        match value {
-            ControlResponsePayload::Ack => Self::Ack,
-            ControlResponsePayload::Snapshot { snapshot } => Self::Snapshot { snapshot },
-            ControlResponsePayload::TrainerSnapshot { snapshot } => {
-                Self::TrainerSnapshot { snapshot }
-            }
-            ControlResponsePayload::Error { message } => Self::Error { message },
-            ControlResponsePayload::RecordingStarted {
-                session_id,
-                output_path,
-            } => Self::RecordingStarted {
-                session_id,
-                output_path,
-            },
-            ControlResponsePayload::RecordingStopped { session_id } => {
-                Self::RecordingStopped { session_id }
-            }
-        }
-    }
-}
-
-impl From<ControlRpcResponsePayload> for ControlResponsePayload {
-    fn from(value: ControlRpcResponsePayload) -> Self {
-        match value {
-            ControlRpcResponsePayload::Ack => Self::Ack,
-            ControlRpcResponsePayload::Snapshot { snapshot } => Self::Snapshot { snapshot },
-            ControlRpcResponsePayload::TrainerSnapshot { snapshot } => {
-                Self::TrainerSnapshot { snapshot }
-            }
-            ControlRpcResponsePayload::Error { message } => Self::Error { message },
-            ControlRpcResponsePayload::RecordingStarted {
-                session_id,
-                output_path,
-            } => Self::RecordingStarted {
-                session_id,
-                output_path,
-            },
-            ControlRpcResponsePayload::RecordingStopped { session_id } => {
-                Self::RecordingStopped { session_id }
-            }
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Trainer stream
 // ---------------------------------------------------------------------------
 
@@ -476,26 +338,6 @@ impl TrainerStreamKind {
             "ack" => Some(Self::Ack),
             "error" => Some(Self::Error),
             _ => None,
-        }
-    }
-}
-
-impl From<RuntimeMlKind> for TrainerStreamKind {
-    fn from(value: RuntimeMlKind) -> Self {
-        match value {
-            RuntimeMlKind::Hello => Self::Hello,
-            RuntimeMlKind::SessionBoundary => Self::SessionBoundary,
-            RuntimeMlKind::DecisionEvent => Self::DecisionEvent,
-            RuntimeMlKind::ErrpWindow => Self::ErrpWindow,
-            RuntimeMlKind::RuntimeTelemetry => Self::RuntimeTelemetry,
-            RuntimeMlKind::Ping => Self::Ping,
-            RuntimeMlKind::Shutdown => Self::Shutdown,
-            RuntimeMlKind::ErrpResult => Self::ErrpResult,
-            RuntimeMlKind::TrainerStatus => Self::TrainerStatus,
-            RuntimeMlKind::CandidateModelReady => Self::CandidateModelReady,
-            RuntimeMlKind::Pong => Self::Pong,
-            RuntimeMlKind::Ack => Self::Ack,
-            RuntimeMlKind::Error => Self::Error,
         }
     }
 }
@@ -734,10 +576,10 @@ mod tests {
 
     #[test]
     fn control_request_roundtrip_via_envelope() {
-        let request = ControlRpcRequest::from(ControlRequest {
+        let request = ControlRequest {
             request_id: Some("req-1".to_string()),
             command: ControlCommand::Snapshot,
-        });
+        };
         let envelope = IpcEnvelope::new(
             IpcChannel::ControlRpc,
             "request",
@@ -749,24 +591,18 @@ mod tests {
         .expect("envelope encoding should succeed");
         assert_eq!(envelope.v, IPC_PROTOCOL_VERSION);
 
-        let decoded: ControlRpcRequest = envelope
+        let decoded: ControlRequest = envelope
             .decode_payload()
             .expect("payload decode should succeed");
         assert_eq!(decoded, request);
     }
 
     #[test]
-    fn control_response_mapping_keeps_shape() {
+    fn control_response_roundtrip_via_serde() {
         let response = ControlResponse::snapshot(Some("x".to_string()), sample_snapshot());
-        let v3 = ControlRpcResponse::from(response.clone());
-        let roundtrip = ControlResponse::from(v3);
+        let json = serde_json::to_string(&response).expect("serialize");
+        let roundtrip: ControlResponse = serde_json::from_str(&json).expect("deserialize");
         assert_eq!(roundtrip, response);
-    }
-
-    #[test]
-    fn trainer_kind_from_runtime_ml_kind() {
-        let kind = TrainerStreamKind::from(RuntimeMlKind::TrainerStatus);
-        assert_eq!(kind, TrainerStreamKind::TrainerStatus);
     }
 
     #[test]
@@ -779,25 +615,24 @@ mod tests {
     }
 
     #[test]
-    fn all_runtime_ml_kinds_have_msg_type() {
+    fn all_trainer_stream_kinds_have_msg_type() {
         let kinds = [
-            RuntimeMlKind::Hello,
-            RuntimeMlKind::SessionBoundary,
-            RuntimeMlKind::DecisionEvent,
-            RuntimeMlKind::ErrpWindow,
-            RuntimeMlKind::RuntimeTelemetry,
-            RuntimeMlKind::Ping,
-            RuntimeMlKind::Shutdown,
-            RuntimeMlKind::ErrpResult,
-            RuntimeMlKind::TrainerStatus,
-            RuntimeMlKind::CandidateModelReady,
-            RuntimeMlKind::Pong,
-            RuntimeMlKind::Ack,
-            RuntimeMlKind::Error,
+            TrainerStreamKind::Hello,
+            TrainerStreamKind::SessionBoundary,
+            TrainerStreamKind::DecisionEvent,
+            TrainerStreamKind::ErrpWindow,
+            TrainerStreamKind::RuntimeTelemetry,
+            TrainerStreamKind::Ping,
+            TrainerStreamKind::Shutdown,
+            TrainerStreamKind::ErrpResult,
+            TrainerStreamKind::TrainerStatus,
+            TrainerStreamKind::CandidateModelReady,
+            TrainerStreamKind::Pong,
+            TrainerStreamKind::Ack,
+            TrainerStreamKind::Error,
         ];
         for kind in kinds {
-            let stream_kind = TrainerStreamKind::from(kind);
-            let msg_type = stream_kind.as_msg_type();
+            let msg_type = kind.as_msg_type();
             assert!(
                 TrainerStreamKind::from_msg_type(msg_type).is_some(),
                 "msg_type round-trip failed for {msg_type}"

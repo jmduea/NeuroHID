@@ -133,32 +133,26 @@ impl std::fmt::Display for DeviceBackend {
 
 /// Configuration for the LSL (Lab Streaming Layer) backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LslConfig {
     /// LSL resolve predicate for stream discovery.
     ///
     /// Examples: `"type='EEG'"`, `"name='EmotivEEG'"`, `""` (all streams).
     /// See LSL docs for predicate syntax.
-    #[serde(default)]
     pub predicate: String,
 
     /// Timeout for stream resolution in seconds.
-    #[serde(default = "default_resolve_timeout")]
     pub resolve_timeout_secs: f64,
 
     /// Inlet buffer size in samples (0 = LSL default of 360 seconds).
-    #[serde(default)]
     pub buffer_size: u32,
-}
-
-fn default_resolve_timeout() -> f64 {
-    1.0
 }
 
 impl Default for LslConfig {
     fn default() -> Self {
         Self {
             predicate: String::new(),
-            resolve_timeout_secs: default_resolve_timeout(),
+            resolve_timeout_secs: 1.0,
             buffer_size: 0,
         }
     }
@@ -177,59 +171,43 @@ pub enum SerialFraming {
 
 /// Configuration for USB/serial adapter backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SerialConfig {
     /// Explicit serial device path (e.g., `/dev/ttyUSB0`, `COM3`).
-    #[serde(default)]
     pub port: Option<String>,
     /// Baud rate.
-    #[serde(default = "default_serial_baud")]
     pub baud_rate: u32,
     /// Framing mode.
-    #[serde(default)]
     pub framing: SerialFraming,
     /// Number of channels expected in each sample.
-    #[serde(default = "default_serial_channels")]
     pub channels: usize,
-}
-
-fn default_serial_baud() -> u32 {
-    115_200
-}
-
-fn default_serial_channels() -> usize {
-    8
 }
 
 impl Default for SerialConfig {
     fn default() -> Self {
         Self {
             port: None,
-            baud_rate: default_serial_baud(),
+            baud_rate: 115_200,
             framing: SerialFraming::default(),
-            channels: default_serial_channels(),
+            channels: 8,
         }
     }
 }
 
 /// Configuration for native BrainFlow backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BrainFlowConfig {
     /// Board id understood by BrainFlow/OpenBCI.
-    #[serde(default = "default_brainflow_board_id")]
     pub board_id: i32,
     /// Optional serial port for board connection.
-    #[serde(default)]
     pub serial_port: Option<String>,
-}
-
-fn default_brainflow_board_id() -> i32 {
-    0
 }
 
 impl Default for BrainFlowConfig {
     fn default() -> Self {
         Self {
-            board_id: default_brainflow_board_id(),
+            board_id: 0,
             serial_port: None,
         }
     }
@@ -463,11 +441,11 @@ pub enum OutletTransport {
 
 /// A single outlet target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OutletTarget {
     /// Stable name used for display/debug.
     pub name: String,
     /// Transport kind.
-    #[serde(default)]
     pub transport: OutletTransport,
     /// Transport address. TCP examples: `127.0.0.1:49000`.
     pub address: String,
@@ -489,18 +467,15 @@ impl Default for OutletTarget {
 
 /// Configuration for configurable network outlets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OutletConfig {
     /// Master switch for outlet publishing.
-    #[serde(default)]
     pub enabled: bool,
     /// When set, use this outlet extension instead of the built-in (LSL/TCP). Name-only ID.
-    #[serde(default)]
     pub extension_name: Option<String>,
     /// Destination targets.
-    #[serde(default)]
     pub targets: Vec<OutletTarget>,
     /// Publish raw samples.
-    #[serde(default)]
     pub publish_samples: bool,
     /// Publish extracted features.
     #[serde(default = "default_true")]
@@ -543,133 +518,67 @@ pub enum ThemeMode {
 
 /// Persisted UI preferences for the hub.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UiConfig {
     /// Font scale multiplier (1.0 = default).
-    #[serde(default = "default_font_scale")]
     pub font_scale: f32,
     /// End-user vs advanced UI mode.
-    #[serde(default)]
     pub mode: UiMode,
     /// Theme preference.
-    #[serde(default)]
     pub theme_mode: ThemeMode,
     /// Whether pane resizing is enabled in visualization layouts.
     #[serde(default = "default_true")]
     pub pane_resize_enabled: bool,
     /// Whether tray mode behavior is enabled.
-    #[serde(default)]
     pub tray_mode_enabled: bool,
     /// Command used to bootstrap the managed Python environment for the IDE.
-    #[serde(default = "default_jupyter_bootstrap_command")]
     pub jupyter_bootstrap_command: String,
     /// Whether the IDE should bootstrap dependencies automatically.
     #[serde(default = "default_true")]
     pub jupyter_auto_bootstrap: bool,
     /// Command used by Advanced mode to launch JupyterLab.
-    #[serde(default = "default_jupyter_command")]
     pub jupyter_command: String,
     /// URL opened by the IDE when Jupyter server is ready.
-    #[serde(default = "default_jupyter_url")]
     pub jupyter_url: String,
     /// Persisted visualization layout preset key.
-    #[serde(default = "default_visualization_layout_preset")]
     pub visualization_layout_preset: String,
     /// Persisted visualization widget assignments by pane slot.
-    #[serde(default = "default_visualization_pane_widgets")]
     pub visualization_pane_widgets: Vec<String>,
     /// Target refresh rate for visualization rendering.
-    #[serde(default = "default_visualization_target_fps")]
     pub visualization_target_fps: u8,
     /// Whether the visualization screen should render in a detached OS window.
-    #[serde(default)]
     pub visualization_detached: bool,
     /// Last known detached visualization window top-left position in points.
-    #[serde(default)]
     pub visualization_detached_pos: Option<(f32, f32)>,
     /// Last known detached visualization window inner size in points.
-    #[serde(default)]
     pub visualization_detached_size: Option<(f32, f32)>,
     /// Thresholds used by Advanced-mode Problems panel device-health diagnostics.
-    #[serde(default)]
     pub device_health_problems: DeviceHealthProblemConfig,
     /// Last open screen ID for resume (e.g. "dashboard", "training"). Applied on Hub startup.
-    #[serde(default)]
     pub last_screen: Option<String>,
-}
-
-fn default_font_scale() -> f32 {
-    1.0
-}
-
-fn default_jupyter_bootstrap_command() -> String {
-    "uv sync --directory python".to_string()
-}
-
-fn default_jupyter_command() -> String {
-    "uv run --directory python jupyter lab --no-browser --ip=127.0.0.1 --port=8888".to_string()
-}
-
-fn default_jupyter_url() -> String {
-    "http://127.0.0.1:8888/lab".to_string()
-}
-
-fn default_visualization_layout_preset() -> String {
-    "grid2x2".to_string()
-}
-
-fn default_visualization_pane_widgets() -> Vec<String> {
-    vec![
-        "time_series".to_string(),
-        "fft_plot".to_string(),
-        "band_power".to_string(),
-        "signal_quality".to_string(),
-    ]
-}
-
-fn default_visualization_target_fps() -> u8 {
-    30
 }
 
 /// UI-side thresholds for synthesizing device-health problems in the workbench.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct DeviceHealthProblemConfig {
     /// Battery percentage at or below which a warning is reported.
-    #[serde(default = "default_device_health_battery_low_threshold_pct")]
     pub battery_low_threshold_pct: u8,
     /// Battery percentage at or below which severity escalates to danger.
-    #[serde(default = "default_device_health_battery_critical_threshold_pct")]
     pub battery_critical_threshold_pct: u8,
     /// Average channel quality at or below which a warning is reported.
-    #[serde(default = "default_device_health_quality_warning_threshold")]
     pub quality_warning_threshold: f32,
     /// Average channel quality at or below which severity escalates to danger.
-    #[serde(default = "default_device_health_quality_critical_threshold")]
     pub quality_critical_threshold: f32,
-}
-
-fn default_device_health_battery_low_threshold_pct() -> u8 {
-    20
-}
-
-fn default_device_health_battery_critical_threshold_pct() -> u8 {
-    10
-}
-
-fn default_device_health_quality_warning_threshold() -> f32 {
-    0.5
-}
-
-fn default_device_health_quality_critical_threshold() -> f32 {
-    0.35
 }
 
 impl Default for DeviceHealthProblemConfig {
     fn default() -> Self {
         Self {
-            battery_low_threshold_pct: default_device_health_battery_low_threshold_pct(),
-            battery_critical_threshold_pct: default_device_health_battery_critical_threshold_pct(),
-            quality_warning_threshold: default_device_health_quality_warning_threshold(),
-            quality_critical_threshold: default_device_health_quality_critical_threshold(),
+            battery_low_threshold_pct: 20,
+            battery_critical_threshold_pct: 10,
+            quality_warning_threshold: 0.5,
+            quality_critical_threshold: 0.35,
         }
     }
 }
@@ -677,18 +586,25 @@ impl Default for DeviceHealthProblemConfig {
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
-            font_scale: default_font_scale(),
+            font_scale: 1.0,
             mode: UiMode::default(),
             theme_mode: ThemeMode::default(),
             pane_resize_enabled: true,
             tray_mode_enabled: false,
-            jupyter_bootstrap_command: default_jupyter_bootstrap_command(),
-            jupyter_auto_bootstrap: default_true(),
-            jupyter_command: default_jupyter_command(),
-            jupyter_url: default_jupyter_url(),
-            visualization_layout_preset: default_visualization_layout_preset(),
-            visualization_pane_widgets: default_visualization_pane_widgets(),
-            visualization_target_fps: default_visualization_target_fps(),
+            jupyter_bootstrap_command: "uv sync --directory python".to_string(),
+            jupyter_auto_bootstrap: true,
+            jupyter_command:
+                "uv run --directory python jupyter lab --no-browser --ip=127.0.0.1 --port=8888"
+                    .to_string(),
+            jupyter_url: "http://127.0.0.1:8888/lab".to_string(),
+            visualization_layout_preset: "grid2x2".to_string(),
+            visualization_pane_widgets: vec![
+                "time_series".to_string(),
+                "fft_plot".to_string(),
+                "band_power".to_string(),
+                "signal_quality".to_string(),
+            ],
+            visualization_target_fps: 30,
             visualization_detached: false,
             visualization_detached_pos: None,
             visualization_detached_size: None,
@@ -742,7 +658,6 @@ impl std::fmt::Display for ServiceRuntimeMode {
         }
     }
 }
-
 
 /// Unified IPC exposure mode for service control/events endpoints.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -832,17 +747,15 @@ impl Default for RecalibrationConfig {
 
 /// Configuration for the background service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServiceConfig {
     /// Runtime hosting mode for hub control.
-    #[serde(default)]
     pub runtime_mode: ServiceRuntimeMode,
 
     /// Unified IPC exposure mode for control/events endpoint.
-    #[serde(default)]
     pub ipc_mode: IpcMode,
 
     /// Unified IPC endpoint path/name or loopback socket address.
-    #[serde(default = "default_ipc_endpoint")]
     pub ipc_endpoint: String,
 
     /// Whether the service should start automatically when the app launches.
@@ -850,15 +763,12 @@ pub struct ServiceConfig {
 
     /// Whether to use the built-in simulated IPC bridge when no real
     /// Python process bridge is configured.
-    #[serde(default = "default_ipc_simulation_enabled")]
     pub ipc_simulation_enabled: bool,
 
     /// Maximum trainer heartbeat staleness before bridge is marked stalled.
-    #[serde(default = "default_ml_stall_timeout_ms")]
     pub ml_stall_timeout_ms: u64,
 
     /// Expected heartbeat interval for runtime<->trainer bridge.
-    #[serde(default = "default_ml_heartbeat_interval_ms")]
     pub ml_heartbeat_interval_ms: u64,
 
     /// Whether to show system tray icon
@@ -874,32 +784,13 @@ pub struct ServiceConfig {
     pub log_file_path: Option<String>,
 
     /// Latency alert policy for runtime decode/action p95 metrics.
-    #[serde(default)]
     pub latency_alert: LatencyAlertConfig,
 
     /// Capability gating and model fallback policy.
-    #[serde(default)]
     pub fallback_policy: FallbackPolicy,
 
     /// Runtime observability sampling and rate-limit policy.
-    #[serde(default)]
     pub observability: ObservabilityConfig,
-}
-
-fn default_ipc_simulation_enabled() -> bool {
-    true
-}
-
-fn default_ipc_endpoint() -> String {
-    "neurohid.control.v3".to_string()
-}
-
-fn default_ml_stall_timeout_ms() -> u64 {
-    1_500
-}
-
-fn default_ml_heartbeat_interval_ms() -> u64 {
-    500
 }
 
 impl Default for ServiceConfig {
@@ -907,11 +798,11 @@ impl Default for ServiceConfig {
         Self {
             runtime_mode: ServiceRuntimeMode::default(),
             ipc_mode: IpcMode::default(),
-            ipc_endpoint: default_ipc_endpoint(),
+            ipc_endpoint: "neurohid.control.v3".to_string(),
             auto_start: true,
             ipc_simulation_enabled: true,
-            ml_stall_timeout_ms: default_ml_stall_timeout_ms(),
-            ml_heartbeat_interval_ms: default_ml_heartbeat_interval_ms(),
+            ml_stall_timeout_ms: 1_500,
+            ml_heartbeat_interval_ms: 500,
             show_tray_icon: true,
             notifications_enabled: true,
             log_level: "info".to_string(),
@@ -946,45 +837,6 @@ impl Default for LatencyAlertConfig {
             action_p95_threshold_us: 60_000,
             sustained_duration_secs: 30,
             notification_cooldown_secs: 120,
-        }
-    }
-}
-
-/// Runtime state that's not persisted but useful for communication.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceState {
-    /// Whether the service is currently running
-    pub running: bool,
-
-    /// Whether action output is currently enabled
-    pub output_enabled: bool,
-
-    /// Whether online learning is currently active
-    pub learning_active: bool,
-
-    /// Current active profile ID
-    pub active_profile: Option<String>,
-
-    /// Current device status summary
-    pub device_status: String,
-
-    /// Current error rate (recent window)
-    pub recent_error_rate: f32,
-
-    /// Uptime in seconds
-    pub uptime_seconds: u64,
-}
-
-impl Default for ServiceState {
-    fn default() -> Self {
-        Self {
-            running: false,
-            output_enabled: false,
-            learning_active: false,
-            active_profile: None,
-            device_status: "Disconnected".to_string(),
-            recent_error_rate: 0.0,
-            uptime_seconds: 0,
         }
     }
 }

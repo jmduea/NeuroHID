@@ -5,9 +5,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::mpsc;
 use tokio::time::{Duration, timeout};
 
-use crate::protocol::{
-    ControlRpcRequest, ControlRpcResponse, IpcChannel, IpcConfig, IpcEnvelope, IpcTransport,
-};
+use crate::protocol::{IpcChannel, IpcConfig, IpcEnvelope, IpcTransport};
 use neurohid_types::control::{ControlRequest, ControlResponse};
 use neurohid_types::error::{IpcError, Result};
 
@@ -179,14 +177,13 @@ impl IpcClient {
         seq: u64,
     ) -> Result<ControlResponse> {
         let request_id = request.request_id.clone();
-        let request_payload = ControlRpcRequest::from(request);
         let envelope = IpcEnvelope::new(
             IpcChannel::ControlRpc,
             "request",
             seq,
             request_id.clone(),
             Some(session_id.to_string()),
-            &request_payload,
+            &request,
         )
         .map_err(IpcError::InvalidMessage)?;
         self.send(envelope).await?;
@@ -239,10 +236,9 @@ pub fn decode_control_response_envelope(
         .into());
     }
 
-    let response_payload: ControlRpcResponse = envelope
+    let response: ControlResponse = envelope
         .decode_payload()
         .map_err(IpcError::InvalidMessage)?;
-    let response = ControlResponse::from(response_payload);
     if expected_request_id.is_some() && response.request_id != *expected_request_id {
         tracing::debug!(
             expected_request_id = ?expected_request_id,

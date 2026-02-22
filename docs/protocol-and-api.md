@@ -35,10 +35,10 @@ Windows, loopback TCP elsewhere).
 
 ## `control.rpc`
 
-Request: `msg_type = "request"`, payload shape `ControlRpcRequest`.
+Request: `msg_type = "request"`, payload shape `ControlRequest`.
 
-Response: `msg_type = "response"`, payload shape `ControlRpcResponse` with
-variants: `ack`, `snapshot`, `trainer_snapshot`, `error`.
+Response: `msg_type = "response"`, payload shape `ControlResponse` with
+variants: `ack`, `snapshot`, `trainer_snapshot`, `error`, `recording_started`, `recording_stopped`.
 
 ### Control Commands
 

@@ -118,15 +118,19 @@ impl FeatureExtractor {
     /// Temporal features (50 dims) will be zero-filled. Use
     /// [`FeatureExtractor::extract_with_temporal`] for the full 180-dim vector.
     pub fn extract(&mut self, window: &SignalWindow) -> Result<FeatureVector, SignalError> {
-        self.extract_with_temporal(window, None)
+        let (fv, _psds) = self.extract_with_temporal(window, None)?;
+        Ok(fv)
     }
 
     /// Extract the complete feature vector, optionally including temporal context.
+    ///
+    /// Also returns the per-channel Welch PSDs so callers (e.g. the pipeline)
+    /// can reuse them for temporal state updates without re-computing.
     pub fn extract_with_temporal(
         &mut self,
         window: &SignalWindow,
         temporal: Option<&TemporalState>,
-    ) -> Result<FeatureVector, SignalError> {
+    ) -> Result<(FeatureVector, Vec<Vec<f32>>), SignalError> {
         let nc = self.config.channel_count;
         if window.channel_count != nc {
             return Err(SignalError::InvalidChannelConfig(format!(
@@ -344,7 +348,7 @@ impl FeatureExtractor {
         if self.config.emit_labels {
             fv.labels = Some(labels);
         }
-        Ok(fv)
+        Ok((fv, channel_psds))
     }
 
     /// Welch's PSD estimate for a single channel.

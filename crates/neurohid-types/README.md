@@ -14,7 +14,7 @@ domain models.
 | `device` | `DeviceInfo`, `DeviceStatus`, `StreamInfo` | EEG device metadata and connection state |
 | `error` | `PlatformError`, `StorageError`, … | Shared error types for the entire ecosystem |
 | `event` | `StreamMarker` | Session-level event markers |
-| `ipc` | `IpcEnvelope`, `RuntimeEvent`, `ControlRpcRequest`, … | IPC v3 protocol types and wire format |
+| `ipc` | `IpcEnvelope`, `RuntimeEvent`, … | IPC v3 protocol types and wire format |
 | `learning` | Reward signals, reinforcement-learning types | Online learning feedback loop |
 | `model` | Model metadata, candidate model types | ML model lifecycle descriptors |
 | `observability` | `ObservabilityComponent`, `EmitGate`, event/stage constants | Structured telemetry helpers |

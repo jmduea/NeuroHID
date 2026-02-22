@@ -25,8 +25,7 @@ use neurohid_ipc::{
     IpcTransport as RuntimeIpcTransport, send_control_request_once,
 };
 use neurohid_ipc::{
-    ControlRpcRequest, ControlRpcResponse, IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope,
-    RuntimeEvent, RuntimeEventsSubscribe,
+    IPC_PROTOCOL_VERSION, IpcChannel, IpcEnvelope, RuntimeEvent, RuntimeEventsSubscribe,
 };
 use neurohid_storage::{ConfigStore, DataPaths, ProfileStore};
 use neurohid_types::{
@@ -1012,15 +1011,14 @@ async fn handle_control_request_envelope(
     if envelope.channel == IpcChannel::ControlRpc {
         let request_payload = if envelope.msg_type == "request" {
             envelope
-                .decode_payload::<ControlRpcRequest>()
+                .decode_payload::<ControlRequest>()
                 .map_err(|e| format!("invalid control request payload: {}", e))
         } else {
             Err("invalid control envelope channel/msg_type".to_string())
         };
 
         let (response, should_shutdown) = match request_payload {
-            Ok(request_v3) => {
-                let request: ControlRequest = request_v3.into();
+            Ok(request) => {
                 let command = control_command_name(&request.command);
                 let _request_span = tracing::debug_span!(
                     obs::span::CONTROL_REQUEST,
@@ -1060,7 +1058,7 @@ async fn handle_control_request_envelope(
             Err(error) => (ControlResponse::error(request_id.clone(), error), false),
         };
 
-        let response_v3 = ControlRpcResponse::from(response);
+        let response_v3 = response;
         let envelope = IpcEnvelope::new(
             IpcChannel::ControlRpc,
             "response",

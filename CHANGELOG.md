@@ -46,6 +46,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **IPC type simplification**: removed `ControlRpcRequest`, `ControlRpcResponse`, `ControlRpcResponsePayload` wrapper types from `neurohid-ipc` — all IPC control paths now use `ControlRequest`/`ControlResponse` from `neurohid-types` directly (wire format unchanged)
+- **IPC type simplification**: merged `RuntimeMlKind` enum into `TrainerStreamKind` (identical variants, single canonical type)
+- **Config cleanup**: consolidated 19 serde default functions into struct-level `#[serde(default)]` + `Default` impls; deleted dead `ServiceState` from `neurohid-types::config`; deleted unused XDF parsing types from `neurohid-types::signal`
+- **Runtime cleanup**: centralized `ServiceState` → `ControlSnapshot` projection into `to_control_snapshot()` method; extracted `ack_command()` helper to deduplicate 11 identical dispatch match arms
+- **Signal pipeline**: cached Welch PSD from feature extraction for temporal state updates — eliminates redundant Goertzel band-power approximation per extraction cycle
 - Python ML bridge (`neurohid-ml`) migrated from socket-based IPC to in-process PyO3 bindings: `IpcClient` now wraps `RuntimeHandle.trainer_*()`, control client takes `RuntimeHandle` directly, telemetry client wraps `subscribe_events()`, CLI commands use `RuntimeBuilder` instead of IPC endpoint arguments
 - Python package `neurohid_bindings` renamed to `neurohid` (module name matches `#[pymodule]`)
 - Python version requirement bumped to `>=3.14` (free-threaded CPython)
