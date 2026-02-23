@@ -41,3 +41,5 @@ cargo fmt --check
 3. Unsafe and error-handling policies remain satisfied.
 4. `docs/crate-boundaries.md` is updated when placement responsibilities changed.
 5. Changes are committed with a message that explains what changed and why.
+
+## Cont

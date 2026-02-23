@@ -1355,16 +1355,18 @@ impl PyAction {
 
     /// Extract the mouse action component, or None.
     fn mouse(&self) -> Option<PyMouseAction> {
-        self.inner.mouse.as_ref().map(|m| PyMouseAction {
-            inner: m.clone(),
-        })
+        self.inner
+            .mouse
+            .as_ref()
+            .map(|m| PyMouseAction { inner: m.clone() })
     }
 
     /// Extract the keyboard action component, or None.
     fn keyboard(&self) -> Option<PyKeyAction> {
-        self.inner.keyboard.as_ref().map(|k| PyKeyAction {
-            inner: k.clone(),
-        })
+        self.inner
+            .keyboard
+            .as_ref()
+            .map(|k| PyKeyAction { inner: k.clone() })
     }
 
     fn to_dict<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {

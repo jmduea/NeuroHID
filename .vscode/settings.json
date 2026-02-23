@@ -6,5 +6,6 @@
       ],
       "url": "./.github/hooks/hooks.schema.json"
     }
-  ]
+  ],
+  "python.languageServer": "None"
 }

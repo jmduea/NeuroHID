@@ -585,7 +585,10 @@ impl eframe::App for HubApp {
     }
 }
 
-#[expect(dead_code, reason = "reserved for command palette or future screen selector")]
+#[expect(
+    dead_code,
+    reason = "reserved for command palette or future screen selector"
+)]
 fn screen_glyph(screen: Screen) -> &'static str {
     match screen {
         Screen::Dashboard => "DB",

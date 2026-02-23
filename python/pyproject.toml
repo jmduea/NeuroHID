@@ -28,6 +28,7 @@ dependencies = [
     "scikit-learn>=1.8.0",
     "jupyterlab>=4.4.0",
     "pyxdf>=1.17.3",
+    "pyright>=1.1.408",
 ]
 
 [project.optional-dependencies]

@@ -275,11 +275,7 @@ impl PySignalWindow {
     }
 
     /// Get a single channel as a 1-D numpy array.
-    fn channel<'py>(
-        &self,
-        py: Python<'py>,
-        ch: usize,
-    ) -> PyResult<Bound<'py, PyArray1<f32>>> {
+    fn channel<'py>(&self, py: Python<'py>, ch: usize) -> PyResult<Bound<'py, PyArray1<f32>>> {
         self.inner
             .channel(ch)
             .map(|data| PyArray1::from_slice(py, data))
