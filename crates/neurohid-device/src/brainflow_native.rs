@@ -145,7 +145,11 @@ impl Device for BrainFlowNativeDevice {
     async fn start_streaming(&mut self) -> Result<SampleStream> {
         let board = Arc::clone(&self.board_shim);
         {
-            let b = board.lock().map_err(|_| DeviceError::ConnectionLost)?;
+            let b = board
+                .lock()
+                .map_err(|_| DeviceError::ConnectionLost {
+                    reason: "board mutex poisoned".to_string(),
+                })?;
             board_shim::BoardShim::start_stream(&b, STREAM_BUFFER_SIZE, "")?;
         }
         self.streaming
@@ -157,18 +161,10 @@ impl Device for BrainFlowNativeDevice {
         let preset = self.preset;
         let source_id = self.source_id.clone();
 
-        let ts_row = timestamp_channel(board_id, preset).map_err(|e| {
-            neurohid_types::error::Error::Device(DeviceError::Other(anyhow::anyhow!(
-                "timestamp_channel: {}",
-                e
-            )))
-        })?;
-        let eeg_rows = eeg_channels(board_id, preset).map_err(|e| {
-            neurohid_types::error::Error::Device(DeviceError::Other(anyhow::anyhow!(
-                "eeg_channels: {}",
-                e
-            )))
-        })?;
+        let ts_row = timestamp_channel(board_id, preset)
+            .map_err(|e| DeviceError::CommunicationError(format!("timestamp_channel: {e}")))?;
+        let eeg_rows = eeg_channels(board_id, preset)
+            .map_err(|e| DeviceError::CommunicationError(format!("eeg_channels: {e}")))?;
         let pkg_row = package_num_channel(board_id, preset).ok();
 
         tokio::task::spawn_blocking(move || {
@@ -206,7 +202,7 @@ impl Device for BrainFlowNativeDevice {
                     }
                     Err(e) => {
                         let _ = tx.blocking_send(Err(neurohid_types::error::Error::Device(
-                            DeviceError::Other(anyhow::anyhow!("get_board_data: {}", e)),
+                            DeviceError::CommunicationError(format!("get_board_data: {e}")),
                         )));
                     }
                 }
@@ -332,10 +328,10 @@ pub fn connect_native(
     let bf_id = to_brainflow_board_id(board_id);
     let params = to_input_params(serial_port);
     let board = board_shim::BoardShim::new(bf_id, params)
-        .map_err(|e| DeviceError::Other(anyhow::anyhow!("BoardShim::new: {}", e)))?;
+        .map_err(|e| DeviceError::CommunicationError(format!("BoardShim::new: {e}")))?;
     board
         .prepare_session()
-        .map_err(|e| DeviceError::Other(anyhow::anyhow!("prepare_session: {}", e)))?;
+        .map_err(|e| DeviceError::CommunicationError(format!("prepare_session: {e}")))?;
 
     let (info, channel_config) = native_device_metadata(board_id, serial_port)?;
     if info.id != *device_id {

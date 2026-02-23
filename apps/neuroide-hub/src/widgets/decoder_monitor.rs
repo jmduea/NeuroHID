@@ -362,12 +362,12 @@ impl DecoderMonitorWidget {
             let min_conf = self
                 .confidence_history
                 .iter()
-                .cloned()
+                .copied()
                 .fold(f32::INFINITY, f32::min);
             let max_conf = self
                 .confidence_history
                 .iter()
-                .cloned()
+                .copied()
                 .fold(f32::NEG_INFINITY, f32::max);
             let avg_conf: f32 =
                 self.confidence_history.iter().sum::<f32>() / self.confidence_history.len() as f32;
@@ -516,8 +516,8 @@ impl DecoderMonitorWidget {
 
                 // Find min/max for color scaling
                 let vals = &fv.values;
-                let v_min = vals.iter().cloned().fold(f32::INFINITY, f32::min);
-                let v_max = vals.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+                let v_min = vals.iter().copied().fold(f32::INFINITY, f32::min);
+                let v_max = vals.iter().copied().fold(f32::NEG_INFINITY, f32::max);
                 let v_range = (v_max - v_min).max(1e-6);
 
                 // Draw header row

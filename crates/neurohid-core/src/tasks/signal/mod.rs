@@ -295,8 +295,8 @@ impl SignalTask {
                             self.maybe_emit_head_movement_marker(&sample);
 
                             // Route sample to the correct per-stream buffer
-                            let stream_key = sample.source_id.clone()
-                                .unwrap_or_else(|| DEFAULT_STREAM_KEY.to_string());
+                            let stream_key: &str = sample.source_id.as_deref()
+                                .unwrap_or(DEFAULT_STREAM_KEY);
 
                             let discovered_stream = self
                                 .state
@@ -308,17 +308,17 @@ impl SignalTask {
                                         .iter()
                                         .find(|stream| {
                                             stream.id == stream_key
-                                                || stream.source_id.as_deref() == Some(&stream_key)
+                                                || stream.source_id.as_deref() == Some(stream_key)
                                         })
                                         .cloned()
                                 });
                             let route = Self::classify_stream_route(
-                                &stream_key,
+                                stream_key,
                                 discovered_stream.as_ref(),
                                 &sample,
                             );
-                            if self.stream_routes.get(&stream_key).copied() != Some(route) {
-                                self.stream_routes.insert(stream_key.clone(), route);
+                            if self.stream_routes.get(stream_key).copied() != Some(route) {
+                                self.stream_routes.insert(stream_key.to_owned(), route);
                                 tracing::info!(
                                     stream_id = %stream_key,
                                     route = ?route,
@@ -344,13 +344,15 @@ impl SignalTask {
                                 sample.device_timestamp.unwrap_or(sample.system_timestamp);
 
                             let (maybe_features, runtime_metrics) = {
-                                let buffer = self.stream_buffers.entry(stream_key.clone()).or_insert_with(|| {
-                                    StreamBuffer::new(
+                                if !self.stream_buffers.contains_key(stream_key) {
+                                    self.stream_buffers.insert(stream_key.to_owned(), StreamBuffer::new(
                                         &self.config,
                                         sample.values.len(),
                                         nominal_sample_rate_hz,
-                                    )
-                                });
+                                    ));
+                                }
+                                let buffer = self.stream_buffers.get_mut(stream_key)
+                                    .expect("stream buffer just inserted or already present");
 
                                 let sample_channel_count = sample.values.len().max(1);
                                 if buffer.channel_count != sample_channel_count {
@@ -430,7 +432,7 @@ impl SignalTask {
                                             Ok(()) => match pipeline.try_extract() {
                                                 Ok(Some(mut features)) => {
                                                     features.stream_id = (stream_key != DEFAULT_STREAM_KEY)
-                                                        .then(|| stream_key.clone());
+                                                        .then(|| stream_key.to_owned());
                                                     features.window_end_us = Some(features.timestamp);
                                                     let window_us =
                                                         i64::from(self.config.feature_window_ms.max(1))
@@ -501,7 +503,7 @@ impl SignalTask {
                             };
 
                             self.record_signal_latency(sample_timestamp).await;
-                            self.publish_stream_runtime_metrics(&stream_key, &runtime_metrics)
+                            self.publish_stream_runtime_metrics(stream_key, &runtime_metrics)
                                 .await;
 
                             if let Some(features) = maybe_features {
@@ -673,7 +675,7 @@ impl SignalPreprocessor for SignalTask {
 
 /// Builds either the built-in SignalTask or a loaded signal preprocessing extension.
 /// Returns the runner and its display name for snapshot ("built-in" or extension name).
-#[allow(clippy::too_many_arguments)]
+#[expect(clippy::too_many_arguments, reason = "factory wiring requires all task dependencies")]
 pub fn create_signal_preprocessor(
     config: SignalConfig,
     sample_rx: mpsc::Receiver<Sample>,

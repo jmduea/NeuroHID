@@ -32,7 +32,6 @@ dirs = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -40,3 +39,6 @@ tracing = { workspace = true }
 [dev-dependencies]
 tempfile = "3.10"
 tokio-test = "0.4"
+
+[lints]
+workspace = true

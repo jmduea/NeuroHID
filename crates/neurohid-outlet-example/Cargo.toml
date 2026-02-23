@@ -16,3 +16,6 @@ neurohid-types = { path = "../neurohid-types" }
 tracing = { workspace = true }
 tokio = { version = "1.49", default-features = false, features = ["sync"] }
 async-trait = "0.1"
+
+[lints]
+workspace = true

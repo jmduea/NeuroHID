@@ -193,8 +193,8 @@ impl SignalQualityWidget {
         let rms = (values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / n).sqrt();
 
         // Peak-to-peak
-        let min_val = values.iter().cloned().fold(f32::INFINITY, f32::min);
-        let max_val = values.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let min_val = values.iter().copied().fold(f32::INFINITY, f32::min);
+        let max_val = values.iter().copied().fold(f32::NEG_INFINITY, f32::max);
         let peak_to_peak = max_val - min_val;
 
         // Railed percentage

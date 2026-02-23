@@ -386,11 +386,10 @@ pub enum ExtensionError {
 // which lost context and misclassified errors. Call sites should use
 // explicit .map_err() with contextual information instead.
 
-impl From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Self {
-        Error::Storage(StorageError::SerializationError(err.to_string()))
-    }
-}
+// NOTE: The blanket From<serde_json::Error> impl was intentionally removed.
+// It routed ALL JSON errors to StorageError::SerializationError, which
+// misclassified IPC/config/protocol errors. Call sites already use explicit
+// .map_err() with appropriate error categories.
 
 // Helper functions for creating errors with context
 

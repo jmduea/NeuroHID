@@ -88,6 +88,7 @@ lsl-sys = { git = "https://github.com/labstreaminglayer/liblsl-rust.git", rev = 
 [workspace.lints.rust]
 unsafe_code = "warn"
 unused = "warn"
+missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"

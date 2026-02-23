@@ -18,7 +18,7 @@
 //! await runtime.shutdown()
 //! ```
 
-#![allow(clippy::used_underscore_binding)] // pyo3 macro generates these
+#![expect(clippy::used_underscore_binding, reason = "pyo3 macro generates these")]
 
 mod errors;
 mod runtime;

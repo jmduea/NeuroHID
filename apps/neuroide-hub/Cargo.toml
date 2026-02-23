@@ -53,3 +53,6 @@ eframe = { workspace = true, features = ["default_fonts", "glow"] }
 
 [dev-dependencies]
 egui_kittest = "0.33.1"
+
+[lints]
+workspace = true

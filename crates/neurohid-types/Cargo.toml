@@ -16,3 +16,6 @@ serde_json.workspace = true
 # For extension/outlet contract traits (async run, broadcast channels)
 tokio = { version = "1.49", default-features = false, features = ["sync"] }
 async-trait = "0.1"
+
+[lints]
+workspace = true

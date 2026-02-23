@@ -585,7 +585,7 @@ impl eframe::App for HubApp {
     }
 }
 
-#[allow(dead_code)] // Used when Platform section is present; kept for command palette or future use.
+#[expect(dead_code, reason = "reserved for command palette or future screen selector")]
 fn screen_glyph(screen: Screen) -> &'static str {
     match screen {
         Screen::Dashboard => "DB",

@@ -36,7 +36,6 @@ serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Async trait support
 async-trait = "0.1"
@@ -51,3 +50,6 @@ tract-onnx = "0.22"
 neurohid-types = { path = "../neurohid-types" }
 tokio-test = "0.4"
 xdf = "0.1.2"
+
+[lints]
+workspace = true

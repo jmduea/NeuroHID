@@ -247,8 +247,8 @@ impl BandPowerWidget {
         }
 
         // Find min/max for scaling
-        let min_val = history.iter().cloned().fold(f32::INFINITY, f32::min);
-        let max_val = history.iter().cloned().fold(f32::NEG_INFINITY, f32::max);
+        let min_val = history.iter().copied().fold(f32::INFINITY, f32::min);
+        let max_val = history.iter().copied().fold(f32::NEG_INFINITY, f32::max);
         let range = (max_val - min_val).max(0.001);
 
         let points: Vec<egui::Pos2> = history

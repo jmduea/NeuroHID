@@ -20,7 +20,6 @@ serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -46,3 +45,6 @@ lsl = ["dep:lsl"]
 brainflow = []
 # Real BrainFlow C++/Rust SDK; not in default or CI. Enables optional brainflow crate.
 brainflow-native = ["dep:brainflow", "dep:num", "dep:tokio-util"]
+
+[lints]
+workspace = true
