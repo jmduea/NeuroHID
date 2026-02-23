@@ -1,10 +1,9 @@
 use super::HubApp;
 use crate::app::screen_glyph;
 use crate::screens::Screen;
-use crate::state::ServiceSnapshot;
 use crate::theme;
 use crate::workbench::screens_for_lane;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
+use crate::workbench::{ActivityLane, WorkbenchState};
 use armas::ArmasContextExt;
 use armas::components::{CollapsibleMode, Sidebar, SidebarResponse, SidebarState, SidebarVariant};
 use eframe::egui;

@@ -1,13 +1,10 @@
 use super::HubApp;
 use crate::app::bottom_panel::advanced_status_bar_tabs;
 use crate::screens::Screen;
-use crate::state::ServiceSnapshot;
 use crate::theme;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
 use eframe::egui;
 use neurohid_types::config::UiMode;
 use neurohid_types::control::RuntimeModeState;
-use std::collections::BTreeMap;
 
 impl HubApp {
     /// Persistent device/stream strip (status bar): visible from every screen.

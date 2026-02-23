@@ -1,13 +1,9 @@
 use super::HubApp;
 use crate::screens::Screen;
-use crate::state::ServiceSnapshot;
 use crate::theme;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
-use chrono::{DateTime, TimeZone, Utc};
+use crate::workbench::BottomTab;
 use eframe::egui;
-use neurohid_types::config::DeviceHealthProblemConfig;
 use neurohid_types::config::UiMode;
-use neurohid_types::control::RuntimeModeState;
 use std::collections::BTreeMap;
 
 impl HubApp {

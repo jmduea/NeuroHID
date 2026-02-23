@@ -1,8 +1,5 @@
 use super::HubApp;
-use crate::screens::Screen;
-use crate::state::ServiceSnapshot;
-use crate::theme;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
+use crate::workbench::ActivityLane;
 use eframe::egui;
 use neurohid_types::config::UiMode;
 

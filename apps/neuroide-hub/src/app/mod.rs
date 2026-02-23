@@ -3,12 +3,10 @@
 //! The main `eframe::App` implementation that ties together the sidebar,
 //! status bar, and screen dispatch.
 
-use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use armas::components::{CollapsibleMode, Sidebar, SidebarResponse, SidebarState, SidebarVariant};
-use armas::prelude::ArmasContextExt;
+use armas::components::SidebarState;
 use eframe::egui;
 use neurohid_types::config::UiMode;
 use neurohid_types::control::RuntimeModeState;
@@ -29,7 +27,7 @@ use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 use crate::stream_console::StreamConsole;
 use crate::theme;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState, screens_for_lane};
+use crate::workbench::{BottomTab, WorkbenchState};
 
 mod bottom_panel;
 mod command_palette;

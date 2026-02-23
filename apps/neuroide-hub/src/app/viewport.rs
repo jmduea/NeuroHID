@@ -1,11 +1,6 @@
 use super::HubApp;
 use crate::screens::Screen;
-use crate::state::ServiceSnapshot;
-use crate::theme;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
 use eframe::egui;
-use neurohid_types::config::UiMode;
-use std::path::PathBuf;
 
 impl HubApp {
     pub(crate) fn detached_visualization_viewport_id() -> egui::ViewportId {

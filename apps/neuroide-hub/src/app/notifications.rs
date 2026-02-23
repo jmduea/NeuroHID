@@ -1,12 +1,5 @@
 use super::HubApp;
-use crate::screens::Screen;
-use crate::state::ServiceSnapshot;
-use crate::theme;
-use crate::workbench::{ActivityLane, BottomTab, WorkbenchState};
-use eframe::egui;
-use neurohid_types::config::UiMode;
 use neurohid_types::control::RuntimeModeState;
-use std::time::Duration;
 
 impl HubApp {
     pub(crate) fn maybe_notify_latency_transition(&mut self) {

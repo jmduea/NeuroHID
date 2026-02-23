@@ -5,7 +5,6 @@
 
 use eframe::egui;
 
-use neurohid_core::extension_registry::{ExtensionRegistry, default_extension_paths};
 
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
