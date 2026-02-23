@@ -8,28 +8,6 @@ rules and may override root guidance for paths under `crates/`.
 Applies to `crates/**` and Rust workspace changes that primarily affect runtime, SDK, or crate
 boundaries.
 
-## Rust Skill Routing
-
-Route questions/work to the most relevant skill:
-
-- Ownership/borrowing/lifetimes: `m01-ownership`
-- Smart pointers/resources: `m02-resource`
-- Mutability and borrow conflicts: `m03-mutability`
-- Traits/generics/dispatch: `m04-zero-cost`
-- Error handling: `m06-error-handling`
-- Concurrency/async/Send+Sync: `m07-concurrency`
-- Unsafe/FFI/soundness: `unsafe-checker`
-- Cross-cutting Rust triage: `rust-router`
-
-## Rust Grounding Policy
-
-For disputed or safety-critical guidance, escalate to canonical references:
-
-- Rust Book: <https://doc.rust-lang.org/book/>
-- Rust Reference: <https://doc.rust-lang.org/stable/reference/>
-- Cargo Book: <https://doc.rust-lang.org/stable/cargo/>
-- Effective Rust: <https://effective-rust.com/>
-
 ## Coding Standards
 
 - `snake_case` for variables/functions/modules
@@ -45,12 +23,6 @@ For disputed or safety-critical guidance, escalate to canonical references:
 - Every `unsafe` block must include a `// SAFETY:` comment.
 - Keep unsafe code localized and wrap with safe APIs.
 
-## Crate Boundaries and Placement
-
-- Treat [`../docs/crate-boundaries.md`](../docs/crate-boundaries.md) as canonical for placement
-  decisions.
-- Update boundary docs when crate responsibilities or manifest dependencies change.
-
 ## Verification Gates (Rust Lane)
 
 Run the minimal affected-scope checks first, then escalate to workspace checks when needed.
@@ -60,13 +32,6 @@ cargo check --workspace
 cargo test --workspace
 cargo clippy --workspace -- -D warnings
 cargo fmt --check
-```
-
-RTK form is also acceptable when supported:
-
-```bash
-rtk cargo check --workspace
-rtk cargo test --workspace
 ```
 
 ## Completion Checklist
