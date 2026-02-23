@@ -23,6 +23,8 @@ neurohid-core = { path = "../neurohid-core" }
 neurohid-types = { path = "../neurohid-types" }
 neurohid-ipc = { path = "../neurohid-ipc" }
 neurohid-storage = { path = "../neurohid-storage" }
+neurohid-signal = { path = "../neurohid-signal" }
+neurohid-platform = { path = "../neurohid-platform" }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 serde = { workspace = true }

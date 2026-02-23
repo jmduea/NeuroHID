@@ -21,7 +21,10 @@
 #![expect(clippy::used_underscore_binding, reason = "pyo3 macro generates these")]
 
 mod errors;
+mod ipc;
+mod platform;
 mod runtime;
+mod signal;
 mod storage;
 mod streams;
 mod types;
@@ -59,6 +62,9 @@ fn neurohid(m: &Bound<'_, PyModule>) -> PyResult<()> {
     errors::register(m)?;
     types::register(m)?;
     streams::register(m)?;
+    signal::register(m)?;
+    platform::register(m)?;
+    ipc::register(m)?;
     storage::register(m)?;
     runtime::register(m)?;
     Ok(())

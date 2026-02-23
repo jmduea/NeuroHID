@@ -3078,6 +3078,8 @@ version = "0.1.0"
 dependencies = [
  "neurohid-core",
  "neurohid-ipc",
+ "neurohid-platform",
+ "neurohid-signal",
  "neurohid-storage",
  "neurohid-types",
  "numpy",

@@ -14,7 +14,10 @@ pyo3::create_exception!(neurohid, IpcError, NeurohidError);
 pyo3::create_exception!(neurohid, InternalError, NeurohidError);
 
 /// Convert a `neurohid_types::error::Error` into the appropriate Python exception.
-#[expect(clippy::needless_pass_by_value, reason = "PyO3 callers pass owned Error from .map_err()")]
+#[expect(
+    clippy::needless_pass_by_value,
+    reason = "PyO3 callers pass owned Error from .map_err()"
+)]
 pub fn to_py_err(err: neurohid_types::error::Error) -> PyErr {
     use neurohid_types::error::Error;
     match &err {
