@@ -6,7 +6,7 @@
 use neurohid_device::Device;
 use neurohid_types::config::{DeviceBackend, DeviceConfig};
 use neurohid_types::device::{DeviceId, DeviceInfo, DiscoveredStream};
-use neurohid_types::error::{DeviceError, ExtensionError, Result};
+use neurohid_types::error::{ExtensionError, Result};
 use tokio::sync::RwLock;
 
 #[cfg(feature = "brainflow")]

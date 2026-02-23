@@ -11,7 +11,6 @@ mod training;
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use async_trait::async_trait;
 use tokio::sync::{RwLock, broadcast, mpsc};
 
 use neurohid_storage::ProfileStore;

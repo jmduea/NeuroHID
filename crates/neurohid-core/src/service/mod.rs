@@ -19,9 +19,8 @@ use neurohid_ipc::{IpcEnvelope, RuntimeEvent};
 use neurohid_storage::ProfileStore;
 use neurohid_types::{
     action::Action,
-    config::{DecoderConfig, FallbackPolicy, LatencyAlertConfig, SignalConfig, SystemConfig},
+    config::{DecoderConfig, LatencyAlertConfig, SignalConfig, SystemConfig},
     control::RuntimeModeState,
-    device::DiscoveredStream,
     error::Result,
     event::StreamMarker,
     profile::ProfileId,
@@ -56,7 +55,6 @@ pub enum IntegrityStage {
     Ipc,
 }
 
-pub(crate) use state::IntegrityStageMetrics;
 
 /// Commands sent from the hub/runtime to the DecoderTask.
 #[derive(Debug, Clone)]

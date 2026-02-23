@@ -19,7 +19,7 @@ use neurohid_ipc::{
 };
 use neurohid_types::{
     control::RuntimeModeState,
-    error::{Error, IpcError, Result},
+    error::{IpcError, Result},
     event::{MarkerPayload, MarkerType, StreamMarker},
     observability::{self as obs, ObservabilityComponent, ObservabilityConfig},
     profile::ProfileId,
