@@ -13,16 +13,6 @@ rules and may override root guidance for paths under `python/`.
 
 Applies to `python/**`, including `src/neurohid_ml`, tests, and notebooks.
 
-## Package Layout
-
-- `src/neurohid_ml/bridge/`: runtime bridge client behavior
-- `src/neurohid_ml/decoder/`: decoder/model inference logic
-- `src/neurohid_ml/errp/`: error-related potential components
-- `src/neurohid_ml/trainer/`: trainer loops and candidate staging
-- `src/neurohid_ml/cli.py`: operational CLI entrypoint
-- `tests/`: Python test surface
-- `notebooks/`: exploratory notebooks
-
 ## Command Policy (`uv`-first)
 
 Use `uv` for all Python commands.
@@ -48,18 +38,8 @@ uv run --project python black --check python/src python/tests
 uv run --project python mypy python/src
 ```
 
-## Bridge and Trainer Workflow References
-
-- Canonical Python command reference: [`README.md`](./README.md)
-- Runtime and operations integration context:
-  [`../docs/deployment-guide.md`](../docs/deployment-guide.md)
-- Protocol contract reference:
-  [`../docs/protocol-and-api.md`](../docs/protocol-and-api.md)
-
 ## Completion Checklist
 
 1. Updated/added tests for behavior changes.
 2. Pytest + lint/format/type checks pass for affected scope.
-3. CLI/help text and docs updated when commands or flows change.
-4. Runtime protocol assumptions stay aligned with `docs/protocol-and-api.md`.
-5. Changes are committed with a message that explains what changed and why.
+3. Changes are committed with a message that explains what changed and why.

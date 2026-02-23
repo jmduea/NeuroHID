@@ -262,12 +262,8 @@ class BridgeSession:
     async def handle_decision_event(self, payload: Any) -> None:
         # Typed payload (DecisionEvent object with numpy attrs)
         if hasattr(payload, "decoder_confidence"):
-            decoder_confidence = float(
-                np.clip(payload.decoder_confidence, 0.0, 1.0)
-            )
-            signal_quality = float(
-                np.clip(payload.signal_quality, 0.0, 1.0)
-            )
+            decoder_confidence = float(np.clip(payload.decoder_confidence, 0.0, 1.0))
+            signal_quality = float(np.clip(payload.signal_quality, 0.0, 1.0))
             # payload.feature_values is already a numpy array — no conversion
         else:
             # Legacy dict path
@@ -302,11 +298,22 @@ class BridgeSession:
             decision_id = str(payload.decision_id)
             action_timestamp = int(payload.action_timestamp_us)
             signal_quality = float(
-                np.clip(float(payload.signal_quality) if hasattr(payload, "signal_quality") else 0.0, 0.0, 1.0)
+                np.clip(
+                    float(payload.signal_quality)
+                    if hasattr(payload, "signal_quality")
+                    else 0.0,
+                    0.0,
+                    1.0,
+                )
             )
             # payload.channel_data is already a 2D numpy array (channels, samples)
             matrix = payload.channel_data
-            if isinstance(matrix, np.ndarray) and matrix.ndim == 2 and matrix.shape[0] > 0 and matrix.shape[1] > 0:
+            if (
+                isinstance(matrix, np.ndarray)
+                and matrix.ndim == 2
+                and matrix.shape[0] > 0
+                and matrix.shape[1] > 0
+            ):
                 if self.errp.is_calibrated:
                     detected = self.errp.detect(matrix.T)
                     error_probability = float(
