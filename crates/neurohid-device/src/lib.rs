@@ -33,6 +33,8 @@
 
 #[cfg(feature = "brainflow")]
 pub mod brainflow;
+#[cfg(all(feature = "brainflow", feature = "brainflow-native"))]
+mod brainflow_native;
 #[cfg(feature = "lsl")]
 pub mod lsl;
 pub mod mock;

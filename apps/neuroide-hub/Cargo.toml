@@ -1,0 +1,58 @@
+[package]
+name = "neuroide-hub"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+description = "NeuroHID Hub - unified GUI for device management, calibration, and service control"
+
+[features]
+default = []
+
+[dependencies]
+neurohid-types = { path = "../../crates/neurohid-types" }
+neurohid-core = { path = "../../crates/neurohid-core" }
+neurohid-ipc = { path = "../../crates/neurohid-ipc" }
+neurohid-storage = { path = "../../crates/neurohid-storage" }
+
+# GUI framework — egui is platform-agnostic, eframe needs platform-specific windowing
+egui = { workspace = true }
+armas = { version = "0.1.2" }
+rustfft = "6.4.1"
+rand = { workspace = true }
+egui_dock = { version = "0.18.0" }
+egui-async = "0.3.4"
+egui_code_editor = "0.2.20"
+egui_console = "0.3.1"
+egui_logger = "0.9.2"
+
+# Async runtime
+tokio = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Error handling
+anyhow = { workspace = true }
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Time handling
+chrono = { workspace = true }
+
+[target.'cfg(unix)'.dependencies]
+signal-hook = "0.3"
+eframe = { workspace = true, features = ["default_fonts", "glow", "x11"] }
+
+[target.'cfg(windows)'.dependencies]
+eframe = { workspace = true, features = ["default_fonts", "glow"] }
+
+[dev-dependencies]
+egui_kittest = "0.33.1"
+
+[lints]
+workspace = true

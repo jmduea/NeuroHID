@@ -217,7 +217,9 @@ class ErrPDetector:
             freqs, psd = signal.welch(
                 channel_data,
                 fs=self.config.sampling_rate_hz,
-                nperseg=min(num_samples, 64),  # Shorter window for better time resolution
+                nperseg=min(
+                    num_samples, 64
+                ),  # Shorter window for better time resolution
             )
 
             # Extract band powers
@@ -234,8 +236,12 @@ class ErrPDetector:
                 features.append(band_power)
 
             # Theta/alpha ratio (often elevated during errors)
-            theta_mask = (freqs >= self.config.theta_band[0]) & (freqs <= self.config.theta_band[1])
-            alpha_mask = (freqs >= self.config.alpha_band[0]) & (freqs <= self.config.alpha_band[1])
+            theta_mask = (freqs >= self.config.theta_band[0]) & (
+                freqs <= self.config.theta_band[1]
+            )
+            alpha_mask = (freqs >= self.config.alpha_band[0]) & (
+                freqs <= self.config.alpha_band[1]
+            )
 
             theta_power = np.mean(psd[theta_mask]) if theta_mask.any() else 0.0
             alpha_power = np.mean(psd[alpha_mask]) if alpha_mask.any() else 1e-10
@@ -380,26 +386,24 @@ class ErrPDetector:
 
     def save(self, path: str):
         """Save the calibrated detector to a file."""
-        import pickle
+        import joblib
 
-        with open(path, "wb") as f:
-            pickle.dump(
-                {
-                    "config": self.config,
-                    "scaler": self.scaler,
-                    "classifier": self.classifier,
-                    "is_calibrated": self.is_calibrated,
-                },
-                f,
-            )
+        joblib.dump(
+            {
+                "config": self.config,
+                "scaler": self.scaler,
+                "classifier": self.classifier,
+                "is_calibrated": self.is_calibrated,
+            },
+            path,
+        )
 
     @classmethod
     def load(cls, path: str) -> "ErrPDetector":
         """Load a calibrated detector from a file."""
-        import pickle
+        import joblib
 
-        with open(path, "rb") as f:
-            data = pickle.load(f)
+        data = joblib.load(path)
 
         detector = cls(data["config"])
         detector.scaler = data["scaler"]

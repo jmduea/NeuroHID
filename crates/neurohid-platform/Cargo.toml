@@ -12,7 +12,6 @@ neurohid-types = { path = "../neurohid-types" }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
@@ -23,9 +22,6 @@ async-trait = "0.1"
 # Cross-platform input simulation
 # enigo provides mouse/keyboard simulation across platforms
 enigo = "0.6.1"
-
-# Cross-platform screen capture
-mss = { version = "0.1.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 # Linux-specific: alternative lower-level access if needed
@@ -47,7 +43,9 @@ core-foundation = "0.10.1"
 
 [features]
 default = []
-screen-capture = ["mss"]
 
 [dev-dependencies]
 tokio-test = "0.4"
+
+[lints]
+workspace = true

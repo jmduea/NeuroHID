@@ -6,13 +6,24 @@
 
 use crate::{
     action::ActionSpace, device::ConnectionSettings, observability::ObservabilityConfig,
-    observation::ObservationConfig, reward::ErrPConfig,
+    observation::ObservationConfig, recording::RecordingConfig, reward::ErrPConfig,
 };
 use serde::{Deserialize, Serialize};
 
+/// Current config file format version. Bump when the schema changes incompatibly.
+pub const CURRENT_CONFIG_FORMAT_VERSION: u32 = 1;
+
+fn default_format_version() -> u32 {
+    CURRENT_CONFIG_FORMAT_VERSION
+}
+
 /// Top-level system configuration.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SystemConfig {
+    /// Config file format version for compatibility and migration.
+    #[serde(default = "default_format_version")]
+    pub format_version: u32,
+
     /// Configuration for device connection
     pub device: DeviceConfig,
 
@@ -48,6 +59,30 @@ pub struct SystemConfig {
     /// Configuration for hub UI behavior and persistence.
     #[serde(default)]
     pub ui: UiConfig,
+
+    /// Configuration for session recording (default path, auto mode, caps).
+    #[serde(default)]
+    pub recording: RecordingConfig,
+}
+
+impl Default for SystemConfig {
+    fn default() -> Self {
+        Self {
+            format_version: CURRENT_CONFIG_FORMAT_VERSION,
+            device: DeviceConfig::default(),
+            signal: SignalConfig::default(),
+            observation: ObservationConfig::default(),
+            errp: ErrPConfig::default(),
+            decoder: DecoderConfig::default(),
+            recalibration: RecalibrationConfig::default(),
+            action: ActionConfig::default(),
+            storage: StorageConfig::default(),
+            outlet: OutletConfig::default(),
+            service: ServiceConfig::default(),
+            ui: UiConfig::default(),
+            recording: RecordingConfig::default(),
+        }
+    }
 }
 
 /// Which device backend to use for data acquisition.
@@ -65,10 +100,15 @@ pub enum DeviceBackend {
     /// Auto-detect: try LSL first, then fall back to Mock.
     #[default]
     Auto,
+    /// Load device provider from a discovered extension by name (name-only ID).
+    #[serde(rename = "extension")]
+    Extension(String),
 }
 
 impl DeviceBackend {
     /// All variants in display order, for use in UI selectors.
+    /// Extension(name) is represented as a single "Extension" variant in UI;
+    /// the name is stored in config.
     pub const ALL: &'static [DeviceBackend] = &[
         DeviceBackend::Auto,
         DeviceBackend::Lsl,
@@ -86,38 +126,33 @@ impl std::fmt::Display for DeviceBackend {
             DeviceBackend::Serial => write!(f, "Serial"),
             DeviceBackend::BrainFlow => write!(f, "BrainFlow"),
             DeviceBackend::Auto => write!(f, "Auto"),
+            DeviceBackend::Extension(name) => write!(f, "Extension({})", name),
         }
     }
 }
 
 /// Configuration for the LSL (Lab Streaming Layer) backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct LslConfig {
     /// LSL resolve predicate for stream discovery.
     ///
     /// Examples: `"type='EEG'"`, `"name='EmotivEEG'"`, `""` (all streams).
     /// See LSL docs for predicate syntax.
-    #[serde(default)]
     pub predicate: String,
 
     /// Timeout for stream resolution in seconds.
-    #[serde(default = "default_resolve_timeout")]
     pub resolve_timeout_secs: f64,
 
     /// Inlet buffer size in samples (0 = LSL default of 360 seconds).
-    #[serde(default)]
     pub buffer_size: u32,
-}
-
-fn default_resolve_timeout() -> f64 {
-    1.0
 }
 
 impl Default for LslConfig {
     fn default() -> Self {
         Self {
             predicate: String::new(),
-            resolve_timeout_secs: default_resolve_timeout(),
+            resolve_timeout_secs: 1.0,
             buffer_size: 0,
         }
     }
@@ -136,59 +171,43 @@ pub enum SerialFraming {
 
 /// Configuration for USB/serial adapter backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct SerialConfig {
     /// Explicit serial device path (e.g., `/dev/ttyUSB0`, `COM3`).
-    #[serde(default)]
     pub port: Option<String>,
     /// Baud rate.
-    #[serde(default = "default_serial_baud")]
     pub baud_rate: u32,
     /// Framing mode.
-    #[serde(default)]
     pub framing: SerialFraming,
     /// Number of channels expected in each sample.
-    #[serde(default = "default_serial_channels")]
     pub channels: usize,
-}
-
-fn default_serial_baud() -> u32 {
-    115_200
-}
-
-fn default_serial_channels() -> usize {
-    8
 }
 
 impl Default for SerialConfig {
     fn default() -> Self {
         Self {
             port: None,
-            baud_rate: default_serial_baud(),
+            baud_rate: 115_200,
             framing: SerialFraming::default(),
-            channels: default_serial_channels(),
+            channels: 8,
         }
     }
 }
 
 /// Configuration for native BrainFlow backend.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct BrainFlowConfig {
     /// Board id understood by BrainFlow/OpenBCI.
-    #[serde(default = "default_brainflow_board_id")]
     pub board_id: i32,
     /// Optional serial port for board connection.
-    #[serde(default)]
     pub serial_port: Option<String>,
-}
-
-fn default_brainflow_board_id() -> i32 {
-    0
 }
 
 impl Default for BrainFlowConfig {
     fn default() -> Self {
         Self {
-            board_id: default_brainflow_board_id(),
+            board_id: 0,
             serial_port: None,
         }
     }
@@ -224,8 +243,11 @@ pub struct DeviceConfig {
 }
 
 /// Configuration for signal processing.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SignalConfig {
+    /// When set, use this signal preprocessing extension instead of the built-in pipeline.
+    #[serde(default)]
+    pub extension_name: Option<String>,
     /// Size of the ring buffer in samples
     pub buffer_size_samples: usize,
 
@@ -260,6 +282,7 @@ pub struct SignalConfig {
 impl Default for SignalConfig {
     fn default() -> Self {
         Self {
+            extension_name: None,
             buffer_size_samples: 1024, // ~8 seconds at 128Hz
             notch_filter_enabled: true,
             notch_filter_hz: 60.0, // US default; should be 50.0 for EU
@@ -277,6 +300,9 @@ impl Default for SignalConfig {
 /// Configuration for the decoder (RL policy).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DecoderConfig {
+    /// When set, use this decoder extension instead of the built-in ONNX pipeline.
+    #[serde(default)]
+    pub extension_name: Option<String>,
     /// Path to the decoder model file (relative to profile directory)
     pub model_path: String,
 
@@ -311,6 +337,7 @@ pub struct DecoderConfig {
 impl Default for DecoderConfig {
     fn default() -> Self {
         Self {
+            extension_name: None,
             model_path: "decoder.pt".to_string(),
             online_learning_enabled: true,
             learning_rate: 3e-4,
@@ -414,11 +441,11 @@ pub enum OutletTransport {
 
 /// A single outlet target.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OutletTarget {
     /// Stable name used for display/debug.
     pub name: String,
     /// Transport kind.
-    #[serde(default)]
     pub transport: OutletTransport,
     /// Transport address. TCP examples: `127.0.0.1:49000`.
     pub address: String,
@@ -440,15 +467,15 @@ impl Default for OutletTarget {
 
 /// Configuration for configurable network outlets.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct OutletConfig {
     /// Master switch for outlet publishing.
-    #[serde(default)]
     pub enabled: bool,
+    /// When set, use this outlet extension instead of the built-in (LSL/TCP). Name-only ID.
+    pub extension_name: Option<String>,
     /// Destination targets.
-    #[serde(default)]
     pub targets: Vec<OutletTarget>,
     /// Publish raw samples.
-    #[serde(default)]
     pub publish_samples: bool,
     /// Publish extracted features.
     #[serde(default = "default_true")]
@@ -469,6 +496,7 @@ impl Default for OutletConfig {
     fn default() -> Self {
         Self {
             enabled: false,
+            extension_name: None,
             targets: vec![OutletTarget::default()],
             publish_samples: false,
             publish_features: true,
@@ -490,103 +518,98 @@ pub enum ThemeMode {
 
 /// Persisted UI preferences for the hub.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct UiConfig {
     /// Font scale multiplier (1.0 = default).
-    #[serde(default = "default_font_scale")]
     pub font_scale: f32,
     /// End-user vs advanced UI mode.
-    #[serde(default)]
     pub mode: UiMode,
     /// Theme preference.
-    #[serde(default)]
     pub theme_mode: ThemeMode,
     /// Whether pane resizing is enabled in visualization layouts.
     #[serde(default = "default_true")]
     pub pane_resize_enabled: bool,
     /// Whether tray mode behavior is enabled.
-    #[serde(default)]
     pub tray_mode_enabled: bool,
     /// Command used to bootstrap the managed Python environment for the IDE.
-    #[serde(default = "default_jupyter_bootstrap_command")]
     pub jupyter_bootstrap_command: String,
     /// Whether the IDE should bootstrap dependencies automatically.
     #[serde(default = "default_true")]
     pub jupyter_auto_bootstrap: bool,
     /// Command used by Advanced mode to launch JupyterLab.
-    #[serde(default = "default_jupyter_command")]
     pub jupyter_command: String,
     /// URL opened by the IDE when Jupyter server is ready.
-    #[serde(default = "default_jupyter_url")]
     pub jupyter_url: String,
     /// Persisted visualization layout preset key.
-    #[serde(default = "default_visualization_layout_preset")]
     pub visualization_layout_preset: String,
     /// Persisted visualization widget assignments by pane slot.
-    #[serde(default = "default_visualization_pane_widgets")]
     pub visualization_pane_widgets: Vec<String>,
     /// Target refresh rate for visualization rendering.
-    #[serde(default = "default_visualization_target_fps")]
     pub visualization_target_fps: u8,
-    /// Command used by Python Lab to launch a notebook-compatible kernel adapter.
-    ///
-    /// Deprecated: retained for backward compatibility with older configs.
-    #[serde(default = "default_lab_kernel_command")]
-    pub lab_kernel_command: String,
+    /// Whether the visualization screen should render in a detached OS window.
+    pub visualization_detached: bool,
+    /// Last known detached visualization window top-left position in points.
+    pub visualization_detached_pos: Option<(f32, f32)>,
+    /// Last known detached visualization window inner size in points.
+    pub visualization_detached_size: Option<(f32, f32)>,
+    /// Thresholds used by Advanced-mode Problems panel device-health diagnostics.
+    pub device_health_problems: DeviceHealthProblemConfig,
+    /// Last open screen ID for resume (e.g. "dashboard", "training"). Applied on Hub startup.
+    pub last_screen: Option<String>,
 }
 
-fn default_font_scale() -> f32 {
-    1.0
+/// UI-side thresholds for synthesizing device-health problems in the workbench.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct DeviceHealthProblemConfig {
+    /// Battery percentage at or below which a warning is reported.
+    pub battery_low_threshold_pct: u8,
+    /// Battery percentage at or below which severity escalates to danger.
+    pub battery_critical_threshold_pct: u8,
+    /// Average channel quality at or below which a warning is reported.
+    pub quality_warning_threshold: f32,
+    /// Average channel quality at or below which severity escalates to danger.
+    pub quality_critical_threshold: f32,
 }
 
-fn default_lab_kernel_command() -> String {
-    "uv run --directory python neurohid-ml lab-kernel --stdio".to_string()
-}
-
-fn default_jupyter_bootstrap_command() -> String {
-    "uv sync --directory python".to_string()
-}
-
-fn default_jupyter_command() -> String {
-    "uv run --directory python jupyter lab --no-browser --ip=127.0.0.1 --port=8888".to_string()
-}
-
-fn default_jupyter_url() -> String {
-    "http://127.0.0.1:8888/lab".to_string()
-}
-
-fn default_visualization_layout_preset() -> String {
-    "grid2x2".to_string()
-}
-
-fn default_visualization_pane_widgets() -> Vec<String> {
-    vec![
-        "time_series".to_string(),
-        "fft_plot".to_string(),
-        "band_power".to_string(),
-        "signal_quality".to_string(),
-    ]
-}
-
-fn default_visualization_target_fps() -> u8 {
-    30
+impl Default for DeviceHealthProblemConfig {
+    fn default() -> Self {
+        Self {
+            battery_low_threshold_pct: 20,
+            battery_critical_threshold_pct: 10,
+            quality_warning_threshold: 0.5,
+            quality_critical_threshold: 0.35,
+        }
+    }
 }
 
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
-            font_scale: default_font_scale(),
+            font_scale: 1.0,
             mode: UiMode::default(),
             theme_mode: ThemeMode::default(),
             pane_resize_enabled: true,
             tray_mode_enabled: false,
-            jupyter_bootstrap_command: default_jupyter_bootstrap_command(),
-            jupyter_auto_bootstrap: default_true(),
-            jupyter_command: default_jupyter_command(),
-            jupyter_url: default_jupyter_url(),
-            visualization_layout_preset: default_visualization_layout_preset(),
-            visualization_pane_widgets: default_visualization_pane_widgets(),
-            visualization_target_fps: default_visualization_target_fps(),
-            lab_kernel_command: default_lab_kernel_command(),
+            jupyter_bootstrap_command: "uv sync --directory python".to_string(),
+            jupyter_auto_bootstrap: true,
+            jupyter_command:
+                "uv run --directory python jupyter lab --no-browser --ip=127.0.0.1 --port=8888"
+                    .to_string(),
+            jupyter_url: "http://127.0.0.1:8888/lab".to_string(),
+            visualization_layout_preset: "grid2x2".to_string(),
+            visualization_pane_widgets: vec![
+                "time_series".to_string(),
+                "fft_plot".to_string(),
+                "band_power".to_string(),
+                "signal_quality".to_string(),
+            ],
+            visualization_target_fps: 30,
+            visualization_detached: false,
+            visualization_detached_pos: None,
+            visualization_detached_size: None,
+            device_health_problems: DeviceHealthProblemConfig::default(),
+            last_screen: None,
         }
     }
 }
@@ -617,6 +640,14 @@ impl ServiceRuntimeMode {
     /// All runtime mode variants in display order.
     pub const ALL: &'static [ServiceRuntimeMode] =
         &[ServiceRuntimeMode::Embedded, ServiceRuntimeMode::External];
+
+    /// User-facing label for UI: "Run in Hub" vs "Run in background".
+    pub fn ui_label(&self) -> &'static str {
+        match self {
+            ServiceRuntimeMode::Embedded => "Run in Hub",
+            ServiceRuntimeMode::External => "Run in background",
+        }
+    }
 }
 
 impl std::fmt::Display for ServiceRuntimeMode {
@@ -628,25 +659,14 @@ impl std::fmt::Display for ServiceRuntimeMode {
     }
 }
 
-/// Transport for hub/runtime control protocol.
+/// Unified IPC exposure mode for service control/events endpoints.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
-pub enum ControlTransport {
-    /// Windows named pipe transport.
+pub enum IpcMode {
+    /// Cross-platform local sockets (UDS / named pipe).
     #[default]
-    NamedPipe,
-    /// Localhost TCP fallback for non-Windows development.
-    TcpLoopback,
-}
-
-/// Transport for runtime<->trainer ML bridge.
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MlTransport {
-    /// Windows named pipe transport.
-    #[default]
-    NamedPipe,
-    /// Localhost TCP fallback for non-Windows development.
+    LocalSocket,
+    /// Localhost TCP fallback endpoint.
     TcpLoopback,
 }
 
@@ -727,52 +747,28 @@ impl Default for RecalibrationConfig {
 
 /// Configuration for the background service.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct ServiceConfig {
     /// Runtime hosting mode for hub control.
-    #[serde(default)]
     pub runtime_mode: ServiceRuntimeMode,
 
-    /// Host used for runtime control protocol connections in external mode.
-    #[serde(default = "default_control_host")]
-    pub control_host: String,
+    /// Unified IPC exposure mode for control/events endpoint.
+    pub ipc_mode: IpcMode,
 
-    /// Port used for runtime control protocol connections in external mode.
-    #[serde(default = "default_control_port")]
-    pub control_port: u16,
-
-    /// Transport used for runtime control protocol.
-    #[serde(default)]
-    pub control_transport: ControlTransport,
-
-    /// Named pipe used for runtime control protocol.
-    #[serde(default = "default_control_pipe_name")]
-    pub control_pipe_name: String,
+    /// Unified IPC endpoint path/name or loopback socket address.
+    pub ipc_endpoint: String,
 
     /// Whether the service should start automatically when the app launches.
     pub auto_start: bool,
 
-    /// Port for TCP localhost IPC (Python bridge communication)
-    pub ipc_port: u16,
-
-    /// Transport used for runtime ML bridge communications.
-    #[serde(default)]
-    pub ml_transport: MlTransport,
-
-    /// Named pipe used for runtime ML bridge communications.
-    #[serde(default = "default_ml_pipe_name")]
-    pub ml_pipe_name: String,
-
     /// Whether to use the built-in simulated IPC bridge when no real
     /// Python process bridge is configured.
-    #[serde(default = "default_ipc_simulation_enabled")]
     pub ipc_simulation_enabled: bool,
 
     /// Maximum trainer heartbeat staleness before bridge is marked stalled.
-    #[serde(default = "default_ml_stall_timeout_ms")]
     pub ml_stall_timeout_ms: u64,
 
     /// Expected heartbeat interval for runtime<->trainer bridge.
-    #[serde(default = "default_ml_heartbeat_interval_ms")]
     pub ml_heartbeat_interval_ms: u64,
 
     /// Whether to show system tray icon
@@ -788,61 +784,25 @@ pub struct ServiceConfig {
     pub log_file_path: Option<String>,
 
     /// Latency alert policy for runtime decode/action p95 metrics.
-    #[serde(default)]
     pub latency_alert: LatencyAlertConfig,
 
     /// Capability gating and model fallback policy.
-    #[serde(default)]
     pub fallback_policy: FallbackPolicy,
 
     /// Runtime observability sampling and rate-limit policy.
-    #[serde(default)]
     pub observability: ObservabilityConfig,
-}
-
-fn default_ipc_simulation_enabled() -> bool {
-    true
-}
-
-fn default_control_host() -> String {
-    "127.0.0.1".to_string()
-}
-
-fn default_control_port() -> u16 {
-    47_385
-}
-
-fn default_control_pipe_name() -> String {
-    r"\\.\pipe\neurohid.control.v2".to_string()
-}
-
-fn default_ml_pipe_name() -> String {
-    r"\\.\pipe\neurohid.ml.v2".to_string()
-}
-
-fn default_ml_stall_timeout_ms() -> u64 {
-    1_500
-}
-
-fn default_ml_heartbeat_interval_ms() -> u64 {
-    500
 }
 
 impl Default for ServiceConfig {
     fn default() -> Self {
         Self {
             runtime_mode: ServiceRuntimeMode::default(),
-            control_host: default_control_host(),
-            control_port: default_control_port(),
-            control_transport: ControlTransport::default(),
-            control_pipe_name: default_control_pipe_name(),
+            ipc_mode: IpcMode::default(),
+            ipc_endpoint: "neurohid.control.v3".to_string(),
             auto_start: true,
-            ipc_port: 47384,
-            ml_transport: MlTransport::default(),
-            ml_pipe_name: default_ml_pipe_name(),
             ipc_simulation_enabled: true,
-            ml_stall_timeout_ms: default_ml_stall_timeout_ms(),
-            ml_heartbeat_interval_ms: default_ml_heartbeat_interval_ms(),
+            ml_stall_timeout_ms: 1_500,
+            ml_heartbeat_interval_ms: 500,
             show_tray_icon: true,
             notifications_enabled: true,
             log_level: "info".to_string(),
@@ -877,45 +837,6 @@ impl Default for LatencyAlertConfig {
             action_p95_threshold_us: 60_000,
             sustained_duration_secs: 30,
             notification_cooldown_secs: 120,
-        }
-    }
-}
-
-/// Runtime state that's not persisted but useful for communication.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ServiceState {
-    /// Whether the service is currently running
-    pub running: bool,
-
-    /// Whether action output is currently enabled
-    pub output_enabled: bool,
-
-    /// Whether online learning is currently active
-    pub learning_active: bool,
-
-    /// Current active profile ID
-    pub active_profile: Option<String>,
-
-    /// Current device status summary
-    pub device_status: String,
-
-    /// Current error rate (recent window)
-    pub recent_error_rate: f32,
-
-    /// Uptime in seconds
-    pub uptime_seconds: u64,
-}
-
-impl Default for ServiceState {
-    fn default() -> Self {
-        Self {
-            running: false,
-            output_enabled: false,
-            learning_active: false,
-            active_profile: None,
-            device_status: "Disconnected".to_string(),
-            recent_error_rate: 0.0,
-            uptime_seconds: 0,
         }
     }
 }
@@ -958,6 +879,7 @@ mod tests {
             .and_then(Value::as_object)
             .expect("observability object exists");
         assert!(observability.contains_key("global"));
+        assert!(observability.contains_key("device"));
         assert!(observability.contains_key("signal"));
         assert!(observability.contains_key("decoder"));
         assert!(observability.contains_key("action"));
@@ -1004,5 +926,71 @@ mod tests {
             decoded.visualization_target_fps,
             UiConfig::default().visualization_target_fps
         );
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_without_detached_visualization_fields() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.remove("visualization_detached");
+        object.remove("visualization_detached_pos");
+        object.remove("visualization_detached_size");
+
+        let decoded: UiConfig = serde_json::from_value(json)
+            .expect("deserialize ui config without detached visualization fields");
+
+        assert_eq!(
+            decoded.visualization_detached,
+            UiConfig::default().visualization_detached
+        );
+        assert_eq!(
+            decoded.visualization_detached_pos,
+            UiConfig::default().visualization_detached_pos
+        );
+        assert_eq!(
+            decoded.visualization_detached_size,
+            UiConfig::default().visualization_detached_size
+        );
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_without_device_health_problems() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.remove("device_health_problems");
+
+        let decoded: UiConfig =
+            serde_json::from_value(json).expect("deserialize ui config without device health");
+
+        assert_eq!(
+            decoded.device_health_problems.battery_low_threshold_pct,
+            UiConfig::default()
+                .device_health_problems
+                .battery_low_threshold_pct
+        );
+        assert_eq!(
+            decoded.device_health_problems.quality_critical_threshold,
+            UiConfig::default()
+                .device_health_problems
+                .quality_critical_threshold
+        );
+    }
+
+    #[test]
+    fn ui_config_backcompat_deserialize_without_last_screen() {
+        let mut json = serde_json::to_value(UiConfig::default()).expect("serialize default ui");
+        let object = json
+            .as_object_mut()
+            .expect("ui config should serialize as object");
+        object.remove("last_screen");
+
+        let decoded: UiConfig =
+            serde_json::from_value(json).expect("deserialize ui config without last_screen");
+
+        assert_eq!(decoded.last_screen, None);
     }
 }

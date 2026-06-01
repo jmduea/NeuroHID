@@ -59,9 +59,7 @@ jobs:
               "Push to main is not associated with a pull request (commit: $sha).",
               "Context: event=$eventName ref=$ref repo=$repo.",
               "If this was a force-push or history rewrite, the commit may not map to a PR.",
-              "Use PR merge flow to update main, or revert this push and re-merge via PR.",
-              "Runbook: docs/automation/branch-protection-checklist.md.",
-              "Policy source: .github/automation/policy-manifest.json."
+              "Use PR merge flow to update main, or revert this push and re-merge via PR."
             ) -join ' '
             throw $hint
           }

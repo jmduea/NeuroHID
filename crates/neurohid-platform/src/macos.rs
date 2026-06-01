@@ -70,27 +70,39 @@ impl MacOSPlatform {
 
     /// Checks if the application has Accessibility permission.
     ///
-    /// This is a macOS-specific check that verifies we can actually simulate input.
+    /// Accessibility permission is required for macOS input simulation via
+    /// Quartz Events / `CGEventPost`. Without it, input events silently fail.
+    /// The actual permission grant requires the user to navigate to
+    /// System Settings > Privacy & Security > Accessibility.
     #[cfg(target_os = "macos")]
     fn check_accessibility_permission() -> Result<()> {
-        // We would use the core-foundation and accessibility APIs here
-        // For now, we'll use a simplified check
+        use core_foundation::base::TCFType;
+        use core_foundation::boolean::CFBoolean;
+        use core_foundation::dictionary::CFDictionary;
+        use core_foundation::string::CFString;
 
-        // In a real implementation:
-        // use core_foundation::boolean::CFBoolean;
-        // use core_foundation::dictionary::CFDictionary;
-        // use core_foundation::string::CFString;
-        //
-        // let options = CFDictionary::from_pairs(&[(
-        //     CFString::from_static_string("AXTrustedCheckOptionPrompt"),
-        //     CFBoolean::false_value(),
-        // )]);
-        //
-        // let trusted = unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) };
+        let key = CFString::from_static_string("AXTrustedCheckOptionPrompt");
+        let value = CFBoolean::false_value();
+        let options = CFDictionary::from_CFType_pairs(&[(key, value)]);
 
-        // Placeholder implementation - assume permission check passes
-        // Real implementation would use the ApplicationServices framework
-        Ok(())
+        // SAFETY: `AXIsProcessTrustedWithOptions` is a read-only query into the
+        // TCC database.  The `CFDictionaryRef` we pass is valid for the duration
+        // of the call and we do not retain any pointer afterward.
+        extern "C" {
+            fn AXIsProcessTrustedWithOptions(options: core_foundation::base::CFTypeRef) -> bool;
+        }
+        let trusted = unsafe { AXIsProcessTrustedWithOptions(options.as_CFTypeRef()) };
+
+        if trusted {
+            Ok(())
+        } else {
+            Err(PlatformError::PermissionDenied(
+                "Accessibility permission required. Grant access in \
+                 System Settings > Privacy & Security > Accessibility."
+                    .to_string(),
+            )
+            .into())
+        }
     }
 }
 
@@ -230,52 +242,23 @@ impl Platform for MacOSPlatform {
     }
 
     fn get_cursor_position(&self) -> Result<(i32, i32)> {
-        // On macOS, we can use NSEvent or CGEvent to get cursor position
-        // This would use core-graphics crate in a real implementation
+        use enigo::Mouse;
 
-        #[cfg(target_os = "macos")]
-        {
-            // use core_graphics::event::CGEvent;
-            // use core_graphics::event_source::{CGEventSource, CGEventSourceStateID};
-            //
-            // let source = CGEventSource::new(CGEventSourceStateID::HIDSystemState)
-            //     .map_err(|_| PlatformError::CursorQueryFailed("Cannot create event source".into()))?;
-            // let event = CGEvent::new(source)
-            //     .map_err(|_| PlatformError::CursorQueryFailed("Cannot create event".into()))?;
-            // let location = event.location();
-            // return Ok((location.x as i32, location.y as i32));
-        }
-
-        // Placeholder
-        Err(PlatformError::NotSupported(
-            "Cursor position query not yet fully implemented for macOS".to_string(),
-        )
-        .into())
+        self.enigo
+            .location()
+            .map_err(|e| PlatformError::CursorQueryFailed(e.to_string()).into())
     }
 
     fn get_screen_info(&self) -> Result<ScreenInfo> {
-        // On macOS, we'd use NSScreen or CGDisplayBounds
-        // This would use core-graphics crate in a real implementation
+        use enigo::Mouse;
 
-        #[cfg(target_os = "macos")]
-        {
-            // use core_graphics::display::{CGDisplay, CGMainDisplayID};
-            //
-            // let main_display = CGDisplay::main();
-            // let bounds = main_display.bounds();
-            //
-            // return Ok(ScreenInfo {
-            //     width: bounds.size.width as u32,
-            //     height: bounds.size.height as u32,
-            //     active_monitor: 0,
-            //     monitor_count: CGDisplay::active_display_count() as u32,
-            // });
-        }
+        let (width, height) = self.enigo.main_display().map_err(|e| {
+            PlatformError::NotSupported(format!("Failed to query display info: {}", e))
+        })?;
 
-        // Placeholder with reasonable defaults
         Ok(ScreenInfo {
-            width: 1920,
-            height: 1080,
+            width: width as u32,
+            height: height as u32,
             active_monitor: 0,
             monitor_count: 1,
         })

@@ -24,7 +24,7 @@
 //!        │
 //!        ▼
 //! ┌──────────────────┐
-//! │   Ring Buffer    │  ← Thread-safe, lock-free storage
+//! │   Ring Buffer    │  ← Columnar VecDeque per channel
 //! │   (1-8 seconds)  │
 //! └────────┬─────────┘
 //!          │
@@ -44,15 +44,11 @@
 //! Feature Vector (to decoder)
 //! ```
 //!
-//! ## Thread Safety Model
+//! ## Threading Model
 //!
-//! The signal processing pipeline is designed to work in a multi-threaded context:
-//!
-//! - **Producer thread**: Device adapter pushes samples into the ring buffer
-//! - **Consumer thread**: Main processing loop reads from buffer, filters, extracts features
-//!
-//! The ring buffer uses lock-free algorithms to allow concurrent push/pop without
-//! blocking either thread. This is critical for maintaining low latency.
+//! The pipeline is single-threaded: `push_sample` and `try_extract` run on
+//! the same async task. The ring buffer uses `VecDeque` (not lock-free
+//! atomics), which is sufficient since there is no concurrent access.
 //!
 //! ## Feature Extraction Strategy
 //!

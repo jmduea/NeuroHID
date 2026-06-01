@@ -4,6 +4,8 @@
 //!
 //! 1. **Highpass** (0.5 Hz, 2nd order Butterworth) — removes baseline drift
 //! 2. **Notch** (50 or 60 Hz, Q=30) — removes power line interference
+//!    (Note: at 128 Hz sample rate the 60 Hz notch sits at 94% of Nyquist;
+//!    bilinear-transform warping limits rejection depth at this ratio.)
 //! 3. **Lowpass** (45 Hz, 2nd order Butterworth) — removes muscle artifact
 //!
 //! All filters are implemented as cascaded second-order sections (biquads)
@@ -204,7 +206,10 @@ impl FilterConfig {
 pub struct FilterChain {
     /// `channel_sections[ch]` is the ordered list of biquad sections for that channel.
     channel_sections: Vec<Vec<Biquad>>,
-    #[allow(dead_code)] // kept for future filter introspection/reconfiguration
+    #[expect(
+        dead_code,
+        reason = "retained for filter introspection and reconfiguration"
+    )]
     config: FilterConfig,
     channel_count: usize,
 }

@@ -3,7 +3,10 @@
 //! Serializable request/response contracts for local service control channels
 //! (for example Windows named pipes or localhost loopback sockets).
 
-use crate::{config::FallbackPolicy, device::DiscoveredStream};
+use crate::{
+    config::{FallbackPolicy, SignalConfig},
+    device::DiscoveredStream,
+};
 use serde::{Deserialize, Serialize};
 
 /// Request sent from control clients to a running service instance.
@@ -55,6 +58,14 @@ pub enum ControlCommand {
     TrainerSnapshot,
     /// Replace runtime fallback policy.
     SetFallbackPolicy { policy: FallbackPolicy },
+    /// Replace runtime signal configuration.
+    SetSignalConfig { signal: SignalConfig },
+    /// Start session recording; optional output path overrides config default.
+    StartRecording {
+        output_path: Option<std::path::PathBuf>,
+    },
+    /// Stop current session recording.
+    StopRecording,
 }
 
 /// Runtime mode classification derived from model/bridge health.
@@ -90,6 +101,15 @@ pub struct ControlSnapshot {
     pub decoder_model_version: Option<String>,
     pub active_profile_name: Option<String>,
     pub device_name: Option<String>,
+    /// Outlet slot identifier: "built-in" or extension name.
+    #[serde(default)]
+    pub outlet_name: Option<String>,
+    /// Signal preprocessing slot identifier: "built-in" or extension name.
+    #[serde(default)]
+    pub signal_name: Option<String>,
+    /// Decoder slot identifier: "built-in" or extension name.
+    #[serde(default)]
+    pub decoder_name: Option<String>,
     pub device_battery: Option<u8>,
     pub signal_quality: f32,
     pub signal_latency_last_us: u64,
@@ -132,6 +152,80 @@ pub struct ControlSnapshot {
     pub routed_auxiliary_streams: u64,
     #[serde(default)]
     pub routed_unknown_streams: u64,
+    #[serde(default)]
+    pub pipeline_integrity_degraded: bool,
+    #[serde(default)]
+    pub integrity_issue_count: u64,
+    #[serde(default)]
+    pub stage_health_summary: Option<String>,
+    /// Whether a session recording is currently active.
+    #[serde(default)]
+    pub recording_active: bool,
+    /// Session id of the current recording, if any.
+    #[serde(default)]
+    pub current_session_id: Option<String>,
+}
+
+impl Default for ControlSnapshot {
+    fn default() -> Self {
+        Self {
+            running: false,
+            uptime_secs: 0,
+            calibration_mode: false,
+            output_enabled: true,
+            profile_ready: false,
+            decoder_ready: false,
+            decoder_model_version: None,
+            active_profile_name: None,
+            device_name: None,
+            outlet_name: None,
+            signal_name: None,
+            decoder_name: None,
+            device_battery: None,
+            signal_quality: 0.0,
+            signal_latency_last_us: 0,
+            signal_latency_p95_us: 0,
+            decode_latency_last_us: 0,
+            decode_latency_p95_us: 0,
+            action_latency_last_us: 0,
+            action_latency_p95_us: 0,
+            latency_degraded: false,
+            latency_alert_message: None,
+            actions_emitted: 0,
+            errors_detected: 0,
+            ipc_connected: false,
+            ipc_simulated: false,
+            learning_enabled: true,
+            ml_bridge_connected: false,
+            ml_bridge_stalled: false,
+            runtime_mode_state: RuntimeModeState::Degraded,
+            enabled_capabilities: Vec::new(),
+            limited_capabilities_message: None,
+            fallback_model_kind: None,
+            trainer_replay_size: None,
+            trainer_step: None,
+            trainer_policy_loss: None,
+            trainer_value_loss: None,
+            trainer_entropy: None,
+            trainer_last_error: None,
+            candidate_promotions_succeeded: 0,
+            candidate_promotions_rejected: 0,
+            candidate_last_outcome: None,
+            ml_protocol_version: None,
+            device_connected: false,
+            task_error: None,
+            discovered_streams: Vec::new(),
+            routed_eeg_streams: 0,
+            routed_motion_streams: 0,
+            routed_auxiliary_streams: 0,
+            routed_unknown_streams: 0,
+            pipeline_integrity_degraded: false,
+            integrity_issue_count: 0,
+            stage_health_summary: None,
+            recording_active: false,
+            current_session_id: None,
+        }
+    }
 }
 
 /// Response emitted by control servers.
@@ -171,12 +265,36 @@ impl ControlResponse {
             payload: ControlResponsePayload::TrainerSnapshot { snapshot },
         }
     }
+
+    pub fn recording_started(
+        request_id: Option<String>,
+        session_id: String,
+        output_path: String,
+    ) -> Self {
+        Self {
+            request_id,
+            payload: ControlResponsePayload::RecordingStarted {
+                session_id,
+                output_path,
+            },
+        }
+    }
+
+    pub fn recording_stopped(request_id: Option<String>, session_id: String) -> Self {
+        Self {
+            request_id,
+            payload: ControlResponsePayload::RecordingStopped { session_id },
+        }
+    }
 }
 
 /// Control response variants.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type", rename_all = "snake_case")]
-#[allow(clippy::large_enum_variant)]
+#[expect(
+    clippy::large_enum_variant,
+    reason = "IPC payload ergonomics favor one tagged enum for serde wire compatibility"
+)]
 pub enum ControlResponsePayload {
     /// Command accepted (no additional payload).
     Ack,
@@ -186,6 +304,13 @@ pub enum ControlResponsePayload {
     TrainerSnapshot { snapshot: TrainerSnapshot },
     /// Command rejected/failed.
     Error { message: String },
+    /// Recording started; includes session id and output path.
+    RecordingStarted {
+        session_id: String,
+        output_path: String,
+    },
+    /// Recording stopped; includes session id.
+    RecordingStopped { session_id: String },
 }
 
 #[cfg(test)]
@@ -220,6 +345,9 @@ mod tests {
             decoder_model_version: Some("v1".to_string()),
             active_profile_name: Some("default".to_string()),
             device_name: Some("Mock EEG".to_string()),
+            outlet_name: None,
+            signal_name: None,
+            decoder_name: None,
             device_battery: Some(100),
             signal_quality: 0.8,
             signal_latency_last_us: 1000,
@@ -262,6 +390,11 @@ mod tests {
             routed_motion_streams: 0,
             routed_auxiliary_streams: 0,
             routed_unknown_streams: 0,
+            pipeline_integrity_degraded: false,
+            integrity_issue_count: 0,
+            stage_health_summary: Some("signal:ok".to_string()),
+            recording_active: false,
+            current_session_id: None,
         };
 
         let response = ControlResponse::snapshot(Some("id-1".to_string()), snapshot.clone());

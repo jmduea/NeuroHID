@@ -63,9 +63,9 @@ impl Platform for WindowsPlatform {
     }
 
     fn check_input_permissions(&self) -> Result<()> {
-        // On Windows, we can almost always send input
-        // The main issue is elevated apps, which we can't easily detect
-        // For now, just return success and let failures happen at runtime
+        // Windows SendInput works for any process at the same or lower
+        // privilege level.  There is no reliable pre-flight check for UIPI
+        // or elevation mismatches — failures surface at emit time.
         Ok(())
     }
 
@@ -200,8 +200,8 @@ impl Platform for WindowsPlatform {
             use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 
             let mut point = POINT { x: 0, y: 0 };
-            // SAFETY: `point` is a valid, writable `POINT` on the stack, and
-            // `GetCursorPos` only writes to the provided out-parameter.
+            // SAFETY: POINT is initialized to zeroes; GetCursorPos writes to the
+            // out-pointer which is valid for the duration of the call.
             unsafe {
                 GetCursorPos(&mut point)
                     .map_err(|e| PlatformError::CursorQueryFailed(e.to_string()))?;
@@ -220,8 +220,8 @@ impl Platform for WindowsPlatform {
                 GetSystemMetrics, SM_CMONITORS, SM_CXSCREEN, SM_CYSCREEN,
             };
 
-            // SAFETY: `GetSystemMetrics` is a read-only Win32 query with no
-            // pointers; calls are side-effect free for these metric constants.
+            // SAFETY: SM_CXSCREEN, SM_CYSCREEN, and SM_CMONITORS are read-only
+            // system queries with no pointer parameters.
             unsafe {
                 let width = GetSystemMetrics(SM_CXSCREEN) as u32;
                 let height = GetSystemMetrics(SM_CYSCREEN) as u32;

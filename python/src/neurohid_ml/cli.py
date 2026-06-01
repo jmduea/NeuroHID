@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
-import os
 import shutil
 import subprocess
 import sys
@@ -44,20 +43,17 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="NeuroHID ML tools")
     subparsers = parser.add_subparsers(dest="command")
 
-    bridge = subparsers.add_parser("bridge", help="run the realtime IPC bridge")
+    bridge = subparsers.add_parser("bridge", help="run the in-process trainer bridge")
     bridge.add_argument(
-        "--transport",
-        choices=["named_pipe", "tcp_loopback"],
-        default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
-        help="bridge transport mode (named_pipe is default on Windows)",
+        "--config-json",
+        type=str,
+        default=None,
+        help="optional JSON object for SystemConfig to start the runtime",
     )
-    bridge.add_argument("--host", default="127.0.0.1")
-    bridge.add_argument("--port", type=int, default=47384)
-    bridge.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v2")
 
     control = subparsers.add_parser(
         "control",
-        help="send one control command to neurohid-service",
+        help="send one control command (requires an in-process runtime)",
     )
     control.add_argument(
         "action",
@@ -84,44 +80,10 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     )
     control.add_argument("--stream-id", type=str)
     control.add_argument(
-        "--transport",
-        choices=["tcp", "pipe"],
-        default="tcp",
-        help="control transport mode",
-    )
-    control.add_argument("--host", default="127.0.0.1")
-    control.add_argument("--port", type=int, default=47385)
-    control.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.control.v2")
-    control.add_argument(
-        "--service-bin",
-        default="neurohid-service",
-        help="service binary used by auto-start behavior",
-    )
-    control.add_argument(
-        "--auto-start-service",
-        action=argparse.BooleanOptionalAction,
-        default=True,
-        help="attempt auto-start when control endpoint is unavailable",
-    )
-
-    telemetry_read = subparsers.add_parser(
-        "telemetry-read",
-        help="read framed runtime-ml telemetry envelopes",
-    )
-    telemetry_read.add_argument(
-        "--transport",
-        choices=["named_pipe", "tcp_loopback"],
-        default=("named_pipe" if os.name == "nt" else "tcp_loopback"),
-        help="telemetry transport mode",
-    )
-    telemetry_read.add_argument("--host", default="127.0.0.1")
-    telemetry_read.add_argument("--port", type=int, default=47384)
-    telemetry_read.add_argument("--pipe-name", default=r"\\.\pipe\neurohid.ml.v2")
-    telemetry_read.add_argument(
-        "--max-messages",
-        type=int,
-        default=1,
-        help="number of envelopes to print before exiting",
+        "--config-json",
+        type=str,
+        default=None,
+        help="optional JSON object for SystemConfig to start the runtime",
     )
 
     trainer = subparsers.add_parser(
@@ -259,7 +221,9 @@ def _print_training_outputs(output_dir: Path, args: argparse.Namespace) -> None:
     if args.session_dir:
         session_logs.extend(sorted(args.session_dir.glob("session_*.json")))
     if not session_logs:
-        raise SystemExit("No session logs supplied. Use --session-log and/or --session-dir.")
+        raise SystemExit(
+            "No session logs supplied. Use --session-log and/or --session-dir."
+        )
 
     outputs = train_candidate_model(
         session_logs=session_logs,
@@ -395,7 +359,8 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
         export_completed = _run_command(export_cmd)
         if export_completed.returncode != 0:
             print(
-                "[trainer-worker] Session export failed " f"(exit {export_completed.returncode})."
+                "[trainer-worker] Session export failed "
+                f"(exit {export_completed.returncode})."
             )
         else:
             session_logs = sorted(session_dir.glob("session_*.json"))
@@ -437,17 +402,27 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
         time.sleep(args.poll_interval_secs)
 
 
+def _start_runtime_from_args(args: argparse.Namespace):
+    """Start an in-process runtime from optional --config-json CLI argument."""
+    from neurohid import RuntimeBuilder, SystemConfig
+
+    config_json = getattr(args, "config_json", None)
+    if config_json:
+        config = SystemConfig.from_dict(json.loads(config_json))
+    else:
+        config = SystemConfig.from_dict({})
+
+    async def _start():
+        return await RuntimeBuilder(config).start()
+
+    return asyncio.run(_start())
+
+
 def _run_control(args: argparse.Namespace) -> None:
     from neurohid_ml.control import NeuroHidControlClient
 
-    client = NeuroHidControlClient(
-        control_host=args.host,
-        control_port=args.port,
-        control_transport=args.transport,
-        control_pipe_name=args.pipe_name,
-        service_bin=args.service_bin,
-        auto_start_service=args.auto_start_service,
-    )
+    runtime = _start_runtime_from_args(args)
+    client = NeuroHidControlClient(runtime)
 
     if args.action == "snapshot":
         print(json.dumps(client.snapshot(), indent=2, sort_keys=True))
@@ -458,12 +433,20 @@ def _run_control(args: argparse.Namespace) -> None:
     if args.action == "set_output_enabled":
         if args.enabled is None:
             raise SystemExit("--enabled is required for set_output_enabled")
-        print(json.dumps(client.set_output_enabled(args.enabled), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                client.set_output_enabled(args.enabled), indent=2, sort_keys=True
+            )
+        )
         return
     if args.action == "set_learning_enabled":
         if args.enabled is None:
             raise SystemExit("--enabled is required for set_learning_enabled")
-        print(json.dumps(client.set_learning_enabled(args.enabled), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                client.set_learning_enabled(args.enabled), indent=2, sort_keys=True
+            )
+        )
         return
     if args.action == "set_fallback_policy":
         if not args.policy_json:
@@ -491,12 +474,18 @@ def _run_control(args: argparse.Namespace) -> None:
     if args.action == "connect_stream":
         if not args.stream_id:
             raise SystemExit("--stream-id is required for connect_stream")
-        print(json.dumps(client.connect_stream(args.stream_id), indent=2, sort_keys=True))
+        print(
+            json.dumps(client.connect_stream(args.stream_id), indent=2, sort_keys=True)
+        )
         return
     if args.action == "disconnect_stream":
         if not args.stream_id:
             raise SystemExit("--stream-id is required for disconnect_stream")
-        print(json.dumps(client.disconnect_stream(args.stream_id), indent=2, sort_keys=True))
+        print(
+            json.dumps(
+                client.disconnect_stream(args.stream_id), indent=2, sort_keys=True
+            )
+        )
         return
     if args.action == "ensure_connected_stream":
         print(json.dumps({"stream_id": client.ensure_connected_stream()}, indent=2))
@@ -505,33 +494,14 @@ def _run_control(args: argparse.Namespace) -> None:
     raise SystemExit(f"Unknown control action: {args.action}")
 
 
-def _run_telemetry_read(args: argparse.Namespace) -> None:
-    from neurohid_ml.telemetry import NeuroHidTelemetryClient
-
-    client = NeuroHidTelemetryClient(
-        transport=args.transport,
-        host=args.host,
-        port=args.port,
-        pipe_name=args.pipe_name,
-    )
-    for message in client.iter_messages(max_messages=max(args.max_messages, 0)):
-        print(json.dumps(message, indent=2, sort_keys=True))
-
-
 def main(argv: Sequence[str] | None = None) -> None:
     args = _parse_args(argv)
 
     if args.command == "bridge":
         from neurohid_ml.bridge import main_async as bridge_main_async
 
-        asyncio.run(
-            bridge_main_async(
-                host=args.host,
-                port=args.port,
-                transport=args.transport,
-                pipe_name=args.pipe_name,
-            )
-        )
+        runtime = _start_runtime_from_args(args)
+        asyncio.run(bridge_main_async(runtime))
         return
 
     if args.command == "train-candidate":
@@ -556,10 +526,6 @@ def main(argv: Sequence[str] | None = None) -> None:
 
     if args.command == "control":
         _run_control(args)
-        return
-
-    if args.command == "telemetry-read":
-        _run_telemetry_read(args)
         return
 
     raise SystemExit(f"Unknown command: {args.command}")

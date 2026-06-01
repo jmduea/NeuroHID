@@ -11,7 +11,7 @@ use neurohid_types::{
     error::{Result, StorageError},
     learning::{CandidateModelMetrics, TrainingEpisode, TrainingSessionLog},
     model::ModelManifest,
-    profile::{CalibrationState, ProfileId, ProfileMetadata},
+    profile::{CalibrationIdentity, CalibrationState, ProfileId, ProfileMetadata},
 };
 
 /// Manages storage and retrieval of user profiles.
@@ -135,10 +135,16 @@ impl ProfileStore {
         self.paths.profile_dir(id).exists()
     }
 
-    /// Saves calibration data (encrypted).
+    /// Saves calibration data (encrypted) and updates profile metadata with calibration identity.
     pub async fn save_calibration(&self, id: &ProfileId, data: &[u8]) -> Result<()> {
         let path = self.paths.profile_calibration(id);
-        self.secure.write_encrypted(&path, data).await
+        self.secure.write_encrypted(&path, data).await?;
+        let mut metadata = self.get_metadata(id).await?;
+        metadata.calibration_identity = Some(CalibrationIdentity {
+            format_version: 1,
+            content_hash: None,
+        });
+        self.save_metadata(&metadata).await
     }
 
     /// Loads calibration data (decrypted).
@@ -772,6 +778,69 @@ mod tests {
 
             assert_eq!(exported, 0);
             assert!(output_dir.exists());
+
+            let _ = std::fs::remove_dir_all(root);
+        });
+    }
+
+    #[test]
+    fn profile_metadata_format_version_and_calibration_identity_roundtrip() {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("runtime should build");
+
+        runtime.block_on(async {
+            let root = unique_test_root("roundtrip");
+            let paths = DataPaths::new(Some(root.clone())).expect("paths should build");
+            paths
+                .ensure_directories()
+                .await
+                .expect("directories should initialize");
+
+            let store = ProfileStore::new(paths.clone(), SecureStorage::default());
+            let profile = store
+                .create_profile("roundtrip-test".to_string())
+                .await
+                .expect("profile should be created");
+
+            assert_eq!(profile.format_version, 1);
+            assert!(profile.calibration_identity.is_none());
+
+            let calibration_blob = b"fake calibration bytes";
+            store
+                .save_calibration(&profile.id, calibration_blob)
+                .await
+                .expect("save_calibration should succeed");
+
+            let metadata_after_save = store.get_metadata(&profile.id).await.expect("get_metadata");
+            assert_eq!(metadata_after_save.format_version, 1);
+            let cal_id = metadata_after_save
+                .calibration_identity
+                .as_ref()
+                .expect("calibration_identity should be set after save_calibration");
+            assert_eq!(cal_id.format_version, 1);
+
+            let exported = store
+                .export_profile(&profile.id)
+                .await
+                .expect("export_profile");
+            assert_eq!(exported.metadata.format_version, 1);
+            assert!(exported.metadata.calibration_identity.is_some());
+
+            let imported_id = store
+                .import_profile(exported)
+                .await
+                .expect("import_profile");
+            let reloaded = store
+                .get_metadata(&imported_id)
+                .await
+                .expect("get_metadata");
+            assert_eq!(reloaded.format_version, 1);
+            assert!(
+                reloaded.calibration_identity.is_some(),
+                "calibration_identity must roundtrip on export/import"
+            );
 
             let _ = std::fs::remove_dir_all(root);
         });

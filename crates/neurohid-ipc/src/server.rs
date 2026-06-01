@@ -1,22 +1,20 @@
-//! Runtime ML IPC server.
+//! IPC v3 server built on top of `ipckit` local sockets and loopback TCP.
 
 use std::sync::Arc;
+
+use ipckit::AsyncLocalSocketListener;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::sync::{Mutex, mpsc};
 
-use crate::protocol::{IpcConfig, IpcTransport, RuntimeMlEnvelopeV2};
+use crate::protocol::{IpcConfig, IpcEnvelope, IpcTransport};
 use neurohid_types::error::{IpcError, Result};
-
-#[cfg(windows)]
-use tokio::net::windows::named_pipe::ServerOptions;
 
 enum ServerBackend {
     Tcp(tokio::net::TcpListener),
-    #[cfg(windows)]
-    NamedPipe,
+    LocalSocket(AsyncLocalSocketListener),
 }
 
-/// Runtime ML bridge server.
+/// Runtime IPC server endpoint.
 pub struct IpcServer {
     config: IpcConfig,
     backend: ServerBackend,
@@ -27,30 +25,23 @@ impl IpcServer {
     pub async fn new(config: IpcConfig) -> Result<Self> {
         let backend = match config.transport {
             IpcTransport::TcpLoopback => {
-                let listener = tokio::net::TcpListener::bind(&config.address)
+                let listener = tokio::net::TcpListener::bind(&config.endpoint)
                     .await
                     .map_err(|e| {
                         IpcError::ConnectionFailed(format!(
-                            "Failed to bind TCP socket at {}: {}",
-                            config.address, e
+                            "failed to bind tcp endpoint {}: {}",
+                            config.endpoint, e
                         ))
                     })?;
-                tracing::info!(address = %config.address, "IPC server listening (tcp)");
+                tracing::info!(endpoint = %config.endpoint, "IPC server listening (tcp)");
                 ServerBackend::Tcp(listener)
             }
-            IpcTransport::NamedPipe => {
-                #[cfg(windows)]
-                {
-                    tracing::info!(pipe = %config.pipe_name, "IPC server listening (named pipe)");
-                    ServerBackend::NamedPipe
-                }
-                #[cfg(not(windows))]
-                {
-                    return Err(IpcError::ConnectionFailed(
-                        "named pipes are only available on Windows".to_string(),
-                    )
-                    .into());
-                }
+            IpcTransport::LocalSocket => {
+                let listener = AsyncLocalSocketListener::bind(&config.endpoint)
+                    .await
+                    .map_err(map_ipckit_error)?;
+                tracing::info!(endpoint = %config.endpoint, "IPC server listening (local_socket)");
+                ServerBackend::LocalSocket(listener)
             }
         };
 
@@ -64,69 +55,60 @@ impl IpcServer {
                 let (stream, addr) = listener
                     .accept()
                     .await
-                    .map_err(|e| IpcError::ConnectionFailed(format!("Accept failed: {e}")))?;
-                tracing::info!(%addr, "IPC client connected (tcp)");
+                    .map_err(|e| IpcError::ConnectionFailed(format!("accept failed: {e}")))?;
                 let _ = stream.set_nodelay(true);
-                Ok(spawn_connection_tasks(stream, self.config.max_message_size))
+                tracing::info!(%addr, "IPC client connected (tcp)");
+                Ok(spawn_connection_tasks(
+                    stream,
+                    self.config.max_message_size,
+                    self.config.channel_capacity,
+                ))
             }
-            #[cfg(windows)]
-            ServerBackend::NamedPipe => {
-                let server = ServerOptions::new()
-                    .create(&self.config.pipe_name)
-                    .map_err(|e| {
-                        IpcError::ConnectionFailed(format!(
-                            "Failed to create named pipe {}: {}",
-                            self.config.pipe_name, e
-                        ))
-                    })?;
-                server.connect().await.map_err(|e| {
-                    IpcError::ConnectionFailed(format!(
-                        "Named pipe connect failed for {}: {}",
-                        self.config.pipe_name, e
-                    ))
-                })?;
-                tracing::info!(pipe = %self.config.pipe_name, "IPC client connected (named pipe)");
-                Ok(spawn_connection_tasks(server, self.config.max_message_size))
+            ServerBackend::LocalSocket(listener) => {
+                let stream = listener.accept().await.map_err(map_ipckit_error)?;
+                tracing::info!(endpoint = %self.config.endpoint, "IPC client connected (local_socket)");
+                Ok(spawn_connection_tasks(
+                    stream,
+                    self.config.max_message_size,
+                    self.config.channel_capacity,
+                ))
             }
         }
     }
 
     /// Human-readable endpoint string for diagnostics.
-    pub fn endpoint(&self) -> String {
-        match self.config.transport {
-            IpcTransport::TcpLoopback => self.config.address.clone(),
-            IpcTransport::NamedPipe => self.config.pipe_name.clone(),
-        }
+    pub fn endpoint(&self) -> &str {
+        &self.config.endpoint
     }
 }
 
 /// Active IPC connection.
 #[derive(Clone)]
 pub struct IpcConnection {
-    tx: mpsc::Sender<RuntimeMlEnvelopeV2>,
-    rx: Arc<Mutex<mpsc::Receiver<RuntimeMlEnvelopeV2>>>,
+    tx: mpsc::Sender<IpcEnvelope>,
+    rx: Arc<Mutex<mpsc::Receiver<IpcEnvelope>>>,
 }
 
 impl IpcConnection {
-    /// Send one message to the peer.
-    pub async fn send(&self, msg: RuntimeMlEnvelopeV2) -> Result<()> {
+    /// Send one envelope to the peer.
+    pub async fn send(&self, message: IpcEnvelope) -> Result<()> {
         self.tx
-            .send(msg)
+            .send(message)
             .await
             .map_err(|_| IpcError::ConnectionLost)?;
         Ok(())
     }
 
-    /// Receive one message from the peer.
-    pub async fn recv(&self) -> Result<RuntimeMlEnvelopeV2> {
+    /// Receive one envelope from the peer.
+    pub async fn recv(&self) -> Result<IpcEnvelope> {
         let mut rx = self.rx.lock().await;
         rx.recv()
             .await
             .ok_or_else(|| IpcError::ConnectionLost.into())
     }
 
-    /// Attempt to receive without blocking.
-    pub fn try_recv(&self) -> Result<Option<RuntimeMlEnvelopeV2>> {
+    /// Try receiving without blocking.
+    pub fn try_recv(&self) -> Result<Option<IpcEnvelope>> {
         match self.rx.try_lock() {
             Ok(mut rx) => match rx.try_recv() {
                 Ok(msg) => Ok(Some(msg)),
@@ -145,26 +127,36 @@ impl IpcConnection {
     }
 }
 
-fn spawn_connection_tasks<S>(stream: S, max_message_size: usize) -> IpcConnection
+fn spawn_connection_tasks<S>(
+    stream: S,
+    max_message_size: usize,
+    channel_capacity: usize,
+) -> IpcConnection
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
     let (read_half, write_half) = tokio::io::split(stream);
-    let (write_tx, mut write_rx) = mpsc::channel::<RuntimeMlEnvelopeV2>(64);
-    let (read_tx, read_rx) = mpsc::channel::<RuntimeMlEnvelopeV2>(64);
+    let (write_tx, mut write_rx) = mpsc::channel::<IpcEnvelope>(channel_capacity);
+    let (read_tx, read_rx) = mpsc::channel::<IpcEnvelope>(channel_capacity);
 
     tokio::spawn(async move {
         let mut writer = write_half;
-        while let Some(msg) = write_rx.recv().await {
-            let encoded = match encode_message(&msg) {
-                Ok(data) => data,
-                Err(e) => {
-                    tracing::warn!("Failed to encode IPC message: {}", e);
+        while let Some(message) = write_rx.recv().await {
+            let payload = match serde_json::to_vec(&message) {
+                Ok(value) => value,
+                Err(error) => {
+                    tracing::warn!("failed to serialize IPC envelope: {}", error);
                     continue;
                 }
             };
-            if let Err(e) = writer.write_all(&encoded).await {
-                tracing::warn!("IPC write failed, closing connection: {}", e);
+            let len = payload.len() as u32;
+            if writer.write_all(&len.to_le_bytes()).await.is_err() {
+                break;
+            }
+            if writer.write_all(&payload).await.is_err() {
+                break;
+            }
+            if writer.flush().await.is_err() {
                 break;
             }
         }
@@ -173,36 +165,35 @@ where
     tokio::spawn(async move {
         let mut reader = read_half;
         loop {
-            let mut len_buf = [0u8; 4];
-            if let Err(e) = reader.read_exact(&mut len_buf).await {
-                tracing::debug!("IPC read failed (client disconnected?): {}", e);
+            let mut len_buf = [0_u8; 4];
+            if let Err(error) = reader.read_exact(&mut len_buf).await {
+                tracing::debug!("IPC read failed (client disconnected?): {}", error);
                 break;
             }
-            let msg_len = u32::from_le_bytes(len_buf) as usize;
-            if msg_len > max_message_size {
+            let message_len = u32::from_le_bytes(len_buf) as usize;
+            if message_len > max_message_size {
                 tracing::warn!(
-                    msg_len,
+                    message_len,
                     max_message_size,
-                    "IPC message exceeds max size, dropping connection"
+                    "IPC message exceeds max size, closing connection"
                 );
                 break;
             }
 
-            let mut msg_buf = vec![0u8; msg_len];
-            if let Err(e) = reader.read_exact(&mut msg_buf).await {
-                tracing::debug!("IPC read failed during body: {}", e);
+            let mut message_buf = vec![0_u8; message_len];
+            if let Err(error) = reader.read_exact(&mut message_buf).await {
+                tracing::debug!("IPC read failed during payload: {}", error);
                 break;
             }
 
-            match decode_message::<RuntimeMlEnvelopeV2>(&msg_buf) {
-                Ok(msg) => {
-                    if read_tx.send(msg).await.is_err() {
-                        tracing::debug!("IPC receiver dropped, stopping read task");
+            match serde_json::from_slice::<IpcEnvelope>(&message_buf) {
+                Ok(message) => {
+                    if read_tx.send(message).await.is_err() {
                         break;
                     }
                 }
-                Err(e) => {
-                    tracing::warn!("Failed to decode IPC message: {}", e);
+                Err(error) => {
+                    tracing::warn!("failed to decode IPC envelope: {}", error);
                 }
             }
         }
@@ -214,30 +205,24 @@ where
     }
 }
 
-fn encode_message<T: serde::Serialize>(msg: &T) -> Result<Vec<u8>> {
-    let json = serde_json::to_vec(msg).map_err(|e| IpcError::InvalidMessage(e.to_string()))?;
-    let len = json.len() as u32;
-    let mut buf = Vec::with_capacity(4 + json.len());
-    buf.extend_from_slice(&len.to_le_bytes());
-    buf.extend_from_slice(&json);
-    Ok(buf)
-}
-
-fn decode_message<T: serde::de::DeserializeOwned>(buf: &[u8]) -> Result<T> {
-    serde_json::from_slice(buf).map_err(|e| IpcError::InvalidMessage(e.to_string()).into())
+fn map_ipckit_error(error: ipckit::IpcError) -> neurohid_types::error::Error {
+    let mapped = if error.is_timeout() {
+        IpcError::Timeout
+    } else {
+        IpcError::ConnectionFailed(error.to_string())
+    };
+    mapped.into()
 }
 
 #[cfg(test)]
 mod tests {
-    use std::net::TcpListener;
-
     use crate::client::IpcClient;
-    use crate::protocol::{PingV2, RuntimeMlKindV2};
+    use crate::protocol::{IpcChannel, IpcEnvelope, Ping, TrainerStreamKind};
 
-    use super::{IpcConfig, IpcServer, IpcTransport, RuntimeMlEnvelopeV2};
+    use super::{IpcConfig, IpcServer, IpcTransport};
 
     fn allocate_test_port() -> u16 {
-        TcpListener::bind("127.0.0.1:0")
+        std::net::TcpListener::bind("127.0.0.1:0")
             .expect("ephemeral bind should succeed")
             .local_addr()
             .expect("socket address should resolve")
@@ -246,10 +231,10 @@ mod tests {
 
     #[tokio::test]
     async fn explicit_tcp_transport_roundtrips_messages() {
-        let address = format!("127.0.0.1:{}", allocate_test_port());
+        let endpoint = format!("127.0.0.1:{}", allocate_test_port());
         let config = IpcConfig {
             transport: IpcTransport::TcpLoopback,
-            address: address.clone(),
+            endpoint: endpoint.clone(),
             ..IpcConfig::default()
         };
         let server = IpcServer::new(config.clone())
@@ -271,12 +256,19 @@ mod tests {
             .await
             .expect("client connect should succeed");
 
-        let ping = PingV2 {
+        let ping = Ping {
             ping_id: "test-ping".to_string(),
             timestamp_us: 123,
         };
-        let envelope = RuntimeMlEnvelopeV2::new(RuntimeMlKindV2::Ping, 1, "test-session", &ping)
-            .expect("envelope should encode");
+        let envelope = IpcEnvelope::new(
+            IpcChannel::TrainerStream,
+            TrainerStreamKind::Ping.as_msg_type(),
+            1,
+            None,
+            Some("test-session".to_string()),
+            &ping,
+        )
+        .expect("envelope should encode");
 
         client
             .send(envelope.clone())
@@ -284,7 +276,7 @@ mod tests {
             .expect("client send should succeed");
         let echoed = client.recv().await.expect("client recv should succeed");
 
-        assert_eq!(echoed.kind, RuntimeMlKindV2::Ping);
+        assert_eq!(echoed.msg_type, envelope.msg_type);
         assert_eq!(echoed.seq, envelope.seq);
         assert_eq!(echoed.session_id, envelope.session_id);
 
@@ -293,23 +285,61 @@ mod tests {
             .expect("server task should complete successfully");
     }
 
-    #[cfg(not(windows))]
     #[tokio::test]
-    async fn named_pipe_transport_is_rejected_on_non_windows() {
-        let result = IpcServer::new(IpcConfig {
-            transport: IpcTransport::NamedPipe,
+    async fn explicit_local_socket_transport_roundtrips_messages() {
+        let endpoint = format!(
+            "neurohid_ipc_test_{}_{}",
+            std::process::id(),
+            neurohid_types::now_micros()
+        );
+        let config = IpcConfig {
+            transport: IpcTransport::LocalSocket,
+            endpoint,
             ..IpcConfig::default()
-        })
-        .await;
+        };
+        let server = IpcServer::new(config.clone())
+            .await
+            .expect("local socket IPC server should start");
 
-        match result {
-            Ok(_) => panic!("named pipes should be unsupported on non-Windows"),
-            Err(error) => assert!(
-                error
-                    .to_string()
-                    .contains("named pipes are only available on Windows"),
-                "unexpected error: {error}"
-            ),
-        }
+        let server_task = tokio::spawn(async move {
+            let connection = server.accept().await.expect("server accept should succeed");
+            let message = connection.recv().await.expect("server recv should succeed");
+            connection
+                .send(message)
+                .await
+                .expect("server send should succeed");
+        });
+
+        let mut client = IpcClient::new(config);
+        client
+            .connect()
+            .await
+            .expect("client connect should succeed");
+
+        let ping = Ping {
+            ping_id: "test-local".to_string(),
+            timestamp_us: 456,
+        };
+        let envelope = IpcEnvelope::new(
+            IpcChannel::TrainerStream,
+            TrainerStreamKind::Ping.as_msg_type(),
+            1,
+            None,
+            Some("session-local".to_string()),
+            &ping,
+        )
+        .expect("envelope should encode");
+
+        client
+            .send(envelope.clone())
+            .await
+            .expect("client send should succeed");
+        let echoed = client.recv().await.expect("client recv should succeed");
+        assert_eq!(echoed.msg_type, envelope.msg_type);
+        assert_eq!(echoed.seq, envelope.seq);
+
+        server_task
+            .await
+            .expect("server task should complete successfully");
     }
 }

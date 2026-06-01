@@ -19,6 +19,7 @@ flags:
   rust:
     paths:
       - crates
+      - apps
       - Cargo.toml
   python:
     paths:

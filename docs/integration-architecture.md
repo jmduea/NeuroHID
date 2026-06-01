@@ -11,8 +11,8 @@ NeuroHID uses a local-process integration model between:
 
 - Primary direction: Rust runtime emits decision and telemetry events
 - Feedback direction: Python returns ML/ErrP/training status and model lifecycle signals
-- Transport: local named pipe (Windows) or local TCP loopback (cross-platform mode)
-- Control: local control command endpoint for service snapshots and control commands
+- Python ML bridge transport: **in-process** via PyO3 bindings (`neurohid-py` crate); no socket or serialization overhead (see [ADR-001](adr/ADR-001-in-process-python-bindings.md))
+- External control clients (Hub CLI, external scripts): local named pipe (Windows) or local TCP loopback via `neurohid-ipc`
 
 ## Contract Surfaces
 
@@ -24,6 +24,10 @@ NeuroHID uses a local-process integration model between:
 - Rust service can remain operational when Python bridge is unavailable
 - Simulation/fallback behaviors are available for non-bridge or degraded scenarios
 - Reconnect and control commands support runtime recovery workflows
+- Integrity handling is warn+degrade by default:
+  - Stream/stage issues are surfaced first without immediate hard shutdown
+  - Pipeline-wide degraded state is raised when all EEG streams are impacted
+    or repeated critical violations cross threshold
 
 ## Data Flow (Logical)
 
@@ -32,6 +36,17 @@ NeuroHID uses a local-process integration model between:
 3. Runtime generates action/decision context and bridge events
 4. Python bridge consumes events, applies model logic, emits status/results
 5. Runtime applies outputs and updates control/telemetry state
+
+## Runtime Observability and Integrity
+
+- Observability is stage-scoped: `device -> signal -> decoder -> action -> ipc`
+- Structured issue events are emitted as `pipeline.integrity_issue` with
+  stage context and correlation keys (`decision_id`, `stream_id` when available)
+- Control snapshot mirrors aggregate integrity state:
+  - `pipeline_integrity_degraded`
+  - `integrity_issue_count`
+  - `stage_health_summary`
+- Hub advanced runtime panels consume these fields for operator triage
 
 ## Device Discovery and Connection Lifecycle
 
@@ -57,6 +72,12 @@ flowchart LR
 
  C[Control Client] -->|ControlRequest| R
  R -->|ControlSnapshot / TrainerSnapshot| C
+
+ N[Observability + Integrity Rollup] --- D
+ N --- S
+ N --- R
+ N --- O
+ N --- B
 ```
 
 ## Transport Matrix
@@ -64,8 +85,8 @@ flowchart LR
 | Channel | Primary Producer | Primary Consumer | Mode |
 |---|---|---|---|
 | Runtime control | Local clients | Rust runtime/service | Named pipe or TCP loopback |
-| Bridge uplink | Rust runtime | Python bridge | Named pipe (Windows) / TCP loopback |
-| Bridge downlink | Python bridge | Rust runtime | Named pipe (Windows) / TCP loopback |
+| ML bridge (samples, features, events) | Rust runtime | Python bridge | In-process (PyO3 async iterators) |
+| ML bridge (trainer, commands) | Python bridge | Rust runtime | In-process (PyO3 method calls) |
 
 ## Control and Bridge Sequence
 
@@ -84,5 +105,5 @@ sequenceDiagram
  PB-->>RT: ErrPResult + TrainerStatus
 
  RT->>PL: Emit HID action
- note over RT,PB: Bridge reconnect/fallback path available on failure
+ note over RT,PB: In-process via PyO3; fallback policy available when bridge is idle
 ```

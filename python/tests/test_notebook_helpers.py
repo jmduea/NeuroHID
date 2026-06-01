@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import subprocess
 import sys
 import unittest
@@ -12,30 +13,61 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 _notebook = importlib.import_module("neurohid_ml.notebook")
 
 
-class _FakeControl:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, object]] = []
+class _FakeSnapshot:
+    def to_dict(self) -> dict:
+        return {"running": True, "discovered_streams": []}
 
-    def set_fallback_policy(self, policy: dict) -> dict:
-        self.calls.append(("set_fallback_policy", policy))
-        return {"payload": {"type": "ack"}}
+
+class _FakeRuntime:
+    def __init__(self) -> None:
+        self.commands: list[tuple] = []
+
+    def snapshot(self) -> _FakeSnapshot:
+        return _FakeSnapshot()
+
+    def trainer_snapshot(self) -> _FakeSnapshot:
+        return _FakeSnapshot()
+
+    def command(self, name: str, **kwargs) -> None:
+        self.commands.append((name, kwargs))
+
+    def dispatch_control_sync(self, request_json: str) -> str:
+        return json.dumps({"status": "ok"})
+
+    def is_alive(self) -> bool:
+        return True
+
+    def subscribe_events(self):
+        return iter([])
 
 
 class NotebookHelperTests(unittest.TestCase):
     def test_set_fallback_policy_passes_through(self) -> None:
-        notebook = _notebook.NeuroHidNotebook(auto_start_service=False)
-        fake_control = _FakeControl()
-        notebook._control = fake_control  # type: ignore[assignment]
+        runtime = _FakeRuntime()
+        notebook = _notebook.NeuroHidNotebook(runtime=runtime)
 
         policy = {"enabled": True, "model_strategy": "lightweight_rust"}
         response = notebook.set_fallback_policy(policy)
+        self.assertEqual(response, {"status": "ok"})
 
-        self.assertEqual(response["payload"]["type"], "ack")
-        self.assertEqual(fake_control.calls, [("set_fallback_policy", policy)])
+    def test_snapshot_returns_dict(self) -> None:
+        runtime = _FakeRuntime()
+        notebook = _notebook.NeuroHidNotebook(runtime=runtime)
+        snap = notebook.snapshot()
+        self.assertIsInstance(snap, dict)
+        self.assertTrue(snap["running"])
+
+    def test_set_output_enabled_sends_command(self) -> None:
+        runtime = _FakeRuntime()
+        notebook = _notebook.NeuroHidNotebook(runtime=runtime)
+        result = notebook.set_output_enabled(True)
+        self.assertEqual(result, {"status": "ok"})
+        self.assertEqual(runtime.commands, [("toggle_output", {"enabled": True})])
 
     def test_train_profile_candidate_builds_expected_command(self) -> None:
+        runtime = _FakeRuntime()
         notebook = _notebook.NeuroHidNotebook(
-            auto_start_service=False,
+            runtime=runtime,
             service_bin="custom-service",
         )
 
@@ -43,7 +75,9 @@ class NotebookHelperTests(unittest.TestCase):
             _notebook.NeuroHidNotebook,
             "_run_command",
             autospec=True,
-            return_value=subprocess.CompletedProcess(args=["ok"], returncode=0, stdout=""),
+            return_value=subprocess.CompletedProcess(
+                args=["ok"], returncode=0, stdout=""
+            ),
         ) as run_command:
             notebook.train_profile_candidate(
                 "profile-1",
@@ -62,7 +96,8 @@ class NotebookHelperTests(unittest.TestCase):
         self.assertIn("8", called_command)
 
     def test_run_command_raises_notebook_error_with_process_output(self) -> None:
-        notebook = _notebook.NeuroHidNotebook(auto_start_service=False)
+        runtime = _FakeRuntime()
+        notebook = _notebook.NeuroHidNotebook(runtime=runtime)
         failed = subprocess.CompletedProcess(
             args=["bad"],
             returncode=2,
@@ -77,6 +112,12 @@ class NotebookHelperTests(unittest.TestCase):
         ):
             with self.assertRaisesRegex(_notebook.NotebookError, "stdout message"):
                 notebook._run_command(["bad"])
+
+    def test_telemetry_client_returns_telemetry_wrapper(self) -> None:
+        runtime = _FakeRuntime()
+        notebook = _notebook.NeuroHidNotebook(runtime=runtime)
+        client = notebook.telemetry_client()
+        self.assertTrue(client.is_alive())
 
 
 if __name__ == "__main__":

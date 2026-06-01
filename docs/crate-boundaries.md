@@ -10,15 +10,15 @@ are allowed to depend on which layers.
    - No runtime orchestration or UI behavior.
 2. Runtime component crates
    - `neurohid-device`, `neurohid-signal`, `neurohid-platform`, `neurohid-ipc`,
-     `neurohid-storage`, `neurohid-calibration`
+     `neurohid-storage`
    - Own isolated capabilities and subsystem logic.
 3. Composition/orchestration
    - `neurohid-core`
    - Wires component crates into end-to-end runtime behavior.
 4. UI and entrypoints
-   - `neurohid-hub` (desktop UI)
-   - `neurohid` (published binary crate)
-   - `neurohid-sdk` (published facade/re-export surface)
+   - `neuroide-hub` (desktop UI)
+   - `neuroide` (GUI app)
+   - `neurohid` (published library facade/re-export surface)
 
 ## Placement Rules
 
@@ -29,14 +29,18 @@ are allowed to depend on which layers.
 - Put runtime-to-ML transport/protocol client logic in `neurohid-ipc`.
 - Put profile/config persistence logic in `neurohid-storage`.
 - Put multi-crate runtime coordination in `neurohid-core`.
-- Put UI-only behavior and presentation in `neurohid-hub`.
-- Put public convenience exports for external Rust users in `neurohid-sdk`.
+- Put UI-only behavior and presentation in `neuroide-hub` (including calibration panels and games).
+- Put public convenience exports for external Rust users in `neurohid` (the facade crate).
+
+## Framework surface and Hub boundary
+
+The framework surface (which crates and APIs embedders and Hub may depend on) and the Hub allowlist are defined in [framework-surface.md](framework-surface.md). That doc is the source of truth for "what do I depend on?" and for Hub's allowed path dependencies; this document defines placement and the layer map. The Hub allowlist is enforced by CI and defined in [`.github/framework-allowlist.toml`](../.github/framework-allowlist.toml).
 
 ## Dependency Direction
 
 Preferred dependency flow:
 
-`types -> component crates -> core -> (hub | sdk | binary)`
+`types -> component crates -> core -> (hub | facade | app)`
 
 Avoid reverse coupling (for example, component crates depending on `core` or UI crates).
 
@@ -67,3 +71,25 @@ When a PR changes `Cargo.toml` files, include a short section in
 ```
 
 Keep rationale concise (3-6 bullets) unless crate ownership actually changes.
+
+## Update Notes
+
+### 2026-02-22 BIND-01 API surface audit (v1.2)
+
+- Change summary: Removed `platform` feature re-export from published `neurohid` facade crate; made `ServiceHandle` fields `pub(crate)`; added `#[doc(hidden)]` to `neurohid_core::tasks`. Documented `neurohid-core → neurohid-platform` allowed dependency.
+- Boundary impact: minor
+- Dependency direction check:
+  - [x] No reverse coupling introduced
+  - [x] Layer map still valid
+- Placement rationale: `neurohid-platform` is an internal OS/HID layer used only inside `neurohid-core::tasks::action`. It is not re-exported by the `neurohid` facade crate (which has `publish = true`) because it is not part of the stable embedder-facing API. The allowed dependency `neurohid-core → neurohid-platform` is intentional — `neurohid-core` consumes the platform HID output layer internally but does not expose any `neurohid-platform` types in its public API surface.
+- Follow-up needed: None; BIND-01 audit complete. BIND-02 bindable surface documented in `docs/bindable-surface.md`.
+
+### 2025-06-25 Hub coupling reduction (advanced-workbench-refactor)
+
+- Change summary: Removed `neurohid-device` and `neurohid-signal` from hub deps; moved `neurohid-ipc` to dev-deps (production code uses `neurohid-core::facade` re-exports).
+- Boundary impact: minor
+- Dependency direction check:
+  - [x] No reverse coupling introduced
+  - [x] Layer map still valid
+- Placement rationale: Hub should depend on `core` for runtime access, not reach through to component crates directly. IPC/storage access via `core::facade` keeps the layer hierarchy clean.
+- Follow-up needed: None.

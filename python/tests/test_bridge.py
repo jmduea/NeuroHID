@@ -33,7 +33,13 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
         session = _bridge.BridgeSession(client)
 
         should_stop = await session.handle_runtime_message(
-            {"v": 1, "kind": "hello", "seq": 1, "payload": {}}
+            {
+                "v": 1,
+                "channel": "trainer.stream",
+                "msg_type": "hello",
+                "seq": 1,
+                "payload": {},
+            }
         )
 
         self.assertFalse(should_stop)
@@ -49,8 +55,9 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
 
         should_stop = await session.handle_runtime_message(
             {
-                "v": 2,
-                "kind": "ping",
+                "v": 3,
+                "channel": "trainer.stream",
+                "msg_type": "ping",
                 "payload": {"ping_id": "abc"},
             }
         )
@@ -64,7 +71,7 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
         session = _bridge.BridgeSession(client)
 
         should_stop = await session.handle_runtime_message(
-            {"v": 2, "kind": "shutdown", "payload": {}}
+            {"v": 3, "channel": "trainer.stream", "msg_type": "shutdown", "payload": {}}
         )
 
         self.assertTrue(should_stop)
@@ -75,8 +82,9 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
 
         await session.handle_runtime_message(
             {
-                "v": 2,
-                "kind": "decision_event",
+                "v": 3,
+                "channel": "trainer.stream",
+                "msg_type": "decision_event",
                 "payload": {"decoder_confidence": 0.7, "signal_quality": 0.8},
             }
         )
@@ -92,8 +100,9 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
 
         await session.handle_runtime_message(
             {
-                "v": 2,
-                "kind": "errp_window",
+                "v": 3,
+                "channel": "trainer.stream",
+                "msg_type": "errp_window",
                 "payload": {
                     "decision_id": "d-1",
                     "action_timestamp_us": 10,
@@ -106,6 +115,20 @@ class BridgeSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(client.sent[-1]["kind"], "errp_result")
         self.assertEqual(client.sent[-1]["payload"]["decision_id"], "d-1")
         self.assertEqual(client.sent[-1]["payload"]["error_probability"], 0.0)
+
+
+class BridgeConfigTests(unittest.TestCase):
+    def test_default_config_heartbeat_interval(self) -> None:
+        config = _bridge.IpcConfig()
+        self.assertEqual(config.heartbeat_interval_sec, 0.5)
+
+    def test_custom_config_values(self) -> None:
+        config = _bridge.IpcConfig(
+            heartbeat_interval_sec=2.0,
+            recv_timeout_sec=1.0,
+        )
+        self.assertEqual(config.heartbeat_interval_sec, 2.0)
+        self.assertEqual(config.recv_timeout_sec, 1.0)
 
 
 if __name__ == "__main__":

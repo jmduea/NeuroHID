@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 
-if (-not (Test-Path 'docs/runtime-ml-protocol-v2.md')) {
-    throw 'Missing protocol document: docs/runtime-ml-protocol-v2.md'
+if (-not (Test-Path 'docs/protocol-and-api.md')) {
+    throw 'Missing protocol document: docs/protocol-and-api.md'
 }
 
 Write-Host 'Verifying protocol contracts (neurohid-types tests)...'

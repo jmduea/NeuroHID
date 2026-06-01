@@ -1,0 +1,34 @@
+[package]
+name = "neurohid-py"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+description = "PyO3 Python bindings for NeuroHID IPC — replaces the ipckit Python package"
+
+[lib]
+name = "neurohid"
+crate-type = ["cdylib"]
+
+[dependencies]
+# PyO3: stable ABI targeting Python 3.14+ (free-threaded capable)
+pyo3 = { workspace = true }
+pyo3-async-runtimes = { workspace = true }
+numpy = { workspace = true }
+pythonize = { workspace = true }
+
+# NeuroHID runtime embedding (in-process, no IPC socket)
+neurohid-core = { path = "../neurohid-core" }
+neurohid-types = { path = "../neurohid-types" }
+neurohid-ipc = { path = "../neurohid-ipc" }
+neurohid-storage = { path = "../neurohid-storage" }
+neurohid-signal = { path = "../neurohid-signal" }
+neurohid-platform = { path = "../neurohid-platform" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+serde = { workspace = true }
+tracing = { workspace = true }
+
+[lints]
+workspace = true

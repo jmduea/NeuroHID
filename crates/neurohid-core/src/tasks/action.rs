@@ -26,10 +26,11 @@ use neurohid_types::{
     control::RuntimeModeState,
     error::Result,
     event::{MarkerPayload, MarkerType, StreamMarker},
-    observability::{self as obs, EmitGate, ObservabilityComponent, ObservabilityConfig},
+    observability::{self as obs, ObservabilityComponent, ObservabilityConfig},
 };
 
-use crate::service::ServiceState;
+use crate::observability::EmitGate;
+use crate::service::{IntegrityStage, ServiceState};
 use crate::tasks::latency::RollingLatency;
 
 const ACTION_SUMMARY_EVERY_EMITTED: u64 = 256;
@@ -125,6 +126,7 @@ pub struct ActionTask {
     cursor_gate: CapabilityGate,
     click_gate: CapabilityGate,
     keyboard_gate: CapabilityGate,
+    integrity_issues: u64,
     emit_gate: EmitGate,
 }
 
@@ -159,8 +161,76 @@ impl ActionTask {
             cursor_gate: CapabilityGate::default(),
             click_gate: CapabilityGate::default(),
             keyboard_gate: CapabilityGate::default(),
+            integrity_issues: 0,
             emit_gate: EmitGate::new(observability.policy_for(ObservabilityComponent::Action)),
         }
+    }
+
+    async fn record_integrity_issue(&mut self, decision_id: &str, issue: &str, details: &str) {
+        self.integrity_issues = self.integrity_issues.saturating_add(1);
+        let mut state = self.state.write().await;
+        state.set_stage_integrity_snapshot(IntegrityStage::Action, self.integrity_issues, true);
+        drop(state);
+
+        tracing::warn!(
+            event = obs::event::INTEGRITY_ISSUE,
+            stage = obs::stage::ACTION,
+            decision_id = decision_id,
+            stream_id = obs::field::UNKNOWN,
+            issue,
+            details,
+            "Action integrity check failed"
+        );
+    }
+
+    async fn validate_action_integrity(&mut self, action: &mut Action) -> bool {
+        let decision_id = action.decision_id.as_deref().unwrap_or("none");
+
+        if !action.confidence.is_finite() {
+            self.record_integrity_issue(
+                decision_id,
+                "confidence_non_finite",
+                "action confidence contains NaN/Inf",
+            )
+            .await;
+            return false;
+        }
+        if !(0.0..=1.0).contains(&action.confidence) {
+            self.record_integrity_issue(
+                decision_id,
+                "confidence_out_of_range",
+                "action confidence is outside [0, 1]",
+            )
+            .await;
+            action.confidence = action.confidence.clamp(0.0, 1.0);
+        }
+
+        if let Some(mouse) = &mut action.mouse {
+            if let Some(movement) = &mouse.movement
+                && (!movement.dx.is_finite() || !movement.dy.is_finite())
+            {
+                self.record_integrity_issue(
+                    decision_id,
+                    "movement_non_finite",
+                    "mouse movement contains NaN/Inf",
+                )
+                .await;
+                return false;
+            }
+            if let Some(scroll) = &mouse.scroll
+                && (!scroll.dx.is_finite() || !scroll.dy.is_finite())
+            {
+                self.record_integrity_issue(
+                    decision_id,
+                    "scroll_non_finite",
+                    "mouse scroll contains NaN/Inf",
+                )
+                .await;
+                return false;
+            }
+        }
+
+        true
     }
 
     /// Runs the action task until shutdown is signaled.
@@ -171,6 +241,10 @@ impl ActionTask {
             stage = obs::stage::ACTION,
             "Action task started"
         );
+        {
+            let mut state = self.state.write().await;
+            state.set_stage_integrity_snapshot(IntegrityStage::Action, 0, false);
+        }
 
         // Try to create the platform-specific HID emitter. If this fails we
         // continue running in "passthrough" mode: actions are still broadcast
@@ -231,7 +305,11 @@ impl ActionTask {
                 action = self.action_rx.recv() => {
                     match action {
                         Some(action) => {
-                            let decision_id = action.decision_id.as_deref().unwrap_or("none");
+                            let mut action = action;
+                            let decision_id = action
+                                .decision_id
+                                .clone()
+                                .unwrap_or_else(|| "none".to_string());
 
                             // Broadcast action to hub visualization widgets
                             // (always, regardless of confidence/calibration/platform)
@@ -239,6 +317,10 @@ impl ActionTask {
                                 let _ = tx.send(action.clone());
                             }
                             self.emit_markers(&action);
+
+                            if !self.validate_action_integrity(&mut action).await {
+                                continue;
+                            }
 
                             // If no platform is available, skip HID emission
                             // but keep broadcasting for visualizations.

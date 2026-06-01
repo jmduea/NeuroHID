@@ -1,4 +1,9 @@
 //! LSL inlet client — pulls samples from an LSL inlet.
+//!
+//! Consumption model, timestamps, and "latest sample" semantics are defined in
+//! `docs/formats/stream-semantics.md`. This implementation uses a **continuous pull** with
+//! `pull_sample(0.2)` in a loop and forwards every sample (no drain-then-last); "latest sample"
+//! here is the most recently received sample in the continuous stream.
 
 use async_trait::async_trait;
 use futures::Stream;
@@ -25,8 +30,8 @@ pub(crate) struct ThreadSafeInlet(pub lsl::StreamInlet);
 // SAFETY: liblsl inlets are thread-safe. The underlying C library handles
 // synchronization for pull operations.
 unsafe impl Send for ThreadSafeInlet {}
-// SAFETY: Same invariant as above; sharing references across threads is safe
-// because liblsl synchronizes concurrent inlet access internally.
+// SAFETY: liblsl inlets are thread-safe. The underlying C library handles
+// synchronization for pull operations.
 unsafe impl Sync for ThreadSafeInlet {}
 
 /// An LSL stream consumer that implements the [`Device`] trait.

@@ -1,77 +1,28 @@
-//! # NeuroHID IPC Layer
+//! NeuroHID IPC transport and protocol adapters.
 //!
-//! This crate provides inter-process communication between the Rust core service
-//! and the trainer bridge process. Transport is named pipes on Windows (default)
-//! with optional localhost TCP fallback for non-Windows development.
-//!
-//! ## Architecture
-//!
-//! The Rust core runs continuously as a background service. It connects to the
-//! EEG device, processes signals, and emits HID events. The Python process runs
-//! alongside, receiving feature vectors and returning decoded actions.
-//!
-//! ```text
-//!                 ┌─────────────────────────────────┐
-//!                 │         Rust Core Service       │
-//!                 │  ┌─────────┐    ┌───────────┐  │
-//!   EEG Device ───│─>│ Signal  │───>│ IPC Server│──│──┐
-//!                 │  │ Pipeline│    └───────────┘  │  │
-//!                 │  └─────────┘          ▲        │  │
-//!                 │       │               │        │  │
-//!                 │       ▼               │        │  │
-//!                 │  ┌─────────┐    ┌─────┴─────┐  │  │
-//!   HID Output <──│──│ Platform│<───│Action     │  │  │
-//!                 │  │ Layer   │    │Executor   │  │  │
-//!                 │  └─────────┘    └───────────┘  │  │
-//!                 └─────────────────────────────────┘  │
-//!                                                      │ Local Socket
-//!                 ┌─────────────────────────────────┐  │
-//!                 │       Python ML Process         │  │
-//!                 │  ┌───────────┐    ┌─────────┐  │  │
-//!                 │  │IPC Client │<───│         │  │<─┘
-//!                 │  └─────┬─────┘    │ Decoder │  │
-//!                 │        │          │ (PyTorch│  │
-//!                 │        ▼          │  PPO)   │  │
-//!                 │  ┌───────────┐    │         │  │
-//!                 │  │   ErrP    │───>│         │  │
-//!                 │  │ Detector  │    └─────────┘  │
-//!                 │  └───────────┘                 │
-//!                 └─────────────────────────────────┘
-//! ```
-//!
-//! ## Usage (Rust Side)
-//!
-//! ```ignore
-//! use neurohid_ipc::{IpcConfig, IpcServer, RuntimeMlEnvelopeV2, RuntimeMlKindV2};
-//!
-//! // Start the IPC server
-//! let server = IpcServer::new(IpcConfig::default()).await?;
-//!
-//! // Wait for trainer bridge to connect
-//! let connection = server.accept().await?;
-//!
-//! // Send decision event envelope
-//! let msg = RuntimeMlEnvelopeV2::new(RuntimeMlKindV2::DecisionEvent, 1, "session", &payload)?;
-//! connection.send(msg).await?;
-//!
-//! // Receive a reply envelope
-//! let msg = connection.recv().await?;
-//! ```
+//! This crate wraps `ipckit` local-socket primitives plus loopback TCP fallback
+//! to provide a unified framed-JSON transport for NeuroHID IPC v3.
 
+pub mod broker;
 pub mod client;
 pub mod protocol;
 pub mod server;
+pub mod types;
 
+pub use broker::{BrokerCounters, BrokerError, IpcBroker, TrainerSessionGuard};
 pub use protocol::{
-    AckV2, CandidateModelReadyV2, DEFAULT_IPC_PORT, DEFAULT_ML_PIPE_NAME, DecisionEventV2,
-    ErrpResultV2, ErrpWindowV2, HelloV2, IpcConfig, IpcTransport, PingV2, PongV2, ProtocolErrorV2,
-    RUNTIME_ML_PROTOCOL_V2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2,
-    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
-    default_address,
+    Ack, BrokerConfig, CandidateModelReady, ChannelPolicy, DEFAULT_CONTROL_SOCKET_ENDPOINT,
+    DEFAULT_IPC_PORT, DEFAULT_IPC_SOCKET_ENDPOINT, DEFAULT_RUNTIME_SOCKET_ENDPOINT, DecisionEvent,
+    ErrpResult, ErrpWindow, Hello, IPC_PROTOCOL_VERSION, IpcChannel, IpcConfig, IpcEnvelope,
+    IpcTransport, Ping, Pong, ProtocolError, QueueOverflowPolicy, RuntimeComponentCapability,
+    RuntimeEvent, RuntimeEventsSubscribe, RuntimeMlRole, RuntimeTelemetry, SessionBoundary,
+    SessionBoundaryEvent, Shutdown, TrainerStatus, TrainerStreamKind, TrainerStreamPayload,
+    default_control_endpoint, default_ipc_endpoint, default_loopback_endpoint,
+    default_runtime_endpoint,
 };
 
-// Server is used by Rust core
-pub use server::IpcServer;
-
-// Client would be used by Python (via PyO3 bindings) or for testing
-pub use client::IpcClient;
+pub use client::{
+    IpcClient, decode_control_response_envelope, send_control_request_blocking,
+    send_control_request_once,
+};
+pub use server::{IpcConnection, IpcServer};

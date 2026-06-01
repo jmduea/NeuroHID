@@ -1,166 +1,89 @@
-# Project Agents
+# Agent Instructions - NeuroHID
 
-## Default Project Settings
+## Coding Standards
 
-When creating Rust projects or Cargo.toml files, ALWAYS use:
+### Rust Development
 
-```toml
-[package]
-edition = "2024"
-rust-version = "1.85"
+- Always collapse if statements per <https://rust-lang.github.io/rust-clippy/master/index.html#collapsible_if>
+- Always inline format! args when possible per <https://rust-lang.github.io/rust-clippy/master/index.html#uninlined_format_args>
+- Use method references over closures when possible per <https://rust-lang.github.io/rust-clippy/master/index.html#redundant_closure_for_method_calls>
 
-[lints.rust]
-unsafe_code = "warn"
+### Python Development
 
-[lints.clippy]
-all = "warn"
-pedantic = "warn"
-```
-
-## Core Capabilities
-
-### 1. Question Routing
-
-Route Rust questions to appropriate skills:
-
-- Ownership/borrowing → m01-ownership
-- Smart pointers → m02-resource
-- Error handling → m06-error-handling
-- Concurrency → m07-concurrency
-- Unsafe code → unsafe-checker
-
-### Rust Grounding Policy
-
-When handling Rust design, semantics, unsafe/FFI, and Cargo behavior, use a tiered source strategy:
-
-1. Repo-local skills and existing codebase patterns first.
-2. Canonical references for disputed or safety-critical guidance:
-    - Rust Book: <https://doc.rust-lang.org/book/>
-    - Rust Reference: <https://doc.rust-lang.org/stable/reference/>
-    - Cargo Book: <https://doc.rust-lang.org/stable/cargo/>
-    - Effective Rust: <https://effective-rust.com/>
-
-Agent outputs should name the source and relevant section when tier-2 escalation is used.
-
-### 2. Code Style
-
-Follow Rust coding guidelines:
-
-- Use snake_case for variables and functions
-- Use PascalCase for types and traits
-- Use SCREAMING_SNAKE_CASE for constants
-- Max line length: 100 characters
-- Use `?` operator instead of `unwrap()` in library code
-
-### 3. Error Handling
-
-```rust
-// Good: Use Result with context
-fn read_config() -> Result<Config, ConfigError> {
-    let content = std::fs::read_to_string("config.toml")
-        .map_err(|e| ConfigError::Io(e))?;
-    toml::from_str(&content)
-        .map_err(|e| ConfigError::Parse(e))
-}
-
-// Avoid: unwrap() in library code
-fn read_config() -> Config {
-    let content = std::fs::read_to_string("config.toml").unwrap(); // Bad
-    toml::from_str(&content).unwrap() // Bad
-}
-```
-
-### Python Command Policy
-
-- Use `uv` for all Python execution and tooling commands.
+- Use `uv` for Python execution and tooling commands.
 - Do not use bare `python` commands in docs, scripts, or automation.
-- Prefer forms such as `uv run --project python ...` (or `uv python --command ...` when needed).
+- Prefer free-threaded python versions 3.14t+
+- Format with Ruff (`ruff format .`)
+- Lint with Ruff (`ruff check .`)
+- Test with pytest (`pytest --cov`)
+- Always include type hints
+- Use Google-style docstrings
+- Follow PEP 8 with max line length 120
 
-### RTK Command Policy
+### Naming Conventions
 
-- Prefer `rtk` as the default proxy for verbose shell commands.
-- Always prefix each command in chains as well (e.g., `rtk git add . && rtk git commit -m "msg"`).
-- RTK passthrough is safe when no dedicated filter exists.
-- Before relying on RTK in a new environment, verify with:
-  - `rtk --version`
-  - `rtk gain`
-- Prefer RTK wrappers for common high-volume output commands:
-  - `git` (`status`, `log`, `diff`, `show`, `add`, `commit`, `push`, `pull`)
-  - `cargo` (`check`, `build`, `clippy`, `test`)
-  - file/search (`ls`, `read`, `grep`, `find`)
-  - `gh` (`pr`, `issue`, `run`), `docker`, `kubectl`
-- In Copilot/VS Code workflows, prefer hook-routed enforcement where available.
-- On Windows + VS Code agent workflows, if command rewrite hooks are not active, use explicit `rtk ...` command prefixes by default.
+- Functions/variables: snake_case
+- Classes: PascalCase
+- Constants: UPPER_SNAKE_CASE
+- Files: snake_case.py
 
-### Branch and TDD Governance Policy
+## Git Workflow
 
-- Canonical governance source of truth is `.github/automation/policy-manifest.json`.
-- Implementation work MUST occur on a non-`main` branch (or dedicated worktree) unless the user explicitly approves otherwise.
-- `main` is PR-only; do not push development commits directly to `main`.
-- For behavior changes, include explicit RED/GREEN TDD evidence in PR metadata.
-- Keep `AGENTS.md`, `CONTRIBUTING.md`, `docs/development-guide.md`, and PR template text aligned with policy manifest changes.
-- Use `pwsh -File ./.github/scripts/verify-governance-setup.ps1` before implementation and `pwsh -File ./.github/scripts/pre-push-governance-checks.ps1 -RustScope focused` before push.
+Use Conventional Commits:
 
-### 4. Unsafe Code
+- `feat:` new feature
+- `fix:` bug fix
+- `docs:` documentation changes
+- `refactor:` code refactoring
+- `test:` adding or updating tests
+- `chore:` maintenance tasks
 
-Every `unsafe` block MUST have a `// SAFETY:` comment:
+Always:
 
-```rust
-// SAFETY: We checked that index < len above, so this is in bounds
-unsafe { slice.get_unchecked(index) }
-```
+1. Run tests before committing
+2. Write clear, concise commit messages
 
-### 5. Common Error Fixes
+## Workflow Guidelines
 
-| Error | Cause | Fix |
-| ----- | ----- | --- |
-| E0382 | Use of moved value | Clone, borrow, or use reference |
-| E0597 | Lifetime too short | Extend lifetime or restructure |
-| E0502 | Borrow conflict | Split borrows or use RefCell |
-| E0499 | Multiple mut borrows | Restructure to single mut borrow |
-| E0277 | Missing trait impl | Add trait bound or implement trait |
+### Planning
 
-## Quick Reference
+- Start complex tasks in Plan mode
+- Get the plan right before implementing
+- Break large tasks into smaller, focused steps
 
-### Ownership
+### Verification
 
-- Each value has one owner
-- Borrowing: `&T` (shared) or `&mut T` (exclusive)
-- Lifetimes: `'a` annotations for references
+- Always verify work with tests when available
+- Run linter after making changes
+- Test UI changes in browser when applicable
 
-### Smart Pointers
+### Error Handling
 
-- `Box<T>`: Heap allocation
-- `Rc<T>`: Reference counting (single-threaded)
-- `Arc<T>`: Atomic reference counting (thread-safe)
-- `RefCell<T>`: Interior mutability
+- Use try-except with proper logging
+- Provide clear error messages
+- Don't silently ignore exceptions
 
-### Concurrency
+## Key Files
 
-- `Send`: Safe to transfer between threads
-- `Sync`: Safe to share references between threads
-- `Mutex<T>`: Mutual exclusion
-- `RwLock<T>`: Reader-writer lock
+| File | Purpose |
+|------|---------|
+| `CLAUDE.md` | Claude Code memory (project-specific) |
+| `AGENTS.md` | This file - Cursor agent instructions |
+| `.cursor/skills/` | Modular Cursor skills |
 
-### Async
+## Tools and Commands
 
-```rust
-#[tokio::main]
-async fn main() {
-    let handle = tokio::spawn(async {
-        // async work
-    });
-    handle.await.unwrap();
-}
-```
+| Task | Command |
+|------|---------|
+| Format code | `ruff format .` |
+| Lint code | `ruff check .` |
+| Fix lint issues | `ruff check --fix .` |
+| Run tests | `pytest` |
+| Run with coverage | `pytest --cov` |
 
-## Skill Files
+## Preferences
 
-For detailed guidance, see:
-
-- `.github/skills/rust-router/SKILL.md` - Question routing
-- `.github/skills/coding-guidelines/SKILL.md` - Code style rules
-- `.github/skills/unsafe-checker/SKILL.md` - Unsafe code review
-- `.github/skills/m01-ownership/SKILL.md` - Ownership concepts
-- `.github/skills/m06-error-handling/SKILL.md` - Error patterns
-- `.github/skills/m07-concurrency/SKILL.md` - Concurrency patterns
+- Provide concise, focused responses
+- Show code examples when helpful
+- Explain the "why" behind changes
+- Prefer editing existing files over creating new ones

@@ -16,10 +16,14 @@ mod ipc;
 mod latency;
 mod latency_alert;
 mod outlet;
+mod recording;
+mod replay_source;
 mod session_logger;
 mod signal;
 
+use neurohid_ipc::IpcEnvelope;
 use neurohid_types::{Timestamp, action::Action};
+use tokio::sync::mpsc;
 
 /// Decoder-emitted event forwarded to the runtime ML bridge.
 #[derive(Debug, Clone)]
@@ -34,11 +38,27 @@ pub struct DecisionEventRecord {
     pub stream_id: Option<String>,
 }
 
+/// Trainer ingress events injected by the unified IPC server.
+#[derive(Debug, Clone)]
+pub enum TrainerIngressEvent {
+    Connected { session_id: String },
+    Envelope(IpcEnvelope),
+    Disconnected,
+}
+
+/// In-process channels connecting service IPC transport and trainer protocol engine.
+pub struct TrainerBridgeChannels {
+    pub ingress_tx: mpsc::Sender<TrainerIngressEvent>,
+    pub egress_rx: mpsc::Receiver<IpcEnvelope>,
+}
+
 pub use action::ActionTask;
-pub use decoder::DecoderTask;
+pub use decoder::{DecoderTask, create_decoder};
 pub use device::DeviceTask;
 pub use ipc::IpcTask;
 pub use latency_alert::LatencyAlertMonitorTask;
-pub use outlet::OutletTask;
+pub use outlet::{OutletTask, create_outlet};
+pub use recording::{RecordingCommand, RecordingCommandResult, RecordingRequest, RecordingTask};
+pub use replay_source::{load_session_samples, run_replay_task};
 pub use session_logger::{EpisodeLogRecord, SessionLoggerTask};
-pub use signal::SignalTask;
+pub use signal::{SignalTask, create_signal_preprocessor};

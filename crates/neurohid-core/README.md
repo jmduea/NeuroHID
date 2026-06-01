@@ -12,20 +12,20 @@ NeuroHID core service library.
 
 ## Usage
 
-This crate is an internal library used by the `neurohid` binaries. Most application users should run `neurohid` or `neurohid-service` from the `neurohid` crate.
+This crate is an internal library used by the application binaries. Most application users should run `neuroide` or `neurohid-service`.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1" }
+neurohid = { version = "0.1" }
 ```
 
 To run the headless service:
 
 ```bash
-cargo run -p neurohid --bin neurohid-service
+cargo run -p neurohid-service
 ```
 
-IPC note: the core currently runs with a simulated IPC bridge by default (`service.ipc_simulation_enabled = true`). Set this flag to `false` to require a real Python bridge.
+By default the core service starts without requiring a running Python bridge. Start the Python bridge separately to enable ML-assisted decoding.
 
 ## License
 

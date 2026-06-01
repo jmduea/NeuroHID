@@ -54,6 +54,10 @@ pub enum Error {
     #[error("Configuration error: {0}")]
     Config(#[from] ConfigError),
 
+    /// Errors related to extension discovery and loading
+    #[error("Extension error: {0}")]
+    Extension(#[from] ExtensionError),
+
     /// Generic internal error (should be rare)
     #[error("Internal error: {0}")]
     Internal(String),
@@ -351,22 +355,41 @@ pub enum ConfigError {
     WriteError(String),
 }
 
+/// Errors related to extension discovery and registry.
+#[derive(Error, Debug)]
+pub enum ExtensionError {
+    /// Duplicate extension name discovered (same name in more than one manifest).
+    #[error("Duplicate extension name: '{name}' appears in multiple manifests")]
+    DuplicateName { name: String },
+
+    /// Extension name not found in registry (not discovered or wrong slot).
+    #[error("Extension not found: '{name}'")]
+    NotFound { name: String },
+
+    /// Failed to load extension library (dylib load or symbol resolution).
+    #[error("Failed to load extension '{name}': {reason}")]
+    LoadError { name: String, reason: String },
+
+    /// Manifest file could not be read or parsed.
+    #[error("Failed to read or parse manifest at '{path}': {reason}")]
+    ManifestError { path: String, reason: String },
+
+    /// Discovery path is invalid or not a directory.
+    #[error("Invalid extension path: {0}")]
+    InvalidPath(String),
+}
+
 // Implement From for common std error types to make ? work smoothly
 
-impl From<std::io::Error> for Error {
-    fn from(err: std::io::Error) -> Self {
-        Error::Storage(StorageError::ReadError {
-            path: "unknown".to_string(),
-            reason: err.to_string(),
-        })
-    }
-}
+// NOTE: The blanket From<std::io::Error> impl was intentionally removed.
+// It mapped ALL io errors to StorageError::ReadError { path: "unknown" },
+// which lost context and misclassified errors. Call sites should use
+// explicit .map_err() with contextual information instead.
 
-impl From<serde_json::Error> for Error {
-    fn from(err: serde_json::Error) -> Self {
-        Error::Storage(StorageError::SerializationError(err.to_string()))
-    }
-}
+// NOTE: The blanket From<serde_json::Error> impl was intentionally removed.
+// It routed ALL JSON errors to StorageError::SerializationError, which
+// misclassified IPC/config/protocol errors. Call sites already use explicit
+// .map_err() with appropriate error categories.
 
 // Helper functions for creating errors with context
 

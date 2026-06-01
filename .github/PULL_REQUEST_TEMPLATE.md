@@ -17,36 +17,16 @@
 - [ ] I evaluated whether an ADR is required.
 - [ ] If required, I linked an ADR in `docs/adr/`.
 - [ ] I ran a docs-freshness pass and resolved blockers.
-- [ ] I refreshed `docs/architecture/index.md` when architecture-gated surfaces changed.
 - [ ] I updated `docs/crate-boundaries.md` when crate ownership or dependency direction changed.
 
 ## Testing / TDD
 
 - [ ] I added or updated tests for behavior changes.
+- [ ] I described the failing test intent that guided implementation.
 - [ ] Rust checks pass for affected crates.
 - [ ] Python checks pass for affected modules.
 - [ ] Protocol contract checks pass when protocol/runtime types changed.
 - [ ] Unsafe compliance checks pass when unsafe code paths changed.
-
-### Failing Test Intent
-
-Describe the behavior gap that failed first and what requirement it covers.
-
-### RED Evidence (Before)
-
-- Command(s) run:
-- Failure summary:
-
-### GREEN Evidence (After)
-
-- Command(s) rerun:
-- Passing summary:
-
-### No-Test-Impact Rationale
-
-Only use when production code changed but dedicated test files were not updated.
-Include why test files were not required and apply label `no-test-impact`.
-When rationale is substantive, CI may auto-apply the `no-test-impact` label.
 
 ## Risk and Rollout
 

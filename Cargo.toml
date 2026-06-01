@@ -3,7 +3,6 @@ resolver = "2"
 
 members = [
     "crates/neurohid",
-    "crates/neurohid-sdk",
     "crates/neurohid-types",
     "crates/neurohid-core",
     "crates/neurohid-signal",
@@ -11,8 +10,12 @@ members = [
     "crates/neurohid-platform",
     "crates/neurohid-storage",
     "crates/neurohid-ipc",
-    "crates/neurohid-calibration",
-    "crates/neurohid-hub",
+    "crates/neurohid-service",
+    "crates/neurohid-validate",
+    "crates/neurohid-outlet-example",
+    "apps/neuroide-hub",
+    "apps/neuroide",
+    "crates/neurohid-py",
 ]
 
 # Shared dependencies across all crates - ensures version consistency
@@ -26,6 +29,9 @@ futures = "0.3.31"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 toml = "0.9.8"
+
+# IPC
+ipckit = { version = "0.1.6", features = ["async", "backend-interprocess"] }
 
 # Error handling
 thiserror = "2.0.18"
@@ -63,6 +69,12 @@ eframe = { version = "0.33.3", default-features = false }
 # Testing
 approx = "0.5.1"
 
+# Python bindings
+pyo3 = { version = "0.28", features = ["abi3-py314"] }
+pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
+numpy = { version = "0.28" }
+pythonize = { version = "0.28" }
+
 [workspace.package]
 version = "0.1.0"
 edition = "2024"
@@ -76,6 +88,7 @@ lsl-sys = { git = "https://github.com/labstreaminglayer/liblsl-rust.git", rev = 
 [workspace.lints.rust]
 unsafe_code = "warn"
 unused = "warn"
+missing_docs = "warn"
 
 [workspace.lints.clippy]
 all = "warn"

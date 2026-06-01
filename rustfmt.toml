@@ -1,0 +1,7 @@
+# Enforce consistent import ordering: std → external → workspace → crate
+# Requires nightly rustfmt as of Rust 1.88: cargo +nightly fmt
+imports_granularity = "Module"
+group_imports = "StdExternalCrate"
+
+# Match project convention (crates/AGENTS.md: max line length 100)
+max_width = 100

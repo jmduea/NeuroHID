@@ -12,11 +12,11 @@ Device abstraction layer for biosensor hardware in NeuroHID.
 
 ## Usage
 
-This crate is typically used as a dependency by `neurohid-core`. End users should use the `neurohid-sdk` facade crate with the `device` feature enabled.
+This crate is typically used as a dependency by `neurohid-core`. End users should use the `neurohid` facade crate with the `device` feature enabled.
 
 ```toml
 [dependencies]
-neurohid-sdk = { version = "0.1", features = ["device"] }
+neurohid = { version = "0.1", features = ["device"] }
 ```
 
 ## Building without LSL

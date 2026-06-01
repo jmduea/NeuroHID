@@ -25,17 +25,20 @@
 pub mod action;
 pub mod config;
 pub mod control;
+pub mod decoder_contract;
 pub mod device;
 pub mod error;
 pub mod event;
-pub mod ipc_v2;
 pub mod learning;
 pub mod model;
 pub mod observability;
 pub mod observation;
+pub mod outlet;
 pub mod profile;
+pub mod recording;
 pub mod reward;
 pub mod signal;
+pub mod signal_contract;
 
 // Re-export commonly used types at the crate root for convenience
 pub use action::{Action, Key, KeyAction, MouseAction, MouseButton};
@@ -43,23 +46,22 @@ pub use control::{
     ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
     RuntimeModeState, TrainerSnapshot,
 };
+pub use decoder_contract::{DecoderChannels, DecoderRunner};
 pub use device::{ConnectionState, DeviceId, DeviceInfo, DeviceStatus, DiscoveredStream};
 pub use error::{Error, Result};
 pub use event::{MarkerPayload, MarkerType, StreamMarker};
-pub use ipc_v2::{
-    AckV2, CandidateModelReadyV2, DecisionEventV2, ErrpResultV2, ErrpWindowV2, HelloV2, PingV2,
-    PongV2, ProtocolErrorV2, RuntimeMlEnvelopeV2, RuntimeMlKindV2, RuntimeMlRoleV2,
-    RuntimeTelemetryV2, SessionBoundaryEventV2, SessionBoundaryV2, ShutdownV2, TrainerStatusV2,
-};
 pub use learning::{
     CandidateGuardrails, CandidateModelMetrics, TrainingEpisode, TrainingSessionLog,
 };
 pub use model::{ModelManifest, NormalizationStats};
-pub use observability::{EmitGate, EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig};
+pub use observability::{EmitPolicyConfig, ObservabilityComponent, ObservabilityConfig};
 pub use observation::{CursorState, Observation};
+pub use outlet::{ExtensionKind, ExtensionManifest, Outlet, OutletChannels};
 pub use profile::{CalibrationState, ProfileId};
+pub use recording::{RecordingAutoMode, RecordingConfig, SessionManifest};
 pub use reward::{ErrPResult, RewardSignal, SignalQuality};
 pub use signal::{ChannelConfig, ChannelId, FeatureVector, Sample};
+pub use signal_contract::{SignalChannels, SignalPreprocessor};
 
 /// Microseconds since Unix epoch. We use i64 to allow for negative values
 /// (timestamps before epoch) even though we don't expect them in practice.

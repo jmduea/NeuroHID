@@ -5,15 +5,17 @@ This module provides a small convenience layer for Jupyter workflows:
 - runtime telemetry polling
 - bridge reconnect
 - profile training/export/staging wrappers
+
+All communication uses an in-process ``RuntimeHandle`` obtained from the
+``neurohid`` native extension.
 """
 
 from __future__ import annotations
 
-import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any
 
 from neurohid_ml.control import NeuroHidControlClient, NotebookError
 from neurohid_ml.telemetry import NeuroHidTelemetryClient
@@ -21,41 +23,22 @@ from neurohid_ml.telemetry import NeuroHidTelemetryClient
 
 @dataclass(slots=True)
 class NeuroHidNotebook:
-    """Ergonomic API surface for Jupyter notebooks."""
+    """Ergonomic API surface for Jupyter notebooks.
 
-    control_host: str = "127.0.0.1"
-    control_port: int = 47385
-    control_transport: str = "tcp"
-    control_pipe_name: str = r"\\.\pipe\neurohid.control.v2"
+    Parameters
+    ----------
+    runtime:
+        A ``neurohid.RuntimeHandle`` returned by ``await RuntimeBuilder(config).start()``.
+    service_bin:
+        Path to the service binary used for subprocess training/export commands.
+    """
+
+    runtime: Any
     service_bin: str = "neurohid-service"
-    auto_start_service: bool = True
-    service_launch_command: str | None = None
-    service_start_wait_secs: float = 1.0
-    connect_timeout_secs: float = 1.5
-    read_timeout_secs: float = 1.5
-    connect_retries: int = 1
-    ml_transport: str = "named_pipe" if os.name == "nt" else "tcp_loopback"
-    ml_host: str = "127.0.0.1"
-    ml_port: int = 47384
-    ml_pipe_name: str = r"\\.\pipe\neurohid.ml.v2"
-    ml_connect_timeout_secs: float = 1.5
-    ml_read_timeout_secs: float = 0.2
     _control: NeuroHidControlClient = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
-        self._control = NeuroHidControlClient(
-            control_host=self.control_host,
-            control_port=self.control_port,
-            control_transport=self.control_transport,
-            control_pipe_name=self.control_pipe_name,
-            service_bin=self.service_bin,
-            auto_start_service=self.auto_start_service,
-            service_launch_command=self.service_launch_command,
-            service_start_wait_secs=self.service_start_wait_secs,
-            connect_timeout_secs=self.connect_timeout_secs,
-            read_timeout_secs=self.read_timeout_secs,
-            connect_retries=self.connect_retries,
-        )
+        self._control = NeuroHidControlClient(self.runtime)
 
     def snapshot(self) -> dict[str, Any]:
         return self._control.snapshot()
@@ -93,25 +76,43 @@ class NeuroHidNotebook:
     def ensure_connected_stream(self, *, rescan: bool = True) -> str | None:
         return self._control.ensure_connected_stream(rescan=rescan)
 
+    def subscribe_samples(self):
+        """Return an async iterator of ``Sample`` objects."""
+        return self._control.subscribe_samples()
+
+    def subscribe_features(self):
+        """Return an async iterator of ``FeatureVector`` objects."""
+        return self._control.subscribe_features()
+
+    def subscribe_actions(self):
+        """Return an async iterator of ``Action`` objects."""
+        return self._control.subscribe_actions()
+
+    def subscribe_markers(self):
+        """Return an async iterator of ``StreamMarker`` objects."""
+        return self._control.subscribe_markers()
+
+    def subscribe_events(self):
+        """Return an async iterator of ``RuntimeEvent`` objects."""
+        return self._control.subscribe_events()
+
+    def is_alive(self) -> bool:
+        return self._control.is_alive()
+
+    # -- Data helpers --------------------------------------------------------
+
+    def observation_to_numpy(self, event_payload: dict[str, Any]) -> Any:
+        return self._control.observation_to_numpy(event_payload)
+
+    def events_to_dataframe(self, events: list[dict[str, Any]]) -> Any:
+        return self._control.events_to_dataframe(events)
+
+    # -- Telemetry -----------------------------------------------------------
+
     def telemetry_client(self) -> NeuroHidTelemetryClient:
-        return NeuroHidTelemetryClient(
-            transport=self.ml_transport,
-            host=self.ml_host,
-            port=self.ml_port,
-            pipe_name=self.ml_pipe_name,
-            connect_timeout_secs=self.ml_connect_timeout_secs,
-            read_timeout_secs=self.ml_read_timeout_secs,
-        )
+        return NeuroHidTelemetryClient(self.runtime)
 
-    def recv_telemetry(self) -> dict[str, Any] | None:
-        return self.telemetry_client().recv()
-
-    def iter_telemetry(
-        self,
-        *,
-        max_messages: int | None = None,
-    ) -> Iterator[dict[str, Any]]:
-        return self.telemetry_client().iter_messages(max_messages=max_messages)
+    # -- Subprocess training/export helpers ----------------------------------
 
     def train_profile_candidate(
         self,

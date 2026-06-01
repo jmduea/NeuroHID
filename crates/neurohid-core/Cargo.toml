@@ -12,7 +12,7 @@ name = "neurohid_core"
 path = "src/lib.rs"
 
 [features]
-default = ["device-lsl"]
+default = ["device-lsl", "brainflow"]
 device-lsl = ["neurohid-device/lsl", "dep:lsl"]
 brainflow = ["neurohid-device/brainflow"]
 
@@ -23,6 +23,7 @@ neurohid-signal = { path = "../neurohid-signal" }
 neurohid-platform = { path = "../neurohid-platform" }
 neurohid-storage = { path = "../neurohid-storage" }
 neurohid-ipc = { path = "../neurohid-ipc" }
+libloading = "0.8"
 
 # Async runtime
 tokio = { workspace = true }
@@ -35,7 +36,6 @@ serde_json = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
-anyhow = { workspace = true }
 
 # Async trait support
 async-trait = "0.1"
@@ -47,4 +47,9 @@ lsl = { version = "0.1", optional = true }
 tract-onnx = "0.22"
 
 [dev-dependencies]
+neurohid-types = { path = "../neurohid-types" }
 tokio-test = "0.4"
+xdf = "0.1.2"
+
+[lints]
+workspace = true
