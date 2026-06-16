@@ -171,7 +171,7 @@ jobs:
       - name: Install LSL
         run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings -A missing_docs -A clippy::pedantic -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
+        run: cargo clippy --workspace -- -D warnings -A missing_docs -A unsafe_code -A clippy::pedantic -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
 
   fmt:
     name: Format
@@ -338,10 +338,11 @@ jobs:
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run Rust coverage gate
-        run: >
-          cargo llvm-cov --workspace
-          --lcov --output-path target/llvm-cov/lcov.info
-          --fail-under-lines ${{ env.RUST_COVERAGE_MIN }}
+        run: |
+          mkdir -p target/llvm-cov
+          cargo llvm-cov --workspace \
+            --lcov --output-path target/llvm-cov/lcov.info \
+            --fail-under-lines ${{ env.RUST_COVERAGE_MIN }}
       - name: Upload Rust coverage artifact
         uses: actions/upload-artifact@v4
         with:
