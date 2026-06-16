@@ -4,6 +4,8 @@
 //! Receives config and channels, runs until shutdown (log-only / no-op). Used to validate
 //! the extension path and CI e2e.
 
+#![allow(unsafe_code)]
+
 use async_trait::async_trait;
 use neurohid_types::{
     config::OutletConfig,

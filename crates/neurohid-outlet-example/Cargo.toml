@@ -19,6 +19,3 @@ async-trait = "0.1"
 
 [lints]
 workspace = true
-
-[lints.rust]
-unsafe_code = "allow"
