@@ -15,7 +15,7 @@ env:
 jobs:
   determine-impact:
     name: Determine Impact
-    runs-on: [ubuntu-latest]
+    runs-on: [windows-latest]
     outputs:
       rust: ${{ steps.impact.outputs.rust }}
       python: ${{ steps.impact.outputs.python }}
@@ -39,7 +39,7 @@ jobs:
 
   focused-gates:
     name: Focused Gates
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [windows-latest]
     needs: determine-impact
     steps:
       - uses: actions/checkout@v4
@@ -67,13 +67,13 @@ jobs:
         include:
           - platform: linux
             runner_os: Linux
-            runner: [self-hosted, linux, neurohid-ci]
+            runner: [ubuntu-latest]
           - platform: linux
             runner_os: Linux
             runner: ubuntu-22.04
           - platform: windows
             runner_os: Windows
-            runner: [self-hosted, windows, neurohid-ci]
+            runner: [windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -98,7 +98,7 @@ jobs:
     name: Test (macOS)
     needs: determine-impact
     if: (needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push') && vars.ENABLE_MACOS != 'false'
-    runs-on: [self-hosted, macos, neurohid-ci]
+    runs-on: [macos-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -120,7 +120,7 @@ jobs:
     name: Clippy
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -136,7 +136,7 @@ jobs:
     name: Format
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -149,7 +149,7 @@ jobs:
     name: Framework Boundary
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || needs.determine-impact.outputs.automation == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -161,7 +161,7 @@ jobs:
     name: Documentation
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -177,7 +177,7 @@ jobs:
     name: Python Tests
     needs: determine-impact
     if: needs.determine-impact.outputs.python == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -210,7 +210,7 @@ jobs:
     name: E2E Service + Python Client
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || needs.determine-impact.outputs.python == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -239,16 +239,16 @@ jobs:
         include:
           - platform: linux
             transport: tcp_loopback
-            runner: [self-hosted, linux, neurohid-ci]
+            runner: [ubuntu-latest]
           - platform: linux
             transport: local_socket
-            runner: [self-hosted, linux, neurohid-ci]
+            runner: [ubuntu-latest]
           - platform: windows
             transport: tcp_loopback
-            runner: [self-hosted, windows, neurohid-ci]
+            runner: [windows-latest]
           - platform: windows
             transport: local_socket
-            runner: [self-hosted, windows, neurohid-ci]
+            runner: [windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -277,7 +277,7 @@ jobs:
     name: Rust Coverage
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -307,7 +307,7 @@ jobs:
   unsafe-compliance:
     name: Unsafe Compliance
     needs: determine-impact
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Validate unsafe compliance
@@ -318,7 +318,7 @@ jobs:
     name: Protocol Contracts
     needs: determine-impact
     if: needs.determine-impact.outputs.protocol == 'true'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
