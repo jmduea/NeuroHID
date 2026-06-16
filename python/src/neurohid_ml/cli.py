@@ -401,7 +401,7 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
 
 def _start_runtime_from_args(args: argparse.Namespace):
     """Start an in-process runtime from optional --config-json CLI argument."""
-    from neurohid import RuntimeBuilder, SystemConfig
+    from neurohid import RuntimeBuilder, SystemConfig  # type: ignore[attr-defined]
 
     config_json = getattr(args, "config_json", None)
     if config_json:

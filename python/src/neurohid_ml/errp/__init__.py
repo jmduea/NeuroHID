@@ -380,7 +380,7 @@ class ErrPDetector:
 
     def save(self, path: str):
         """Save the calibrated detector to a file."""
-        import joblib
+        import joblib  # type: ignore[import-untyped]
 
         joblib.dump(
             {
@@ -395,7 +395,7 @@ class ErrPDetector:
     @classmethod
     def load(cls, path: str) -> "ErrPDetector":
         """Load a calibrated detector from a file."""
-        import joblib
+        import joblib  # type: ignore[import-untyped]
 
         data = joblib.load(path)
 
