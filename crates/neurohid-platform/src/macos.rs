@@ -96,11 +96,11 @@ impl MacOSPlatform {
         if trusted {
             Ok(())
         } else {
-            Err(PlatformError::PermissionDenied(
-                "Accessibility permission required. Grant access in \
-                 System Settings > Privacy & Security > Accessibility."
+            Err(PlatformError::PermissionDenied {
+                hint: "Accessibility permission required. Grant access in \
+                      System Settings > Privacy & Security > Accessibility."
                     .to_string(),
-            )
+            }
             .into())
         }
     }
