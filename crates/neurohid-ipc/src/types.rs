@@ -11,7 +11,7 @@ use neurohid_types::{
     Timestamp,
     action::Action,
     control::{
-        ControlCommand, ControlRequest, ControlResponse, ControlResponsePayload, ControlSnapshot,
+        ControlSnapshot,
         TrainerSnapshot,
     },
     event::StreamMarker,

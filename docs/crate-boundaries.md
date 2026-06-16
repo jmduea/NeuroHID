@@ -103,3 +103,13 @@ Keep rationale concise (3-6 bullets) unless crate ownership actually changes.
   - [x] Layer map still valid
 - Placement rationale: Documentation-only manifest metadata; crate ownership unchanged.
 - Follow-up needed: None.
+
+### 2026-06-16 PR #6 hosted CI PyO3 linking
+
+- Change summary: Enable PyO3 `extension-module` in workspace dependencies so the `neurohid-py` cdylib builds on GitHub-hosted Linux/macOS runners without linking `-lpython3.14`.
+- Boundary impact: none
+- Dependency direction check:
+  - [x] No reverse coupling introduced
+  - [x] Layer map still valid
+- Placement rationale: Build/link configuration only; Python binding crate remains at the same layer.
+- Follow-up needed: None.
