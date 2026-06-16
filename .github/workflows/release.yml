@@ -11,7 +11,7 @@ env:
 jobs:
   verify:
     name: Verify tagged pre-release
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
