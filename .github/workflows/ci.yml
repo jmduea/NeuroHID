@@ -75,13 +75,16 @@ jobs:
         include:
           - platform: linux
             runner_os: Linux
-            runner: [ubuntu-latest]
+            runner: ubuntu-latest
+            cache_key: ubuntu-latest
           - platform: linux
             runner_os: Linux
             runner: ubuntu-22.04
+            cache_key: ubuntu-22.04
           - platform: windows
             runner_os: Windows
-            runner: [windows-latest]
+            runner: windows-latest
+            cache_key: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -89,6 +92,8 @@ jobs:
           python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-${{ matrix.cache_key }}
       - name: Install cargo-nextest
         uses: taiki-e/install-action@v2
         with:

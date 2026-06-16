@@ -104,12 +104,12 @@ Keep rationale concise (3-6 bullets) unless crate ownership actually changes.
 - Placement rationale: Documentation-only manifest metadata; crate ownership unchanged.
 - Follow-up needed: None.
 
-### 2026-06-16 PR #6 hosted CI PyO3 linking
+### 2026-06-16 PR #7 hosted CI cache and extension linking
 
-- Change summary: Enable PyO3 `extension-module` in workspace dependencies so the `neurohid-py` cdylib builds on GitHub-hosted Linux/macOS runners without linking `-lpython3.14`.
+- Change summary: Scope rust-cache keys per test runner image, allow intentional FFI `unsafe_code` in `neurohid-outlet-example`, and add macOS dynamic lookup link flags for PyO3 cdylib builds.
 - Boundary impact: none
 - Dependency direction check:
   - [x] No reverse coupling introduced
   - [x] Layer map still valid
-- Placement rationale: Build/link configuration only; Python binding crate remains at the same layer.
+- Placement rationale: CI/build configuration and extension crate lint exceptions only.
 - Follow-up needed: None.
