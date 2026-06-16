@@ -70,7 +70,7 @@ eframe = { version = "0.33.3", default-features = false }
 approx = "0.5.1"
 
 # Python bindings
-pyo3 = { version = "0.28", features = ["abi3-py314"] }
+pyo3 = { version = "0.28", features = ["abi3-py314", "extension-module"] }
 pyo3-async-runtimes = { version = "0.28", features = ["tokio-runtime"] }
 numpy = { version = "0.28" }
 pythonize = { version = "0.28" }

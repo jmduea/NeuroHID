@@ -88,7 +88,7 @@ impl MacOSPlatform {
         // SAFETY: `AXIsProcessTrustedWithOptions` is a read-only query into the
         // TCC database.  The `CFDictionaryRef` we pass is valid for the duration
         // of the call and we do not retain any pointer afterward.
-        extern "C" {
+        unsafe extern "C" {
             fn AXIsProcessTrustedWithOptions(options: core_foundation::base::CFTypeRef) -> bool;
         }
         let trusted = unsafe { AXIsProcessTrustedWithOptions(options.as_CFTypeRef()) };

@@ -115,7 +115,7 @@ impl DeviceProvider for BrainFlowProvider {
     /// Discover available boards.
     ///
     /// In **synthetic mode** (board_id 0, no serial port), returns one entry
-    /// per entry in [`KNOWN_SYNTHETIC_BOARDS`] so callers can choose which
+    /// per known synthetic board profile so callers can choose which
     /// hardware profile to simulate.  In all other configurations a single
     /// entry matching the configured board is returned.
     async fn discover(&self) -> Result<Vec<DeviceInfo>> {
