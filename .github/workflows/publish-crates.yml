@@ -17,7 +17,7 @@ permissions:
 jobs:
   publish:
     name: Publish to crates.io
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     if: github.ref == 'refs/heads/main' && github.event.inputs.confirm == 'PUBLISH'
     steps:
       - uses: actions/checkout@v4
