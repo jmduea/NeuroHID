@@ -93,3 +93,13 @@ Keep rationale concise (3-6 bullets) unless crate ownership actually changes.
   - [x] Layer map still valid
 - Placement rationale: Hub should depend on `core` for runtime access, not reach through to component crates directly. IPC/storage access via `core::facade` keeps the layer hierarchy clean.
 - Follow-up needed: None.
+
+### 2026-06-16 PR #4 hosted CI follow-ups
+
+- Change summary: Set `doc = false` on `neurohid-py` cdylib to avoid rustdoc name collision with the published `neurohid` facade crate during workspace doc builds.
+- Boundary impact: none
+- Dependency direction check:
+  - [x] No reverse coupling introduced
+  - [x] Layer map still valid
+- Placement rationale: Documentation-only manifest metadata; crate ownership unchanged.
+- Follow-up needed: None.
