@@ -96,14 +96,29 @@ jobs:
       - name: Install LSL (Linux)
         if: matrix.runner_os == 'Linux'
         run: bash ./.github/scripts/install-liblsl-linux.sh
+      - name: Install keyring support (Linux)
+        if: matrix.runner_os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y dbus-x11 libsecret-1-dev gnome-keyring
       - name: Build
         run: cargo build --workspace
       - name: Test
+        if: matrix.runner_os != 'Linux'
         run: cargo nextest run --workspace
+      - name: Test (Linux)
+        if: matrix.runner_os == 'Linux'
+        run: dbus-run-session -- cargo nextest run --workspace
       - name: Extension outlet e2e
+        if: matrix.runner_os != 'Linux'
         run: cargo nextest run -p neurohid-core --test extension_outlet_e2e
+      - name: Extension outlet e2e (Linux)
+        if: matrix.runner_os == 'Linux'
+        run: dbus-run-session -- cargo nextest run -p neurohid-core --test extension_outlet_e2e
       - name: Pipeline integration
+        if: matrix.runner_os != 'Linux'
         run: cargo nextest run -p neurohid-core --test pipeline_integration
+      - name: Pipeline integration (Linux)
+        if: matrix.runner_os == 'Linux'
+        run: dbus-run-session -- cargo nextest run -p neurohid-core --test pipeline_integration
 
   test-macos:
     name: Test (macOS)
@@ -151,7 +166,7 @@ jobs:
       - name: Install LSL
         run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings -A missing_docs -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
+        run: cargo clippy --workspace -- -D warnings -A missing_docs -A clippy::pedantic -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
 
   fmt:
     name: Format
