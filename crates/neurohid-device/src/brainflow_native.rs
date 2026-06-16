@@ -145,11 +145,9 @@ impl Device for BrainFlowNativeDevice {
     async fn start_streaming(&mut self) -> Result<SampleStream> {
         let board = Arc::clone(&self.board_shim);
         {
-            let b = board
-                .lock()
-                .map_err(|_| DeviceError::ConnectionLost {
-                    reason: "board mutex poisoned".to_string(),
-                })?;
+            let b = board.lock().map_err(|_| DeviceError::ConnectionLost {
+                reason: "board mutex poisoned".to_string(),
+            })?;
             board_shim::BoardShim::start_stream(&b, STREAM_BUFFER_SIZE, "")?;
         }
         self.streaming

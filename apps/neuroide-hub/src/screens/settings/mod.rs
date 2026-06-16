@@ -5,7 +5,6 @@
 
 use eframe::egui;
 
-
 use crate::service_manager::ServiceManager;
 use crate::state::HubState;
 use crate::theme;

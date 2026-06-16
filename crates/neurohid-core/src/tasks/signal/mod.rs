@@ -675,7 +675,10 @@ impl SignalPreprocessor for SignalTask {
 
 /// Builds either the built-in SignalTask or a loaded signal preprocessing extension.
 /// Returns the runner and its display name for snapshot ("built-in" or extension name).
-#[expect(clippy::too_many_arguments, reason = "factory wiring requires all task dependencies")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "factory wiring requires all task dependencies"
+)]
 pub fn create_signal_preprocessor(
     config: SignalConfig,
     sample_rx: mpsc::Receiver<Sample>,

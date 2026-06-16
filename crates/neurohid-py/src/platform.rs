@@ -147,7 +147,10 @@ impl PyScreenInfo {
     fn __repr__(&self) -> String {
         format!(
             "ScreenInfo({}x{}, monitor={}/{})",
-            self.inner.width, self.inner.height, self.inner.active_monitor, self.inner.monitor_count
+            self.inner.width,
+            self.inner.height,
+            self.inner.active_monitor,
+            self.inner.monitor_count
         )
     }
 }

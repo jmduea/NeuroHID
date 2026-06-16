@@ -1072,7 +1072,10 @@ impl DecoderRunner for DecoderTask {
 
 /// Builds either the built-in DecoderTask or a loaded decoder extension.
 /// Returns the runner and its display name for snapshot ("built-in" or extension name).
-#[expect(clippy::too_many_arguments, reason = "factory wiring requires all task dependencies")]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "factory wiring requires all task dependencies"
+)]
 pub fn create_decoder(
     config: DecoderConfig,
     feature_rx: mpsc::Receiver<FeatureVector>,

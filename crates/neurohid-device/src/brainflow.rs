@@ -151,7 +151,9 @@ impl DeviceProvider for BrainFlowProvider {
                 .iter()
                 .find(|b| synthetic_device_id(b.board_id) == device_id.0)
                 .ok_or(DeviceError::NoDeviceFound)?;
-            return Ok(Box::new(BrainFlowDevice::new(known_board_to_metadata(board))));
+            return Ok(Box::new(BrainFlowDevice::new(known_board_to_metadata(
+                board,
+            ))));
         }
 
         let metadata = normalize_metadata(&self.config);
@@ -519,7 +521,10 @@ mod tests {
         let result = provider
             .connect(&DeviceId::new("brainflow::99::synthetic"), None)
             .await;
-        assert!(result.is_err(), "connecting to unknown synthetic ID should fail");
+        assert!(
+            result.is_err(),
+            "connecting to unknown synthetic ID should fail"
+        );
     }
 
     #[test]

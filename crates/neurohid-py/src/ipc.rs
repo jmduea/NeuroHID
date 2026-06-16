@@ -191,12 +191,9 @@ impl PyIpcClient {
 /// Connects, sends the request, receives the response, and disconnects.
 /// Runs the async I/O on the shared tokio runtime.
 #[pyfunction]
-fn send_control_request_blocking(
-    config: PyIpcConfig,
-    request_json: String,
-) -> PyResult<String> {
-    let request: neurohid_types::control::ControlRequest =
-        serde_json::from_str(&request_json).map_err(|e| {
+fn send_control_request_blocking(config: PyIpcConfig, request_json: String) -> PyResult<String> {
+    let request: neurohid_types::control::ControlRequest = serde_json::from_str(&request_json)
+        .map_err(|e| {
             pyo3::exceptions::PyValueError::new_err(format!("invalid control request JSON: {e}"))
         })?;
 
