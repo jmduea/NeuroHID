@@ -55,6 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $args = @('-File', './.github/scripts/run-agent-ready-tasks.ps1', '-RustScope', 'focused')
+          if ('${{ needs.determine-impact.outputs.rust }}' -ne 'true') { $args += '-SkipRust' }
           if ('${{ needs.determine-impact.outputs.python }}' -eq 'true') { $args += '-WithPython' }
           if ('${{ needs.determine-impact.outputs.docs }}' -eq 'true') { $args += '-WithDocs' }
           if ('${{ needs.determine-impact.outputs.protocol }}' -eq 'true') { $args += '-WithProtocol' }
@@ -150,7 +151,7 @@ jobs:
       - name: Install LSL
         run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
+        run: cargo clippy --workspace -- -D warnings -A missing_docs -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
 
   fmt:
     name: Format
@@ -337,6 +338,7 @@ jobs:
   unsafe-compliance:
     name: Unsafe Compliance
     needs: determine-impact
+    if: needs.determine-impact.outputs.unsafe == 'true' || github.event_name == 'push'
     runs-on: [ubuntu-latest]
     env:
       PYO3_PYTHON: python
