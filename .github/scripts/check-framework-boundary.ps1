@@ -43,6 +43,7 @@ if ($hubAllowed.Count -eq 0 -or $neuroideAllowed.Count -eq 0 -or $serviceAllowed
     Write-Error "Could not parse [neuroide-hub], [neuroide], and [neurohid-service].allowed from $AllowlistPath"
 }
 
+$env:CARGO_TERM_COLOR = 'never'
 $metadataJson = & cargo metadata --format-version=1 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Error "cargo metadata failed: $metadataJson"

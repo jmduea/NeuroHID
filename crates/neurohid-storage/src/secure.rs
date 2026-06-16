@@ -134,6 +134,7 @@ impl SecureStorage {
 
     /// Encrypts and writes data to a file.
     pub async fn write_encrypted(&self, path: &std::path::Path, data: &[u8]) -> Result<()> {
+        self.ensure_master_key().await?;
         let encrypted = self.encrypt(data)?;
 
         tokio::fs::write(path, &encrypted)
