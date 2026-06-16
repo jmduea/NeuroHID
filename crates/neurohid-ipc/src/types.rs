@@ -5,9 +5,10 @@
 //! the Rust runtime, trainer processes, and observer clients (Hub, notebooks,
 //! scripts) is multiplexed over a single endpoint using these types.
 
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 
 use neurohid_types::{
+    Timestamp,
     action::Action,
     control::{ControlSnapshot, TrainerSnapshot},
     event::StreamMarker,
@@ -16,7 +17,6 @@ use neurohid_types::{
     now_micros,
     observation::Observation,
     signal::{FeatureVector, Sample},
-    Timestamp,
 };
 
 // ---------------------------------------------------------------------------
