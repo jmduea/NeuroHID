@@ -17,14 +17,14 @@ permissions:
 jobs:
   publish:
     name: Publish to crates.io
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     if: github.ref == 'refs/heads/main' && github.event.inputs.confirm == 'PUBLISH'
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Dry-run neurohid publish
         run: cargo publish -p neurohid --dry-run
       - name: Publish neurohid

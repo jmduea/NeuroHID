@@ -106,9 +106,7 @@ class PolicyNetwork(nn.Module):
         # Actor head for continuous actions (mouse movement)
         # We output mean and log_std for a Gaussian distribution
         self.continuous_mean = nn.Linear(prev_dim, config.continuous_action_dim)
-        self.continuous_log_std = nn.Parameter(
-            torch.zeros(config.continuous_action_dim)
-        )
+        self.continuous_log_std = nn.Parameter(torch.zeros(config.continuous_action_dim))
 
         # Actor head for discrete actions (clicks, key presses)
         # We output logits for a categorical distribution
@@ -168,9 +166,7 @@ class PolicyNetwork(nn.Module):
             continuous_action = continuous_mean
         else:
             continuous_std = continuous_log_std.exp()
-            continuous_dist = torch.distributions.Normal(
-                continuous_mean, continuous_std
-            )
+            continuous_dist = torch.distributions.Normal(continuous_mean, continuous_std)
             continuous_action = continuous_dist.sample()
 
         # Sample discrete action from categorical
@@ -226,9 +222,7 @@ class Decoder:
         self.policy = PolicyNetwork(config).to(self.device)
 
         # Optimizer
-        self.optimizer = torch.optim.Adam(
-            self.policy.parameters(), lr=config.learning_rate
-        )
+        self.optimizer = torch.optim.Adam(self.policy.parameters(), lr=config.learning_rate)
 
         # Experience buffer for PPO updates
         self.experience_buffer = ExperienceBuffer()
@@ -252,9 +246,7 @@ class Decoder:
 
         # Get action from policy
         with torch.no_grad():
-            continuous, discrete, log_prob = self.policy.get_action(
-                features_tensor, deterministic
-            )
+            continuous, discrete, log_prob = self.policy.get_action(features_tensor, deterministic)
 
         # Compute confidence from log probability
         # Higher log_prob = more confident
@@ -267,9 +259,7 @@ class Decoder:
             "confidence": confidence,
         }
 
-    def add_experience(
-        self, features: np.ndarray, action: dict, reward: float, done: bool
-    ):
+    def add_experience(self, features: np.ndarray, action: dict, reward: float, done: bool):
         """Add an experience to the buffer for later training.
 
         Call this after each action is taken and a reward is received.
@@ -339,9 +329,7 @@ class Decoder:
 
             self.optimizer.zero_grad()
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(
-                self.policy.parameters(), self.config.max_grad_norm
-            )
+            torch.nn.utils.clip_grad_norm_(self.policy.parameters(), self.config.max_grad_norm)
             self.optimizer.step()
 
             total_loss += loss.item()

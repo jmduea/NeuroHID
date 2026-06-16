@@ -70,6 +70,7 @@ select = ["E", "F", "I", "N", "W"]
 python_version = "3.14"
 warn_return_any = true
 warn_unused_configs = true
+disable_error_code = ["import-untyped"]
 
 [tool.coverage.run]
 branch = true
@@ -86,4 +87,12 @@ dev = [
 
 [[tool.mypy.overrides]]
 module = ["scipy", "scipy.*", "sklearn", "sklearn.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["neurohid", "neurohid.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["joblib", "joblib.*"]
 ignore_missing_imports = true

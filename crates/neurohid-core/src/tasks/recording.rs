@@ -67,7 +67,10 @@ pub struct RecordingTask {
 }
 
 impl RecordingTask {
-    #[expect(clippy::too_many_arguments, reason = "task construction requires all dependencies")]
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "task construction requires all dependencies"
+    )]
     pub fn new(
         recording_config: RecordingConfig,
         system_config: SystemConfig,

@@ -118,9 +118,7 @@ class IpcClient:
                 pass
         self.connected = False
 
-    async def send_envelope(
-        self, kind: str, session_id: str, payload: dict[str, Any]
-    ) -> None:
+    async def send_envelope(self, kind: str, session_id: str, payload: dict[str, Any]) -> None:
         """Send one protocol v3 envelope to the runtime via the trainer bridge."""
         self.sequence += 1
         envelope = {
@@ -146,9 +144,7 @@ class IpcClient:
             return None
         try:
             recv_coro = (
-                self._runtime.trainer_recv_typed()
-                if self._typed
-                else self._runtime.trainer_recv()
+                self._runtime.trainer_recv_typed() if self._typed else self._runtime.trainer_recv()
             )
             result = await asyncio.wait_for(
                 recv_coro,
@@ -193,10 +189,7 @@ class BridgeSession:
                     break
 
             now = time.monotonic()
-            if (
-                now - self.last_status_sent_at
-                >= self.client.config.heartbeat_interval_sec
-            ):
+            if now - self.last_status_sent_at >= self.client.config.heartbeat_interval_sec:
                 await self.send_trainer_status()
                 self.last_status_sent_at = now
 
@@ -270,9 +263,7 @@ class BridgeSession:
             decoder_confidence = float(
                 np.clip(float(payload.get("decoder_confidence") or 0.0), 0.0, 1.0)
             )
-            signal_quality = float(
-                np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
-            )
+            signal_quality = float(np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0))
             feature_values = payload.get("feature_values")
             if isinstance(feature_values, list):
                 np.asarray(feature_values, dtype=np.float32)
@@ -299,9 +290,7 @@ class BridgeSession:
             action_timestamp = int(payload.action_timestamp_us)
             signal_quality = float(
                 np.clip(
-                    float(payload.signal_quality)
-                    if hasattr(payload, "signal_quality")
-                    else 0.0,
+                    float(payload.signal_quality) if hasattr(payload, "signal_quality") else 0.0,
                     0.0,
                     1.0,
                 )
@@ -316,9 +305,7 @@ class BridgeSession:
             ):
                 if self.errp.is_calibrated:
                     detected = self.errp.detect(matrix.T)
-                    error_probability = float(
-                        np.clip(detected.error_probability, 0.0, 1.0)
-                    )
+                    error_probability = float(np.clip(detected.error_probability, 0.0, 1.0))
                     confidence = float(np.clip(detected.confidence, 0.0, 1.0))
                 else:
                     error_probability = 0.0
@@ -330,9 +317,7 @@ class BridgeSession:
             # Legacy dict path
             decision_id = str(payload.get("decision_id") or f"dec_{now_micros()}")
             action_timestamp = int(payload.get("action_timestamp_us") or now_micros())
-            signal_quality = float(
-                np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0)
-            )
+            signal_quality = float(np.clip(float(payload.get("signal_quality") or 0.0), 0.0, 1.0))
             channels = payload.get("channel_data")
             if isinstance(channels, list) and channels:
                 try:
@@ -340,9 +325,7 @@ class BridgeSession:
                     if matrix.ndim == 2 and matrix.shape[0] > 0 and matrix.shape[1] > 0:
                         if self.errp.is_calibrated:
                             detected = self.errp.detect(matrix.T)
-                            error_probability = float(
-                                np.clip(detected.error_probability, 0.0, 1.0)
-                            )
+                            error_probability = float(np.clip(detected.error_probability, 0.0, 1.0))
                             confidence = float(np.clip(detected.confidence, 0.0, 1.0))
                         else:
                             error_probability = 0.0
@@ -358,9 +341,7 @@ class BridgeSession:
                 error_probability = 0.0
                 confidence = 0.0
 
-        self.stats.value_loss = _ema(
-            self.stats.value_loss, error_probability, alpha=0.12
-        )
+        self.stats.value_loss = _ema(self.stats.value_loss, error_probability, alpha=0.12)
         self.stats.policy_loss = _ema(
             self.stats.policy_loss, max(0.0, 1.0 - confidence), alpha=0.12
         )
@@ -426,9 +407,7 @@ class BridgeSession:
             },
         )
 
-    async def send_protocol_error(
-        self, code: str, message: str, recoverable: bool
-    ) -> None:
+    async def send_protocol_error(self, code: str, message: str, recoverable: bool) -> None:
         self.stats.last_error = message
         await self.client.send_envelope(
             kind="error",

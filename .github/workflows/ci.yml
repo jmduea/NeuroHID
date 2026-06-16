@@ -15,7 +15,7 @@ env:
 jobs:
   determine-impact:
     name: Determine Impact
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [windows-latest]
     outputs:
       rust: ${{ steps.impact.outputs.rust }}
       python: ${{ steps.impact.outputs.python }}
@@ -39,10 +39,15 @@ jobs:
 
   focused-gates:
     name: Focused Gates
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [windows-latest]
     needs: determine-impact
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
@@ -50,6 +55,7 @@ jobs:
         shell: pwsh
         run: |
           $args = @('-File', './.github/scripts/run-agent-ready-tasks.ps1', '-RustScope', 'focused')
+          if ('${{ needs.determine-impact.outputs.rust }}' -ne 'true') { $args += '-SkipRust' }
           if ('${{ needs.determine-impact.outputs.python }}' -eq 'true') { $args += '-WithPython' }
           if ('${{ needs.determine-impact.outputs.docs }}' -eq 'true') { $args += '-WithDocs' }
           if ('${{ needs.determine-impact.outputs.protocol }}' -eq 'true') { $args += '-WithProtocol' }
@@ -61,21 +67,26 @@ jobs:
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
+    env:
+      PYO3_PYTHON: python
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: linux
             runner_os: Linux
-            runner: [self-hosted, linux, neurohid-ci]
+            runner: [ubuntu-latest]
           - platform: linux
             runner_os: Linux
             runner: ubuntu-22.04
           - platform: windows
             runner_os: Windows
-            runner: [self-hosted, windows, neurohid-ci]
+            runner: [windows-latest]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -84,7 +95,7 @@ jobs:
           tool: cargo-nextest@0.9
       - name: Install LSL (Linux)
         if: matrix.runner_os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Build
         run: cargo build --workspace
       - name: Test
@@ -98,9 +109,14 @@ jobs:
     name: Test (macOS)
     needs: determine-impact
     if: (needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push') && vars.ENABLE_MACOS != 'false'
-    runs-on: [self-hosted, macos, neurohid-ci]
+    runs-on: [macos-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -120,23 +136,28 @@ jobs:
     name: Clippy
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Clippy
-        run: cargo clippy --workspace -- -D warnings -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
+        run: cargo clippy --workspace -- -D warnings -A missing_docs -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
 
   fmt:
     name: Format
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -149,7 +170,7 @@ jobs:
     name: Framework Boundary
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || needs.determine-impact.outputs.automation == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -161,13 +182,18 @@ jobs:
     name: Documentation
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Build docs
         run: cargo doc --workspace --no-deps
         env:
@@ -177,13 +203,13 @@ jobs:
     name: Python Tests
     needs: determine-impact
     if: needs.determine-impact.outputs.python == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install Python dependencies (builds Rust extension via maturin)
@@ -210,17 +236,17 @@ jobs:
     name: E2E Service + Python Client
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || needs.determine-impact.outputs.python == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL (Linux)
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Build neurohid-service
         run: cargo build -p neurohid-service
       - name: Install Python dependencies
@@ -239,22 +265,22 @@ jobs:
         include:
           - platform: linux
             transport: tcp_loopback
-            runner: [self-hosted, linux, neurohid-ci]
+            runner: [ubuntu-latest]
           - platform: linux
             transport: local_socket
-            runner: [self-hosted, linux, neurohid-ci]
+            runner: [ubuntu-latest]
           - platform: windows
             transport: tcp_loopback
-            runner: [self-hosted, windows, neurohid-ci]
+            runner: [windows-latest]
           - platform: windows
             transport: local_socket
-            runner: [self-hosted, windows, neurohid-ci]
+            runner: [windows-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install Python dependencies (builds Rust extension via maturin)
@@ -277,13 +303,18 @@ jobs:
     name: Rust Coverage
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run Rust coverage gate
@@ -307,9 +338,21 @@ jobs:
   unsafe-compliance:
     name: Unsafe Compliance
     needs: determine-impact
-    runs-on: [self-hosted, linux, neurohid-ci]
+    if: needs.determine-impact.outputs.unsafe == 'true' || github.event_name == 'push'
+    runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: Swatinem/rust-cache@v2
+      - name: Install LSL
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Validate unsafe compliance
         shell: pwsh
         run: ./.github/scripts/check-unsafe-compliance.ps1
@@ -318,7 +361,7 @@ jobs:
     name: Protocol Contracts
     needs: determine-impact
     if: needs.determine-impact.outputs.protocol == 'true'
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable

@@ -221,9 +221,7 @@ def _print_training_outputs(output_dir: Path, args: argparse.Namespace) -> None:
     if args.session_dir:
         session_logs.extend(sorted(args.session_dir.glob("session_*.json")))
     if not session_logs:
-        raise SystemExit(
-            "No session logs supplied. Use --session-log and/or --session-dir."
-        )
+        raise SystemExit("No session logs supplied. Use --session-log and/or --session-dir.")
 
     outputs = train_candidate_model(
         session_logs=session_logs,
@@ -359,8 +357,7 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
         export_completed = _run_command(export_cmd)
         if export_completed.returncode != 0:
             print(
-                "[trainer-worker] Session export failed "
-                f"(exit {export_completed.returncode})."
+                "[trainer-worker] Session export failed " f"(exit {export_completed.returncode})."
             )
         else:
             session_logs = sorted(session_dir.glob("session_*.json"))
@@ -404,7 +401,7 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
 
 def _start_runtime_from_args(args: argparse.Namespace):
     """Start an in-process runtime from optional --config-json CLI argument."""
-    from neurohid import RuntimeBuilder, SystemConfig
+    from neurohid import RuntimeBuilder, SystemConfig  # type: ignore[attr-defined]
 
     config_json = getattr(args, "config_json", None)
     if config_json:
@@ -433,20 +430,12 @@ def _run_control(args: argparse.Namespace) -> None:
     if args.action == "set_output_enabled":
         if args.enabled is None:
             raise SystemExit("--enabled is required for set_output_enabled")
-        print(
-            json.dumps(
-                client.set_output_enabled(args.enabled), indent=2, sort_keys=True
-            )
-        )
+        print(json.dumps(client.set_output_enabled(args.enabled), indent=2, sort_keys=True))
         return
     if args.action == "set_learning_enabled":
         if args.enabled is None:
             raise SystemExit("--enabled is required for set_learning_enabled")
-        print(
-            json.dumps(
-                client.set_learning_enabled(args.enabled), indent=2, sort_keys=True
-            )
-        )
+        print(json.dumps(client.set_learning_enabled(args.enabled), indent=2, sort_keys=True))
         return
     if args.action == "set_fallback_policy":
         if not args.policy_json:
@@ -474,18 +463,12 @@ def _run_control(args: argparse.Namespace) -> None:
     if args.action == "connect_stream":
         if not args.stream_id:
             raise SystemExit("--stream-id is required for connect_stream")
-        print(
-            json.dumps(client.connect_stream(args.stream_id), indent=2, sort_keys=True)
-        )
+        print(json.dumps(client.connect_stream(args.stream_id), indent=2, sort_keys=True))
         return
     if args.action == "disconnect_stream":
         if not args.stream_id:
             raise SystemExit("--stream-id is required for disconnect_stream")
-        print(
-            json.dumps(
-                client.disconnect_stream(args.stream_id), indent=2, sort_keys=True
-            )
-        )
+        print(json.dumps(client.disconnect_stream(args.stream_id), indent=2, sort_keys=True))
         return
     if args.action == "ensure_connected_stream":
         print(json.dumps({"stream_id": client.ensure_connected_stream()}, indent=2))

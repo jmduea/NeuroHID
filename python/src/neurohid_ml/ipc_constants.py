@@ -26,9 +26,7 @@ def parse_tcp_endpoint(endpoint: str) -> tuple[str, int]:
         raise RuntimeError("ipc_endpoint must not be empty for tcp_loopback mode")
     host, sep, port_raw = value.rpartition(":")
     if sep == "":
-        raise RuntimeError(
-            f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port"
-        )
+        raise RuntimeError(f"invalid tcp_loopback ipc_endpoint '{endpoint}': expected host:port")
     host = host.strip() or CANONICAL_TCP_HOST
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1].strip() or CANONICAL_TCP_HOST

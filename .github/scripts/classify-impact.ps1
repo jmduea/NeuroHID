@@ -125,3 +125,5 @@ if ($env:GITHUB_OUTPUT) {
 }
 
 Write-Host "Impact classification written to $OutputJsonPath"
+
+exit 0

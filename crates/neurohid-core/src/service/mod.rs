@@ -55,7 +55,6 @@ pub enum IntegrityStage {
     Ipc,
 }
 
-
 /// Commands sent from the hub/runtime to the DecoderTask.
 #[derive(Debug, Clone)]
 pub enum DecoderCommand {

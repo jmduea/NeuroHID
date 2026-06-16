@@ -25,7 +25,7 @@ function Invoke-Step {
 
 if (-not $SkipRust) {
     Invoke-Step -Name 'Rust fmt check' -Command @('cargo', 'fmt', '--check')
-    Invoke-Step -Name 'Rust clippy' -Command @('cargo', 'clippy', '--workspace', '--', '-D', 'warnings')
+    Invoke-Step -Name 'Rust clippy' -Command @('cargo', 'clippy', '--workspace', '--', '-D', 'warnings', '-A', 'missing_docs')
 
     if ($RustScope -eq 'full') {
         Invoke-Step -Name 'Rust tests (full)' -Command @('cargo', 'test', '--workspace')

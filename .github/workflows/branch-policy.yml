@@ -11,7 +11,7 @@ permissions:
 jobs:
   pr-only-main:
     name: Enforce PR-only main updates
-    runs-on: [self-hosted, linux, neurohid-ci]
+    runs-on: [ubuntu-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Validate main update came from PR
