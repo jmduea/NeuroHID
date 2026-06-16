@@ -195,22 +195,13 @@ impl Default for SerialConfig {
 }
 
 /// Configuration for native BrainFlow backend.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct BrainFlowConfig {
     /// Board id understood by BrainFlow/OpenBCI.
     pub board_id: i32,
     /// Optional serial port for board connection.
     pub serial_port: Option<String>,
-}
-
-impl Default for BrainFlowConfig {
-    fn default() -> Self {
-        Self {
-            board_id: 0,
-            serial_port: None,
-        }
-    }
 }
 
 /// Configuration for device connection.

@@ -44,9 +44,9 @@ if ($hubAllowed.Count -eq 0 -or $neuroideAllowed.Count -eq 0 -or $serviceAllowed
 }
 
 $env:CARGO_TERM_COLOR = 'never'
-$metadataJson = & cargo metadata --format-version=1 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "cargo metadata failed: $metadataJson"
+$metadataJson = & cargo metadata --format-version=1 2>$null
+if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($metadataJson)) {
+    Write-Error "cargo metadata failed"
 }
 $metadata = $metadataJson | ConvertFrom-Json
 

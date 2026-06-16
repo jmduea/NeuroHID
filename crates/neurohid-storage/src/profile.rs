@@ -808,9 +808,7 @@ mod tests {
             assert!(profile.calibration_identity.is_none());
 
             let calibration_blob = b"fake calibration bytes";
-            let save_result = store
-                .save_calibration(&profile.id, calibration_blob)
-                .await;
+            let save_result = store.save_calibration(&profile.id, calibration_blob).await;
             if save_result.is_err() {
                 eprintln!("skipping: OS keyring unavailable in this environment ({save_result:?})");
                 let _ = std::fs::remove_dir_all(root);
