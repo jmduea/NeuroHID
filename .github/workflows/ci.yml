@@ -15,7 +15,7 @@ env:
 jobs:
   determine-impact:
     name: Determine Impact
-    runs-on: [ubuntu-latest, neurohid-ci]
+    runs-on: [ubuntu-latest]
     outputs:
       rust: ${{ steps.impact.outputs.rust }}
       python: ${{ steps.impact.outputs.python }}
