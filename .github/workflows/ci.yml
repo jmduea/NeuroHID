@@ -84,7 +84,7 @@ jobs:
           tool: cargo-nextest@0.9
       - name: Install LSL (Linux)
         if: matrix.runner_os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Build
         run: cargo build --workspace
       - name: Test
@@ -128,7 +128,7 @@ jobs:
           components: clippy
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Clippy
         run: cargo clippy --workspace -- -D warnings -W clippy::undocumented_unsafe_blocks -W clippy::missing_safety_doc
 
@@ -167,7 +167,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Build docs
         run: cargo doc --workspace --no-deps
         env:
@@ -220,7 +220,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL (Linux)
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Build neurohid-service
         run: cargo build -p neurohid-service
       - name: Install Python dependencies
@@ -283,7 +283,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
       - name: Run Rust coverage gate
@@ -318,7 +318,7 @@ jobs:
           python-version: "3.13"
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Validate unsafe compliance
         shell: pwsh
         env:

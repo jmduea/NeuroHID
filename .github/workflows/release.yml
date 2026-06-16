@@ -18,7 +18,7 @@ jobs:
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
-        run: sudo apt-get update && sudo apt-get install -y liblsl-dev
+        run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Verify tag commit belongs to main
         shell: bash
         run: |
