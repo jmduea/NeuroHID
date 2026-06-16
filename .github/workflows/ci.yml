@@ -41,8 +41,13 @@ jobs:
     name: Focused Gates
     runs-on: [windows-latest]
     needs: determine-impact
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
@@ -61,6 +66,8 @@ jobs:
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: ${{ matrix.runner }}
+    env:
+      PYO3_PYTHON: python
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +83,9 @@ jobs:
             runner: [windows-latest]
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -99,8 +109,13 @@ jobs:
     needs: determine-impact
     if: (needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push') && vars.ENABLE_MACOS != 'false'
     runs-on: [macos-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install cargo-nextest
@@ -121,8 +136,13 @@ jobs:
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
@@ -162,8 +182,13 @@ jobs:
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
@@ -183,7 +208,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install Python dependencies (builds Rust extension via maturin)
@@ -216,7 +241,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL (Linux)
@@ -254,7 +279,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - uses: astral-sh/setup-uv@v4
       - uses: Swatinem/rust-cache@v2
       - name: Install Python dependencies (builds Rust extension via maturin)
@@ -278,8 +303,13 @@ jobs:
     needs: determine-impact
     if: needs.determine-impact.outputs.rust == 'true' || github.event_name == 'push'
     runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
@@ -308,6 +338,8 @@ jobs:
     name: Unsafe Compliance
     needs: determine-impact
     runs-on: [ubuntu-latest]
+    env:
+      PYO3_PYTHON: python
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -315,14 +347,12 @@ jobs:
           components: clippy
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.13"
+          python-version: "3.14"
       - uses: Swatinem/rust-cache@v2
       - name: Install LSL
         run: bash ./.github/scripts/install-liblsl-linux.sh
       - name: Validate unsafe compliance
         shell: pwsh
-        env:
-          PYO3_PYTHON: python3
         run: ./.github/scripts/check-unsafe-compliance.ps1
 
   protocol-contracts:
