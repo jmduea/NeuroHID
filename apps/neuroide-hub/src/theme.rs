@@ -8,6 +8,24 @@ use armas::prelude::{
 use eframe::egui::{self, Color32, RichText};
 use neurohid_types::config::ThemeMode;
 
+const GRAPHITE_BACKGROUND: Color32 = Color32::from_rgb(24, 24, 24);
+const GRAPHITE_CANVAS: Color32 = Color32::from_rgb(20, 20, 20);
+const GRAPHITE_CARD: Color32 = Color32::from_rgb(32, 32, 32);
+const GRAPHITE_MUTED: Color32 = Color32::from_rgb(42, 42, 42);
+const GRAPHITE_BORDER: Color32 = Color32::from_rgba_premultiplied(26, 26, 26, 26);
+const GRAPHITE_INPUT: Color32 = Color32::from_rgba_premultiplied(31, 31, 31, 31);
+const GRAPHITE_FOREGROUND: Color32 = Color32::from_rgb(235, 235, 235);
+const GRAPHITE_MUTED_FOREGROUND: Color32 = Color32::from_rgb(158, 158, 158);
+const GRAPHITE_RING: Color32 = Color32::from_rgb(140, 140, 140);
+const GRAPHITE_SIDEBAR: Color32 = Color32::from_rgb(17, 17, 17);
+
+const PAPER_BACKGROUND: Color32 = Color32::from_rgb(249, 248, 245);
+const PAPER_CARD: Color32 = Color32::from_rgb(255, 255, 255);
+const PAPER_MUTED: Color32 = Color32::from_rgb(243, 242, 239);
+const PAPER_BORDER: Color32 = Color32::from_rgb(229, 227, 222);
+const PAPER_MUTED_FOREGROUND: Color32 = Color32::from_rgb(117, 113, 106);
+const PAPER_RING: Color32 = Color32::from_rgb(132, 126, 118);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Intent {
     Info,
@@ -99,36 +117,54 @@ pub fn apply_ui_preferences(ctx: &egui::Context, theme_mode: ThemeMode, font_sca
 
     match theme_mode {
         ThemeMode::Light => {
-            ctx.set_visuals(egui::Visuals::light());
+            let mut visuals = egui::Visuals::light();
+            visuals.window_fill = PAPER_CARD;
+            visuals.panel_fill = PAPER_BACKGROUND;
+            visuals.extreme_bg_color = PAPER_BACKGROUND;
+            visuals.faint_bg_color = PAPER_MUTED;
+
+            visuals.widgets.noninteractive.bg_fill = PAPER_CARD;
+            visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, PAPER_BORDER);
+
+            visuals.widgets.inactive.bg_fill = PAPER_MUTED;
+            visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, PAPER_BORDER);
+
+            visuals.widgets.hovered.bg_fill = PAPER_MUTED;
+            visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, PAPER_RING);
+
+            visuals.widgets.active.bg_fill = Color32::from_rgb(235, 234, 230);
+            visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, PAPER_RING);
+
+            visuals.selection.bg_fill = Color32::from_rgb(231, 230, 226);
+            visuals.selection.stroke = egui::Stroke::new(1.0, PAPER_RING);
+
+            visuals.window_corner_radius = egui::CornerRadius::same(4);
+            ctx.set_visuals(visuals);
             ctx.set_armas_theme(ArmasTheme::light());
         }
         ThemeMode::Dark | ThemeMode::System => {
             let mut visuals = egui::Visuals::dark();
-            visuals.window_fill = Color32::from_rgb(9, 10, 14);
-            visuals.panel_fill = Color32::from_rgb(8, 10, 14);
-            visuals.extreme_bg_color = Color32::from_rgb(5, 7, 10);
-            visuals.faint_bg_color = Color32::from_rgb(14, 18, 24);
+            visuals.window_fill = GRAPHITE_CARD;
+            visuals.panel_fill = GRAPHITE_CANVAS;
+            visuals.extreme_bg_color = GRAPHITE_SIDEBAR;
+            visuals.faint_bg_color = GRAPHITE_BACKGROUND;
 
-            visuals.widgets.noninteractive.bg_fill = Color32::from_rgb(17, 22, 30);
-            visuals.widgets.noninteractive.bg_stroke =
-                egui::Stroke::new(1.0, Color32::from_rgb(36, 46, 61));
+            visuals.widgets.noninteractive.bg_fill = GRAPHITE_CARD;
+            visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, GRAPHITE_BORDER);
 
-            visuals.widgets.inactive.bg_fill = Color32::from_rgb(21, 27, 37);
-            visuals.widgets.inactive.bg_stroke =
-                egui::Stroke::new(1.0, Color32::from_rgb(43, 57, 74));
+            visuals.widgets.inactive.bg_fill = GRAPHITE_MUTED;
+            visuals.widgets.inactive.bg_stroke = egui::Stroke::new(1.0, GRAPHITE_INPUT);
 
-            visuals.widgets.hovered.bg_fill = Color32::from_rgb(30, 39, 53);
-            visuals.widgets.hovered.bg_stroke =
-                egui::Stroke::new(1.0, Color32::from_rgb(92, 145, 231));
+            visuals.widgets.hovered.bg_fill = Color32::from_rgb(45, 45, 45);
+            visuals.widgets.hovered.bg_stroke = egui::Stroke::new(1.0, GRAPHITE_RING);
 
-            visuals.widgets.active.bg_fill = Color32::from_rgb(35, 45, 62);
-            visuals.widgets.active.bg_stroke =
-                egui::Stroke::new(1.0, Color32::from_rgb(122, 178, 255));
+            visuals.widgets.active.bg_fill = Color32::from_rgb(50, 50, 50);
+            visuals.widgets.active.bg_stroke = egui::Stroke::new(1.0, GRAPHITE_RING);
 
-            visuals.selection.bg_fill = Color32::from_rgb(38, 65, 108);
-            visuals.selection.stroke = egui::Stroke::new(1.0, Color32::from_rgb(129, 183, 255));
+            visuals.selection.bg_fill = Color32::from_rgb(48, 48, 48);
+            visuals.selection.stroke = egui::Stroke::new(1.0, GRAPHITE_FOREGROUND);
 
-            visuals.window_corner_radius = egui::CornerRadius::same(10);
+            visuals.window_corner_radius = egui::CornerRadius::same(4);
             ctx.set_visuals(visuals);
 
             ctx.set_armas_theme(ArmasTheme::dark());
@@ -136,23 +172,23 @@ pub fn apply_ui_preferences(ctx: &egui::Context, theme_mode: ThemeMode, font_sca
     }
 
     let mut style = (*ctx.style()).clone();
-    style.spacing.item_spacing = egui::vec2(8.0, 7.0);
-    style.spacing.button_padding = egui::vec2(11.0, 6.0);
+    style.spacing.item_spacing = egui::vec2(6.0, 6.0);
+    style.spacing.button_padding = egui::vec2(10.0, 5.0);
     style.text_styles.insert(
         egui::TextStyle::Heading,
-        egui::FontId::new(23.0, egui::FontFamily::Proportional),
+        egui::FontId::new(22.0, egui::FontFamily::Proportional),
     );
     style.text_styles.insert(
         egui::TextStyle::Name("Section".into()),
-        egui::FontId::new(16.0, egui::FontFamily::Proportional),
+        egui::FontId::new(12.0, egui::FontFamily::Proportional),
     );
     style.text_styles.insert(
         egui::TextStyle::Body,
-        egui::FontId::new(14.0, egui::FontFamily::Proportional),
+        egui::FontId::new(13.5, egui::FontFamily::Proportional),
     );
     style.text_styles.insert(
         egui::TextStyle::Small,
-        egui::FontId::new(11.5, egui::FontFamily::Proportional),
+        egui::FontId::new(11.0, egui::FontFamily::Proportional),
     );
     ctx.set_style(style);
 }
@@ -171,13 +207,13 @@ pub fn page_header(ui: &mut egui::Ui, title: &str, subtitle: &str) {
 
 pub fn status_chip(ui: &mut egui::Ui, label: &str, intent: Intent) {
     let fg = intent_color(intent);
-    let bg = fg.gamma_multiply(0.16);
-    let stroke = fg.gamma_multiply(0.45);
+    let bg = fg.gamma_multiply(0.12);
+    let stroke = fg.gamma_multiply(0.36);
     egui::Frame::new()
-        .corner_radius(egui::CornerRadius::same(6))
+        .corner_radius(egui::CornerRadius::same(8))
         .fill(bg)
         .stroke(egui::Stroke::new(1.0, stroke))
-        .inner_margin(egui::Margin::symmetric(8, 3))
+        .inner_margin(egui::Margin::symmetric(7, 2))
         .show(ui, |ui| {
             ui.label(RichText::new(label).small().color(fg).strong());
         });
@@ -194,17 +230,37 @@ pub fn operation_state_chip(ui: &mut egui::Ui, subject: &str, state: OperationSt
 }
 
 pub fn workbench_surface_fill_ctx(ctx: &egui::Context) -> Color32 {
-    ctx.style().visuals.window_fill.gamma_multiply(0.97)
+    ctx.style().visuals.panel_fill
 }
 
 pub fn workbench_divider_color(ui: &egui::Ui) -> Color32 {
     ui.style().visuals.widgets.noninteractive.bg_stroke.color
 }
 
+pub fn sidebar_fill_ctx(ctx: &egui::Context) -> Color32 {
+    if ctx.style().visuals.dark_mode {
+        GRAPHITE_SIDEBAR
+    } else {
+        PAPER_CARD
+    }
+}
+
+pub fn selected_flat_fill(ui: &egui::Ui) -> Color32 {
+    ui.style().visuals.selection.bg_fill
+}
+
+pub fn muted_text_color(ui: &egui::Ui) -> Color32 {
+    if ui.visuals().dark_mode {
+        GRAPHITE_MUTED_FOREGROUND
+    } else {
+        PAPER_MUTED_FOREGROUND
+    }
+}
+
 pub fn card_frame(_ui: &egui::Ui) -> ArmasFrame {
     ArmasFrame {
         variant: CardVariant::Outlined,
-        margin: egui::Margin::symmetric(10, 8),
+        margin: egui::Margin::symmetric(12, 10),
         fill: None,
         stroke: None,
     }
@@ -213,19 +269,19 @@ pub fn card_frame(_ui: &egui::Ui) -> ArmasFrame {
 pub fn panel_frame(ui: &egui::Ui) -> ArmasFrame {
     ArmasFrame {
         variant: CardVariant::Outlined,
-        margin: egui::Margin::symmetric(8, 6),
-        fill: Some(ui.style().visuals.window_fill.gamma_multiply(0.94)),
+        margin: egui::Margin::symmetric(10, 8),
+        fill: Some(ui.style().visuals.window_fill),
         stroke: Some(ui.style().visuals.widgets.noninteractive.bg_stroke.color),
     }
 }
 
 pub fn intent_color(intent: Intent) -> Color32 {
     match intent {
-        Intent::Info => Color32::from_rgb(101, 168, 255),
-        Intent::Success => Color32::from_rgb(106, 227, 130),
-        Intent::Warning => Color32::from_rgb(255, 204, 90),
+        Intent::Info => Color32::from_rgb(130, 202, 218),
+        Intent::Success => Color32::from_rgb(120, 205, 145),
+        Intent::Warning => Color32::from_rgb(230, 190, 100),
         Intent::Danger => Color32::from_rgb(255, 107, 107),
-        Intent::Muted => Color32::from_rgb(136, 150, 168),
+        Intent::Muted => GRAPHITE_MUTED_FOREGROUND,
     }
 }
 

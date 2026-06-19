@@ -194,16 +194,14 @@ impl HubApp {
 
                         let visuals = ui.style().visuals.clone();
                         let bg_fill = if selected {
-                            visuals.selection.bg_fill.gamma_multiply(0.45)
-                        } else if response.hovered() {
-                            visuals.widgets.hovered.bg_fill.gamma_multiply(0.35)
+                            theme::selected_flat_fill(ui)
                         } else {
                             egui::Color32::TRANSPARENT
                         };
 
                         if bg_fill != egui::Color32::TRANSPARENT {
                             ui.painter()
-                                .rect_filled(rect, egui::CornerRadius::same(4), bg_fill);
+                                .rect_filled(rect, egui::CornerRadius::ZERO, bg_fill);
                         }
 
                         if selected {
@@ -222,7 +220,7 @@ impl HubApp {
                         } else if response.hovered() {
                             visuals.text_color()
                         } else {
-                            visuals.weak_text_color()
+                            theme::muted_text_color(ui)
                         };
 
                         ui.painter().text(

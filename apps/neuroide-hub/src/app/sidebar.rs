@@ -4,7 +4,6 @@ use crate::screens::Screen;
 use crate::theme;
 use crate::workbench::screens_for_lane;
 use crate::workbench::{ActivityLane, WorkbenchState};
-use armas::ArmasContextExt;
 use armas::components::{CollapsibleMode, Sidebar, SidebarResponse, SidebarState, SidebarVariant};
 use eframe::egui;
 use neurohid_types::config::UiMode;
@@ -14,7 +13,6 @@ impl HubApp {
         let panel_width = self.sidebar_state.width().clamp(52.0, 280.0);
         let screens = self.workbench.visible_screens(&self.state.config.ui.mode);
         let mut response = SidebarShellResponse::default();
-        let sidebar_theme = ctx.armas_theme();
 
         egui::SidePanel::left("sidebar")
             .exact_width(panel_width)
@@ -22,7 +20,7 @@ impl HubApp {
             .show_separator_line(false)
             .frame(
                 egui::Frame::new()
-                    .fill(sidebar_theme.sidebar())
+                    .fill(theme::sidebar_fill_ctx(ctx))
                     .inner_margin(egui::Margin::ZERO),
             )
             .show(ctx, |ui| {
