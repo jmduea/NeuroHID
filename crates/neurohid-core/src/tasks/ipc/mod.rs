@@ -278,7 +278,7 @@ impl IpcTask {
                 }
                 sample = self.sample_rx.recv() => {
                     if let Some(sample) = sample {
-                        let sample_timestamp = sample.device_timestamp.unwrap_or(sample.system_timestamp);
+                        let sample_timestamp = sample_runtime_timestamp(&sample);
                         self.record_runtime_sample(sample);
                         self.emit_due_errp_windows(Some(sample_timestamp)).await?;
                     }
@@ -312,6 +312,7 @@ impl IpcTask {
         self.set_connection_state(true, true, false).await;
         self.note_heartbeat().await;
         tracing::info!("Trainer bridge connected (simulated)");
+        let mut reported_simulated_feedback = false;
 
         loop {
             tokio::select! {
@@ -324,18 +325,19 @@ impl IpcTask {
                         tracing::info!("Decision event channel closed");
                         break;
                     };
-                    // In simulation mode, emit neutral ErrP feedback so downstream
-                    // rolling success metrics remain stable.
-                    let result = ErrPResult {
-                        action_timestamp: decision.timestamp_us,
-                        detection_timestamp: neurohid_types::now_micros(),
-                        error_probability: 0.0,
-                        classification_confidence: 0.0,
-                        signal_quality: SignalQuality::Good,
-                        estimated_magnitude: None,
-                        detection_latency_us: 0,
-                    };
-                    let _ = self.errp_tx.send(result).await;
+                    if !reported_simulated_feedback {
+                        self.record_integrity_issue(
+                            "simulated_errp_feedback_suppressed",
+                            "IPC simulation mode cannot produce validated ErrP feedback",
+                            decision.stream_id.as_deref(),
+                        )
+                        .await;
+                        reported_simulated_feedback = true;
+                    }
+                    tracing::debug!(
+                        decision_id = %decision.decision_id,
+                        "Suppressed simulated ErrP feedback for decision"
+                    );
                 }
             }
         }
@@ -725,7 +727,7 @@ impl IpcTask {
     }
 
     fn record_runtime_sample(&mut self, sample: Sample) {
-        let sample_timestamp = sample.device_timestamp.unwrap_or(sample.system_timestamp);
+        let sample_timestamp = sample_runtime_timestamp(&sample);
         let cutoff_us = sample_timestamp.saturating_sub(ERRP_BUFFER_RETENTION_US);
 
         self.sample_buffers
@@ -826,7 +828,7 @@ impl IpcTask {
             .samples
             .iter()
             .filter(|sample| {
-                let timestamp = sample.device_timestamp.unwrap_or(sample.system_timestamp);
+                let timestamp = sample_runtime_timestamp(sample);
                 timestamp >= pending.window_start_us && timestamp <= pending.window_end_us
             })
             .collect()
@@ -839,11 +841,11 @@ impl IpcTask {
 
         let first = samples
             .first()
-            .map(|sample| sample.device_timestamp.unwrap_or(sample.system_timestamp))
+            .map(|sample| sample_runtime_timestamp(sample))
             .unwrap_or(0);
         let last = samples
             .last()
-            .map(|sample| sample.device_timestamp.unwrap_or(sample.system_timestamp))
+            .map(|sample| sample_runtime_timestamp(sample))
             .unwrap_or(first);
         let span_us = last.saturating_sub(first);
         if span_us <= 0 {
@@ -1066,7 +1068,12 @@ impl IpcTask {
         state.ipc_simulated = simulated;
         state.ml_bridge_connected = connected && !simulated;
         state.ml_bridge_stalled = stalled;
-        if !connected {
+        if simulated {
+            state.runtime_mode_state = RuntimeModeState::Degraded;
+            state.limited_capabilities_message = Some(
+                "Trainer bridge is simulated; validated ErrP feedback is unavailable.".to_string(),
+            );
+        } else if !connected {
             state.runtime_mode_state = RuntimeModeState::Fallback;
             state.limited_capabilities_message =
                 Some("Trainer bridge disconnected; runtime fallback mode is active.".to_string());
@@ -1099,5 +1106,29 @@ impl IpcTask {
     async fn note_heartbeat(&self) {
         let mut state = self.state.write().await;
         state.ml_bridge_last_heartbeat_us = Some(neurohid_types::now_micros());
+    }
+}
+
+fn sample_runtime_timestamp(sample: &Sample) -> i64 {
+    sample.system_timestamp
+}
+
+#[cfg(test)]
+mod tests {
+    use super::sample_runtime_timestamp;
+    use neurohid_types::signal::Sample;
+
+    #[test]
+    fn sample_runtime_timestamp_uses_system_clock_domain() {
+        let sample = Sample {
+            source_id: Some("lsl-stream".to_string()),
+            device_timestamp: Some(123),
+            system_timestamp: 9_876_543,
+            sequence_number: Some(1),
+            values: vec![1.0, 2.0],
+            quality: None,
+        };
+
+        assert_eq!(sample_runtime_timestamp(&sample), 9_876_543);
     }
 }

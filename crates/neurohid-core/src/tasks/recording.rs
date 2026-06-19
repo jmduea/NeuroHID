@@ -101,6 +101,8 @@ impl RecordingTask {
         let mut next_stream_index: usize = 0;
         let mut actions_writer: Option<BufWriter<fs::File>> = None;
         let mut _total_bytes: u64 = 0;
+        let mut sample_lagged_messages: u64 = 0;
+        let mut action_lagged_messages: u64 = 0;
         let max_size_bytes: Option<u64> = self
             .recording_config
             .max_size_mb
@@ -115,6 +117,8 @@ impl RecordingTask {
                             &active_path,
                             &mut actions_writer,
                             &mut stream_files,
+                            sample_lagged_messages,
+                            action_lagged_messages,
                         ).await;
                     }
                     break;
@@ -167,6 +171,8 @@ impl RecordingTask {
                                     &path,
                                     &mut actions_writer,
                                     &mut stream_files,
+                                    sample_lagged_messages,
+                                    action_lagged_messages,
                                 ).await {
                                     tracing::warn!("recording stop: {}", e);
                                 }
@@ -175,6 +181,8 @@ impl RecordingTask {
                                 active_path = None;
                                 stream_index.clear();
                                 next_stream_index = 0;
+                                sample_lagged_messages = 0;
+                                action_lagged_messages = 0;
                                 let _ = reply.send(Ok(RecordingCommandResult::Stopped {
                                     session_id: sid,
                                 }));
@@ -212,11 +220,17 @@ impl RecordingTask {
                                             &active_path,
                                             &mut actions_writer,
                                             &mut stream_files,
+                                            sample_lagged_messages,
+                                            action_lagged_messages,
                                         ).await;
                                         active_session_id = None;
                                         active_path = None;
                                         actions_writer = None;
                                         stream_files.clear();
+                                        stream_index.clear();
+                                        next_stream_index = 0;
+                                        sample_lagged_messages = 0;
+                                        action_lagged_messages = 0;
                                     } else if let Err(_) = w.write_all(b"\n").await {
                                         // best-effort
                                     } else if let Some(max) = max_size_bytes {
@@ -227,17 +241,24 @@ impl RecordingTask {
                                                 &active_path,
                                                 &mut actions_writer,
                                                 &mut stream_files,
+                                                sample_lagged_messages,
+                                                action_lagged_messages,
                                             ).await;
                                             active_session_id = None;
                                             active_path = None;
                                             actions_writer = None;
                                             stream_files.clear();
+                                            stream_index.clear();
+                                            next_stream_index = 0;
+                                            sample_lagged_messages = 0;
+                                            action_lagged_messages = 0;
                                         }
                                     }
                                 }
                             }
                             Err(broadcast::error::RecvError::Lagged(n)) => {
-                                tracing::debug!("recording sample lagged {} messages", n);
+                                sample_lagged_messages = sample_lagged_messages.saturating_add(n);
+                                tracing::warn!("recording sample lagged {} messages", n);
                             }
                             Err(_) => {}
                         }
@@ -255,7 +276,10 @@ impl RecordingTask {
                                     tracing::warn!("recording newline failed: {}", e);
                                 }
                             }
-                            Err(broadcast::error::RecvError::Lagged(_)) => {}
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                action_lagged_messages = action_lagged_messages.saturating_add(n);
+                                tracing::warn!("recording action lagged {} messages", n);
+                            }
                             Err(_) => {}
                         }
                         }
@@ -271,6 +295,14 @@ impl RecordingTask {
         &self,
         output_path_override: Option<PathBuf>,
     ) -> Result<(String, PathBuf, i64)> {
+        if output_path_override
+            .as_ref()
+            .is_some_and(|path| path.as_os_str().is_empty())
+        {
+            return Err(neurohid_types::Error::internal(
+                "recording output path override must not be empty",
+            ));
+        }
         let base = output_path_override
             .or_else(|| {
                 self.recording_config
@@ -296,10 +328,12 @@ impl RecordingTask {
             ended_at_us: None,
             config_ref: Some("config.json".to_string()),
             format_version: "1".to_string(),
-            runtime_version: None,
+            runtime_version: Some(env!("CARGO_PKG_VERSION").to_string()),
             sdk_version: None,
             profile_id: self.profile_id.as_ref().map(|p| p.to_string()),
-            device_stream_summary: None,
+            device_stream_summary: Some(self.device_stream_summary().await),
+            sample_lagged_messages: 0,
+            action_lagged_messages: 0,
         };
         let manifest_path = session_dir.join("manifest.json");
         let manifest_json = serde_json::to_string_pretty(&manifest)
@@ -347,6 +381,8 @@ impl RecordingTask {
         session_path: &Option<PathBuf>,
         actions_writer: &mut Option<BufWriter<fs::File>>,
         stream_files: &mut HashMap<String, BufWriter<fs::File>>,
+        sample_lagged_messages: u64,
+        action_lagged_messages: u64,
     ) -> Result<()> {
         let path = match session_path {
             Some(p) => p.clone(),
@@ -363,6 +399,9 @@ impl RecordingTask {
         if let Ok(contents) = fs::read_to_string(&manifest_path).await {
             if let Ok(mut manifest) = serde_json::from_str::<SessionManifest>(&contents) {
                 manifest.ended_at_us = Some(ended_us);
+                manifest.sample_lagged_messages = sample_lagged_messages;
+                manifest.action_lagged_messages = action_lagged_messages;
+                manifest.device_stream_summary = Some(self.device_stream_summary().await);
                 if let Ok(updated) = serde_json::to_string_pretty(&manifest) {
                     let _ = fs::write(&manifest_path, updated).await;
                 }
@@ -377,5 +416,19 @@ impl RecordingTask {
             tracing::info!(session_id = %sid, "recording stopped");
         }
         Ok(())
+    }
+
+    async fn device_stream_summary(&self) -> String {
+        let state = self.state.read().await;
+        let stream_count = state.discovered_streams.len();
+        let connected_count = state
+            .discovered_streams
+            .iter()
+            .filter(|stream| stream.connected)
+            .count();
+        let device_name = state.device_name.as_deref().unwrap_or("none");
+        format!(
+            "device_name={device_name}; streams={stream_count}; connected_streams={connected_count}"
+        )
     }
 }
