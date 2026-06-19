@@ -121,12 +121,12 @@ class ControlClientTests(unittest.TestCase):
             ],
         )
 
-    def test_dispatch_control_preserves_rust_control_request_shape(self) -> None:
+    def test_dispatch_control_preserves_wrapped_request(self) -> None:
         runtime = _FakeRuntime()
         client = _control.NeuroHidControlClient(runtime)
         request = {
-            "request_id": "abc",
-            "command": {"type": "set_output_enabled", "enabled": False},
+            "request_id": "req-1",
+            "command": {"type": "set_learning_enabled", "enabled": False},
         }
         result = client.dispatch_control(request)
         self.assertEqual(result, {"status": "ok"})

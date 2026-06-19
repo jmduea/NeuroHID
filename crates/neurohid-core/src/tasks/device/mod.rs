@@ -58,8 +58,8 @@ use neurohid_types::error::DeviceError;
 
 use discovery::{create_provider, scan};
 use streaming::{
-    ActiveStream, DEVICE_SUMMARY_EVERY_SAMPLES, DeviceSampleIntegrityTracker, StreamTaskContext,
-    report_device_integrity_issue, spawn_stream_task,
+    ActiveStream, DEVICE_SUMMARY_EVERY_SAMPLES, DeviceIntegrityIssue, DeviceSampleIntegrityTracker,
+    StreamTaskContext, report_device_integrity_issue, spawn_stream_task,
 };
 
 /// Update `device_connected` and `device_name` in shared state based on
@@ -89,6 +89,38 @@ async fn set_stream_connected(state: &Arc<RwLock<ServiceState>>, stream_id: &str
     let mut st = state.write().await;
     if let Some(ds) = st.discovered_streams.iter_mut().find(|s| s.id == stream_id) {
         ds.connected = connected;
+    }
+}
+
+async fn prune_finished_streams(
+    state: &Arc<RwLock<ServiceState>>,
+    active_streams: &mut HashMap<String, ActiveStream>,
+    emit_gate: &mut EmitGate,
+) {
+    let finished_ids = active_streams
+        .iter()
+        .filter_map(|(stream_id, active)| {
+            active.join_handle.is_finished().then(|| stream_id.clone())
+        })
+        .collect::<Vec<_>>();
+
+    for stream_id in finished_ids {
+        let Some(active) = active_streams.remove(&stream_id) else {
+            continue;
+        };
+        match active.join_handle.await {
+            Ok(()) => tracing::warn!("Stream '{}' task exited", stream_id),
+            Err(error) => tracing::warn!("Stream '{}' task join failed: {}", stream_id, error),
+        }
+        set_stream_connected(state, &stream_id, false).await;
+        update_connection_state(state, active_streams).await;
+        report_device_integrity_issue(
+            state,
+            &stream_id,
+            DeviceIntegrityIssue::StreamTaskExited,
+            emit_gate,
+        )
+        .await;
     }
 }
 
@@ -276,6 +308,7 @@ impl DeviceTask {
                     "Device task periodic summary"
                 );
             }
+            prune_finished_streams(&self.state, &mut active_streams, &mut self.emit_gate).await;
         }
 
         for (id, active) in active_streams.drain() {

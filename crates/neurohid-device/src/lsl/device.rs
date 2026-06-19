@@ -189,14 +189,13 @@ impl Device for LslDevice {
                             );
                         }
 
-                        // LSL timestamps are seconds since an arbitrary epoch.
-                        // Convert to microseconds for consistency with our Sample type.
-                        let device_ts = (timestamp * 1_000_000.0) as i64;
                         let system_ts = now_micros();
 
                         let sample = Sample {
                             source_id: Some(stream_id_for_thread.clone()),
-                            device_timestamp: Some(device_ts),
+                            // LSL timestamps are in the LSL local clock domain, not
+                            // NeuroHID wall-clock microseconds.
+                            device_timestamp: None,
                             system_timestamp: system_ts,
                             sequence_number: Some(sequence),
                             values: data,
@@ -227,7 +226,15 @@ impl Device for LslDevice {
                                 e
                             );
                         }
-                        continue;
+                        if consecutive_errors >= 50 {
+                            let _ = tx.blocking_send(Err(DeviceError::CommunicationError(
+                                format!(
+                                    "LSL pull_sample failed {consecutive_errors} consecutive times on '{stream_id_for_thread}'"
+                                ),
+                            )
+                            .into()));
+                            break;
+                        }
                     }
                 }
             }
