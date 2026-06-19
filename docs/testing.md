@@ -2,6 +2,63 @@
 
 This document is the single source for test tier definitions, isolation policy, and how to avoid flakiness in the NeuroHID repository. See [Development Guide](development-guide.md) for build and run commands.
 
+## Automation Stack
+
+NeuroHID is a native Rust/egui desktop application with Rust runtime crates and
+a Python ML bridge. Browser automation is not the primary fit for NeuroIDE Hub;
+the default automation stack is layered so each tool proves the part it is good
+at and keeps lab-specific checks explicit.
+
+| Layer | Primary tools | What it proves | What it does not prove |
+|-------|---------------|----------------|------------------------|
+| Rust unit/component | `cargo test`, `cargo nextest` | Pure logic, state transitions, serialization, timing helpers | Whole-app visual quality |
+| Native semantic UI | `egui_kittest` | Controls are discoverable by label, flows expose correct state/copy, degraded states are visible | Subjective polish, OS window behavior |
+| State/contract snapshots | serde JSON/YAML assertions, focused fixtures | Runtime/control/provenance contracts stay stable | Pixel layout |
+| Python/Rust bridge | `uv run --project python pytest python/tests` | Python callers send the Rust wire shapes and receive expected errors/results | Rust internals alone are correct |
+| Optional LSL simulator | `scripts/run-lab-realism-checks.sh simulator` | LSL discovery sees a known simulator stream with channel/sample-rate metadata | Real lab hardware quality |
+| Optional hardware-in-loop | `scripts/run-lab-realism-checks.sh hil` | A real lab publisher is discoverable in the current environment | Every device, subject, or room condition |
+| Manual UX review | Release checklist with screenshots/session notes | Operator trust, visual hierarchy, readiness language, lab workflow clarity | Fast regression coverage |
+
+### Native UI semantic checks
+
+Use `egui_kittest` for UI behavior that would otherwise require browser
+automation in a web app. Tests should query by accessible label and exercise the
+journey a user takes:
+
+- Python Lab: kernel command, add/run cell controls, kernel/degraded bridge state.
+- Calibration: readiness copy must distinguish collected data from validated
+  model artifacts.
+- Devices: stopped/empty/degraded/connected stream states and connect controls.
+- Recording: active/degraded status and provenance/error copy.
+
+Prefer semantic assertions over screenshots by default. Add golden screenshots
+only for a small release-critical set of screens once the semantic state is
+already covered, because image tests are slower and more brittle than label and
+state assertions.
+
+### Optional LSL lab realism checks
+
+Normal CI must not require an LSL publisher or physical device. Lab realism
+checks are opt-in and ignored by default:
+
+```bash
+# Simulator publisher already running.
+NEUROHID_LSL_EXPECTED_NAME=NeuroHIDSim \
+  scripts/run-lab-realism-checks.sh simulator
+
+# Real lab publisher already running.
+NEUROHID_HIL=1 NEUROHID_HIL_LSL_PREDICATE="type='EEG'" \
+  scripts/run-lab-realism-checks.sh hil
+```
+
+Use `NEUROHID_LSL_TIMEOUT_SECS` to adjust discovery timeouts and
+`NEUROHID_HIL_MIN_STREAMS` when a lab setup is expected to publish multiple
+streams. These checks should run on a lab workstation, nightly/manual CI, or
+before release validation, not in every pull request. The manual GitHub Actions
+entry point is `Lab Realism Checks` in `.github/workflows/lab-realism.yml`;
+it expects a self-hosted Linux lab runner with the usual `neurohid-ci` label set
+and an already-running simulator or hardware LSL publisher.
+
 ## Test Tiers
 
 ### Unit

@@ -337,7 +337,10 @@ impl CalibrationPanel {
             return;
         }
 
-        ui.colored_label(egui::Color32::GREEN, "Training completed.");
+        ui.colored_label(
+            egui::Color32::YELLOW,
+            "Calibration summary prepared; validated model artifact not confirmed yet.",
+        );
         if action_button(ui, "Continue", true, ButtonVariant::Default) {
             self.decoder_training_started_at = None;
             self.wizard.advance();
@@ -415,10 +418,11 @@ impl CalibrationPanel {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
 
-                ui.heading("Calibration Complete!");
+                ui.heading("Calibration Data Collected");
                 ui.add_space(20.0);
 
-                ui.label("Your profile has been calibrated and is ready to use.");
+                ui.label("Calibration tasks are complete for this session.");
+                ui.label("A validated decoder model must be confirmed before claiming readiness.");
                 ui.add_space(10.0);
                 ui.label("The service will now resume normal operation.");
             });
@@ -434,6 +438,8 @@ impl Default for CalibrationPanel {
 
 #[cfg(test)]
 mod tests {
+    use egui_kittest::{Harness, kittest::Queryable};
+
     use super::*;
 
     #[test]
@@ -549,6 +555,25 @@ mod tests {
         assert_ne!(Screen::Wizard, Screen::GridMaze);
         assert_ne!(Screen::GridMaze, Screen::TargetTracking);
         assert_ne!(Screen::TargetTracking, Screen::Complete);
+    }
+
+    #[test]
+    fn complete_screen_does_not_claim_validated_model_readiness() {
+        let mut panel = CalibrationPanel::new();
+        panel.screen = Screen::Complete;
+
+        let harness = Harness::new_state(
+            |ctx, panel: &mut CalibrationPanel| {
+                let _ = panel.show(ctx);
+            },
+            panel,
+        );
+
+        harness.get_by_label("Calibration Data Collected");
+        harness
+            .get_by_label("A validated decoder model must be confirmed before claiming readiness.");
+        assert!(harness.query_by_label("Calibration Complete!").is_none());
+        assert!(harness.query_by_label_contains("ready to use").is_none());
     }
 }
 

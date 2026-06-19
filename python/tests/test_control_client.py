@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib
+import json
 import sys
 import unittest
 from pathlib import Path
@@ -30,6 +31,7 @@ class _FakeRuntime:
     def __init__(self) -> None:
         self.commands: list[tuple] = []
         self._dispatch_response = '{"status":"ok"}'
+        self.dispatch_requests: list[dict] = []
 
     def snapshot(self) -> _FakeSnapshot:
         return _FakeSnapshot()
@@ -41,6 +43,7 @@ class _FakeRuntime:
         self.commands.append((name, kwargs))
 
     def dispatch_control_sync(self, request_json: str) -> str:
+        self.dispatch_requests.append(json.loads(request_json))
         return self._dispatch_response
 
     def is_alive(self) -> bool:
@@ -86,9 +89,7 @@ class ControlClientTests(unittest.TestCase):
         client = _control.NeuroHidControlClient(runtime)
         result = client.set_learning_enabled(False)
         self.assertEqual(result, {"status": "ok"})
-        self.assertEqual(
-            runtime.commands, [("set_learning_enabled", {"enabled": False})]
-        )
+        self.assertEqual(runtime.commands, [("set_learning_enabled", {"enabled": False})])
 
     def test_rescan_streams_sends_command(self) -> None:
         runtime = _FakeRuntime()
@@ -102,9 +103,7 @@ class ControlClientTests(unittest.TestCase):
         client = _control.NeuroHidControlClient(runtime)
         result = client.connect_stream("stream-abc")
         self.assertEqual(result, {"status": "ok"})
-        self.assertEqual(
-            runtime.commands, [("connect_stream", {"stream_id": "stream-abc"})]
-        )
+        self.assertEqual(runtime.commands, [("connect_stream", {"stream_id": "stream-abc"})])
 
     def test_set_fallback_policy_dispatches_control(self) -> None:
         runtime = _FakeRuntime()
@@ -112,6 +111,32 @@ class ControlClientTests(unittest.TestCase):
         policy = {"enabled": True, "model_strategy": "lightweight_rust"}
         result = client.set_fallback_policy(policy)
         self.assertEqual(result, {"status": "ok"})
+        self.assertEqual(
+            runtime.dispatch_requests,
+            [
+                {
+                    "request_id": None,
+                    "command": {"type": "set_fallback_policy", "policy": policy},
+                }
+            ],
+        )
+
+    def test_dispatch_control_preserves_rust_control_request_shape(self) -> None:
+        runtime = _FakeRuntime()
+        client = _control.NeuroHidControlClient(runtime)
+        request = {
+            "request_id": "abc",
+            "command": {"type": "set_output_enabled", "enabled": False},
+        }
+        result = client.dispatch_control(request)
+        self.assertEqual(result, {"status": "ok"})
+        self.assertEqual(runtime.dispatch_requests, [request])
+
+    def test_dispatch_control_rejects_non_object_command(self) -> None:
+        runtime = _FakeRuntime()
+        client = _control.NeuroHidControlClient(runtime)
+        with self.assertRaises(_control.NotebookError):
+            client.dispatch_control({"command": "set_output_enabled"})  # type: ignore[dict-item]
 
     def test_set_fallback_policy_rejects_non_dict(self) -> None:
         runtime = _FakeRuntime()
@@ -129,9 +154,7 @@ class ControlClientTests(unittest.TestCase):
         client = _control.NeuroHidControlClient(runtime)
         stream_id = client.ensure_connected_stream(rescan=False)
         self.assertEqual(stream_id, "stream-1")
-        self.assertEqual(
-            runtime.commands, [("connect_stream", {"stream_id": "stream-1"})]
-        )
+        self.assertEqual(runtime.commands, [("connect_stream", {"stream_id": "stream-1"})])
 
     def test_eligible_eeg_stream_filter(self) -> None:
         self.assertTrue(

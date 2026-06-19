@@ -260,8 +260,7 @@ def _stage_candidate(service_bin: str, profile_id: str, output_dir: Path) -> Non
     completed = _run_command(cmd)
     if completed.returncode != 0:
         raise SystemExit(
-            "Candidate staging failed. "
-            f"Command exited with {completed.returncode}: {' '.join(cmd)}"
+            f"Candidate staging failed. Command exited with {completed.returncode}: {' '.join(cmd)}"
         )
     print(f"Staged candidate artifacts for profile: {profile_id}")
 
@@ -356,9 +355,7 @@ def _run_trainer_worker(args: argparse.Namespace) -> None:
         print(f"[trainer-worker] Exporting sessions for profile '{args.profile_id}'")
         export_completed = _run_command(export_cmd)
         if export_completed.returncode != 0:
-            print(
-                "[trainer-worker] Session export failed " f"(exit {export_completed.returncode})."
-            )
+            print(f"[trainer-worker] Session export failed (exit {export_completed.returncode}).")
         else:
             session_logs = sorted(session_dir.glob("session_*.json"))
             signature = tuple(path.name for path in session_logs)

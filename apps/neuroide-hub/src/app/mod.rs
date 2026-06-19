@@ -8,7 +8,7 @@ use std::time::Duration;
 
 use armas::components::SidebarState;
 use eframe::egui;
-use neurohid_types::config::UiMode;
+use neurohid_types::config::{SystemConfig, UiMode};
 use neurohid_types::control::RuntimeModeState;
 
 use crate::data_bus::DataBus;
@@ -19,7 +19,7 @@ use crate::screens::devices::DevicesScreen;
 use crate::screens::extensions::ExtensionsScreen;
 use crate::screens::jupyter_ide::JupyterIdeScreen;
 use crate::screens::profiles::ProfilesScreen;
-use crate::screens::python_lab::PythonLabScreen;
+use crate::screens::python_lab::{DEFAULT_LAB_KERNEL_COMMAND, PythonLabScreen};
 use crate::screens::settings::SettingsScreen;
 use crate::screens::training::TrainingScreen;
 use crate::screens::visualization::VisualizationScreen;
@@ -543,7 +543,7 @@ impl eframe::App for HubApp {
                     Screen::PythonLab => {
                         self.python_lab.show(
                             ui,
-                            &self.state.config.ui.jupyter_command,
+                            python_lab_kernel_command(&self.state.config),
                             &self.data_bus,
                             &self.state.service_snapshot,
                         );
@@ -585,6 +585,10 @@ impl eframe::App for HubApp {
     }
 }
 
+fn python_lab_kernel_command(_config: &SystemConfig) -> &'static str {
+    DEFAULT_LAB_KERNEL_COMMAND
+}
+
 #[expect(
     dead_code,
     reason = "reserved for command palette or future screen selector"
@@ -619,7 +623,7 @@ impl Drop for HubApp {
 mod tests {
     use armas::components::SidebarState;
     use egui_kittest::{Harness, kittest::Queryable};
-    use neurohid_types::config::UiMode;
+    use neurohid_types::config::{SystemConfig, UiMode};
 
     use crate::screens::Screen;
     use crate::workbench::{ActivityLane, BottomTab, WorkbenchState, screens_for_lane};
@@ -629,12 +633,25 @@ mod tests {
         build_device_health_problem_row, normalize_problem_rows, problem_severity_rank,
     };
     use super::command_palette::command_palette_items;
+    use super::python_lab_kernel_command;
     use super::sidebar::{
         SidebarShellResponse, apply_sidebar_shell_response, render_sidebar_shell,
     };
 
     struct SidebarHarnessState {
         sidebar_state: SidebarState,
+    }
+
+    #[test]
+    fn python_lab_screen_uses_lab_kernel_not_jupyter_command() {
+        let mut config = SystemConfig::default();
+        config.ui.jupyter_command = "jupyter lab --no-browser".to_string();
+
+        assert_eq!(
+            python_lab_kernel_command(&config),
+            crate::screens::python_lab::DEFAULT_LAB_KERNEL_COMMAND
+        );
+        assert!(!python_lab_kernel_command(&config).contains("jupyter"));
     }
 
     #[test]

@@ -17,6 +17,9 @@ use crate::data_bus::DataBus;
 use crate::state::ServiceSnapshot;
 use crate::theme;
 
+pub(crate) const DEFAULT_LAB_KERNEL_COMMAND: &str =
+    "uv run --project python neurohid-ml lab-kernel";
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CellStatus {
     Idle,
@@ -1058,7 +1061,7 @@ fn action_button_tone(
 mod tests {
     use egui_kittest::{Harness, kittest::Queryable};
 
-    use super::PythonLabScreen;
+    use super::{DEFAULT_LAB_KERNEL_COMMAND, PythonLabScreen};
     use crate::{data_bus::DataBus, state::ServiceSnapshot};
 
     struct PythonLabHarnessState {
@@ -1073,7 +1076,7 @@ mod tests {
             |ui, state: &mut PythonLabHarnessState| {
                 state.screen.show(
                     ui,
-                    "uv run --project python neurohid-ml kernel-adapter",
+                    DEFAULT_LAB_KERNEL_COMMAND,
                     &state.data_bus,
                     &state.service_snapshot,
                 );
@@ -1095,5 +1098,41 @@ mod tests {
         harness.run();
 
         harness.get_by_label("Cell 2");
+    }
+
+    #[test]
+    fn default_lab_kernel_command_uses_json_lines_adapter() {
+        assert!(DEFAULT_LAB_KERNEL_COMMAND.contains("neurohid-ml lab-kernel"));
+        assert!(!DEFAULT_LAB_KERNEL_COMMAND.contains("jupyter"));
+    }
+
+    #[test]
+    fn bridge_monitor_surfaces_degraded_service_state() {
+        let mut snapshot = ServiceSnapshot {
+            ml_bridge_connected: true,
+            ml_bridge_stalled: true,
+            ..ServiceSnapshot::default()
+        };
+        snapshot.runtime_mode_state = neurohid_types::control::RuntimeModeState::Degraded;
+
+        let harness = Harness::new_ui_state(
+            |ui, state: &mut PythonLabHarnessState| {
+                state.screen.show(
+                    ui,
+                    DEFAULT_LAB_KERNEL_COMMAND,
+                    &state.data_bus,
+                    &state.service_snapshot,
+                );
+            },
+            PythonLabHarnessState {
+                screen: PythonLabScreen::new(),
+                data_bus: DataBus::new(),
+                service_snapshot: snapshot,
+            },
+        );
+
+        harness.get_by_label("ML bridge stalled");
+        harness.get_by_label("No feature vectors yet");
+        harness.get_by_label("Kernel cmd: uv run --project python neurohid-ml lab-kernel");
     }
 }

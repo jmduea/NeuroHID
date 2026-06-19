@@ -1,0 +1,54 @@
+name: Lab Realism Checks
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Which opt-in realism check to run"
+        required: true
+        default: simulator
+        type: choice
+        options:
+          - simulator
+          - hil
+      lsl_expected_name:
+        description: "Simulator LSL stream name (required for simulator mode)"
+        required: false
+        type: string
+      hil_lsl_predicate:
+        description: "Hardware LSL predicate (hil mode, default: type='EEG')"
+        required: false
+        default: "type='EEG'"
+        type: string
+      hil_min_streams:
+        description: "Minimum hardware streams expected in hil mode"
+        required: false
+        default: "1"
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  lab-realism:
+    name: LSL ${{ inputs.mode }} realism
+    runs-on: [self-hosted, linux, neurohid-ci]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install LSL
+        run: bash ./.github/scripts/install-liblsl-linux.sh
+      - name: Run simulator check
+        if: inputs.mode == 'simulator'
+        env:
+          NEUROHID_LSL_EXPECTED_NAME: ${{ inputs.lsl_expected_name }}
+        run: scripts/run-lab-realism-checks.sh simulator
+      - name: Run hardware-in-the-loop check
+        if: inputs.mode == 'hil'
+        env:
+          NEUROHID_HIL: "1"
+          NEUROHID_HIL_LSL_PREDICATE: ${{ inputs.hil_lsl_predicate }}
+          NEUROHID_HIL_MIN_STREAMS: ${{ inputs.hil_min_streams }}
+        run: scripts/run-lab-realism-checks.sh hil

@@ -407,4 +407,45 @@ mod tests {
             ControlResponsePayload::Snapshot { snapshot }
         );
     }
+
+    #[test]
+    fn snapshot_json_preserves_lab_readiness_and_degraded_state() {
+        let snapshot = ControlSnapshot {
+            running: true,
+            calibration_mode: true,
+            output_enabled: false,
+            profile_ready: false,
+            decoder_ready: false,
+            ipc_connected: true,
+            ipc_simulated: true,
+            ml_bridge_connected: false,
+            ml_bridge_stalled: true,
+            runtime_mode_state: RuntimeModeState::Degraded,
+            limited_capabilities_message: Some(
+                "simulated feedback cannot validate lab readiness".to_string(),
+            ),
+            latency_degraded: true,
+            latency_alert_message: Some("signal p95 latency above lab threshold".to_string()),
+            pipeline_integrity_degraded: true,
+            integrity_issue_count: 2,
+            stage_health_summary: Some("device:degraded; ipc:simulated".to_string()),
+            recording_active: true,
+            current_session_id: Some("session_lab_001".to_string()),
+            ..ControlSnapshot::default()
+        };
+
+        let json = serde_json::to_value(&snapshot).expect("snapshot should serialize");
+        assert_eq!(json["running"], true);
+        assert_eq!(json["calibration_mode"], true);
+        assert_eq!(json["output_enabled"], false);
+        assert_eq!(json["profile_ready"], false);
+        assert_eq!(json["decoder_ready"], false);
+        assert_eq!(json["ipc_simulated"], true);
+        assert_eq!(json["ml_bridge_stalled"], true);
+        assert_eq!(json["runtime_mode_state"], "degraded");
+        assert_eq!(json["pipeline_integrity_degraded"], true);
+        assert_eq!(json["integrity_issue_count"], 2);
+        assert_eq!(json["recording_active"], true);
+        assert_eq!(json["current_session_id"], "session_lab_001");
+    }
 }

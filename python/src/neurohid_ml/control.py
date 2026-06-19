@@ -81,12 +81,13 @@ class NeuroHidControlClient:
         return self.dispatch_control({"type": "set_fallback_policy", "policy": policy})
 
     def dispatch_control(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Send an arbitrary ``ControlRequest`` and return the response dict.
+        """Send an arbitrary control request and return the response dict.
 
         Uses the synchronous ``dispatch_control_sync`` method on the native
-        ``RuntimeHandle``.
+        ``RuntimeHandle``. Callers may provide either the Rust ``ControlRequest``
+        shape or a bare ``ControlCommand``; bare commands are wrapped here.
         """
-        result_json = self._runtime.dispatch_control_sync(json.dumps(request))
+        result_json = self._runtime.dispatch_control_sync(json.dumps(_control_request(request)))
         return json.loads(result_json)
 
     # -- Stream discovery helpers --------------------------------------------
@@ -171,3 +172,23 @@ def _is_eligible_eeg_stream(stream: dict[str, Any]) -> bool:
         return True
 
     return stream_type in {"EEG/EmotivEEG", "EEG"}
+
+
+def _control_request(request: dict[str, Any]) -> dict[str, Any]:
+    """Return a Rust ``ControlRequest`` JSON object for a command payload."""
+    if not isinstance(request, dict):
+        raise NotebookError("control request must be a JSON object")
+
+    if "command" in request:
+        command = request["command"]
+        if not isinstance(command, dict):
+            raise NotebookError("control request command must be a JSON object")
+        return {
+            "request_id": request.get("request_id"),
+            "command": command,
+        }
+
+    return {
+        "request_id": request.get("request_id"),
+        "command": {key: value for key, value in request.items() if key != "request_id"},
+    }
