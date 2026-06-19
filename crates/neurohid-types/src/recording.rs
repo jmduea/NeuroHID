@@ -37,6 +37,12 @@ pub struct SessionManifest {
     /// Optional device/stream summary for reproducibility.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_stream_summary: Option<String>,
+    /// Number of sample broadcast messages skipped before the recorder could read them.
+    #[serde(default)]
+    pub sample_lagged_messages: u64,
+    /// Number of action broadcast messages skipped before the recorder could read them.
+    #[serde(default)]
+    pub action_lagged_messages: u64,
 }
 
 /// When to auto-start/stop recording.

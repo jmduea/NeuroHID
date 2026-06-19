@@ -337,7 +337,10 @@ impl CalibrationPanel {
             return;
         }
 
-        ui.colored_label(egui::Color32::GREEN, "Training completed.");
+        ui.colored_label(
+            egui::Color32::YELLOW,
+            "Calibration summary prepared; validated model artifact not confirmed yet.",
+        );
         if action_button(ui, "Continue", true, ButtonVariant::Default) {
             self.decoder_training_started_at = None;
             self.wizard.advance();
@@ -415,10 +418,11 @@ impl CalibrationPanel {
             ui.vertical_centered(|ui| {
                 ui.add_space(50.0);
 
-                ui.heading("Calibration Complete!");
+                ui.heading("Calibration Data Collected");
                 ui.add_space(20.0);
 
-                ui.label("Your profile has been calibrated and is ready to use.");
+                ui.label("Calibration tasks are complete for this session.");
+                ui.label("A validated decoder model must be confirmed before claiming readiness.");
                 ui.add_space(10.0);
                 ui.label("The service will now resume normal operation.");
             });

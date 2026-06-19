@@ -19,7 +19,7 @@ use crate::screens::devices::DevicesScreen;
 use crate::screens::extensions::ExtensionsScreen;
 use crate::screens::jupyter_ide::JupyterIdeScreen;
 use crate::screens::profiles::ProfilesScreen;
-use crate::screens::python_lab::PythonLabScreen;
+use crate::screens::python_lab::{DEFAULT_LAB_KERNEL_COMMAND, PythonLabScreen};
 use crate::screens::settings::SettingsScreen;
 use crate::screens::training::TrainingScreen;
 use crate::screens::visualization::VisualizationScreen;
@@ -543,7 +543,7 @@ impl eframe::App for HubApp {
                     Screen::PythonLab => {
                         self.python_lab.show(
                             ui,
-                            &self.state.config.ui.jupyter_command,
+                            DEFAULT_LAB_KERNEL_COMMAND,
                             &self.data_bus,
                             &self.state.service_snapshot,
                         );

@@ -53,6 +53,7 @@ pub(super) enum DeviceIntegrityIssue {
         expected: usize,
         got: usize,
     },
+    StreamTaskExited,
 }
 
 pub(super) struct DeviceSampleIntegrityTracker {
@@ -335,6 +336,16 @@ pub(super) async fn report_device_integrity_issue(
                 expected,
                 got,
                 "Device ingest channel-count mismatch detected"
+            );
+        }
+        DeviceIntegrityIssue::StreamTaskExited => {
+            tracing::warn!(
+                event = obs::event::INTEGRITY_ISSUE,
+                stage = obs::stage::DEVICE,
+                decision_id = obs::field::UNKNOWN,
+                stream_id = stream_id,
+                issue = "stream_task_exited",
+                "Device stream task exited unexpectedly"
             );
         }
     }
