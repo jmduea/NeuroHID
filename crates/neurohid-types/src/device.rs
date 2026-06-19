@@ -220,6 +220,50 @@ impl DeviceStatus {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::{ConnectionState, DeviceId, DeviceStatus};
+
+    fn status(
+        samples_received: u64,
+        samples_dropped: u64,
+        channel_quality: Option<Vec<f32>>,
+    ) -> DeviceStatus {
+        DeviceStatus {
+            device_id: DeviceId::new("test-device"),
+            connection_state: ConnectionState::Connected,
+            is_streaming: true,
+            samples_received,
+            samples_dropped,
+            battery_percent: None,
+            channel_quality,
+            message: None,
+        }
+    }
+
+    #[test]
+    fn drop_rate_is_zero_without_samples() {
+        assert_eq!(status(0, 0, None).drop_rate(), 0.0);
+    }
+
+    #[test]
+    fn drop_rate_reflects_dropped_fraction() {
+        assert!((status(75, 25, None).drop_rate() - 25.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn average_quality_handles_empty_and_populated_channels() {
+        let empty_average = status(0, 0, Some(Vec::new()))
+            .average_quality()
+            .expect("empty channel quality should still produce an average");
+        assert!(empty_average.abs() < f32::EPSILON);
+        let average = status(0, 0, Some(vec![0.25, 0.75, 1.0]))
+            .average_quality()
+            .expect("average quality should be present");
+        assert!((average - (2.0 / 3.0)).abs() < f32::EPSILON);
+    }
+}
+
 /// Settings for device connection behavior.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionSettings {

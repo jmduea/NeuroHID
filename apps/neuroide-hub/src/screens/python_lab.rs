@@ -1105,4 +1105,34 @@ mod tests {
         assert!(DEFAULT_LAB_KERNEL_COMMAND.contains("neurohid-ml lab-kernel"));
         assert!(!DEFAULT_LAB_KERNEL_COMMAND.contains("jupyter"));
     }
+
+    #[test]
+    fn bridge_monitor_surfaces_degraded_service_state() {
+        let mut snapshot = ServiceSnapshot {
+            ml_bridge_connected: true,
+            ml_bridge_stalled: true,
+            ..ServiceSnapshot::default()
+        };
+        snapshot.runtime_mode_state = neurohid_types::control::RuntimeModeState::Degraded;
+
+        let harness = Harness::new_ui_state(
+            |ui, state: &mut PythonLabHarnessState| {
+                state.screen.show(
+                    ui,
+                    DEFAULT_LAB_KERNEL_COMMAND,
+                    &state.data_bus,
+                    &state.service_snapshot,
+                );
+            },
+            PythonLabHarnessState {
+                screen: PythonLabScreen::new(),
+                data_bus: DataBus::new(),
+                service_snapshot: snapshot,
+            },
+        );
+
+        harness.get_by_label("ML bridge stalled");
+        harness.get_by_label("No feature vectors yet");
+        harness.get_by_label("Kernel cmd: uv run --project python neurohid-ml lab-kernel");
+    }
 }

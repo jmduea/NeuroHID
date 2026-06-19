@@ -31,7 +31,7 @@ class _FakeRuntime:
     def __init__(self) -> None:
         self.commands: list[tuple] = []
         self._dispatch_response = '{"status":"ok"}'
-        self.last_dispatch_request_json: str | None = None
+        self.dispatch_requests: list[dict] = []
 
     def snapshot(self) -> _FakeSnapshot:
         return _FakeSnapshot()
@@ -43,7 +43,7 @@ class _FakeRuntime:
         self.commands.append((name, kwargs))
 
     def dispatch_control_sync(self, request_json: str) -> str:
-        self.last_dispatch_request_json = request_json
+        self.dispatch_requests.append(json.loads(request_json))
         return self._dispatch_response
 
     def is_alive(self) -> bool:
@@ -111,33 +111,32 @@ class ControlClientTests(unittest.TestCase):
         policy = {"enabled": True, "model_strategy": "lightweight_rust"}
         result = client.set_fallback_policy(policy)
         self.assertEqual(result, {"status": "ok"})
-        self.assertIsNotNone(runtime.last_dispatch_request_json)
-        request = json.loads(runtime.last_dispatch_request_json or "{}")
-        self.assertEqual(request["request_id"], None)
         self.assertEqual(
-            request["command"],
-            {"type": "set_fallback_policy", "policy": policy},
+            runtime.dispatch_requests,
+            [
+                {
+                    "request_id": None,
+                    "command": {"type": "set_fallback_policy", "policy": policy},
+                }
+            ],
         )
 
     def test_dispatch_control_preserves_wrapped_request(self) -> None:
         runtime = _FakeRuntime()
         client = _control.NeuroHidControlClient(runtime)
-        result = client.dispatch_control(
-            {
-                "request_id": "req-1",
-                "command": {"type": "set_learning_enabled", "enabled": False},
-            }
-        )
+        request = {
+            "request_id": "req-1",
+            "command": {"type": "set_learning_enabled", "enabled": False},
+        }
+        result = client.dispatch_control(request)
         self.assertEqual(result, {"status": "ok"})
-        self.assertIsNotNone(runtime.last_dispatch_request_json)
-        request = json.loads(runtime.last_dispatch_request_json or "{}")
-        self.assertEqual(
-            request,
-            {
-                "request_id": "req-1",
-                "command": {"type": "set_learning_enabled", "enabled": False},
-            },
-        )
+        self.assertEqual(runtime.dispatch_requests, [request])
+
+    def test_dispatch_control_rejects_non_object_command(self) -> None:
+        runtime = _FakeRuntime()
+        client = _control.NeuroHidControlClient(runtime)
+        with self.assertRaises(_control.NotebookError):
+            client.dispatch_control({"command": "set_output_enabled"})  # type: ignore[dict-item]
 
     def test_set_fallback_policy_rejects_non_dict(self) -> None:
         runtime = _FakeRuntime()

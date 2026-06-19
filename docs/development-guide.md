@@ -67,6 +67,10 @@ cargo clippy --workspace -- -D warnings
 cargo fmt --check
 ```
 
+For native UI and lab realism testing guidance, including `egui_kittest`
+semantic checks and opt-in LSL simulator / hardware-in-the-loop commands, see
+[Testing: Tiers, Isolation, and Flakiness](testing.md).
+
 ### Python
 
 ```bash

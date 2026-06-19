@@ -255,3 +255,108 @@ impl DeviceProvider for LslProvider {
 
 /// Stream-native alias for [`LslProvider`].
 pub type LslStreamResolver = LslProvider;
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+
+    use neurohid_types::config::LslConfig;
+
+    use super::LslProvider;
+    use crate::traits::DeviceProvider;
+
+    fn env_timeout_secs() -> f64 {
+        env::var("NEUROHID_LSL_TIMEOUT_SECS")
+            .ok()
+            .and_then(|value| value.parse::<f64>().ok())
+            .unwrap_or(3.0)
+    }
+
+    fn provider_for_predicate(predicate: String) -> LslProvider {
+        LslProvider::new(LslConfig {
+            predicate,
+            resolve_timeout_secs: env_timeout_secs(),
+            ..LslConfig::default()
+        })
+    }
+
+    #[tokio::test]
+    #[ignore = "requires an external LSL simulator publishing NEUROHID_LSL_EXPECTED_NAME"]
+    async fn lsl_simulator_stream_is_discoverable_with_expected_metadata() {
+        let expected_name = env::var("NEUROHID_LSL_EXPECTED_NAME")
+            .expect("set NEUROHID_LSL_EXPECTED_NAME to the simulator stream name");
+        let provider = provider_for_predicate(format!("name='{expected_name}'"));
+
+        let streams = provider
+            .discover()
+            .await
+            .expect("simulator stream discovery should not error");
+        let stream = streams
+            .iter()
+            .find(|stream| stream.name.as_deref() == Some(expected_name.as_str()))
+            .expect("expected simulator stream should be discoverable");
+        let channel_config = stream
+            .channel_config
+            .as_ref()
+            .expect("LSL simulator stream should include channel metadata");
+
+        assert!(
+            !channel_config.channels.is_empty(),
+            "simulator stream should expose at least one channel"
+        );
+        assert!(
+            channel_config.sampling_rate_hz.is_finite() && channel_config.sampling_rate_hz > 0.0,
+            "simulator stream should expose a positive finite sample rate"
+        );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires NEUROHID_HIL=1 and a real lab LSL publisher"]
+    async fn lsl_hardware_stream_is_discoverable_for_lab_realism() {
+        assert_eq!(
+            env::var("NEUROHID_HIL").as_deref(),
+            Ok("1"),
+            "set NEUROHID_HIL=1 to acknowledge this hardware-in-the-loop check"
+        );
+        let predicate =
+            env::var("NEUROHID_HIL_LSL_PREDICATE").unwrap_or_else(|_| "type='EEG'".to_string());
+        let minimum_streams = match env::var("NEUROHID_HIL_MIN_STREAMS") {
+            Ok(value) => value
+                .parse::<usize>()
+                .expect("NEUROHID_HIL_MIN_STREAMS must be a positive integer"),
+            Err(_) => 1,
+        };
+        assert!(
+            minimum_streams > 0,
+            "NEUROHID_HIL_MIN_STREAMS must be greater than zero"
+        );
+        let provider = provider_for_predicate(predicate);
+
+        let streams = provider
+            .discover()
+            .await
+            .expect("hardware LSL discovery should not error");
+        assert!(
+            streams.len() >= minimum_streams,
+            "expected at least {minimum_streams} hardware LSL stream(s), got {}",
+            streams.len()
+        );
+        for stream in &streams {
+            let channel_config = stream
+                .channel_config
+                .as_ref()
+                .expect("hardware LSL streams should expose channel metadata");
+            assert!(
+                !channel_config.channels.is_empty(),
+                "hardware LSL stream '{}' should expose at least one channel",
+                stream.name.as_deref().unwrap_or("<unnamed>")
+            );
+            assert!(
+                channel_config.sampling_rate_hz.is_finite()
+                    && channel_config.sampling_rate_hz > 0.0,
+                "hardware LSL stream '{}' should expose a positive finite sample rate",
+                stream.name.as_deref().unwrap_or("<unnamed>")
+            );
+        }
+    }
+}
